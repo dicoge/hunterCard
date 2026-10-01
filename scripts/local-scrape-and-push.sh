@@ -68,8 +68,18 @@ if ! mkdir "$LOCK_FILE" 2>/dev/null; then
   exit 0
 fi
 trap 'rm -rf "$LOCK_FILE"' EXIT
-# Record the owner so a later parent can tell an orphaned lock from a live one.
-if ! printf '%s\n' "$$" > "$LOCK_FILE/pid" 2>/dev/null; then
+# procStartTime <pid>: the process's start time (normalized `ps -o lstart`),
+# empty if it is not running or unreadable. pid + start time identify ONE
+# process; a pid alone does not survive pid reuse.
+procStartTime() {
+  LC_ALL=C ps -o lstart= -p "$1" 2>/dev/null | tr -s ' \t' ' ' | sed 's/^ //; s/ $//'
+}
+# Record the owner so a later parent can tell an orphaned lock from a live one
+# (DIC-1167 pid reuse: the start time too, so a recycled pid is not mistaken
+# for the owner).
+LOCK_OWNER_START=$(procStartTime "$$")
+if ! printf '%s\n' "$$" > "$LOCK_FILE/pid" 2>/dev/null \
+  || { [ -n "$LOCK_OWNER_START" ] && ! printf '%s\n' "$LOCK_OWNER_START" > "$LOCK_FILE/start" 2>/dev/null; }; then
   echo "[$(date)] ❌ could not record the lock owner in $LOCK_FILE; cron fails" >> "$LOG_FILE"
   echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
   exit 1
@@ -199,15 +209,37 @@ physDir() {
 # exists then is residue of a killed run — unless its recorded owner is still
 # alive, in which case another delegated run is in flight: fail closed, never
 # steal it. Returns 0 iff <lock> is absent afterwards.
+# DIC-1167 (pid reuse): "alive" means the SAME process, not merely a live
+# pid — the killed owner's pid may since have been recycled by an unrelated
+# long-lived process, which would otherwise keep the orphan (and fail every
+# cron) forever. The owner is that process iff its current start time equals
+# the one recorded in the lock; a lock without a recorded start time (written
+# by an older script) is honoured only while the pid still runs this script.
+# An unreadable start time of a live pid cannot be disproved: fail closed.
 clearOrphanChildLock() {
-  local lock="$1" owner
+  local lock="$1" owner recorded_start live_start live_args reason
   [ -e "$lock" ] || [ -L "$lock" ] || return 0
   owner=$(cat "$lock/pid" 2>/dev/null || true)
+  reason="owner pid ${owner:-unrecorded} not running"
   if echo "$owner" | grep -qE '^[0-9]+$' && ps -p "$owner" >/dev/null 2>&1; then
-    echo "[$(date)] ❌ child lock $lock is held by live pid $owner; refusing to start a second delegated run (cron fails)" >> "$LOG_FILE"
-    return 1
+    recorded_start=$(head -n 1 "$lock/start" 2>/dev/null || true)
+    live_start=$(procStartTime "$owner")
+    if [ -n "$recorded_start" ]; then
+      if [ -z "$live_start" ] || [ "$live_start" = "$recorded_start" ]; then
+        echo "[$(date)] ❌ child lock $lock is held by live pid $owner (started ${live_start:-unreadable}); refusing to start a second delegated run (cron fails)" >> "$LOG_FILE"
+        return 1
+      fi
+      reason="owner pid $owner was reused: recorded start '$recorded_start', live process started '$live_start'"
+    else
+      live_args=$(ps -o args= -p "$owner" 2>/dev/null || true)
+      if [ -z "$live_args" ] || echo "$live_args" | grep -q 'local-scrape-and-push'; then
+        echo "[$(date)] ❌ child lock $lock is held by live pid $owner (no recorded start time; running ${live_args:-unreadable}); refusing to start a second delegated run (cron fails)" >> "$LOG_FILE"
+        return 1
+      fi
+      reason="owner pid $owner was reused: no recorded start time and the live process is not this scraper"
+    fi
   fi
-  echo "[$(date)] ⚠️ removing orphaned child lock $lock (owner pid ${owner:-unrecorded} not running) left by a killed run" >> "$LOG_FILE"
+  echo "[$(date)] ⚠️ removing orphaned child lock $lock ($reason) left by a killed run" >> "$LOG_FILE"
   rm -rf "$lock" 2>/dev/null || true
   if [ -e "$lock" ] || [ -L "$lock" ]; then
     echo "[$(date)] ❌ could not remove orphaned child lock $lock (cron fails)" >> "$LOG_FILE"

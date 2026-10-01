@@ -56,7 +56,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execSync, spawnSync } from 'node:child_process';
+import { execSync, spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -1584,11 +1584,25 @@ for (const [route, extraEnv, residue] of [
 //   - a parent reports Done only on the child's per-run nonce receipt, never
 //     on a bare exit 0. ──────────────────────────────────────────────────────
 
+// procStartTime(pid): the script's normalized `ps -o lstart` for <pid>.
+function procStartTime(pid) {
+  return execSync(`ps -o lstart= -p ${pid}`, { env: { ...process.env, LC_ALL: 'C' } })
+    .toString().replace(/\s+/g, ' ').trim();
+}
+const reEsc = (v) => String(v).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 // DD(a/b): an orphaned stage-2 lock (killed run; no pid, or a dead pid) is
 // cleared by stage 1 and the run completes its real handoff, on both routes.
+// DD(f/g) (pid reuse): the killed owner's pid now belongs to an unrelated LIVE
+// process (here: this node test runner) — with a recorded start time that no
+// longer matches, or a legacy lock with no start time whose live pid is not
+// this scraper. That lock is still an orphan: cleared, never kept forever.
 for (const [route, extraEnv, residue, ownerPid] of [
   ['DD(a) forced route, orphaned stage-2 lock without owner pid', { HUNTERCARD_FORCE_ISOLATED: '1' }, false, null],
   ['DD(b) dirty route, orphaned stage-2 lock with a dead owner pid', {}, true, 'dead'],
+  ['DD(f) forced route, owner pid reused by a live process (start time differs)', { HUNTERCARD_FORCE_ISOLATED: '1' }, false, 'reused'],
+  ['DD(f) dirty route, owner pid reused by a live process (start time differs)', {}, true, 'reused'],
+  ['DD(g) forced route, legacy lock (no start time) whose pid is reused by a non-scraper', { HUNTERCARD_FORCE_ISOLATED: '1' }, false, 'reused-legacy'],
 ]) {
   const sandbox = makeSandbox();
   const isoDir = path.join(sandbox.dir, 'iso');
@@ -1598,16 +1612,28 @@ for (const [route, extraEnv, residue, ownerPid] of [
     if (residue) fs.writeFileSync(path.join(sandbox.repo, 'data', 'price-history', 'hDD-001_hFOO_C.json'), '{}');
     fs.mkdirSync(staleLock);
     let recorded = 'unrecorded';
+    let reasonRe = `owner pid ${recorded} not running`;
     if (ownerPid === 'dead') {
       const exited = spawnSync('bash', ['-c', 'echo $$']);
       recorded = exited.stdout.toString().trim();
       fs.writeFileSync(path.join(staleLock, 'pid'), `${recorded}\n`);
+      reasonRe = `owner pid ${recorded} not running`;
+    } else if (ownerPid === 'reused') {
+      recorded = String(process.pid);
+      fs.writeFileSync(path.join(staleLock, 'pid'), `${recorded}\n`);
+      fs.writeFileSync(path.join(staleLock, 'start'), 'Thu Jan  1 00:00:00 1970\n');
+      reasonRe = `owner pid ${recorded} was reused: recorded start 'Thu Jan  1 00:00:00 1970', live process started '${reEsc(procStartTime(process.pid))}'`;
+    } else if (ownerPid === 'reused-legacy') {
+      recorded = String(process.pid);
+      fs.writeFileSync(path.join(staleLock, 'pid'), `${recorded}\n`);
+      reasonRe = `owner pid ${recorded} was reused: no recorded start time and the live process is not this scraper`;
     }
     const snapshot = takeResidentSnapshot(sandbox);
     const { status, lines, log } = runSandbox(sandbox, extraEnv);
     const label = residue ? 'isolated' : 'forced-isolated';
     assert.equal(status, 0, `${route}: an orphaned child lock must not block or fake the run; got ${status}\n${log}`);
-    assert.match(log, new RegExp(`removing orphaned child lock ${staleLock.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(owner pid ${recorded} not running\\)`), `${route}: the orphan must be reported`);
+    assert.match(log, new RegExp(`removing orphaned child lock ${reEsc(staleLock)} \\(${reasonRe}\\)`), `${route}: the orphan must be reported`);
+    assert.doesNotMatch(log, /is held by live pid/, `${route}: a dead or reused owner pid is never treated as a live owner`);
     assert.doesNotMatch(log, /already running, skipping/, `${route}: stage 2 must not skip`);
     assert.equal(pipelineOwnersOrBuild(lines, isoDir), true, `${route}: the build must actually run in the isolated worktree`);
     assert.ok(someTraced(lines, 'HEAD:refs/heads/bot/scrape/'), `${route}: the handoff must actually be pushed`);
@@ -1622,28 +1648,41 @@ for (const [route, extraEnv, residue, ownerPid] of [
   }
 }
 
-// DD(c): a stage-2 lock whose recorded owner is ALIVE is never stolen; stage 1
-// fails closed before the child runs and leaves that lock in place.
-{
+// DD(c): a stage-2 lock whose recorded owner is ALIVE — the same process: its
+// recorded start time matches, or (legacy lock, no start time) it is still
+// running this scraper — is never stolen; stage 1 fails closed before the
+// child runs and leaves that lock in place.
+for (const [route, legacy] of [
+  ['DD(c) live stage-2 lock owner (start time matches)', false],
+  ['DD(c) live stage-2 lock owner (legacy lock, live scraper command)', true],
+]) {
   const sandbox = makeSandbox();
   const isoDir = path.join(sandbox.dir, 'iso');
   const staleLock = path.join(sandbox.dir, 'scrape.lock.stage2');
+  // A live stand-in owner whose command line names this scraper. `; :` keeps
+  // bash from exec'ing sleep, so the pid keeps that command line.
+  const owner = spawn('bash', ['-c', 'sleep 120; :', 'local-scrape-and-push.sh'], { stdio: 'ignore' });
   try {
     fs.mkdirSync(staleLock);
-    fs.writeFileSync(path.join(staleLock, 'pid'), `${process.pid}\n`);
+    fs.writeFileSync(path.join(staleLock, 'pid'), `${owner.pid}\n`);
+    const startRecorded = legacy ? null : `${procStartTime(owner.pid)}\n`;
+    if (startRecorded) fs.writeFileSync(path.join(staleLock, 'start'), startRecorded);
     const snapshot = takeResidentSnapshot(sandbox);
     const result = runSandbox(sandbox, { HUNTERCARD_FORCE_ISOLATED: '1' });
     assertFailedClosedNoMutation(
-      'DD(c) live stage-2 lock owner',
+      route,
       result,
-      new RegExp(`child lock \\S+scrape\\.lock\\.stage2 is held by live pid ${process.pid}; refusing to start a second delegated run`),
+      new RegExp(`child lock \\S+scrape\\.lock\\.stage2 is held by live pid ${owner.pid} \\(${legacy ? 'no recorded start time; running [^)]*local-scrape-and-push' : 'started [^)]+'}[^)]*\\); refusing to start a second delegated run`),
     );
-    assert.deepEqual(pipelineOwners(result.lines), [], 'DD(c): no runPipeline may run');
-    assert.doesNotMatch(result.log, /✅ Done/, 'DD(c): must never report Done');
-    assert.equal(fs.readFileSync(path.join(staleLock, 'pid'), 'utf-8'), `${process.pid}\n`, 'DD(c): a live owner\'s lock must not be removed');
-    assert.equal(fs.existsSync(isoDir), false, 'DD(c): stage 1 removes the ephemeral worktree');
+    assert.deepEqual(pipelineOwners(result.lines), [], `${route}: no runPipeline may run`);
+    assert.doesNotMatch(result.log, /✅ Done/, `${route}: must never report Done`);
+    assert.doesNotMatch(result.log, /removing orphaned child lock/, `${route}: a live owner is never treated as an orphan`);
+    assert.equal(fs.readFileSync(path.join(staleLock, 'pid'), 'utf-8'), `${owner.pid}\n`, `${route}: a live owner's lock must not be removed`);
+    if (startRecorded) assert.equal(fs.readFileSync(path.join(staleLock, 'start'), 'utf-8'), startRecorded, `${route}: the owner's start time is kept`);
+    assert.equal(fs.existsSync(isoDir), false, `${route}: stage 1 removes the ephemeral worktree`);
     assertResidentUntouched(sandbox, snapshot);
   } finally {
+    owner.kill('SIGKILL');
     cleanup(sandbox);
   }
 }
@@ -1722,4 +1761,4 @@ for (const [route, extraEnv, anchor, failRe] of [
   }
 }
 
-console.log('DIC-1219/DIC-1321/DIC-1334/DIC-1472(+CR-P1 alias/removal/post-link + resident fingerprint)/DIC-1167(CR 028f6a19 clean-path ff/ahead/push + fetch freshness; 09-30 origin-only orchestration W–AA; CR bced44d5 stage-2 attestation + freshness BB–CC; CR cb2b3b13 child lock + receipt DD) scheduler dirty-precondition + coverage-gate + no-op + parity + isolated-deps regression checks passed');
+console.log('DIC-1219/DIC-1321/DIC-1334/DIC-1472(+CR-P1 alias/removal/post-link + resident fingerprint)/DIC-1167(CR 028f6a19 clean-path ff/ahead/push + fetch freshness; 09-30 origin-only orchestration W–AA; CR bced44d5 stage-2 attestation + freshness BB–CC; CR cb2b3b13 child lock + receipt DD; pid-reuse owner identity DD(c/f/g)) scheduler dirty-precondition + coverage-gate + no-op + parity + isolated-deps regression checks passed');
