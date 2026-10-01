@@ -3,13 +3,13 @@
   "name": "小鳥遊キアラ",
   "nameZh": "小鳥遊琪亞拉",
   "trend": "down",
-  "score": -0.3,
+  "score": -0.31,
   "confidence": 0.5,
   "components": {
     "priceTrend": -0.56,
     "ytTrend": 0,
     "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-09-27T12:14:34.712Z",
+  "lastUpdated": "2026-10-01T12:17:28.662Z",
   "dataPoints": 64
 }

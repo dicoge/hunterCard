@@ -26,8 +26,16 @@
       "currency": "JPY",
       "cardId": "hBP04-001_hBP04_OSR_hBP04-001_OSR",
       "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-10-01",
+      "price": 500,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-001_hBP04_OSR_hBP04-001_OSR",
+      "sourceProduct": "hBP04"
     }
   ],
-  "lastUpdated": "2026-09-27T12:14:25.898Z",
+  "lastUpdated": "2026-10-01T12:17:19.412Z",
   "nameZh": "博衣可佑理"
 }

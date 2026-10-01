@@ -26,8 +26,16 @@
       "currency": "JPY",
       "cardId": "hBP07-103_hBP07_U_hBP07-103_U",
       "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-10-01",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-103_hBP07_U_hBP07-103_U",
+      "sourceProduct": "hBP07"
     }
   ],
-  "lastUpdated": "2026-09-27T12:14:25.941Z",
+  "lastUpdated": "2026-10-01T12:17:19.453Z",
   "nameZh": "寬鍬形蟲"
 }

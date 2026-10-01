@@ -2,14 +2,14 @@
   "cardId": "hBP02-076",
   "name": "カスタムパソコン",
   "nameZh": "客製電腦",
-  "trend": "up",
-  "score": 0.33,
-  "confidence": 0.9,
+  "trend": "stable",
+  "score": 0.03,
+  "confidence": 0.8,
   "components": {
-    "priceTrend": 0.5,
+    "priceTrend": 0,
     "ytTrend": 0,
     "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-09-27T12:14:34.724Z",
-  "dataPoints": 70
+  "lastUpdated": "2026-10-01T12:17:28.673Z",
+  "dataPoints": 71
 }

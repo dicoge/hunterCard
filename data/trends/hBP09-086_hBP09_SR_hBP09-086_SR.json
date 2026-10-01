@@ -3,13 +3,13 @@
   "name": "夏色まつり",
   "nameZh": "夏色祭",
   "trend": "stable",
-  "score": 0.12,
+  "score": 0.03,
   "confidence": 0.6,
   "components": {
-    "priceTrend": 0.15,
+    "priceTrend": 0,
     "ytTrend": 0,
     "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-09-27T12:14:34.771Z",
-  "dataPoints": 3
+  "lastUpdated": "2026-10-01T12:17:28.736Z",
+  "dataPoints": 4
 }

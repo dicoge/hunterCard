@@ -2,14 +2,14 @@
   "cardId": "hBP06-079",
   "name": "大空スバル",
   "nameZh": "大空昴",
-  "trend": "up",
-  "score": 0.63,
+  "trend": "stable",
+  "score": 0.03,
   "confidence": 0.7,
   "components": {
-    "priceTrend": 1,
+    "priceTrend": 0,
     "ytTrend": 0,
     "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-09-27T12:14:34.754Z",
-  "dataPoints": 70
+  "lastUpdated": "2026-10-01T12:17:28.705Z",
+  "dataPoints": 71
 }
