@@ -73,6 +73,11 @@ import {
   classifyFreshness,
   HOCG_DECKLOG_GAME_TITLE_ID,
 } from '../src/utils/tournamentReport.ts';
+import {
+  buildAnalyticsArtifacts,
+  loadMonthlyReports,
+  stableStringify,
+} from './tournament-analytics-core.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -109,6 +114,7 @@ const OUT_DIRS = flagValue('--out-dir')
 const CANONICAL_DIR = OUT_DIRS[0];
 
 const alerts = [];
+const MONTH_FILE_RE = /^\d{4}-\d{2}\.json$/;
 function alert(level, message, extra = {}) {
   alerts.push({ level, message, ...extra });
   const tag = level === 'error' ? '❌' : level === 'warn' ? '⚠️ ' : 'ℹ️ ';
@@ -267,7 +273,7 @@ function existingMonthsOnDisk() {
   if (!fs.existsSync(CANONICAL_DIR)) return [];
   return fs
     .readdirSync(CANONICAL_DIR)
-    .filter((f) => /^\d{4}-\d{2}\.json$/.test(f))
+    .filter((f) => MONTH_FILE_RE.test(f))
     .map((f) => f.slice(0, -'.json'.length))
     .sort();
 }
@@ -783,6 +789,8 @@ async function mainAsync() {
   };
   writeStable('index.json', index, (o) => JSON.stringify(o.months));
 
+  const analytics = regenerateAnalytics();
+
   // ── Report ────────────────────────────────────────────────────────────────
   console.log('\n=== Tournament report collection ===');
   console.log(`mode: ${LIVE ? 'LIVE (Deck Log fetch on)' : 'offline'}${
@@ -796,6 +804,11 @@ async function mainAsync() {
     );
   }
   console.log(`alerts: ${alerts.length}`);
+  console.log(
+    `analytics: ${analytics.written.length} file(s) written, ` +
+      `${analytics.unchanged} already current` +
+      (analytics.pruned.length ? `, ${analytics.pruned.length} stale removed` : ''),
+  );
 
   writeStable(
     'collector-alerts.json',
@@ -809,6 +822,93 @@ async function mainAsync() {
   finish(hasError ? 1 : 0);
 }
 
+// ── Deterministic analytics regeneration (DIC-1032 / DIC-1496) ───────────────
+// The committed `data/tournaments/analytics/` + `public/...` mirrors are
+// GENERATED artifacts, and CI asserts they are byte-identical to a
+// deterministic re-run of the analyzer. The collector used to write month
+// reports and never touch analytics, so every scheduled run that added or
+// changed a report left the analytics one run behind — the drift then surfaced
+// as a Validate failure on the bot PR (and on every later PR touching the same
+// files), pointing at the OLDEST month rather than the one that changed.
+//
+// Regenerating here, from the same reports that were just written and read
+// back from the canonical out dir, makes the collector's own output satisfy
+// the invariant by construction: what the bot commits is what `npm run
+// analyze:tournaments` reproduces.
+//
+// Properties this must keep:
+//   • Deterministic: artifacts are a pure function of the committed reports,
+//     so an unchanged re-run rewrites nothing and produces no churn commit.
+//   • Last-known-safe: a failed regeneration writes NOTHING and raises an
+//     error alert (non-zero exit) rather than leaving a half-written or empty
+//     analytics set that would look like "no data" to the UI.
+//   • Mirrored: both out dirs get the identical bytes.
+//   • Pruning: an analytics artifact for a month that no longer has a report is
+//     stale and is removed, so analytics never advertises a month the report
+//     index dropped.
+function regenerateAnalytics() {
+  const result = { written: [], unchanged: 0, pruned: [] };
+  let artifacts;
+  try {
+    const reports = loadMonthlyReports(CANONICAL_DIR);
+    const { index, months } = buildAnalyticsArtifacts(reports);
+    artifacts = [
+      { file: 'index.json', text: stableStringify(index) },
+      ...months
+        .filter((artifact) => artifact.month)
+        .map((artifact) => ({ file: `${artifact.month}.json`, text: stableStringify(artifact) })),
+    ];
+    result.expectedFiles = new Set(artifacts.map((a) => a.file));
+  } catch (err) {
+    // Nothing has been written yet, so the committed analytics stay exactly as
+    // they were. Fail the run instead of committing a report whose analytics
+    // nobody can reproduce.
+    alert('error', `Analytics regeneration failed; analytics left untouched: ${err.message}`);
+    return result;
+  }
+
+  for (const dir of OUT_DIRS) {
+    const analyticsDir = path.join(dir, 'analytics');
+    if (!DRY_RUN) fs.mkdirSync(analyticsDir, { recursive: true });
+    for (const { file, text } of artifacts) {
+      const target = path.join(analyticsDir, file);
+      if (fs.existsSync(target) && fs.readFileSync(target, 'utf8') === text) {
+        result.unchanged += 1;
+        continue;
+      }
+      if (!DRY_RUN) writeFileAtomic(target, text);
+      if (!result.written.includes(file)) result.written.push(file);
+    }
+    // Prune analytics for months with no report. Guarded to the month-file
+    // pattern so a hand-authored sibling file is never deleted.
+    if (!fs.existsSync(analyticsDir)) continue;
+    for (const name of fs.readdirSync(analyticsDir)) {
+      if (!MONTH_FILE_RE.test(name)) continue;
+      if (result.expectedFiles.has(name)) continue;
+      if (!DRY_RUN) fs.rmSync(path.join(analyticsDir, name), { force: true });
+      result.pruned.push(name);
+    }
+  }
+  if (result.pruned.length > 0) {
+    const months = [...new Set(result.pruned)].sort().join(', ');
+    alert(
+      DRY_RUN ? 'warn' : 'info',
+      `${DRY_RUN ? '[dry run] would remove' : 'Removed'} stale analytics with no matching report: ${months}`,
+    );
+  }
+  return result;
+}
+
+// A regenerated artifact replaces the last-known-good one in a single step, so
+// an interrupted write can never leave a truncated JSON file behind for the UI
+// or for CI's byte-identity assertion to trip over.
+function writeFileAtomic(target, text) {
+  const tmp = `${target}.tmp`;
+  fs.writeFileSync(tmp, text);
+  fs.renameSync(tmp, target);
+}
+
+// ── Report ───────────────────────────────────────────────────────────────────
 function finish(code) {
   if (alerts.length > 0) {
     console.log('\n--- alert detail ---');
