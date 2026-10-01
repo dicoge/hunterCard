@@ -337,6 +337,41 @@ test('--dry-run writes no analytics and leaves the tree byte-identical', () => {
   assert.deepEqual(treeAnalytics(tree), before, 'a dry run must not write analytics');
 });
 
+// The staging job commits data/ recursively, so an analytics temp file orphaned
+// by a kill between write and rename gets committed as an orphan. The month-file
+// prune cannot remove it (2026-08.json.tmp does not match MONTH_FILE_RE), so the
+// next run must sweep it.
+test('an orphaned analytics temp file from an interrupted run is swept', () => {
+  const tree = seeded();
+  const analyticsDir = path.join(tree.out, 'analytics');
+  const orphan = path.join(analyticsDir, '2026-07.json.tmp');
+  const indexOrphan = path.join(analyticsDir, 'index.json.tmp');
+  fs.writeFileSync(orphan, '{"truncated": ');
+  fs.writeFileSync(indexOrphan, '{"truncated": ');
+  const sibling = path.join(analyticsDir, 'NOTES.md');
+  fs.writeFileSync(sibling, 'hand-authored, must survive\n');
+
+  assert.equal(runCollector(tree, '2026-09-01T00:00:00Z').code, 0);
+
+  assert.ok(!fs.existsSync(orphan), 'orphaned month temp file must be swept');
+  assert.ok(!fs.existsSync(indexOrphan), 'orphaned index temp file must be swept');
+  assert.ok(fs.existsSync(sibling), 'a hand-authored sibling file must never be swept');
+  assert.deepEqual(
+    Object.keys(treeAnalytics(tree)).filter((f) => f.endsWith('.json')).sort(),
+    ['2026-07.json', 'index.json'],
+    'sweeping must leave exactly the generated analytics artifacts',
+  );
+  // Compare only the generated artifacts: the surviving sibling is not one of
+  // them, so a whole-directory compare would be the wrong assertion here.
+  const regen = path.join(tree.dir, 'regen-analytics');
+  fs.rmSync(regen, { recursive: true, force: true });
+  fs.mkdirSync(regen, { recursive: true });
+  runAnalyzer(tree.out, regen);
+  for (const f of ['2026-07.json', 'index.json']) {
+    assert.equal(treeAnalytics(tree)[f], fs.readFileSync(path.join(regen, f), 'utf8'));
+  }
+});
+
 // ── DIC-1029: committed card arrays are revalidated on every run ─────────────
 // A committed (last-known-good) array is an input, not a certificate. These
 // tests drive the REAL collector over a genuinely valid 1/50/20 deck and over

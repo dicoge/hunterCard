@@ -870,6 +870,10 @@ function regenerateAnalytics() {
   for (const dir of OUT_DIRS) {
     const analyticsDir = path.join(dir, 'analytics');
     if (!DRY_RUN) fs.mkdirSync(analyticsDir, { recursive: true });
+    const swept = sweepOrphanedAnalyticsTemps(analyticsDir);
+    if (swept > 0) {
+      alert('info', `Removed ${swept} orphaned analytics temp file(s) from an interrupted run`);
+    }
     for (const { file, text } of artifacts) {
       const target = path.join(analyticsDir, file);
       if (fs.existsSync(target) && fs.readFileSync(target, 'utf8') === text) {
@@ -902,10 +906,34 @@ function regenerateAnalytics() {
 // A regenerated artifact replaces the last-known-good one in a single step, so
 // an interrupted write can never leave a truncated JSON file behind for the UI
 // or for CI's byte-identity assertion to trip over.
+//
+// The staging job commits data/ recursively, so a temp file orphaned by a kill
+// between write and rename would be committed too — and the month-file prune
+// cannot remove it, because `2026-08.json.tmp` does not match MONTH_FILE_RE.
+// The scratch file is therefore always ours to clean up: on an exception here,
+// and at the start of the next run for anything an earlier kill left behind.
+const ANALYTICS_TMP_RE = /^(?:index|\d{4}-\d{2})\.json\.tmp$/;
+
 function writeFileAtomic(target, text) {
   const tmp = `${target}.tmp`;
-  fs.writeFileSync(tmp, text);
-  fs.renameSync(tmp, target);
+  try {
+    fs.writeFileSync(tmp, text);
+    fs.renameSync(tmp, target);
+  } catch (err) {
+    fs.rmSync(tmp, { force: true });
+    throw err;
+  }
+}
+
+function sweepOrphanedAnalyticsTemps(analyticsDir) {
+  if (DRY_RUN || !fs.existsSync(analyticsDir)) return 0;
+  let removed = 0;
+  for (const name of fs.readdirSync(analyticsDir)) {
+    if (!ANALYTICS_TMP_RE.test(name)) continue;
+    fs.rmSync(path.join(analyticsDir, name), { force: true });
+    removed += 1;
+  }
+  return removed;
 }
 
 // ── Report ───────────────────────────────────────────────────────────────────
