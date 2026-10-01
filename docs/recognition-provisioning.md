@@ -87,9 +87,13 @@ AFTER the canonical alias is bound, that it actually worked.
    error string) and `candidates` (empty). That is the only answer the
    handler can give the sub-320px probe once an adapter resolved — the floor
    arm returns before any vision call — so no 200 is ever success (CR
-   065f9384). Any other 404 or any 200 — e.g. a JSON `NOT_FOUND`, a stale
-   cached body, or a vision-shaped 200 — stays in the bounded retry lane and
-   times out as a failure.
+   065f9384). The one exception to status-based grading is the stable code:
+   a JSON body carrying `"code":"RECOGNITION_UNAVAILABLE"` is FATAL on ANY
+   HTTP status — 503, 404, 200 or otherwise — because it is the deployment's
+   own declaration that it cannot recognise anything, and it is checked
+   before any status arm. Any other 404 or any other 200 — e.g. a JSON
+   `NOT_FOUND`, a stale cached body, or a vision-shaped 200 — stays in the
+   bounded retry lane and times out as a failure.
 
 Boundary: the gate proves a vision adapter RESOLVES (the 503 class of this
 incident is impossible). It deliberately does not spend a metered vision call
