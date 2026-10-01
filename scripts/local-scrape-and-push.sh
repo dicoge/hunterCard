@@ -36,12 +36,44 @@ LOCK_FILE="${HUNTERCARD_LOCK_FILE:-/tmp/huntercard-scrape.lock}"
 LOG_FILE="$HOME/.hermes/logs/huntercard-scrape-$(date +%Y%m%d).log"
 mkdir -p "$(dirname "$LOG_FILE")"
 
+# DIC-1167 (CR cb2b3b13): a delegated child (forced/dirty stage 2, or the
+# in-place re-exec) runs under its own lock while its parent still holds the
+# primary one. Its parent waits on it and reports Done on its result, so a
+# child that "skips" on a lock collision would turn a run that never scraped
+# or pushed into a success — the stale-lock state a killed stage 2 leaves
+# behind (no EXIT trap on SIGKILL/OOM). A child therefore never skips: a
+# collision fails closed. Its parent clears orphaned child locks before
+# spawning (clearOrphanChildLock) and also requires the child's completion
+# receipt (childReceiptDetail), never a bare exit 0.
+LOCK_CHILD_ROLE=""
+if [ "${HUNTERCARD_FORCE_ISOLATED_STAGE2:-}" = "1" ]; then
+  LOCK_CHILD_ROLE="stage 2"
+elif [ "${HUNTERCARD_SELF_REEXEC:-}" = "1" ]; then
+  LOCK_CHILD_ROLE="re-executed run"
+fi
+# The parent's receipt request is for THIS process only; never let it leak
+# into the pipeline or into a grandchild (which gets its own).
+PARENT_RECEIPT="${HUNTERCARD_CHILD_RECEIPT:-}"
+PARENT_RECEIPT_NONCE="${HUNTERCARD_CHILD_RECEIPT_NONCE:-}"
+unset HUNTERCARD_CHILD_RECEIPT HUNTERCARD_CHILD_RECEIPT_NONCE
+
 # Prevent concurrent execution
 if ! mkdir "$LOCK_FILE" 2>/dev/null; then
+  if [ -n "$LOCK_CHILD_ROLE" ]; then
+    echo "[$(date)] ❌ $LOCK_CHILD_ROLE lock $LOCK_FILE already exists (owner pid $(cat "$LOCK_FILE/pid" 2>/dev/null || echo unrecorded)); a delegated child never skips — cron fails" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
   echo "[$(date)] ⚠️ Scrape already running, skipping this instance" >> "$LOG_FILE"
   exit 0
 fi
 trap 'rm -rf "$LOCK_FILE"' EXIT
+# Record the owner so a later parent can tell an orphaned lock from a live one.
+if ! printf '%s\n' "$$" > "$LOCK_FILE/pid" 2>/dev/null; then
+  echo "[$(date)] ❌ could not record the lock owner in $LOCK_FILE; cron fails" >> "$LOG_FILE"
+  echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+  exit 1
+fi
 
 echo "[$(date)] Starting hunterCard local scrape..." >> "$LOG_FILE"
 
@@ -160,6 +192,62 @@ newStage2Nonce() {
 # physDir <dir>: physical (symlink-resolved) path of <dir>, empty if absent.
 physDir() {
   [ -n "$1" ] && (cd "$1" 2>/dev/null && pwd -P) || true
+}
+
+# clearOrphanChildLock <lock>: run by a parent that holds its own lock, just
+# before it spawns the child that will take <lock>. A child lock that still
+# exists then is residue of a killed run — unless its recorded owner is still
+# alive, in which case another delegated run is in flight: fail closed, never
+# steal it. Returns 0 iff <lock> is absent afterwards.
+clearOrphanChildLock() {
+  local lock="$1" owner
+  [ -e "$lock" ] || [ -L "$lock" ] || return 0
+  owner=$(cat "$lock/pid" 2>/dev/null || true)
+  if echo "$owner" | grep -qE '^[0-9]+$' && ps -p "$owner" >/dev/null 2>&1; then
+    echo "[$(date)] ❌ child lock $lock is held by live pid $owner; refusing to start a second delegated run (cron fails)" >> "$LOG_FILE"
+    return 1
+  fi
+  echo "[$(date)] ⚠️ removing orphaned child lock $lock (owner pid ${owner:-unrecorded} not running) left by a killed run" >> "$LOG_FILE"
+  rm -rf "$lock" 2>/dev/null || true
+  if [ -e "$lock" ] || [ -L "$lock" ]; then
+    echo "[$(date)] ❌ could not remove orphaned child lock $lock (cron fails)" >> "$LOG_FILE"
+    return 1
+  fi
+  return 0
+}
+
+# Completion receipt (CR cb2b3b13): a parent hands its child a one-time nonce
+# and a receipt path inside the parent's OWN lock dir; the child writes
+# "<nonce> <detail>" there only on its success path. The parent reports Done
+# only when the receipt carries this run's nonce — an exit 0 from a child
+# that skipped, or from any premature exit, is a failure.
+CHILD_RECEIPT_NAME='child-receipt'
+
+# writeParentReceipt [detail]: on success, acknowledge the parent's request
+# (no-op for a top-level run). Returns non-zero if the receipt was requested
+# but could not be written.
+writeParentReceipt() {
+  [ -n "$PARENT_RECEIPT" ] || return 0
+  [ -n "$PARENT_RECEIPT_NONCE" ] && printf '%s %s\n' "$PARENT_RECEIPT_NONCE" "${1:-}" > "$PARENT_RECEIPT" 2>/dev/null
+}
+
+# finishWithParentReceipt [detail]: write the receipt or fail the run.
+finishWithParentReceipt() {
+  if ! writeParentReceipt "${1:-}"; then
+    echo "[$(date)] ❌ could not write the completion receipt $PARENT_RECEIPT for the parent run; cron fails" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
+}
+
+# childReceiptDetail <receipt> <nonce>: print the detail of a receipt that
+# carries <nonce>; non-zero if absent or for another run.
+childReceiptDetail() {
+  local line
+  [ -n "$2" ] && [ -f "$1" ] || return 1
+  line=$(head -n 1 "$1" 2>/dev/null || true)
+  [ "${line%% *}" = "$2" ] || return 1
+  case "$line" in *" "*) echo "${line#* }" ;; *) echo "" ;; esac
 }
 
 # removeStaleIsolatedWorktree <path>: prune/remove a previously-registered
@@ -758,6 +846,7 @@ if [ "${HUNTERCARD_FORCE_ISOLATED_STAGE2:-}" = "1" ]; then
     exit 1
   fi
   echo "[$(date)] ✅ ${ROUTE_LABEL} artifact pushed to $ISOLATED_BRANCH ($ROUTE_KEEPS)" >> "$LOG_FILE"
+  finishWithParentReceipt "$STAGE2_END_SHA"
   echo "[$(date)] ✅ Done ($ROUTE_LABEL handoff)" >> "$LOG_FILE"
   exit 0
 fi
@@ -825,20 +914,44 @@ if [ -n "$ISOLATION_ROUTE" ]; then
   fi
   # Re-execute the ORIGIN version of this script inside the clean worktree.
   # A distinct stage-2 lock: this stage-1 process still holds the primary
-  # cron lock, so the child must not collide with it (a same-lock collision
-  # would exit 0 as "already running" and silently mask a skipped run).
-  if HUNTERCARD_FORCE_ISOLATED_STAGE2=1 HUNTERCARD_ISOLATION_ROUTE="$ISOLATION_ROUTE" \
+  # cron lock, so the child must not collide with it. CR cb2b3b13: clear a
+  # killed run's orphaned stage-2 lock first, and require the child's
+  # completion receipt — stage 2's exit status alone never proves a handoff.
+  if ! clearOrphanChildLock "${LOCK_FILE}.stage2"; then
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
+  STAGE2_RECEIPT="$LOCK_FILE/$CHILD_RECEIPT_NAME"
+  STAGE2_RECEIPT_NONCE=$(newStage2Nonce || true)
+  rm -f "$STAGE2_RECEIPT"
+  if [ "${#STAGE2_RECEIPT_NONCE}" -ne 32 ] || [ -e "$STAGE2_RECEIPT" ]; then
+    echo "[$(date)] ❌ could not prepare the $STAGE1_LABEL stage-2 completion receipt; abandoning (cron fails)" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
+  if ! HUNTERCARD_FORCE_ISOLATED_STAGE2=1 HUNTERCARD_ISOLATION_ROUTE="$ISOLATION_ROUTE" \
     HUNTERCARD_STAGE2_WORKTREE="$ISOLATED_DIR" HUNTERCARD_STAGE2_EXPECTED_HEAD="$REMOTE_HEAD" \
     HUNTERCARD_STAGE2_NONCE="$STAGE2_NONCE" \
     HUNTERCARD_LOCK_FILE="${LOCK_FILE}.stage2" \
+    HUNTERCARD_CHILD_RECEIPT="$STAGE2_RECEIPT" HUNTERCARD_CHILD_RECEIPT_NONCE="$STAGE2_RECEIPT_NONCE" \
     bash "$ISOLATED_DIR/scripts/local-scrape-and-push.sh"; then
-    echo "[$(date)] ✅ Done ($STAGE1_LABEL bootstrap)" >> "$LOG_FILE"
-    exit 0
-  else
     echo "[$(date)] ❌ $STAGE1_LABEL stage 2 failed — cron reports failure" >> "$LOG_FILE"
     echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
     exit 1
   fi
+  # The receipt must name the handoff commit stage 2 left in THIS worktree,
+  # and that commit must be new on top of the pinned origin/main.
+  STAGE2_HANDOFF_SHA=$(childReceiptDetail "$STAGE2_RECEIPT" "$STAGE2_RECEIPT_NONCE" || true)
+  STAGE2_WORKTREE_SHA=$(cd "$ISOLATED_DIR" 2>/dev/null && git rev-parse --verify HEAD 2>/dev/null || true)
+  if [ -z "$STAGE2_HANDOFF_SHA" ] || [ "$STAGE2_HANDOFF_SHA" != "$STAGE2_WORKTREE_SHA" ] || [ "$STAGE2_HANDOFF_SHA" = "$REMOTE_HEAD" ]; then
+    echo "[$(date)] ❌ $STAGE1_LABEL stage 2 exited 0 without this run's completion receipt (receipt ${STAGE2_HANDOFF_SHA:-absent}, worktree HEAD ${STAGE2_WORKTREE_SHA:-unresolved}, origin $REMOTE_HEAD); never Done on a bare exit status (cron fails)" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
+  echo "[$(date)] ✅ $STAGE1_LABEL stage 2 receipt verified (handoff $STAGE2_HANDOFF_SHA)" >> "$LOG_FILE"
+  finishWithParentReceipt "$STAGE2_HANDOFF_SHA"
+  echo "[$(date)] ✅ Done ($STAGE1_LABEL bootstrap)" >> "$LOG_FILE"
+  exit 0
 fi
 
 # In-place clean path.
@@ -881,13 +994,34 @@ if ! selfScriptIsCommittedAt HEAD; then
     exit 1
   fi
   echo "[$(date)] ⚙️ fast-forward updated $SELF_SCRIPT_REL (running blob ${SELF_SCRIPT_BLOB:-unresolved} → committed $COMMITTED_SCRIPT_BLOB); re-executing origin/main's copy" >> "$LOG_FILE"
-  if HUNTERCARD_SELF_REEXEC=1 HUNTERCARD_LOCK_FILE="${LOCK_FILE}.reexec" \
-    bash "$(pwd)/$SELF_SCRIPT_REL"; then
-    exit 0
+  # CR cb2b3b13: same child contract as stage 2 — orphaned lock cleared,
+  # success only on this run's completion receipt.
+  if ! clearOrphanChildLock "${LOCK_FILE}.reexec"; then
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
   fi
-  echo "[$(date)] ❌ re-executed origin/main script failed — cron reports failure" >> "$LOG_FILE"
-  echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
-  exit 1
+  REEXEC_RECEIPT="$LOCK_FILE/$CHILD_RECEIPT_NAME"
+  REEXEC_RECEIPT_NONCE=$(newStage2Nonce || true)
+  rm -f "$REEXEC_RECEIPT"
+  if [ "${#REEXEC_RECEIPT_NONCE}" -ne 32 ] || [ -e "$REEXEC_RECEIPT" ]; then
+    echo "[$(date)] ❌ could not prepare the re-exec completion receipt; refusing in-place build/push (cron fails)" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
+  if ! HUNTERCARD_SELF_REEXEC=1 HUNTERCARD_LOCK_FILE="${LOCK_FILE}.reexec" \
+    HUNTERCARD_CHILD_RECEIPT="$REEXEC_RECEIPT" HUNTERCARD_CHILD_RECEIPT_NONCE="$REEXEC_RECEIPT_NONCE" \
+    bash "$(pwd)/$SELF_SCRIPT_REL"; then
+    echo "[$(date)] ❌ re-executed origin/main script failed — cron reports failure" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
+  if ! REEXEC_DETAIL=$(childReceiptDetail "$REEXEC_RECEIPT" "$REEXEC_RECEIPT_NONCE"); then
+    echo "[$(date)] ❌ re-executed origin/main script exited 0 without this run's completion receipt; never Done on a bare exit status (cron fails)" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
+  finishWithParentReceipt "$REEXEC_DETAIL"
+  exit 0
 fi
 if ! runPipeline "$(pwd)" "chore: update database $(date +%Y-%m-%d)"; then
   echo "[$(date)] ❌ pipeline failed — cron reports failure" >> "$LOG_FILE"
@@ -895,4 +1029,5 @@ if ! runPipeline "$(pwd)" "chore: update database $(date +%Y-%m-%d)"; then
   exit 1
 fi
 
+finishWithParentReceipt "$(git rev-parse --verify HEAD 2>/dev/null || true)"
 echo "[$(date)] ✅ Done" >> "$LOG_FILE"

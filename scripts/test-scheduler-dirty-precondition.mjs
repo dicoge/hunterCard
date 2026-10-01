@@ -1312,6 +1312,9 @@ function advanceRemoteScript(sandbox, label) {
   return execSync(`${REAL_GIT} rev-parse HEAD`, { cwd: other, encoding: 'utf-8' }).trim();
 }
 
+const pipelineOwnersOrBuild = (lines, isoDir) =>
+  lines.some((l) => l.includes('build-database.js') && l.includes(`[cwd=${isoDir}]`));
+
 const pipelineOwners = (lines) =>
   lines.filter((l) => l.startsWith('RUNPIPELINE_FROM ')).map((l) => l.slice('RUNPIPELINE_FROM '.length));
 
@@ -1570,4 +1573,153 @@ for (const [route, extraEnv, residue] of [
   }
 }
 
-console.log('DIC-1219/DIC-1321/DIC-1334/DIC-1472(+CR-P1 alias/removal/post-link + resident fingerprint)/DIC-1167(CR 028f6a19 clean-path ff/ahead/push + fetch freshness; 09-30 origin-only orchestration W–AA; CR bced44d5 stage-2 attestation + freshness BB–CC) scheduler dirty-precondition + coverage-gate + no-op + parity + isolated-deps regression checks passed');
+// ─── DIC-1167 (CR cb2b3b13): a delegated child (stage 2 / in-place re-exec)
+// that finds its lock already present used to log "already running" and
+// exit 0; its parent took that 0 as a completed handoff and logged Done. A
+// stage-2 process killed before its EXIT trap leaves exactly that lock, so
+// every later run "succeeded" without scraping or pushing. Now:
+//   - a parent clears an ORPHANED child lock (owner pid not running) before
+//     spawning, and refuses (fails closed) while the owner is still alive;
+//   - a delegated child never skips on a lock collision — it fails closed;
+//   - a parent reports Done only on the child's per-run nonce receipt, never
+//     on a bare exit 0. ──────────────────────────────────────────────────────
+
+// DD(a/b): an orphaned stage-2 lock (killed run; no pid, or a dead pid) is
+// cleared by stage 1 and the run completes its real handoff, on both routes.
+for (const [route, extraEnv, residue, ownerPid] of [
+  ['DD(a) forced route, orphaned stage-2 lock without owner pid', { HUNTERCARD_FORCE_ISOLATED: '1' }, false, null],
+  ['DD(b) dirty route, orphaned stage-2 lock with a dead owner pid', {}, true, 'dead'],
+]) {
+  const sandbox = makeSandbox();
+  const isoDir = path.join(sandbox.dir, 'iso');
+  const lock = path.join(sandbox.dir, 'scrape.lock');
+  const staleLock = `${lock}.stage2`;
+  try {
+    if (residue) fs.writeFileSync(path.join(sandbox.repo, 'data', 'price-history', 'hDD-001_hFOO_C.json'), '{}');
+    fs.mkdirSync(staleLock);
+    let recorded = 'unrecorded';
+    if (ownerPid === 'dead') {
+      const exited = spawnSync('bash', ['-c', 'echo $$']);
+      recorded = exited.stdout.toString().trim();
+      fs.writeFileSync(path.join(staleLock, 'pid'), `${recorded}\n`);
+    }
+    const snapshot = takeResidentSnapshot(sandbox);
+    const { status, lines, log } = runSandbox(sandbox, extraEnv);
+    const label = residue ? 'isolated' : 'forced-isolated';
+    assert.equal(status, 0, `${route}: an orphaned child lock must not block or fake the run; got ${status}\n${log}`);
+    assert.match(log, new RegExp(`removing orphaned child lock ${staleLock.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(owner pid ${recorded} not running\\)`), `${route}: the orphan must be reported`);
+    assert.doesNotMatch(log, /already running, skipping/, `${route}: stage 2 must not skip`);
+    assert.equal(pipelineOwnersOrBuild(lines, isoDir), true, `${route}: the build must actually run in the isolated worktree`);
+    assert.ok(someTraced(lines, 'HEAD:refs/heads/bot/scrape/'), `${route}: the handoff must actually be pushed`);
+    assert.match(log, new RegExp(`✅ Done \\(${label} handoff\\)`), `${route}: stage 2 completes`);
+    assert.match(log, new RegExp(`${label} stage 2 receipt verified`), `${route}: stage 1 verified the stage-2 receipt`);
+    assert.match(log, new RegExp(`✅ Done \\(${label} bootstrap\\)`), `${route}: stage 1 reports Done after the receipt`);
+    assert.equal(fs.existsSync(staleLock), false, `${route}: no stage-2 lock remains`);
+    assert.equal(fs.existsSync(lock), false, `${route}: no primary lock remains`);
+    assertResidentUntouched(sandbox, snapshot);
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// DD(c): a stage-2 lock whose recorded owner is ALIVE is never stolen; stage 1
+// fails closed before the child runs and leaves that lock in place.
+{
+  const sandbox = makeSandbox();
+  const isoDir = path.join(sandbox.dir, 'iso');
+  const staleLock = path.join(sandbox.dir, 'scrape.lock.stage2');
+  try {
+    fs.mkdirSync(staleLock);
+    fs.writeFileSync(path.join(staleLock, 'pid'), `${process.pid}\n`);
+    const snapshot = takeResidentSnapshot(sandbox);
+    const result = runSandbox(sandbox, { HUNTERCARD_FORCE_ISOLATED: '1' });
+    assertFailedClosedNoMutation(
+      'DD(c) live stage-2 lock owner',
+      result,
+      new RegExp(`child lock \\S+scrape\\.lock\\.stage2 is held by live pid ${process.pid}; refusing to start a second delegated run`),
+    );
+    assert.deepEqual(pipelineOwners(result.lines), [], 'DD(c): no runPipeline may run');
+    assert.doesNotMatch(result.log, /✅ Done/, 'DD(c): must never report Done');
+    assert.equal(fs.readFileSync(path.join(staleLock, 'pid'), 'utf-8'), `${process.pid}\n`, 'DD(c): a live owner\'s lock must not be removed');
+    assert.equal(fs.existsSync(isoDir), false, 'DD(c): stage 1 removes the ephemeral worktree');
+    assertResidentUntouched(sandbox, snapshot);
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// DD(d): a delegated child that collides with its lock fails closed (exit 1,
+// FAILED) instead of the top-level "already running" exit 0 — for both the
+// stage-2 and the in-place re-exec roles — and never removes the lock.
+for (const [route, env, roleRe] of [
+  ['DD(d) stage-2 lock collision', { HUNTERCARD_FORCE_ISOLATED_STAGE2: '1' }, /stage 2 lock \S+ already exists \(owner pid unrecorded\); a delegated child never skips/],
+  ['DD(d) re-exec lock collision', { HUNTERCARD_SELF_REEXEC: '1' }, /re-executed run lock \S+ already exists \(owner pid unrecorded\); a delegated child never skips/],
+]) {
+  const sandbox = makeSandbox();
+  const lock = path.join(sandbox.dir, 'child.lock');
+  try {
+    fs.mkdirSync(lock);
+    const result = runSandbox(sandbox, { ...env, HUNTERCARD_LOCK_FILE: lock });
+    assertFailedClosedNoMutation(route, result, roleRe);
+    assert.doesNotMatch(result.log, /already running, skipping/, `${route}: a child never takes the skip path`);
+    assert.equal(someTraced(result.lines, 'git fetch'), false, `${route}: fails before any other work`);
+    assert.equal(fs.existsSync(lock), true, `${route}: a colliding child must not remove a lock it does not own`);
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// DD(e): a child that exits 0 WITHOUT doing its work (the exact shape of the
+// old "already running" skip, or any premature success) must not be taken
+// as a completed run by its parent — stage 1 on the forced route, and the
+// in-place parent after a fast-forward re-exec.
+function scriptWithInjectedLine(afterAnchor, line) {
+  const src = fs.readFileSync(REAL_PIPELINE, 'utf-8');
+  assert.ok(src.includes(afterAnchor), `harness: anchor must exist: ${afterAnchor}`);
+  return src.replace(afterAnchor, `${afterAnchor}\n${line}`);
+}
+function advanceRemoteWith(sandbox, tag, content) {
+  const other = path.join(sandbox.dir, `other-dd-${tag}`);
+  execSync(`${REAL_GIT} clone -q ${sandbox.remote} ${other}`);
+  fs.writeFileSync(path.join(other, 'scripts', 'local-scrape-and-push.sh'), content);
+  execSync(`${REAL_GIT} add scripts/local-scrape-and-push.sh`, { cwd: other });
+  execSync(`${REAL_GIT} -c user.email=o@example.com -c user.name=o -c commit.gpgsign=false commit -q -m "remote dd ${tag}"`, { cwd: other });
+  execSync(`${REAL_GIT} push -q origin main`, { cwd: other });
+}
+for (const [route, extraEnv, anchor, failRe] of [
+  [
+    'DD(e) forced stage 2 exits 0 without a receipt',
+    { HUNTERCARD_FORCE_ISOLATED: '1' },
+    'if [ "${HUNTERCARD_FORCE_ISOLATED_STAGE2:-}" = "1" ]; then',
+    /forced-isolated stage 2 exited 0 without this run's completion receipt[^\n]*; never Done on a bare exit status \(cron fails\)/,
+  ],
+  [
+    'DD(e) in-place re-exec exits 0 without a receipt',
+    {},
+    '# In-place clean path.',
+    /re-executed origin\/main script exited 0 without this run's completion receipt; never Done on a bare exit status \(cron fails\)/,
+  ],
+]) {
+  const sandbox = makeSandbox();
+  const isoDir = path.join(sandbox.dir, 'iso');
+  try {
+    const premature = anchor.startsWith('#')
+      ? '[ "${HUNTERCARD_SELF_REEXEC:-}" = "1" ] && exit 0'
+      : '  exit 0';
+    advanceRemoteWith(sandbox, 'premature', scriptWithInjectedLine(anchor, premature));
+    const snapshot = takeResidentSnapshot(sandbox);
+    const { status, lines, log } = runSandbox(sandbox, extraEnv);
+    assert.equal(status, 1, `${route}: must fail; got ${status}\n${log}`);
+    assert.match(log, failRe, `${route}: exact receipt failure`);
+    assert.match(log, /HUNTERCARD_SCRAPE_STATUS=FAILED/, `${route}: cron must observe FAILED`);
+    assert.doesNotMatch(log, /✅ Done/, `${route}: must never report Done`);
+    assert.equal(someTraced(lines, 'build-database.js'), false, `${route}: sanity — the child did no work`);
+    assert.equal(someTraced(lines, 'push origin'), false, `${route}: nothing was pushed`);
+    assert.equal(fs.existsSync(isoDir), false, `${route}: no ephemeral worktree remains`);
+    if (!anchor.startsWith('#')) assertResidentUntouched(sandbox, snapshot);
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+console.log('DIC-1219/DIC-1321/DIC-1334/DIC-1472(+CR-P1 alias/removal/post-link + resident fingerprint)/DIC-1167(CR 028f6a19 clean-path ff/ahead/push + fetch freshness; 09-30 origin-only orchestration W–AA; CR bced44d5 stage-2 attestation + freshness BB–CC; CR cb2b3b13 child lock + receipt DD) scheduler dirty-precondition + coverage-gate + no-op + parity + isolated-deps regression checks passed');
