@@ -82,10 +82,13 @@ AFTER the canonical alias is bound, that it actually worked.
 3. The same committed module decides the outcome (exit 0 provisioned /
    2 retry / 1 fatal), and the workflow fails closed: an unprovisioned
    Production is a FAILED deploy, not a green one. "Provisioned" requires
-   the handler's exact adapter-gated body shape (the 404 photo answer with
-   its exact error string and empty `candidates`, or a 200 vision answer
-   with non-empty `candidates`); any other 404/200 — e.g. a JSON
-   `NOT_FOUND` or a stale cached body — stays in the bounded retry lane and
+   exactly the handler's resolution-floor answer to this probe: a 404 whose
+   JSON body has only the keys `success` (`false`), `error` (the exact floor
+   error string) and `candidates` (empty). That is the only answer the
+   handler can give the sub-320px probe once an adapter resolved — the floor
+   arm returns before any vision call — so no 200 is ever success (CR
+   065f9384). Any other 404 or any 200 — e.g. a JSON `NOT_FOUND`, a stale
+   cached body, or a vision-shaped 200 — stays in the bounded retry lane and
    times out as a failure.
 
 Boundary: the gate proves a vision adapter RESOLVES (the 503 class of this
