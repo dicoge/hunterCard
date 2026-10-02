@@ -759,14 +759,36 @@ done
 # (the 2026-09-17 run built detached at the previous day's merge). A failed
 # fetch must fail closed BEFORE any official mutation, never fall through to
 # the stale ref.
-if ! git fetch origin main >> "$LOG_FILE" 2>&1; then
+# DIC-1167 (CR 504e8fb5): a plain `git fetch origin main` only moves the
+# tracking ref through remote.origin.fetch. With that config missing it writes
+# FETCH_HEAD alone, the tracking ref keeps the launcher's (or stage 1's)
+# earlier commit, and stage 2's freshness check compares the pinned snapshot
+# against that same stale value — a remote advance went undetected. Fetch with
+# an explicit force refspec into the fully qualified tracking ref (a local
+# tag/branch named origin/main cannot shadow it), then require it to BE the
+# commit this fetch returned. Only origin/main is ever accepted.
+case "${HUNTERCARD_REMOTE_REF:-origin/main}" in
+  origin/main|refs/remotes/origin/main) SCHED_REMOTE_REF='refs/remotes/origin/main' ;;
+  *)
+    echo "[$(date)] ❌ HUNTERCARD_REMOTE_REF=${HUNTERCARD_REMOTE_REF} is refused: the scheduler only runs the freshly fetched origin/main (cron fails)" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+    ;;
+esac
+if ! git fetch --write-fetch-head origin "+refs/heads/main:$SCHED_REMOTE_REF" >> "$LOG_FILE" 2>&1; then
   echo "[$(date)] ❌ git fetch origin main failed before scheduler mutation; abandoning (cron fails)" >> "$LOG_FILE"
   echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
   exit 1
 fi
-REMOTE_HEAD=$(git rev-parse --verify "${HUNTERCARD_REMOTE_REF:-origin/main}" 2>/dev/null || true)
+FETCHED_HEAD=$(git rev-parse --verify --quiet 'FETCH_HEAD^{commit}' 2>/dev/null || true)
+REMOTE_HEAD=$(git rev-parse --verify --quiet "${SCHED_REMOTE_REF}^{commit}" 2>/dev/null || true)
 if [ -z "$REMOTE_HEAD" ]; then
-  echo "[$(date)] ❌ could not resolve ${HUNTERCARD_REMOTE_REF:-origin/main} after fetch; abandoning (cron fails)" >> "$LOG_FILE"
+  echo "[$(date)] ❌ could not resolve $SCHED_REMOTE_REF after fetch; abandoning (cron fails)" >> "$LOG_FILE"
+  echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+  exit 1
+fi
+if [ "$REMOTE_HEAD" != "$FETCHED_HEAD" ]; then
+  echo "[$(date)] ❌ $SCHED_REMOTE_REF ($REMOTE_HEAD) is not the commit this fetch returned (FETCH_HEAD ${FETCHED_HEAD:-unresolved}); abandoning (cron fails)" >> "$LOG_FILE"
   echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
   exit 1
 fi

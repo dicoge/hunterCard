@@ -1085,7 +1085,12 @@ exit 0
       `#!/bin/bash
 echo "[shim git] $*" >> "$TRACE_FILE"
 case "$1" in
-  fetch) if [ -n "$FAIL_FETCH" ]; then exit 1; fi; exit 0 ;;
+  fetch)
+    if [ -n "$FAIL_FETCH" ]; then exit 1; fi
+    # A real fetch writes FETCH_HEAD; the scheduler requires the tracking ref
+    # to be the commit the fetch returned (CR 504e8fb5).
+    ${REAL_GIT} rev-parse refs/remotes/origin/main > "$(${REAL_GIT} rev-parse --git-dir)/FETCH_HEAD"
+    exit 0 ;;
   pull|push|commit) exit 0 ;;
 esac
 exec ${REAL_GIT} "$@"
@@ -1170,7 +1175,7 @@ exec ${REAL_GIT} "$@"
         `Scheduler: fetch-failure guard message must be logged. log:\n${fetchFailLog.slice(-2000)}`,
       );
       assert.ok(
-        fetchFailLines.some((l) => l.includes('[shim git] fetch origin main')),
+        fetchFailLines.some((l) => l.includes('[shim git] fetch --write-fetch-head origin +refs/heads/main:refs/remotes/origin/main')),
         `Scheduler: the fetch must have been attempted. trace:\n${fetchFailLines.join('\n')}`,
       );
       for (const forbidden of ['scrape-official-cards.js', '[shim git] commit', '[shim git] push']) {
@@ -1219,7 +1224,7 @@ exec ${REAL_GIT} "$@"
     // SUCCEEDED, and it must have run BEFORE the official scraper mutated
     // anything — otherwise the non-zero exit above could be a masked fetch
     // failure rather than the DIC-1229 audit this scenario exists to prove.
-    const fetchIdx = traceLines.findIndex((l) => l.includes('[shim git] fetch origin main'));
+    const fetchIdx = traceLines.findIndex((l) => l.includes('[shim git] fetch --write-fetch-head origin +refs/heads/main:refs/remotes/origin/main'));
     const officialIdx = traceLines.findIndex((l) => l.includes('scrape-official-cards.js'));
     assert.ok(
       fetchIdx !== -1,
