@@ -15,7 +15,12 @@
 # objects and node_modules. Every run it:
 #   1. fetches origin/main into the resident repo (refs only — the resident
 #      working tree, index and HEAD are never touched) and fails closed if the
-#      fetch or the ref fails;
+#      fetch or the ref fails. The run is pinned to the commit THIS fetch
+#      returned (CR 11164f31): refs/remotes/origin/main is force-updated by an
+#      explicit refspec and must equal FETCH_HEAD, and a caller-supplied
+#      HUNTERCARD_REMOTE_REF naming anything else (an older tag, branch or SHA)
+#      is refused — otherwise a stale ref that still carries a launcher passes
+#      every blob proof below and runs its old scheduler;
 #   2. proves its OWN bytes are origin/main's committed scripts/scheduler-launch.sh;
 #      a drifted installed copy re-executes origin's copy once instead, so the
 #      launcher itself cannot go stale either;
@@ -41,7 +46,8 @@ unset HUNTERCARD_FORCE_ISOLATED_STAGE2 HUNTERCARD_SELF_REEXEC HUNTERCARD_ISOLATI
 SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 SELF_BLOB=$(git hash-object --no-filters "$SELF" 2>/dev/null || true)
 RESIDENT_DIR="${HUNTERCARD_RESIDENT_DIR:-$HOME/hunterCard}"
-REMOTE_REF="${HUNTERCARD_REMOTE_REF:-origin/main}"
+# Fully qualified so a local tag/branch named origin/main cannot shadow it.
+REMOTE_REF='refs/remotes/origin/main'
 BOOTSTRAP_PARENT="${HUNTERCARD_BOOTSTRAP_PARENT:-$HOME/.hermes/scheduler}"
 LAUNCHER_REL='scripts/scheduler-launch.sh'
 SCHEDULER_REL='scripts/local-scrape-and-push.sh'
@@ -61,11 +67,20 @@ rgit() { git -C "$RESIDENT_DIR" "$@"; }
 [ -n "$SELF_BLOB" ] || fail "cannot hash the running launcher $SELF"
 rgit rev-parse --git-dir >/dev/null 2>&1 || fail "resident $RESIDENT_DIR is not a git checkout"
 
-if ! rgit fetch origin main >> "$LOG_FILE" 2>&1; then
+case "${HUNTERCARD_REMOTE_REF:-origin/main}" in
+  origin/main|"$REMOTE_REF") ;;
+  *) fail "HUNTERCARD_REMOTE_REF=${HUNTERCARD_REMOTE_REF} is refused: the launcher only runs the freshly fetched origin/main" ;;
+esac
+
+# An explicit force refspec: the tracking ref is updated even if the resident's
+# remote.origin.fetch is missing or narrowed, and FETCH_HEAD is always written.
+if ! rgit fetch --write-fetch-head origin "+refs/heads/main:$REMOTE_REF" >> "$LOG_FILE" 2>&1; then
   fail "git fetch origin main failed in $RESIDENT_DIR"
 fi
+FETCHED_HEAD=$(rgit rev-parse --verify --quiet 'FETCH_HEAD^{commit}' 2>/dev/null || true)
 REMOTE_HEAD=$(rgit rev-parse --verify --quiet "${REMOTE_REF}^{commit}" 2>/dev/null || true)
 [ -n "$REMOTE_HEAD" ] || fail "could not resolve $REMOTE_REF after fetch"
+[ "$REMOTE_HEAD" = "$FETCHED_HEAD" ] || fail "$REMOTE_REF ($REMOTE_HEAD) is not the commit this fetch returned (FETCH_HEAD ${FETCHED_HEAD:-unresolved})"
 
 ORIGIN_LAUNCHER_BLOB=$(rgit rev-parse --verify --quiet "$REMOTE_HEAD:$LAUNCHER_REL" 2>/dev/null || true)
 [ -n "$ORIGIN_LAUNCHER_BLOB" ] || fail "$REMOTE_REF ($REMOTE_HEAD) has no committed $LAUNCHER_REL to prove this launcher against"
