@@ -18,6 +18,17 @@
 #      printed "Done").
 
 set -e
+# DIC-1167 (2026-09-30 P0): the cron invokes this script by the RESIDENT path,
+# and bash keeps executing the function definitions it parsed from that file
+# for the whole run — a fetch, fast-forward or fresh isolated worktree never
+# reloads them. On 09-30 the resident copy was 225 commits stale, so the
+# dirty-isolated route built origin/main's DATA with the resident's
+# ORCHESTRATION (no run budget, no fail-closed push). Record the identity of
+# the bytes this process is running so every route can prove it runs the
+# committed origin version before it mutates anything (see
+# selfScriptIsCommittedAt).
+SELF_SCRIPT="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+SELF_SCRIPT_BLOB=$(git hash-object --no-filters "$SELF_SCRIPT" 2>/dev/null || true)
 cd "$(dirname "$0")/.."
 # Overridable so the pipeline regression can run hermetically without contending
 # with (or clearing) the real cron lock.
@@ -25,12 +36,54 @@ LOCK_FILE="${HUNTERCARD_LOCK_FILE:-/tmp/huntercard-scrape.lock}"
 LOG_FILE="$HOME/.hermes/logs/huntercard-scrape-$(date +%Y%m%d).log"
 mkdir -p "$(dirname "$LOG_FILE")"
 
+# DIC-1167 (CR cb2b3b13): a delegated child (forced/dirty stage 2, or the
+# in-place re-exec) runs under its own lock while its parent still holds the
+# primary one. Its parent waits on it and reports Done on its result, so a
+# child that "skips" on a lock collision would turn a run that never scraped
+# or pushed into a success — the stale-lock state a killed stage 2 leaves
+# behind (no EXIT trap on SIGKILL/OOM). A child therefore never skips: a
+# collision fails closed. Its parent clears orphaned child locks before
+# spawning (clearOrphanChildLock) and also requires the child's completion
+# receipt (childReceiptDetail), never a bare exit 0.
+LOCK_CHILD_ROLE=""
+if [ "${HUNTERCARD_FORCE_ISOLATED_STAGE2:-}" = "1" ]; then
+  LOCK_CHILD_ROLE="stage 2"
+elif [ "${HUNTERCARD_SELF_REEXEC:-}" = "1" ]; then
+  LOCK_CHILD_ROLE="re-executed run"
+fi
+# The parent's receipt request is for THIS process only; never let it leak
+# into the pipeline or into a grandchild (which gets its own).
+PARENT_RECEIPT="${HUNTERCARD_CHILD_RECEIPT:-}"
+PARENT_RECEIPT_NONCE="${HUNTERCARD_CHILD_RECEIPT_NONCE:-}"
+unset HUNTERCARD_CHILD_RECEIPT HUNTERCARD_CHILD_RECEIPT_NONCE
+
 # Prevent concurrent execution
 if ! mkdir "$LOCK_FILE" 2>/dev/null; then
+  if [ -n "$LOCK_CHILD_ROLE" ]; then
+    echo "[$(date)] ❌ $LOCK_CHILD_ROLE lock $LOCK_FILE already exists (owner pid $(cat "$LOCK_FILE/pid" 2>/dev/null || echo unrecorded)); a delegated child never skips — cron fails" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
   echo "[$(date)] ⚠️ Scrape already running, skipping this instance" >> "$LOG_FILE"
   exit 0
 fi
 trap 'rm -rf "$LOCK_FILE"' EXIT
+# procStartTime <pid>: the process's start time (normalized `ps -o lstart`),
+# empty if it is not running or unreadable. pid + start time identify ONE
+# process; a pid alone does not survive pid reuse.
+procStartTime() {
+  LC_ALL=C ps -o lstart= -p "$1" 2>/dev/null | tr -s ' \t' ' ' | sed 's/^ //; s/ $//'
+}
+# Record the owner so a later parent can tell an orphaned lock from a live one
+# (DIC-1167 pid reuse: the start time too, so a recycled pid is not mistaken
+# for the owner).
+LOCK_OWNER_START=$(procStartTime "$$")
+if ! printf '%s\n' "$$" > "$LOCK_FILE/pid" 2>/dev/null \
+  || { [ -n "$LOCK_OWNER_START" ] && ! printf '%s\n' "$LOCK_OWNER_START" > "$LOCK_FILE/start" 2>/dev/null; }; then
+  echo "[$(date)] ❌ could not record the lock owner in $LOCK_FILE; cron fails" >> "$LOG_FILE"
+  echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+  exit 1
+fi
 
 echo "[$(date)] Starting hunterCard local scrape..." >> "$LOG_FILE"
 
@@ -119,6 +172,115 @@ parityOk() {
     return 1
   fi
   return 0
+}
+
+SELF_SCRIPT_REL='scripts/local-scrape-and-push.sh'
+
+# selfScriptIsCommittedAt <rev>: 0 iff the bytes THIS process started from are
+# exactly <rev>'s committed copy of this script. An unresolvable identity on
+# either side counts as a mismatch (fail closed).
+selfScriptIsCommittedAt() {
+  local committed
+  committed=$(git rev-parse --verify --quiet "$1:$SELF_SCRIPT_REL" 2>/dev/null || true)
+  [ -n "$SELF_SCRIPT_BLOB" ] && [ -n "$committed" ] && [ "$SELF_SCRIPT_BLOB" = "$committed" ]
+}
+
+# DIC-1167 (CR bced44d5): matching its own HEAD's committed script does not
+# prove a stage-2 process is the ephemeral worktree stage 1 just created — a
+# clean but stale resident with a leaked HUNTERCARD_FORCE_ISOLATED_STAGE2=1
+# passes that check and would scrape/commit/push from the resident. Stage 1
+# therefore attests the worktree it created: a one-time nonce written into
+# THAT worktree's private git dir (removed with the worktree), handed to the
+# child via HUNTERCARD_STAGE2_NONCE. Stage 2 consumes it before any mutation.
+STAGE2_ATTESTATION_NAME='huntercard-stage2-attestation'
+
+# newStage2Nonce: 32 hex chars from /dev/urandom (empty on failure).
+newStage2Nonce() {
+  od -An -N16 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n'
+}
+
+# physDir <dir>: physical (symlink-resolved) path of <dir>, empty if absent.
+physDir() {
+  [ -n "$1" ] && (cd "$1" 2>/dev/null && pwd -P) || true
+}
+
+# clearOrphanChildLock <lock>: run by a parent that holds its own lock, before
+# any work (CR 4d3610a7) and again just before it spawns the child that will
+# take <lock>. A child lock that still
+# exists then is residue of a killed run — unless its recorded owner is still
+# alive, in which case another delegated run is in flight: fail closed, never
+# steal it. Returns 0 iff <lock> is absent afterwards.
+# DIC-1167 (pid reuse): "alive" means the SAME process, not merely a live
+# pid — the killed owner's pid may since have been recycled by an unrelated
+# long-lived process, which would otherwise keep the orphan (and fail every
+# cron) forever. The owner is that process iff its current start time equals
+# the one recorded in the lock; a lock without a recorded start time (written
+# by an older script) is honoured only while the pid still runs this script.
+# An unreadable start time of a live pid cannot be disproved: fail closed.
+clearOrphanChildLock() {
+  local lock="$1" owner recorded_start live_start live_args reason
+  [ -e "$lock" ] || [ -L "$lock" ] || return 0
+  owner=$(cat "$lock/pid" 2>/dev/null || true)
+  reason="owner pid ${owner:-unrecorded} not running"
+  if echo "$owner" | grep -qE '^[0-9]+$' && ps -p "$owner" >/dev/null 2>&1; then
+    recorded_start=$(head -n 1 "$lock/start" 2>/dev/null || true)
+    live_start=$(procStartTime "$owner")
+    if [ -n "$recorded_start" ]; then
+      if [ -z "$live_start" ] || [ "$live_start" = "$recorded_start" ]; then
+        echo "[$(date)] ❌ child lock $lock is held by live pid $owner (started ${live_start:-unreadable}); refusing to start a second delegated run (cron fails)" >> "$LOG_FILE"
+        return 1
+      fi
+      reason="owner pid $owner was reused: recorded start '$recorded_start', live process started '$live_start'"
+    else
+      live_args=$(ps -o args= -p "$owner" 2>/dev/null || true)
+      if [ -z "$live_args" ] || echo "$live_args" | grep -q 'local-scrape-and-push'; then
+        echo "[$(date)] ❌ child lock $lock is held by live pid $owner (no recorded start time; running ${live_args:-unreadable}); refusing to start a second delegated run (cron fails)" >> "$LOG_FILE"
+        return 1
+      fi
+      reason="owner pid $owner was reused: no recorded start time and the live process is not this scraper"
+    fi
+  fi
+  echo "[$(date)] ⚠️ removing orphaned child lock $lock ($reason) left by a killed run" >> "$LOG_FILE"
+  rm -rf "$lock" 2>/dev/null || true
+  if [ -e "$lock" ] || [ -L "$lock" ]; then
+    echo "[$(date)] ❌ could not remove orphaned child lock $lock (cron fails)" >> "$LOG_FILE"
+    return 1
+  fi
+  return 0
+}
+
+# Completion receipt (CR cb2b3b13): a parent hands its child a one-time nonce
+# and a receipt path inside the parent's OWN lock dir; the child writes
+# "<nonce> <detail>" there only on its success path. The parent reports Done
+# only when the receipt carries this run's nonce — an exit 0 from a child
+# that skipped, or from any premature exit, is a failure.
+CHILD_RECEIPT_NAME='child-receipt'
+
+# writeParentReceipt [detail]: on success, acknowledge the parent's request
+# (no-op for a top-level run). Returns non-zero if the receipt was requested
+# but could not be written.
+writeParentReceipt() {
+  [ -n "$PARENT_RECEIPT" ] || return 0
+  [ -n "$PARENT_RECEIPT_NONCE" ] && printf '%s %s\n' "$PARENT_RECEIPT_NONCE" "${1:-}" > "$PARENT_RECEIPT" 2>/dev/null
+}
+
+# finishWithParentReceipt [detail]: write the receipt or fail the run.
+finishWithParentReceipt() {
+  if ! writeParentReceipt "${1:-}"; then
+    echo "[$(date)] ❌ could not write the completion receipt $PARENT_RECEIPT for the parent run; cron fails" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
+}
+
+# childReceiptDetail <receipt> <nonce>: print the detail of a receipt that
+# carries <nonce>; non-zero if absent or for another run.
+childReceiptDetail() {
+  local line
+  [ -n "$2" ] && [ -f "$1" ] || return 1
+  line=$(head -n 1 "$1" 2>/dev/null || true)
+  [ "${line%% *}" = "$2" ] || return 1
+  case "$line" in *" "*) echo "${line#* }" ;; *) echo "" ;; esac
 }
 
 # removeStaleIsolatedWorktree <path>: prune/remove a previously-registered
@@ -574,6 +736,22 @@ runPipeline() {
 }
 
 # ─── Main dispatch ─────────────────────────────────────────────────────────
+# DIC-1167 (CR 4d3610a7): a delegated child (stage 2 / in-place re-exec)
+# outlives a parent that was killed (EXIT trap ran, primary lock released)
+# and keeps working in its checkout — stage 2 inside the isolated worktree,
+# the re-exec in the resident one. A new run must find that out BEFORE it
+# touches anything the child may be using: removeStaleIsolatedWorktree used
+# to force-remove a live stage 2's worktree, and the in-place fast-forward
+# would move the resident under a live re-exec, before the child lock was
+# checked just ahead of the spawn. So every child lock is resolved here,
+# first: an orphan is cleared, a live owner fails the run with no work done.
+for CHILD_LOCK_SUFFIX in stage2 reexec; do
+  if ! clearOrphanChildLock "${LOCK_FILE}.${CHILD_LOCK_SUFFIX}"; then
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
+done
+
 # DIC-1461: verify AND refresh origin before mutating anything. Both the
 # dirty-worktree route and the forced-isolated bootstrap create their isolated
 # worktree from REMOTE_HEAD; resolving it from a stale local origin/main cache
@@ -581,42 +759,123 @@ runPipeline() {
 # (the 2026-09-17 run built detached at the previous day's merge). A failed
 # fetch must fail closed BEFORE any official mutation, never fall through to
 # the stale ref.
-if ! git fetch origin main >> "$LOG_FILE" 2>&1; then
+# DIC-1167 (CR 504e8fb5): a plain `git fetch origin main` only moves the
+# tracking ref through remote.origin.fetch. With that config missing it writes
+# FETCH_HEAD alone, the tracking ref keeps the launcher's (or stage 1's)
+# earlier commit, and stage 2's freshness check compares the pinned snapshot
+# against that same stale value — a remote advance went undetected. Fetch with
+# an explicit force refspec into the fully qualified tracking ref (a local
+# tag/branch named origin/main cannot shadow it), then require it to BE the
+# commit this fetch returned. Only origin/main is ever accepted.
+case "${HUNTERCARD_REMOTE_REF:-origin/main}" in
+  origin/main|refs/remotes/origin/main) SCHED_REMOTE_REF='refs/remotes/origin/main' ;;
+  *)
+    echo "[$(date)] ❌ HUNTERCARD_REMOTE_REF=${HUNTERCARD_REMOTE_REF} is refused: the scheduler only runs the freshly fetched origin/main (cron fails)" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+    ;;
+esac
+if ! git fetch --write-fetch-head origin "+refs/heads/main:$SCHED_REMOTE_REF" >> "$LOG_FILE" 2>&1; then
   echo "[$(date)] ❌ git fetch origin main failed before scheduler mutation; abandoning (cron fails)" >> "$LOG_FILE"
   echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
   exit 1
 fi
-REMOTE_HEAD=$(git rev-parse --verify "${HUNTERCARD_REMOTE_REF:-origin/main}" 2>/dev/null || true)
+FETCHED_HEAD=$(git rev-parse --verify --quiet 'FETCH_HEAD^{commit}' 2>/dev/null || true)
+REMOTE_HEAD=$(git rev-parse --verify --quiet "${SCHED_REMOTE_REF}^{commit}" 2>/dev/null || true)
 if [ -z "$REMOTE_HEAD" ]; then
-  echo "[$(date)] ❌ could not resolve ${HUNTERCARD_REMOTE_REF:-origin/main} after fetch; abandoning (cron fails)" >> "$LOG_FILE"
+  echo "[$(date)] ❌ could not resolve $SCHED_REMOTE_REF after fetch; abandoning (cron fails)" >> "$LOG_FILE"
+  echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+  exit 1
+fi
+if [ "$REMOTE_HEAD" != "$FETCHED_HEAD" ]; then
+  echo "[$(date)] ❌ $SCHED_REMOTE_REF ($REMOTE_HEAD) is not the commit this fetch returned (FETCH_HEAD ${FETCHED_HEAD:-unresolved}); abandoning (cron fails)" >> "$LOG_FILE"
   echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
   exit 1
 fi
 
-# ─── DIC-1461 forced-isolated scheduler bootstrap ──────────────────────────
+# ─── DIC-1461 / DIC-1167 isolated two-stage bootstrap ──────────────────────
 # A long-lived scheduler shell keeps executing the function definitions it
 # parsed from the RESIDENT script at startup — fetching or creating a new
-# worktree never reloads them. HUNTERCARD_FORCE_ISOLATED=1 gives a scheduler a
-# supported two-stage path whose only trusted resident code is this small
-# bootstrap block:
-#   Stage 1 (resident code, HUNTERCARD_FORCE_ISOLATED=1): fetch origin/main
-#   (fail-closed, above), create a clean ephemeral worktree at the CURRENT
-#   origin SHA, then re-execute THAT worktree's copy of this script — the
-#   current origin version, not resident function definitions — as a child
-#   process with HUNTERCARD_FORCE_ISOLATED_STAGE2=1.
-#   Stage 2 (origin code, HUNTERCARD_FORCE_ISOLATED_STAGE2=1): run the
-#   pipeline in the worktree in ISOLATED push mode — it never pushes
-#   HEAD:main and never stages/touches resident files — then perform the
-#   explicit auditable bot/scrape/<date> handoff push, failing closed on
-#   no-op or push failure exactly like the dirty-worktree route.
+# worktree never reloads them. Every isolated run therefore goes through a
+# two-stage path whose only trusted resident code is this small bootstrap:
+#   Stage 1 (resident code): fetch origin/main (fail-closed, above), create a
+#   clean ephemeral worktree at the CURRENT origin SHA, then re-execute THAT
+#   worktree's copy of this script — the current origin version, not resident
+#   function definitions — as a child process with
+#   HUNTERCARD_FORCE_ISOLATED_STAGE2=1.
+#   Stage 2 (origin code): prove it is the worktree's committed script,
+#   running in stage 1's attested ephemeral worktree at the freshly fetched
+#   origin/main (CR bced44d5), run the pipeline in the worktree in ISOLATED
+#   push mode — it never pushes HEAD:main and never stages/touches resident
+#   files — then perform the explicit auditable bot/scrape/<date> handoff
+#   push, failing closed on no-op or push failure.
+# Two triggers take this path:
+#   - HUNTERCARD_FORCE_ISOLATED=1 (DIC-1461, route "forced");
+#   - residue in scraper-managed paths of the resident checkout (DIC-1321,
+#     route "dirty"). DIC-1167 (2026-09-30): the dirty route used to run the
+#     pipeline IN-PROCESS with the resident's function definitions — the
+#     09-30 run built origin/main's data with 225-commit-stale orchestration
+#     (no run budget, no fail-closed push). It now re-executes origin's copy
+#     exactly like the forced route; the user's dirty files stay untouched.
 # Any fetch/worktree/dependency/pipeline/handoff failure exits non-zero and
 # stage 1 removes the ephemeral worktree on exit.
 if [ "${HUNTERCARD_FORCE_ISOLATED_STAGE2:-}" = "1" ]; then
   # Stage 2: this process IS the clean ephemeral worktree at the current
   # origin SHA (the stage-1 bootstrap re-executed this script from it).
+  if [ "${HUNTERCARD_ISOLATION_ROUTE:-}" = "dirty" ]; then
+    ROUTE_LABEL="isolated"
+    ROUTE_KEEPS="dirty worktree preserved"
+  else
+    ROUTE_LABEL="forced-isolated"
+    ROUTE_KEEPS="resident checkout untouched"
+  fi
   STAGE2_START_SHA=$(git rev-parse HEAD 2>/dev/null || true)
   if [ -z "$STAGE2_START_SHA" ]; then
-    echo "[$(date)] ❌ forced-isolated stage 2: cannot resolve worktree HEAD; cron fails" >> "$LOG_FILE"
+    echo "[$(date)] ❌ $ROUTE_LABEL stage 2: cannot resolve worktree HEAD; cron fails" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
+  # DIC-1167: stage 2 exists so that the orchestration is origin's. A stage-2
+  # process whose bytes are not its worktree HEAD's committed script (e.g. the
+  # flag leaked into a resident invocation) must not run the pipeline.
+  if ! selfScriptIsCommittedAt HEAD; then
+    echo "[$(date)] ❌ $ROUTE_LABEL stage 2: running script ${SELF_SCRIPT} (blob ${SELF_SCRIPT_BLOB:-unresolved}) is not the committed $SELF_SCRIPT_REL at worktree HEAD $STAGE2_START_SHA; refusing stale orchestration (cron fails)" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
+  # DIC-1167 (CR bced44d5): prove this checkout IS stage 1's ephemeral
+  # worktree — the attested path, a linked (never a main) working tree, a
+  # detached HEAD, and the one-time stage-1 nonce in its private git dir —
+  # before anything here can scrape, commit or push.
+  STAGE2_TOP=$(physDir "$(git rev-parse --show-toplevel 2>/dev/null || true)")
+  STAGE2_EXPECTED_TOP=$(physDir "${HUNTERCARD_STAGE2_WORKTREE:-}")
+  STAGE2_GIT_DIR=$(physDir "$(git rev-parse --absolute-git-dir 2>/dev/null || true)")
+  STAGE2_COMMON_DIR=$(physDir "$(git rev-parse --git-common-dir 2>/dev/null || true)")
+  STAGE2_PROOF_FAIL=""
+  if [ -z "$STAGE2_TOP" ] || [ -z "$STAGE2_EXPECTED_TOP" ] || [ "$STAGE2_TOP" != "$STAGE2_EXPECTED_TOP" ]; then
+    STAGE2_PROOF_FAIL="checkout ${STAGE2_TOP:-unresolved} is not the stage-1 ephemeral worktree (${HUNTERCARD_STAGE2_WORKTREE:-unset})"
+  elif [ -z "$STAGE2_GIT_DIR" ] || [ -z "$STAGE2_COMMON_DIR" ] || [ "$STAGE2_GIT_DIR" = "$STAGE2_COMMON_DIR" ]; then
+    STAGE2_PROOF_FAIL="checkout $STAGE2_TOP is a main working tree, not a linked ephemeral worktree"
+  elif git symbolic-ref -q HEAD >/dev/null 2>&1; then
+    STAGE2_PROOF_FAIL="checkout $STAGE2_TOP has HEAD attached to a branch, not stage 1's detached origin snapshot"
+  elif [ -z "${HUNTERCARD_STAGE2_NONCE:-}" ] || [ ! -f "$STAGE2_GIT_DIR/$STAGE2_ATTESTATION_NAME" ] \
+    || [ "$(cat "$STAGE2_GIT_DIR/$STAGE2_ATTESTATION_NAME" 2>/dev/null || true)" != "$HUNTERCARD_STAGE2_NONCE" ]; then
+    STAGE2_PROOF_FAIL="no matching stage-1 attestation in $STAGE2_GIT_DIR (leaked flag, replayed nonce, or a resident bootstrap that predates attestation — refresh the resident)"
+  elif ! rm -f "$STAGE2_GIT_DIR/$STAGE2_ATTESTATION_NAME" || [ -e "$STAGE2_GIT_DIR/$STAGE2_ATTESTATION_NAME" ]; then
+    STAGE2_PROOF_FAIL="could not consume the one-time stage-1 attestation in $STAGE2_GIT_DIR"
+  fi
+  if [ -n "$STAGE2_PROOF_FAIL" ]; then
+    echo "[$(date)] ❌ $ROUTE_LABEL stage 2: $STAGE2_PROOF_FAIL; refusing to run the pipeline outside stage 1's isolated worktree (cron fails)" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
+  # DIC-1167 (CR bced44d5): the worktree must still be the origin/main this
+  # process just fetched (REMOTE_HEAD, above) AND the SHA stage 1 pinned. If
+  # origin advanced between the stage-1 and stage-2 fetches, this snapshot's
+  # orchestration/data are already stale — fail closed; the next run builds
+  # the new head.
+  if [ "$STAGE2_START_SHA" != "$REMOTE_HEAD" ] || [ "$STAGE2_START_SHA" != "${HUNTERCARD_STAGE2_EXPECTED_HEAD:-}" ]; then
+    echo "[$(date)] ❌ $ROUTE_LABEL stage 2: worktree HEAD $STAGE2_START_SHA is not the freshly fetched origin/main $REMOTE_HEAD (stage 1 pinned ${HUNTERCARD_STAGE2_EXPECTED_HEAD:-unset}); refusing stale orchestration (cron fails)" >> "$LOG_FILE"
     echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
     exit 1
   fi
@@ -624,50 +883,71 @@ if [ "${HUNTERCARD_FORCE_ISOLATED_STAGE2:-}" = "1" ]; then
   # provisioned this worktree, but THIS (origin) process is the one that will
   # import puppeteer/cheerio; absent anchors here must fail before mutation.
   if ! depAnchorsOk "$(pwd)/node_modules"; then
-    echo "[$(date)] ❌ forced-isolated stage 2: node_modules anchors (${DEP_ANCHORS[*]}) absent in worktree; failing before pipeline mutation" >> "$LOG_FILE"
+    echo "[$(date)] ❌ $ROUTE_LABEL stage 2: node_modules anchors (${DEP_ANCHORS[*]}) absent in worktree; failing before pipeline mutation" >> "$LOG_FILE"
     echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
     exit 1
   fi
-  if ! runPipeline "$(pwd)" "chore: update database $(date +%Y-%m-%d) (forced-isolated)" isolated; then
-    echo "[$(date)] ❌ forced-isolated pipeline failed — cron reports failure" >> "$LOG_FILE"
+  if ! runPipeline "$(pwd)" "chore: update database $(date +%Y-%m-%d) ($ROUTE_LABEL)" isolated; then
+    echo "[$(date)] ❌ $ROUTE_LABEL pipeline failed — cron reports failure" >> "$LOG_FILE"
     echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
     exit 1
   fi
   ISOLATED_BRANCH="${ISOLATED_BRANCH_PREFIX}/$(date +%Y-%m-%d)"
   STAGE2_END_SHA=$(git rev-parse HEAD 2>/dev/null || true)
   if [ -z "$STAGE2_END_SHA" ]; then
-    echo "[$(date)] ❌ forced-isolated handoff: no commit at all in worktree HEAD; cron fails" >> "$LOG_FILE"
+    echo "[$(date)] ❌ $ROUTE_LABEL handoff: no commit at all in worktree HEAD; cron fails" >> "$LOG_FILE"
     echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
     exit 1
   fi
+  # DIC-1321 (Mac-Codex CR DIC-1328): pushing the unchanged origin/main
+  # baseline to bot/scrape/<date> is NOT a valid handoff.
   if [ "$STAGE2_START_SHA" = "$STAGE2_END_SHA" ]; then
-    echo "[$(date)] ❌ forced-isolated handoff: pipeline was a no-op (HEAD unchanged at $STAGE2_END_SHA); cron fails — must never push unchanged baseline" >> "$LOG_FILE"
+    echo "[$(date)] ❌ $ROUTE_LABEL handoff: pipeline was a no-op (HEAD unchanged at $STAGE2_END_SHA); cron fails — must never push unchanged baseline" >> "$LOG_FILE"
     echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
     exit 1
   fi
   # Fully-qualified dst ref: the worktree HEAD is detached, and git refuses
   # to guess an unqualified destination for a commit-object <src> when the
   # remote branch does not exist yet (proven by the DIC-1461 real-git
-  # forced-isolated dry-run).
+  # forced-isolated dry-run). DIC-1321 (Mac-Codex CR DIC-1326): a failed
+  # handoff push must never end in "Done"/exit 0.
   if ! git push origin "HEAD:refs/heads/$ISOLATED_BRANCH" >> "$LOG_FILE" 2>&1; then
-    echo "[$(date)] ❌ forced-isolated artifact handoff push to $ISOLATED_BRANCH FAILED; cron fails (never success on failed handoff)" >> "$LOG_FILE"
+    echo "[$(date)] ❌ $ROUTE_LABEL artifact handoff push to $ISOLATED_BRANCH FAILED; cron fails (never success on failed handoff)" >> "$LOG_FILE"
     echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
     exit 1
   fi
-  echo "[$(date)] ✅ Forced-isolated artifact pushed to $ISOLATED_BRANCH (resident checkout untouched)" >> "$LOG_FILE"
-  echo "[$(date)] ✅ Done (forced-isolated handoff)" >> "$LOG_FILE"
+  echo "[$(date)] ✅ ${ROUTE_LABEL} artifact pushed to $ISOLATED_BRANCH ($ROUTE_KEEPS)" >> "$LOG_FILE"
+  finishWithParentReceipt "$STAGE2_END_SHA"
+  echo "[$(date)] ✅ Done ($ROUTE_LABEL handoff)" >> "$LOG_FILE"
   exit 0
 fi
 
+# Dirty-worktree check. When the resident checkout is dirty in a
+# scraper-managed path we never pull/mutate/stage over the residue (DIC-1219)
+# and never deadlock (DIC-1321): the run takes the isolated bootstrap below.
+DIRTY_STATUS=$(git status --porcelain --ignore-submodules -- "${SCRAPER_MANAGED_PATHS[@]}" 2>/dev/null || true)
+ISOLATION_ROUTE=""
 if [ "${HUNTERCARD_FORCE_ISOLATED:-}" = "1" ]; then
+  ISOLATION_ROUTE="forced"
   echo "[$(date)] ⚙️ HUNTERCARD_FORCE_ISOLATED=1 — bootstrapping clean ephemeral worktree at current origin/main ($REMOTE_HEAD)" >> "$LOG_FILE"
+elif [ -n "$DIRTY_STATUS" ]; then
+  ISOLATION_ROUTE="dirty"
+  echo "[$(date)] ⚠️ Worktree has residue in scraper-managed paths; switching to isolated clean-worktree handoff (DIC-1321) — bootstrapping origin/main ($REMOTE_HEAD)'s script in a clean ephemeral worktree." >> "$LOG_FILE"
+  echo "$DIRTY_STATUS" >> "$LOG_FILE"
+fi
+
+if [ -n "$ISOLATION_ROUTE" ]; then
+  if [ "$ISOLATION_ROUTE" = "dirty" ]; then STAGE1_LABEL="isolated"; else STAGE1_LABEL="forced-isolated"; fi
   ISOLATED_DIR="${HUNTERCARD_ISOLATED_DIR:-/tmp/huntercard-scrape-worktree}"
   removeStaleIsolatedWorktree "$ISOLATED_DIR"
+  # A throwaway worktree pinned to the current remote HEAD gives a clean,
+  # committed baseline the scheduler is allowed to mutate. Never touches the
+  # resident checkout.
   if ! git worktree add --detach "$ISOLATED_DIR" "$REMOTE_HEAD" >> "$LOG_FILE" 2>&1; then
     echo "[$(date)] ⚠️ isolated worktree add failed once; pruning stale registrations and retrying" >> "$LOG_FILE"
     removeStaleIsolatedWorktree "$ISOLATED_DIR"
     if ! git worktree add --detach "$ISOLATED_DIR" "$REMOTE_HEAD" >> "$LOG_FILE" 2>&1; then
-      echo "[$(date)] ❌ could not create forced-isolated worktree; abandoning (cron fails)" >> "$LOG_FILE"
+      echo "[$(date)] ❌ could not create $STAGE1_LABEL worktree; abandoning (cron fails)" >> "$LOG_FILE"
       echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
       exit 1
     fi
@@ -678,7 +958,7 @@ if [ "${HUNTERCARD_FORCE_ISOLATED:-}" = "1" ]; then
   # anchor contract (verify → replace shell with absolute resident symlink →
   # re-verify), failing closed BEFORE any pipeline mutation.
   if ! ensureIsolatedDeps "$ISOLATED_DIR"; then
-    echo "[$(date)] ❌ forced-isolated worktree dependencies could not be provisioned; abandoning (cron fails)" >> "$LOG_FILE"
+    echo "[$(date)] ❌ $STAGE1_LABEL worktree dependencies could not be provisioned; abandoning (cron fails)" >> "$LOG_FILE"
     echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
     exit 1
   fi
@@ -690,95 +970,58 @@ if [ "${HUNTERCARD_FORCE_ISOLATED:-}" = "1" ]; then
     echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
     exit 1
   fi
+  if ! selfScriptIsCommittedAt "$REMOTE_HEAD"; then
+    echo "[$(date)] ⚠️ resident script ${SELF_SCRIPT} (blob ${SELF_SCRIPT_BLOB:-unresolved}) differs from origin/main ($REMOTE_HEAD); only this bootstrap runs from it — the pipeline runs origin's copy" >> "$LOG_FILE"
+  fi
+  # DIC-1167 (CR bced44d5): attest the worktree just created — a one-time
+  # nonce in ITS private git dir — so stage 2 can prove where it runs.
+  ISOLATED_GIT_DIR=$(cd "$ISOLATED_DIR" && git rev-parse --absolute-git-dir 2>/dev/null || true)
+  STAGE2_NONCE=$(newStage2Nonce || true)
+  if [ -z "$ISOLATED_GIT_DIR" ] || [ "${#STAGE2_NONCE}" -ne 32 ] \
+    || ! (umask 077 && printf '%s\n' "$STAGE2_NONCE" > "$ISOLATED_GIT_DIR/$STAGE2_ATTESTATION_NAME") 2>/dev/null; then
+    echo "[$(date)] ❌ could not attest the $STAGE1_LABEL worktree for stage 2 (git dir ${ISOLATED_GIT_DIR:-unresolved}); abandoning (cron fails)" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
   # Re-execute the ORIGIN version of this script inside the clean worktree.
   # A distinct stage-2 lock: this stage-1 process still holds the primary
-  # cron lock, so the child must not collide with it (a same-lock collision
-  # would exit 0 as "already running" and silently mask a skipped run).
-  if HUNTERCARD_FORCE_ISOLATED_STAGE2=1 HUNTERCARD_LOCK_FILE="${LOCK_FILE}.stage2" \
+  # cron lock, so the child must not collide with it. CR cb2b3b13: clear a
+  # killed run's orphaned stage-2 lock first, and require the child's
+  # completion receipt — stage 2's exit status alone never proves a handoff.
+  if ! clearOrphanChildLock "${LOCK_FILE}.stage2"; then
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
+  STAGE2_RECEIPT="$LOCK_FILE/$CHILD_RECEIPT_NAME"
+  STAGE2_RECEIPT_NONCE=$(newStage2Nonce || true)
+  rm -f "$STAGE2_RECEIPT"
+  if [ "${#STAGE2_RECEIPT_NONCE}" -ne 32 ] || [ -e "$STAGE2_RECEIPT" ]; then
+    echo "[$(date)] ❌ could not prepare the $STAGE1_LABEL stage-2 completion receipt; abandoning (cron fails)" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
+  if ! HUNTERCARD_FORCE_ISOLATED_STAGE2=1 HUNTERCARD_ISOLATION_ROUTE="$ISOLATION_ROUTE" \
+    HUNTERCARD_STAGE2_WORKTREE="$ISOLATED_DIR" HUNTERCARD_STAGE2_EXPECTED_HEAD="$REMOTE_HEAD" \
+    HUNTERCARD_STAGE2_NONCE="$STAGE2_NONCE" \
+    HUNTERCARD_LOCK_FILE="${LOCK_FILE}.stage2" \
+    HUNTERCARD_CHILD_RECEIPT="$STAGE2_RECEIPT" HUNTERCARD_CHILD_RECEIPT_NONCE="$STAGE2_RECEIPT_NONCE" \
     bash "$ISOLATED_DIR/scripts/local-scrape-and-push.sh"; then
-    echo "[$(date)] ✅ Done (forced-isolated bootstrap)" >> "$LOG_FILE"
-    exit 0
-  else
-    echo "[$(date)] ❌ forced-isolated stage 2 failed — cron reports failure" >> "$LOG_FILE"
+    echo "[$(date)] ❌ $STAGE1_LABEL stage 2 failed — cron reports failure" >> "$LOG_FILE"
     echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
     exit 1
   fi
-fi
-
-# 0. Dirty-worktree check (in-place). When the resident checkout is dirty in a
-#    scraper-managed path we NO LONGER permanently deadlock: we route to an
-#    isolated throwaway worktree pinned to origin/main and keep the user's
-#    dirty files untouched. DIC-1219's fail-closed intent is preserved for the
-#    in-place path (we never pull/mutate/stage over residue).
-DIRTY_STATUS=$(git status --porcelain --ignore-submodules -- "${SCRAPER_MANAGED_PATHS[@]}" 2>/dev/null || true)
-if [ -n "$DIRTY_STATUS" ]; then
-  echo "[$(date)] ⚠️ Worktree has residue in scraper-managed paths; switching to isolated clean-worktree handoff (DIC-1321)." >> "$LOG_FILE"
-  echo "$DIRTY_STATUS" >> "$LOG_FILE"
-
-  ISOLATED_DIR="${HUNTERCARD_ISOLATED_DIR:-/tmp/huntercard-scrape-worktree}"
-  removeStaleIsolatedWorktree "$ISOLATED_DIR"
-  # A throwaway worktree pinned to the current remote HEAD gives a clean,
-  # committed baseline the scheduler is allowed to mutate. Never touches the
-  # resident checkout.
-  if ! git worktree add --detach "$ISOLATED_DIR" "$REMOTE_HEAD" >> "$LOG_FILE" 2>&1; then
-    echo "[$(date)] ⚠️ isolated worktree add failed once; pruning stale registrations and retrying" >> "$LOG_FILE"
-    removeStaleIsolatedWorktree "$ISOLATED_DIR"
-    if ! git worktree add --detach "$ISOLATED_DIR" "$REMOTE_HEAD" >> "$LOG_FILE" 2>&1; then
-      echo "[$(date)] ❌ could not create isolated worktree; abandoning (cron fails)" >> "$LOG_FILE"
-      echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
-      exit 1
-    fi
-  fi
-  trap 'git worktree remove --force "$ISOLATED_DIR" >> "$LOG_FILE" 2>&1 || true; rm -rf "$LOCK_FILE"' EXIT
-  # DIC-1472: same dependency contract as the forced-isolated bootstrap — the
-  # tracked node_modules shell means directory existence is not readiness.
-  # Verify real anchors, replace only the disposable worktree's shell with an
-  # absolute symlink to the resident install, and fail closed BEFORE any
-  # pipeline mutation if provisioning cannot be proven.
-  if ! ensureIsolatedDeps "$ISOLATED_DIR"; then
-    echo "[$(date)] ❌ isolated worktree dependencies could not be provisioned; abandoning (cron fails)" >> "$LOG_FILE"
+  # The receipt must name the handoff commit stage 2 left in THIS worktree,
+  # and that commit must be new on top of the pinned origin/main.
+  STAGE2_HANDOFF_SHA=$(childReceiptDetail "$STAGE2_RECEIPT" "$STAGE2_RECEIPT_NONCE" || true)
+  STAGE2_WORKTREE_SHA=$(cd "$ISOLATED_DIR" 2>/dev/null && git rev-parse --verify HEAD 2>/dev/null || true)
+  if [ -z "$STAGE2_HANDOFF_SHA" ] || [ "$STAGE2_HANDOFF_SHA" != "$STAGE2_WORKTREE_SHA" ] || [ "$STAGE2_HANDOFF_SHA" = "$REMOTE_HEAD" ]; then
+    echo "[$(date)] ❌ $STAGE1_LABEL stage 2 exited 0 without this run's completion receipt (receipt ${STAGE2_HANDOFF_SHA:-absent}, worktree HEAD ${STAGE2_WORKTREE_SHA:-unresolved}, origin $REMOTE_HEAD); never Done on a bare exit status (cron fails)" >> "$LOG_FILE"
     echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
     exit 1
   fi
-
-  # DIC-1321 (Mac-Codex CR DIC-1328): record the starting SHA so we can detect
-  # a no-op pipeline that created no new artifact commit. Pushing the unchanged
-  # origin/main baseline to bot/scrape/<date> is NOT a valid handoff.
-  ISOLATED_START_SHA=$(git -C "$ISOLATED_DIR" rev-parse HEAD)
-
-  if ! runPipeline "$ISOLATED_DIR" "chore: update database $(date +%Y-%m-%d) (isolated)" isolated; then
-    echo "[$(date)] ❌ isolated pipeline failed — sending alert, cron reports failure" >> "$LOG_FILE"
-    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
-    exit 1
-  fi
-
-  # Push the isolated artifact to a dedicated auditable branch (never main) as
-  # the handoff; the user keeps their dirty files. A separate reviewer/PR path
-  # merges it after checks. The isolated worktree commits on a detached HEAD.
-  # DIC-1321 (Mac-Codex CR DIC-1326): this handoff must FAIL CLOSED — a push or
-  # a missing artifact commit must never end in "Done"/exit 0.
-  ISOLATED_BRANCH="${ISOLATED_BRANCH_PREFIX}/$(date +%Y-%m-%d)"
-  ISOLATED_END_SHA=$(git -C "$ISOLATED_DIR" rev-parse HEAD 2>/dev/null || true)
-  if [ -z "$ISOLATED_END_SHA" ]; then
-    echo "[$(date)] ❌ isolated handoff: no commit at all in worktree HEAD; cron fails" >> "$LOG_FILE"
-    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
-    exit 1
-  fi
-  if [ "$ISOLATED_START_SHA" = "$ISOLATED_END_SHA" ]; then
-    echo "[$(date)] ❌ isolated handoff: pipeline was a no-op (HEAD unchanged at $ISOLATED_END_SHA); cron fails — must never push unchanged baseline" >> "$LOG_FILE"
-    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
-    exit 1
-  fi
-  # Fully-qualified dst ref — same detached-HEAD push rule as the
-  # forced-isolated handoff above (DIC-1461): an unqualified dst fails when
-  # bot/scrape/<date> does not exist on the remote yet.
-  if ! git -C "$ISOLATED_DIR" push origin "HEAD:refs/heads/$ISOLATED_BRANCH" >> "$LOG_FILE" 2>&1; then
-    echo "[$(date)] ❌ isolated artifact handoff push to $ISOLATED_BRANCH FAILED; cron fails (never success on failed handoff)" >> "$LOG_FILE"
-    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
-    exit 1
-  fi
-  echo "[$(date)] ✅ Isolated artifact pushed to $ISOLATED_BRANCH (dirty worktree preserved)" >> "$LOG_FILE"
-  echo "[$(date)] ✅ Done (isolated handoff)" >> "$LOG_FILE"
+  echo "[$(date)] ✅ $STAGE1_LABEL stage 2 receipt verified (handoff $STAGE2_HANDOFF_SHA)" >> "$LOG_FILE"
+  finishWithParentReceipt "$STAGE2_HANDOFF_SHA"
+  echo "[$(date)] ✅ Done ($STAGE1_LABEL bootstrap)" >> "$LOG_FILE"
   exit 0
 fi
 
@@ -803,10 +1046,59 @@ if [ -z "$INPLACE_HEAD" ] || [ -z "$INPLACE_ORIGIN" ] || [ "$INPLACE_HEAD" != "$
   echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
   exit 1
 fi
+# DIC-1167 (2026-09-30): the fast-forward above may have just replaced this
+# script on disk, but this process keeps running the function definitions it
+# parsed before the pull. The in-place pipeline must run origin/main's
+# committed orchestration:
+#   - running bytes == committed copy at HEAD → proceed;
+#   - otherwise, if the on-disk copy IS the committed one (the pull updated
+#     it), re-execute it once as a child (own lock; this process still holds
+#     the primary cron lock) and propagate its result;
+#   - otherwise (a locally modified copy, or a re-executed child that still
+#     differs) fail closed before any official mutation.
+if ! selfScriptIsCommittedAt HEAD; then
+  DISK_SCRIPT_BLOB=$(git hash-object --no-filters "$SELF_SCRIPT_REL" 2>/dev/null || true)
+  COMMITTED_SCRIPT_BLOB=$(git rev-parse --verify --quiet "HEAD:$SELF_SCRIPT_REL" 2>/dev/null || true)
+  if [ "${HUNTERCARD_SELF_REEXEC:-}" = "1" ] || [ -z "$COMMITTED_SCRIPT_BLOB" ] || [ "$DISK_SCRIPT_BLOB" != "$COMMITTED_SCRIPT_BLOB" ]; then
+    echo "[$(date)] ❌ running script ${SELF_SCRIPT} (blob ${SELF_SCRIPT_BLOB:-unresolved}) is not origin/main's committed $SELF_SCRIPT_REL (blob ${COMMITTED_SCRIPT_BLOB:-unresolved}, on-disk ${DISK_SCRIPT_BLOB:-unresolved}); refusing in-place build/push with stale or locally modified orchestration (cron fails)" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
+  echo "[$(date)] ⚙️ fast-forward updated $SELF_SCRIPT_REL (running blob ${SELF_SCRIPT_BLOB:-unresolved} → committed $COMMITTED_SCRIPT_BLOB); re-executing origin/main's copy" >> "$LOG_FILE"
+  # CR cb2b3b13: same child contract as stage 2 — orphaned lock cleared,
+  # success only on this run's completion receipt.
+  if ! clearOrphanChildLock "${LOCK_FILE}.reexec"; then
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
+  REEXEC_RECEIPT="$LOCK_FILE/$CHILD_RECEIPT_NAME"
+  REEXEC_RECEIPT_NONCE=$(newStage2Nonce || true)
+  rm -f "$REEXEC_RECEIPT"
+  if [ "${#REEXEC_RECEIPT_NONCE}" -ne 32 ] || [ -e "$REEXEC_RECEIPT" ]; then
+    echo "[$(date)] ❌ could not prepare the re-exec completion receipt; refusing in-place build/push (cron fails)" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
+  if ! HUNTERCARD_SELF_REEXEC=1 HUNTERCARD_LOCK_FILE="${LOCK_FILE}.reexec" \
+    HUNTERCARD_CHILD_RECEIPT="$REEXEC_RECEIPT" HUNTERCARD_CHILD_RECEIPT_NONCE="$REEXEC_RECEIPT_NONCE" \
+    bash "$(pwd)/$SELF_SCRIPT_REL"; then
+    echo "[$(date)] ❌ re-executed origin/main script failed — cron reports failure" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
+  if ! REEXEC_DETAIL=$(childReceiptDetail "$REEXEC_RECEIPT" "$REEXEC_RECEIPT_NONCE"); then
+    echo "[$(date)] ❌ re-executed origin/main script exited 0 without this run's completion receipt; never Done on a bare exit status (cron fails)" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
+  finishWithParentReceipt "$REEXEC_DETAIL"
+  exit 0
+fi
 if ! runPipeline "$(pwd)" "chore: update database $(date +%Y-%m-%d)"; then
   echo "[$(date)] ❌ pipeline failed — cron reports failure" >> "$LOG_FILE"
   echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
   exit 1
 fi
 
+finishWithParentReceipt "$(git rev-parse --verify HEAD 2>/dev/null || true)"
 echo "[$(date)] ✅ Done" >> "$LOG_FILE"

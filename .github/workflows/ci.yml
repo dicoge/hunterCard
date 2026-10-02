@@ -513,6 +513,9 @@ jobs:
       - name: Verify scheduler fails closed on tracked/staged/untracked residue (DIC-1219)
         run: npm run test:scheduler-dirty-precondition
 
+      - name: Verify the deployed scheduler launcher only ever runs origin/main's committed scheduler (DIC-1167)
+        run: npm run test:scheduler-launcher
+
       - name: Verify yuyu-provenance gate blocks cross-product preservation (DIC-1227)
         run: npm run test:yuyu-provenance-preservation
 

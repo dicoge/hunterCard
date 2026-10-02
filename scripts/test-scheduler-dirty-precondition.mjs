@@ -56,7 +56,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execSync, spawnSync } from 'node:child_process';
+import { execSync, spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -244,6 +244,14 @@ exit 0
   // genuinely materialised.
   writeShim(bin, 'git', `#!/bin/bash
 echo "git $*" >> "$TRACE_FILE"
+# DIC-1167 (CR bced44d5): ADVANCE_ON_FETCH_N=<n> runs ADVANCE_HOOK (a real,
+# untraced push from another clone) just before the n-th fetch, so origin
+# can advance between the stage-1 and stage-2 fetches.
+if [ "$1" = "fetch" ] && [ -n "$ADVANCE_ON_FETCH_N" ]; then
+  n=$(( $(cat "$FETCH_COUNT_FILE" 2>/dev/null || echo 0) + 1 ))
+  echo "$n" > "$FETCH_COUNT_FILE"
+  [ "$n" = "$ADVANCE_ON_FETCH_N" ] && bash "$ADVANCE_HOOK"
+fi
 if [[ "$*" == *" push "* ]] || [[ "$*" == "push "* ]]; then
   [ -n "$FAIL_PUSH" ] && [[ "$*" == *"$FAIL_PUSH"* ]] && exit 1
   exit 0
@@ -267,9 +275,9 @@ function schedulerLogPath(sandbox) {
   return path.join(sandbox.dir, '.hermes', 'logs', `huntercard-scrape-${ymd}.log`);
 }
 
-function runSandbox(sandbox, extraEnv = {}) {
+function runSandbox(sandbox, extraEnv = {}, scriptPath = null) {
   const { bin, repo, trace, dir } = sandbox;
-  const result = spawnSync('bash', [path.join(repo, 'scripts', 'local-scrape-and-push.sh')], {
+  const result = spawnSync('bash', [scriptPath ?? path.join(repo, 'scripts', 'local-scrape-and-push.sh')], {
     env: {
       ...process.env,
       PATH: `${bin}:${process.env.PATH}`,
@@ -1220,7 +1228,7 @@ function assertCleanPathFailedClosed(route, result, reasonRe) {
     const newRemote = advanceRemote(sandbox, 'u');
     const { status, lines, log } = runSandbox(sandbox);
     assert.equal(status, 0, `U: dirty isolated handoff must complete; got ${status}\n${log}`);
-    const fetch = lines.findIndex((l) => l.includes('git fetch origin main'));
+    const fetch = lines.findIndex((l) => l.includes('git fetch --write-fetch-head origin +refs/heads/main:refs/remotes/origin/main'));
     const add = lines.findIndex((l) => l.includes(`git worktree add --detach ${isoDir} `));
     assert.ok(fetch !== -1 && add !== -1 && fetch < add, 'U: fetch must precede the isolated worktree creation');
     assert.ok(
@@ -1259,4 +1267,700 @@ for (const dirty of [false, true]) {
   }
 }
 
-console.log('DIC-1219/DIC-1321/DIC-1334/DIC-1472(+CR-P1 alias/removal/post-link + resident fingerprint)/DIC-1167(CR 028f6a19 clean-path ff/ahead/push + fetch freshness) scheduler dirty-precondition + coverage-gate + no-op + parity + isolated-deps regression checks passed');
+// ─── DIC-1167 (2026-09-30) stale resident orchestration ─────────────────────
+// The cron invokes the RESIDENT script, and bash keeps the function
+// definitions it parsed from that file for the whole run. On 09-30 a
+// 225-commit-stale resident built origin/main's data through its OWN
+// runPipeline (no run budget, no fail-closed push). These cases mark each
+// copy of the script's runPipeline with a trace so the harness can see WHOSE
+// orchestration actually ran.
+
+const RUN_PIPELINE_ANCHOR = 'runPipeline() {\n  local dir="$1"\n';
+
+// markedScript(label): the real script whose runPipeline traces
+// `RUNPIPELINE_FROM <label>` first thing.
+function markedScript(label) {
+  const src = fs.readFileSync(REAL_PIPELINE, 'utf-8');
+  assert.ok(src.includes(RUN_PIPELINE_ANCHOR), 'harness: runPipeline anchor must exist in the real script');
+  return src.replace(
+    RUN_PIPELINE_ANCHOR,
+    `runPipeline() {\n  echo "RUNPIPELINE_FROM ${label}" >> "$TRACE_FILE"\n  local dir="$1"\n`,
+  );
+}
+
+const residentScriptPath = (sandbox) => path.join(sandbox.repo, 'scripts', 'local-scrape-and-push.sh');
+
+// Commit + push a script variant from the resident (resident HEAD == origin).
+function commitScriptOnResident(sandbox, label) {
+  fs.writeFileSync(residentScriptPath(sandbox), markedScript(label));
+  execSync(`${REAL_GIT} add scripts/local-scrape-and-push.sh`, { cwd: sandbox.repo });
+  execSync(`${REAL_GIT} -c commit.gpgsign=false commit -q -m "script ${label}"`, { cwd: sandbox.repo });
+  execSync(`${REAL_GIT} push -q origin main`, { cwd: sandbox.repo });
+}
+
+// Advance origin with a script variant from an independent clone, leaving the
+// resident (and its running copy) one commit behind.
+function advanceRemoteScript(sandbox, label) {
+  const other = path.join(sandbox.dir, `other-script-${label}`);
+  execSync(`${REAL_GIT} clone -q ${sandbox.remote} ${other}`);
+  execSync(`${REAL_GIT} config user.email other@example.com`, { cwd: other });
+  execSync(`${REAL_GIT} config user.name other`, { cwd: other });
+  fs.writeFileSync(path.join(other, 'scripts', 'local-scrape-and-push.sh'), markedScript(label));
+  execSync(`${REAL_GIT} add scripts/local-scrape-and-push.sh`, { cwd: other });
+  execSync(`${REAL_GIT} -c commit.gpgsign=false commit -q -m "remote script ${label}"`, { cwd: other });
+  execSync(`${REAL_GIT} push -q origin main`, { cwd: other });
+  return execSync(`${REAL_GIT} rev-parse HEAD`, { cwd: other, encoding: 'utf-8' }).trim();
+}
+
+const pipelineOwnersOrBuild = (lines, isoDir) =>
+  lines.some((l) => l.includes('build-database.js') && l.includes(`[cwd=${isoDir}]`));
+
+const pipelineOwners = (lines) =>
+  lines.filter((l) => l.startsWith('RUNPIPELINE_FROM ')).map((l) => l.slice('RUNPIPELINE_FROM '.length));
+
+// ─── Case W: dirty route with a STALE/MODIFIED resident script — the
+// pipeline must run origin's committed orchestration from the isolated
+// worktree, never the resident's function definitions. ────────────────────
+{
+  const sandbox = makeSandbox();
+  const isoDir = path.join(sandbox.dir, 'iso');
+  try {
+    commitScriptOnResident(sandbox, 'ORIGIN');
+    fs.writeFileSync(residentScriptPath(sandbox), markedScript('RESIDENT'));
+    const residue = path.join(sandbox.repo, 'data', 'price-history', 'hW-001_hFOO_C.json');
+    fs.writeFileSync(residue, '{}');
+    const { status, lines, log } = runSandbox(sandbox);
+    assert.equal(status, 0, `W: dirty isolated handoff must complete; got ${status}\n${log}`);
+    assert.deepEqual(pipelineOwners(lines), ['ORIGIN'], `W: exactly origin's runPipeline must run, never the resident's\n${lines.join('\n')}`);
+    assert.match(log, /resident script .* differs from origin\/main .*the pipeline runs origin's copy/, 'W: the stale resident must be reported');
+    assert.ok(
+      lines.some((l) => l.includes('build-database.js') && l.includes(`[cwd=${isoDir}]`)),
+      'W: the build must run inside the isolated worktree',
+    );
+    assert.ok(someTraced(lines, 'HEAD:refs/heads/bot/scrape/'), 'W: handoff goes to bot/scrape/<date>');
+    assert.equal(someTraced(lines, 'HEAD:main'), false, 'W: dirty route must never push HEAD:main');
+    assert.match(log, /✅ Done \(isolated handoff\)/, 'W: stage 2 reports the isolated handoff');
+    assert.match(log, /✅ Done \(isolated bootstrap\)/, 'W: stage 1 reports Done only after stage 2');
+    assert.equal(fs.readFileSync(residue, 'utf-8'), '{}', 'W: resident residue must stay untouched');
+    assert.equal(fs.readFileSync(residentScriptPath(sandbox), 'utf-8'), markedScript('RESIDENT'), 'W: resident script must stay untouched');
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// ─── Case X: clean in-place route where the fast-forward UPDATES the script —
+// the run must re-execute origin's copy instead of the definitions it parsed
+// before the pull, and publish exactly once. ───────────────────────────────
+{
+  const sandbox = makeSandbox();
+  try {
+    commitScriptOnResident(sandbox, 'OLD');
+    const newRemote = advanceRemoteScript(sandbox, 'NEW');
+    const { status, lines, log } = runSandbox(sandbox);
+    assert.equal(status, 0, `X: fast-forwarded in-place run must complete via the updated script; got ${status}\n${log}`);
+    assert.deepEqual(pipelineOwners(lines), ['NEW'], `X: only the pulled script's runPipeline may run\n${lines.join('\n')}`);
+    assert.match(log, /fast-forward updated scripts\/local-scrape-and-push\.sh .*re-executing origin\/main's copy/, 'X: the re-exec must be logged');
+    assert.equal(lines.filter((l) => l.includes('push origin HEAD:main')).length, 1, 'X: the artifact is published exactly once');
+    const artifactParent = execSync(`${REAL_GIT} rev-parse HEAD^`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim();
+    assert.equal(artifactParent, newRemote, 'X: artifact sits on the fetched origin/main');
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// ─── Case Y: clean in-place route with a LOCALLY MODIFIED resident script —
+// neither the running copy nor the on-disk one is origin's, so the run must
+// fail closed before any scrape/build/commit/push. ──────────────────────────
+{
+  const sandbox = makeSandbox();
+  try {
+    fs.writeFileSync(residentScriptPath(sandbox), markedScript('LOCAL'));
+    const result = runSandbox(sandbox);
+    assertCleanPathFailedClosed(
+      'Y locally modified resident script',
+      result,
+      /is not origin\/main's committed scripts\/local-scrape-and-push\.sh .*refusing in-place build\/push with stale or locally modified orchestration/,
+    );
+    assert.deepEqual(pipelineOwners(result.lines), [], 'Y: no runPipeline may run');
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// ─── Case Z: a re-executed run that STILL is not origin's script (or a
+// leaked HUNTERCARD_SELF_REEXEC) must fail closed, never re-exec again. ────
+{
+  const sandbox = makeSandbox();
+  try {
+    commitScriptOnResident(sandbox, 'OLD');
+    advanceRemoteScript(sandbox, 'NEW');
+    const result = runSandbox(sandbox, { HUNTERCARD_SELF_REEXEC: '1' });
+    assertCleanPathFailedClosed(
+      'Z re-exec guard',
+      result,
+      /refusing in-place build\/push with stale or locally modified orchestration/,
+    );
+    assert.deepEqual(pipelineOwners(result.lines), [], 'Z: no runPipeline may run');
+    assert.doesNotMatch(result.log, /re-executing origin\/main's copy/, 'Z: must not re-execute a second time');
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// ─── Case AA: HUNTERCARD_FORCE_ISOLATED_STAGE2 leaked into a resident run whose
+// script is not its HEAD's committed copy — stage 2 must refuse. ────────────
+{
+  const sandbox = makeSandbox();
+  try {
+    fs.writeFileSync(residentScriptPath(sandbox), markedScript('LEAKED'));
+    const result = runSandbox(sandbox, { HUNTERCARD_FORCE_ISOLATED_STAGE2: '1' });
+    assertFailedClosedNoMutation(
+      'AA leaked stage-2 flag',
+      result,
+      /forced-isolated stage 2: running script .* is not the committed scripts\/local-scrape-and-push\.sh at worktree HEAD [0-9a-f]{40}; refusing stale orchestration/,
+    );
+    assert.deepEqual(pipelineOwners(result.lines), [], 'AA: no runPipeline may run');
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// ─── DIC-1167 (CR bced44d5): a stage-2 process whose script DOES match its
+// own HEAD must still prove it is stage 1's ephemeral worktree at the freshly
+// fetched origin/main. A clean (even current) resident, a linked worktree on
+// a branch, or a detached linked worktree without stage 1's one-time
+// attestation must all refuse before any scrape/build/commit/push. ─────────
+
+function assertStage2Refused(route, sandbox, snapshot, result, reasonRe) {
+  assertFailedClosedNoMutation(route, result, reasonRe);
+  assert.deepEqual(pipelineOwners(result.lines), [], `${route}: no runPipeline may run`);
+  assert.equal(someTraced(result.lines, 'git worktree add'), false, `${route}: stage 2 never bootstraps`);
+  assert.doesNotMatch(result.log, /✅ Done/, `${route}: must never report Done`);
+  assertResidentUntouched(sandbox, snapshot);
+  assert.equal(
+    execSync(`${REAL_GIT} status --porcelain`, { cwd: sandbox.repo, encoding: 'utf-8' }),
+    '',
+    `${route}: the clean resident must stay clean`,
+  );
+}
+
+// ─── Case BB: clean resident (script == HEAD's == origin's) with leaked
+// stage-2 env — bare flag, then forged worktree/expected-head/nonce. ────────
+{
+  const variants = [
+    ['BB(a) bare leaked flag', () => ({}), /forced-isolated stage 2: checkout \S+ is not the stage-1 ephemeral worktree \(unset\)/],
+    [
+      'BB(b) forged stage-2 env on the main working tree',
+      (sandbox, head) => ({ HUNTERCARD_STAGE2_WORKTREE: sandbox.repo, HUNTERCARD_STAGE2_EXPECTED_HEAD: head, HUNTERCARD_STAGE2_NONCE: 'f'.repeat(32) }),
+      /forced-isolated stage 2: checkout \S+ is a main working tree, not a linked ephemeral worktree/,
+    ],
+  ];
+  for (const [route, env, reasonRe] of variants) {
+    const sandbox = makeSandbox();
+    try {
+      commitScriptOnResident(sandbox, 'RESIDENT');
+      const head = execSync(`${REAL_GIT} rev-parse HEAD`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim();
+      assert.equal(head, execSync(`${REAL_GIT} rev-parse origin/main`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim(), `${route}: sanity — resident is current`);
+      const snapshot = takeResidentSnapshot(sandbox);
+      const result = runSandbox(sandbox, { HUNTERCARD_FORCE_ISOLATED_STAGE2: '1', ...env(sandbox, head) });
+      assert.doesNotMatch(result.log, /is not the committed scripts\/local-scrape-and-push\.sh/, `${route}: sanity — the script check passes`);
+      assertStage2Refused(route, sandbox, snapshot, result, reasonRe);
+      assert.equal(someTraced(result.lines, 'git pull'), false, `${route}: the resident must not be pulled`);
+    } finally {
+      cleanup(sandbox);
+    }
+  }
+}
+
+// ─── Case BB (linked worktrees): a checkout that IS a linked worktree at
+// origin/main but was not created+attested by THIS stage 1 — on a branch, or
+// detached with a missing or foreign attestation — must refuse. ────────────
+{
+  const variants = [
+    ['BB(c) linked worktree on a branch', 'branch', null, /HEAD attached to a branch, not stage 1's detached origin snapshot/],
+    ['BB(d) detached linked worktree without attestation', 'detached', null, /no matching stage-1 attestation in \S+ \(leaked flag, replayed nonce/],
+    ['BB(e) detached linked worktree with a foreign attestation', 'detached', 'a'.repeat(32), /no matching stage-1 attestation in \S+ \(leaked flag, replayed nonce/],
+  ];
+  for (const [route, mode, foreignNonce, reasonRe] of variants) {
+    const sandbox = makeSandbox();
+    const leakDir = path.join(sandbox.dir, 'leaked-wt');
+    try {
+      commitScriptOnResident(sandbox, 'RESIDENT');
+      const head = execSync(`${REAL_GIT} rev-parse HEAD`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim();
+      execSync(
+        mode === 'branch'
+          ? `${REAL_GIT} worktree add -q -b leaked ${leakDir} ${head}`
+          : `${REAL_GIT} worktree add -q --detach ${leakDir} ${head}`,
+        { cwd: sandbox.repo },
+      );
+      const leakGitDir = execSync(`${REAL_GIT} rev-parse --absolute-git-dir`, { cwd: leakDir, encoding: 'utf-8' }).trim();
+      if (foreignNonce) fs.writeFileSync(path.join(leakGitDir, 'huntercard-stage2-attestation'), `${foreignNonce}\n`);
+      const snapshot = takeResidentSnapshot(sandbox);
+      const result = runSandbox(
+        sandbox,
+        {
+          HUNTERCARD_FORCE_ISOLATED_STAGE2: '1',
+          HUNTERCARD_STAGE2_WORKTREE: leakDir,
+          HUNTERCARD_STAGE2_EXPECTED_HEAD: head,
+          HUNTERCARD_STAGE2_NONCE: 'b'.repeat(32),
+        },
+        path.join(leakDir, 'scripts', 'local-scrape-and-push.sh'),
+      );
+      assertStage2Refused(route, sandbox, snapshot, result, reasonRe);
+      assert.equal(
+        execSync(`${REAL_GIT} rev-parse HEAD`, { cwd: leakDir, encoding: 'utf-8' }).trim(),
+        head,
+        `${route}: the leaked worktree must not gain a commit`,
+      );
+      if (foreignNonce) {
+        assert.equal(
+          fs.readFileSync(path.join(leakGitDir, 'huntercard-stage2-attestation'), 'utf-8'),
+          `${foreignNonce}\n`,
+          `${route}: a non-matching attestation must not be consumed`,
+        );
+      }
+    } finally {
+      cleanup(sandbox);
+    }
+  }
+}
+
+// ─── Case CC: origin/main ADVANCES between the stage-1 fetch (worktree
+// pinned) and the stage-2 fetch — stage 2 must refuse the stale snapshot,
+// never build or hand it off, and stage 1 must report failure. ────────────
+for (const [route, extraEnv, residue] of [
+  ['CC forced route', { HUNTERCARD_FORCE_ISOLATED: '1' }, false],
+  ['CC dirty route', {}, true],
+]) {
+  const sandbox = makeSandbox();
+  const isoDir = path.join(sandbox.dir, 'iso');
+  try {
+    if (residue) {
+      fs.writeFileSync(path.join(sandbox.repo, 'data', 'price-history', 'hCC-001_hFOO_C.json'), '{}');
+    }
+    const pinned = execSync(`${REAL_GIT} rev-parse HEAD`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim();
+    const other = path.join(sandbox.dir, 'other-cc');
+    execSync(`${REAL_GIT} clone -q ${sandbox.remote} ${other}`);
+    fs.writeFileSync(path.join(other, 'remote-cc.txt'), 'cc\n');
+    execSync(`${REAL_GIT} add remote-cc.txt`, { cwd: other });
+    execSync(`${REAL_GIT} -c user.email=o@example.com -c user.name=o -c commit.gpgsign=false commit -q -m "remote cc"`, { cwd: other });
+    const advanced = execSync(`${REAL_GIT} rev-parse HEAD`, { cwd: other, encoding: 'utf-8' }).trim();
+    const hook = path.join(sandbox.dir, 'advance-hook.sh');
+    fs.writeFileSync(hook, `${REAL_GIT} -C ${other} push -q origin main\n`);
+    const snapshot = takeResidentSnapshot(sandbox);
+    const result = runSandbox(sandbox, {
+      ...extraEnv,
+      ADVANCE_ON_FETCH_N: '2',
+      ADVANCE_HOOK: hook,
+      FETCH_COUNT_FILE: path.join(sandbox.dir, 'fetch-count'),
+    });
+    const label = residue ? 'isolated' : 'forced-isolated';
+    assertFailedClosedNoMutation(
+      route,
+      result,
+      new RegExp(`${label} stage 2: worktree HEAD ${pinned} is not the freshly fetched origin/main ${advanced} \\(stage 1 pinned ${pinned}\\); refusing stale orchestration`),
+    );
+    assert.ok(someTraced(result.lines, `git worktree add --detach ${isoDir} ${pinned}`), `${route}: stage 1 pinned the pre-advance head`);
+    assert.equal(result.lines.filter((l) => l.startsWith('git fetch --write-fetch-head origin +refs/heads/main:refs/remotes/origin/main')).length, 2, `${route}: both stages fetched`);
+    assert.deepEqual(pipelineOwners(result.lines), [], `${route}: no runPipeline may run`);
+    assert.equal(someTraced(result.lines, 'bot/scrape/'), false, `${route}: no bot/scrape handoff`);
+    assert.match(result.log, new RegExp(`${label} stage 2 failed — cron reports failure`), `${route}: stage 1 propagates the refusal`);
+    assert.doesNotMatch(result.log, /✅ Done/, `${route}: must never report Done`);
+    assertResidentUntouched(sandbox, snapshot);
+    assert.equal(fs.existsSync(isoDir), false, `${route}: stage 1 removes the ephemeral worktree`);
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// ─── Case CC-norefspec (CR 504e8fb5): the same mid-run advance on a resident
+// whose remote.origin.fetch is MISSING. A plain `git fetch origin main` then
+// writes FETCH_HEAD only, the tracking ref keeps stage 1's commit, and stage 2
+// compared the pinned snapshot against that same stale value — it built and
+// handed off the stale snapshot. Every fetch must move the explicit tracking
+// ref, so stage 2 still sees the advance and refuses. Run with and without the
+// launcher's fully qualified HUNTERCARD_REMOTE_REF. ─────────────────────────
+for (const [route, extraEnv, residue] of [
+  ['CC-norefspec forced route (launcher ref)', { HUNTERCARD_FORCE_ISOLATED: '1', HUNTERCARD_REMOTE_REF: 'refs/remotes/origin/main' }, false],
+  ['CC-norefspec forced route (default ref)', { HUNTERCARD_FORCE_ISOLATED: '1' }, false],
+  ['CC-norefspec dirty route', {}, true],
+]) {
+  const sandbox = makeSandbox();
+  const isoDir = path.join(sandbox.dir, 'iso');
+  try {
+    if (residue) {
+      fs.writeFileSync(path.join(sandbox.repo, 'data', 'price-history', 'hCN-001_hFOO_C.json'), '{}');
+    }
+    execSync(`${REAL_GIT} config --unset-all remote.origin.fetch`, { cwd: sandbox.repo });
+    const pinned = execSync(`${REAL_GIT} rev-parse HEAD`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim();
+    const other = path.join(sandbox.dir, 'other-cn');
+    execSync(`${REAL_GIT} clone -q ${sandbox.remote} ${other}`);
+    fs.writeFileSync(path.join(other, 'remote-cn.txt'), 'cn\n');
+    execSync(`${REAL_GIT} add remote-cn.txt`, { cwd: other });
+    execSync(`${REAL_GIT} -c user.email=o@example.com -c user.name=o -c commit.gpgsign=false commit -q -m "remote cn"`, { cwd: other });
+    const advanced = execSync(`${REAL_GIT} rev-parse HEAD`, { cwd: other, encoding: 'utf-8' }).trim();
+    const hook = path.join(sandbox.dir, 'advance-hook.sh');
+    fs.writeFileSync(hook, `${REAL_GIT} -C ${other} push -q origin main\n`);
+    const snapshot = takeResidentSnapshot(sandbox);
+    const result = runSandbox(sandbox, {
+      ...extraEnv,
+      ADVANCE_ON_FETCH_N: '2',
+      ADVANCE_HOOK: hook,
+      FETCH_COUNT_FILE: path.join(sandbox.dir, 'fetch-count'),
+    });
+    const label = residue ? 'isolated' : 'forced-isolated';
+    assertFailedClosedNoMutation(
+      route,
+      result,
+      new RegExp(`${label} stage 2: worktree HEAD ${pinned} is not the freshly fetched origin/main ${advanced} \\(stage 1 pinned ${pinned}\\); refusing stale orchestration`),
+    );
+    assert.ok(someTraced(result.lines, `git worktree add --detach ${isoDir} ${pinned}`), `${route}: stage 1 pinned the pre-advance head`);
+    assert.equal(result.lines.filter((l) => l.startsWith('git fetch --write-fetch-head origin +refs/heads/main:refs/remotes/origin/main')).length, 2, `${route}: both stages fetched the explicit tracking ref`);
+    assert.deepEqual(pipelineOwners(result.lines), [], `${route}: no runPipeline may run`);
+    assert.equal(someTraced(result.lines, 'bot/scrape/'), false, `${route}: no bot/scrape handoff`);
+    assert.match(result.log, new RegExp(`${label} stage 2 failed — cron reports failure`), `${route}: stage 1 propagates the refusal`);
+    assert.doesNotMatch(result.log, /✅ Done/, `${route}: must never report Done`);
+    assert.equal(
+      execSync(`${REAL_GIT} rev-parse refs/remotes/origin/main`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim(),
+      advanced,
+      `${route}: the tracking ref moved to the advanced commit despite the missing refspec`,
+    );
+    assert.equal(
+      execSync(`${REAL_GIT} config --get-all remote.origin.fetch || true`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim(),
+      '',
+      `${route}: the resident's fetch config is left as found`,
+    );
+    assertResidentUntouched(sandbox, snapshot);
+    assert.equal(fs.existsSync(isoDir), false, `${route}: stage 1 removes the ephemeral worktree`);
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// ─── Case CC-override (CR 504e8fb5): the scheduler resolves only origin/main.
+// A HUNTERCARD_REMOTE_REF naming anything else (an older SHA, a tag) is
+// refused before any fetch, worktree or pipeline. ──────────────────────────
+for (const [route, ref] of [
+  ['CC-override stale sha', 'sha'],
+  ['CC-override tag', 'refs/tags/stale'],
+]) {
+  const sandbox = makeSandbox();
+  try {
+    const head = execSync(`${REAL_GIT} rev-parse HEAD`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim();
+    execSync(`${REAL_GIT} tag stale ${head}`, { cwd: sandbox.repo });
+    const snapshot = takeResidentSnapshot(sandbox);
+    const result = runSandbox(sandbox, { HUNTERCARD_FORCE_ISOLATED: '1', HUNTERCARD_REMOTE_REF: ref === 'sha' ? head : ref });
+    assertFailedClosedNoMutation(route, result, /HUNTERCARD_REMOTE_REF=\S+ is refused: the scheduler only runs the freshly fetched origin\/main/);
+    assert.equal(someTraced(result.lines, 'git fetch'), false, `${route}: refused before fetching`);
+    assert.equal(someTraced(result.lines, 'git worktree add'), false, `${route}: no worktree`);
+    assert.deepEqual(pipelineOwners(result.lines), [], `${route}: no runPipeline may run`);
+    assertResidentUntouched(sandbox, snapshot);
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// ─── DIC-1167 (CR cb2b3b13): a delegated child (stage 2 / in-place re-exec)
+// that finds its lock already present used to log "already running" and
+// exit 0; its parent took that 0 as a completed handoff and logged Done. A
+// stage-2 process killed before its EXIT trap leaves exactly that lock, so
+// every later run "succeeded" without scraping or pushing. Now:
+//   - a parent clears an ORPHANED child lock (owner pid not running) before
+//     spawning, and refuses (fails closed) while the owner is still alive;
+//   - a delegated child never skips on a lock collision — it fails closed;
+//   - a parent reports Done only on the child's per-run nonce receipt, never
+//     on a bare exit 0. ──────────────────────────────────────────────────────
+
+// procStartTime(pid): the script's normalized `ps -o lstart` for <pid>.
+function procStartTime(pid) {
+  return execSync(`ps -o lstart= -p ${pid}`, { env: { ...process.env, LC_ALL: 'C' } })
+    .toString().replace(/\s+/g, ' ').trim();
+}
+const reEsc = (v) => String(v).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// DD(a/b): an orphaned stage-2 lock (killed run; no pid, or a dead pid) is
+// cleared by stage 1 and the run completes its real handoff, on both routes.
+// DD(f/g) (pid reuse): the killed owner's pid now belongs to an unrelated LIVE
+// process (here: this node test runner) — with a recorded start time that no
+// longer matches, or a legacy lock with no start time whose live pid is not
+// this scraper. That lock is still an orphan: cleared, never kept forever.
+for (const [route, extraEnv, residue, ownerPid] of [
+  ['DD(a) forced route, orphaned stage-2 lock without owner pid', { HUNTERCARD_FORCE_ISOLATED: '1' }, false, null],
+  ['DD(b) dirty route, orphaned stage-2 lock with a dead owner pid', {}, true, 'dead'],
+  ['DD(f) forced route, owner pid reused by a live process (start time differs)', { HUNTERCARD_FORCE_ISOLATED: '1' }, false, 'reused'],
+  ['DD(f) dirty route, owner pid reused by a live process (start time differs)', {}, true, 'reused'],
+  ['DD(g) forced route, legacy lock (no start time) whose pid is reused by a non-scraper', { HUNTERCARD_FORCE_ISOLATED: '1' }, false, 'reused-legacy'],
+]) {
+  const sandbox = makeSandbox();
+  const isoDir = path.join(sandbox.dir, 'iso');
+  const lock = path.join(sandbox.dir, 'scrape.lock');
+  const staleLock = `${lock}.stage2`;
+  try {
+    if (residue) fs.writeFileSync(path.join(sandbox.repo, 'data', 'price-history', 'hDD-001_hFOO_C.json'), '{}');
+    fs.mkdirSync(staleLock);
+    let recorded = 'unrecorded';
+    let reasonRe = `owner pid ${recorded} not running`;
+    if (ownerPid === 'dead') {
+      const exited = spawnSync('bash', ['-c', 'echo $$']);
+      recorded = exited.stdout.toString().trim();
+      fs.writeFileSync(path.join(staleLock, 'pid'), `${recorded}\n`);
+      reasonRe = `owner pid ${recorded} not running`;
+    } else if (ownerPid === 'reused') {
+      recorded = String(process.pid);
+      fs.writeFileSync(path.join(staleLock, 'pid'), `${recorded}\n`);
+      fs.writeFileSync(path.join(staleLock, 'start'), 'Thu Jan  1 00:00:00 1970\n');
+      reasonRe = `owner pid ${recorded} was reused: recorded start 'Thu Jan  1 00:00:00 1970', live process started '${reEsc(procStartTime(process.pid))}'`;
+    } else if (ownerPid === 'reused-legacy') {
+      recorded = String(process.pid);
+      fs.writeFileSync(path.join(staleLock, 'pid'), `${recorded}\n`);
+      reasonRe = `owner pid ${recorded} was reused: no recorded start time and the live process is not this scraper`;
+    }
+    const snapshot = takeResidentSnapshot(sandbox);
+    const { status, lines, log } = runSandbox(sandbox, extraEnv);
+    const label = residue ? 'isolated' : 'forced-isolated';
+    assert.equal(status, 0, `${route}: an orphaned child lock must not block or fake the run; got ${status}\n${log}`);
+    assert.match(log, new RegExp(`removing orphaned child lock ${reEsc(staleLock)} \\(${reasonRe}\\)`), `${route}: the orphan must be reported`);
+    assert.doesNotMatch(log, /is held by live pid/, `${route}: a dead or reused owner pid is never treated as a live owner`);
+    assert.doesNotMatch(log, /already running, skipping/, `${route}: stage 2 must not skip`);
+    assert.equal(pipelineOwnersOrBuild(lines, isoDir), true, `${route}: the build must actually run in the isolated worktree`);
+    assert.ok(someTraced(lines, 'HEAD:refs/heads/bot/scrape/'), `${route}: the handoff must actually be pushed`);
+    assert.match(log, new RegExp(`✅ Done \\(${label} handoff\\)`), `${route}: stage 2 completes`);
+    assert.match(log, new RegExp(`${label} stage 2 receipt verified`), `${route}: stage 1 verified the stage-2 receipt`);
+    assert.match(log, new RegExp(`✅ Done \\(${label} bootstrap\\)`), `${route}: stage 1 reports Done after the receipt`);
+    assert.equal(fs.existsSync(staleLock), false, `${route}: no stage-2 lock remains`);
+    assert.equal(fs.existsSync(lock), false, `${route}: no primary lock remains`);
+    assertResidentUntouched(sandbox, snapshot);
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// DD(c): a stage-2 lock whose recorded owner is ALIVE — the same process: its
+// recorded start time matches, or (legacy lock, no start time) it is still
+// running this scraper — is never stolen; stage 1 fails closed before the
+// child runs and leaves that lock in place. CR 4d3610a7: that live stage 2
+// may still be working in the isolated worktree, so stage 1 must fail BEFORE
+// it prunes/removes or (re)creates any worktree — a registered checkout at
+// the isolated path survives untouched, and no worktree is ever created.
+for (const [route, legacy, existingWorktree] of [
+  ['DD(c) live stage-2 lock owner (start time matches)', false, false],
+  ['DD(c) live stage-2 lock owner (legacy lock, live scraper command)', true, false],
+  ['DD(c) live stage-2 lock owner + its live isolated worktree (start time matches)', false, true],
+  ['DD(c) live stage-2 lock owner + its live isolated worktree (legacy lock)', true, true],
+]) {
+  const sandbox = makeSandbox();
+  const isoDir = path.join(sandbox.dir, 'iso');
+  const marker = path.join(isoDir, 'live-stage2-in-progress');
+  const staleLock = path.join(sandbox.dir, 'scrape.lock.stage2');
+  // A live stand-in owner whose command line names this scraper. `; :` keeps
+  // bash from exec'ing sleep, so the pid keeps that command line.
+  const owner = spawn('bash', ['-c', 'sleep 120; :', 'local-scrape-and-push.sh'], { stdio: 'ignore' });
+  try {
+    if (existingWorktree) {
+      execSync(`${REAL_GIT} worktree add --detach ${isoDir} HEAD >/dev/null 2>&1`, { cwd: sandbox.repo });
+      fs.writeFileSync(marker, 'stage 2 work in progress\n');
+    }
+    fs.mkdirSync(staleLock);
+    fs.writeFileSync(path.join(staleLock, 'pid'), `${owner.pid}\n`);
+    const startRecorded = legacy ? null : `${procStartTime(owner.pid)}\n`;
+    if (startRecorded) fs.writeFileSync(path.join(staleLock, 'start'), startRecorded);
+    const snapshot = takeResidentSnapshot(sandbox);
+    const result = runSandbox(sandbox, { HUNTERCARD_FORCE_ISOLATED: '1' });
+    assertFailedClosedNoMutation(
+      route,
+      result,
+      new RegExp(`child lock \\S+scrape\\.lock\\.stage2 is held by live pid ${owner.pid} \\(${legacy ? 'no recorded start time; running [^)]*local-scrape-and-push' : 'started [^)]+'}[^)]*\\); refusing to start a second delegated run`),
+    );
+    assert.deepEqual(pipelineOwners(result.lines), [], `${route}: no runPipeline may run`);
+    assert.doesNotMatch(result.log, /✅ Done/, `${route}: must never report Done`);
+    assert.doesNotMatch(result.log, /removing orphaned child lock/, `${route}: a live owner is never treated as an orphan`);
+    assert.doesNotMatch(result.log, /removing stale isolated worktree/, `${route}: a live stage 2's worktree is never treated as stale`);
+    assert.equal(someTraced(result.lines, 'git worktree'), false, `${route}: no worktree may be pruned, removed or added`);
+    assert.equal(someTraced(result.lines, 'git fetch'), false, `${route}: fails before any other work`);
+    assert.equal(fs.readFileSync(path.join(staleLock, 'pid'), 'utf-8'), `${owner.pid}\n`, `${route}: a live owner's lock must not be removed`);
+    if (startRecorded) assert.equal(fs.readFileSync(path.join(staleLock, 'start'), 'utf-8'), startRecorded, `${route}: the owner's start time is kept`);
+    if (existingWorktree) {
+      assert.ok(fs.existsSync(marker), `${route}: the live stage 2's checkout must not be removed`);
+      assert.equal(fs.readFileSync(marker, 'utf-8'), 'stage 2 work in progress\n', `${route}: the live stage 2's checkout must survive untouched`);
+      const registered = execSync(`${REAL_GIT} worktree list --porcelain`, { cwd: sandbox.repo, encoding: 'utf-8' });
+      assert.ok(
+        registered.includes(`worktree ${isoDir}\n`) || registered.includes(`worktree ${fs.realpathSync(isoDir)}\n`),
+        `${route}: the live stage 2's worktree must stay registered\n${registered}`,
+      );
+    } else {
+      assert.equal(fs.existsSync(isoDir), false, `${route}: no ephemeral worktree is created`);
+    }
+    assertResidentUntouched(sandbox, snapshot);
+  } finally {
+    owner.kill('SIGKILL');
+    cleanup(sandbox);
+  }
+}
+
+// DD(h) (CR 4d3610a7): a live delegated child is detected before ANY work on
+// every route — a live re-exec child runs in the resident checkout, so the
+// clean in-place route must not fetch/fast-forward under it either; nor may a
+// clean run start a second pipeline beside a live stage 2.
+for (const [route, suffix, extraEnv] of [
+  ['DD(h) clean in-place route, live re-exec lock owner', 'reexec', {}],
+  ['DD(h) clean in-place route, live stage-2 lock owner', 'stage2', {}],
+  ['DD(h) forced route, live re-exec lock owner', 'reexec', { HUNTERCARD_FORCE_ISOLATED: '1' }],
+]) {
+  const sandbox = makeSandbox();
+  const isoDir = path.join(sandbox.dir, 'iso');
+  const liveLock = path.join(sandbox.dir, `scrape.lock.${suffix}`);
+  const owner = spawn('bash', ['-c', 'sleep 120; :', 'local-scrape-and-push.sh'], { stdio: 'ignore' });
+  try {
+    fs.mkdirSync(liveLock);
+    fs.writeFileSync(path.join(liveLock, 'pid'), `${owner.pid}\n`);
+    fs.writeFileSync(path.join(liveLock, 'start'), `${procStartTime(owner.pid)}\n`);
+    const snapshot = takeResidentSnapshot(sandbox);
+    const result = runSandbox(sandbox, extraEnv);
+    assertFailedClosedNoMutation(
+      route,
+      result,
+      new RegExp(`child lock \\S+scrape\\.lock\\.${suffix} is held by live pid ${owner.pid} \\(started [^)]+\\); refusing to start a second delegated run`),
+    );
+    assert.deepEqual(pipelineOwners(result.lines), [], `${route}: no runPipeline may run`);
+    assert.doesNotMatch(result.log, /✅ Done/, `${route}: must never report Done`);
+    assert.equal(someTraced(result.lines, 'git fetch'), false, `${route}: fails before fetching`);
+    assert.equal(someTraced(result.lines, 'git pull'), false, `${route}: never fast-forwards under a live child`);
+    assert.equal(someTraced(result.lines, 'git worktree'), false, `${route}: no worktree may be pruned, removed or added`);
+    assert.equal(fs.existsSync(isoDir), false, `${route}: no ephemeral worktree is created`);
+    assert.equal(fs.readFileSync(path.join(liveLock, 'pid'), 'utf-8'), `${owner.pid}\n`, `${route}: a live owner's lock must not be removed`);
+    assert.equal(fs.existsSync(path.join(sandbox.dir, 'scrape.lock')), false, `${route}: the primary lock is released`);
+    assertResidentUntouched(sandbox, snapshot);
+  } finally {
+    owner.kill('SIGKILL');
+    cleanup(sandbox);
+  }
+}
+
+// DD(d): a delegated child that collides with its lock fails closed (exit 1,
+// FAILED) instead of the top-level "already running" exit 0 — for both the
+// stage-2 and the in-place re-exec roles — and never removes the lock.
+for (const [route, env, roleRe] of [
+  ['DD(d) stage-2 lock collision', { HUNTERCARD_FORCE_ISOLATED_STAGE2: '1' }, /stage 2 lock \S+ already exists \(owner pid unrecorded\); a delegated child never skips/],
+  ['DD(d) re-exec lock collision', { HUNTERCARD_SELF_REEXEC: '1' }, /re-executed run lock \S+ already exists \(owner pid unrecorded\); a delegated child never skips/],
+]) {
+  const sandbox = makeSandbox();
+  const lock = path.join(sandbox.dir, 'child.lock');
+  try {
+    fs.mkdirSync(lock);
+    const result = runSandbox(sandbox, { ...env, HUNTERCARD_LOCK_FILE: lock });
+    assertFailedClosedNoMutation(route, result, roleRe);
+    assert.doesNotMatch(result.log, /already running, skipping/, `${route}: a child never takes the skip path`);
+    assert.equal(someTraced(result.lines, 'git fetch'), false, `${route}: fails before any other work`);
+    assert.equal(fs.existsSync(lock), true, `${route}: a colliding child must not remove a lock it does not own`);
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// DD(e): a child that exits 0 WITHOUT doing its work (the exact shape of the
+// old "already running" skip, or any premature success) must not be taken
+// as a completed run by its parent — stage 1 on the forced route, and the
+// in-place parent after a fast-forward re-exec.
+function scriptWithInjectedLine(afterAnchor, line) {
+  const src = fs.readFileSync(REAL_PIPELINE, 'utf-8');
+  assert.ok(src.includes(afterAnchor), `harness: anchor must exist: ${afterAnchor}`);
+  return src.replace(afterAnchor, `${afterAnchor}\n${line}`);
+}
+function advanceRemoteWith(sandbox, tag, content) {
+  const other = path.join(sandbox.dir, `other-dd-${tag}`);
+  execSync(`${REAL_GIT} clone -q ${sandbox.remote} ${other}`);
+  fs.writeFileSync(path.join(other, 'scripts', 'local-scrape-and-push.sh'), content);
+  execSync(`${REAL_GIT} add scripts/local-scrape-and-push.sh`, { cwd: other });
+  execSync(`${REAL_GIT} -c user.email=o@example.com -c user.name=o -c commit.gpgsign=false commit -q -m "remote dd ${tag}"`, { cwd: other });
+  execSync(`${REAL_GIT} push -q origin main`, { cwd: other });
+}
+for (const [route, extraEnv, anchor, failRe] of [
+  [
+    'DD(e) forced stage 2 exits 0 without a receipt',
+    { HUNTERCARD_FORCE_ISOLATED: '1' },
+    'if [ "${HUNTERCARD_FORCE_ISOLATED_STAGE2:-}" = "1" ]; then',
+    /forced-isolated stage 2 exited 0 without this run's completion receipt[^\n]*; never Done on a bare exit status \(cron fails\)/,
+  ],
+  [
+    'DD(e) in-place re-exec exits 0 without a receipt',
+    {},
+    '# In-place clean path.',
+    /re-executed origin\/main script exited 0 without this run's completion receipt; never Done on a bare exit status \(cron fails\)/,
+  ],
+]) {
+  const sandbox = makeSandbox();
+  const isoDir = path.join(sandbox.dir, 'iso');
+  try {
+    const premature = anchor.startsWith('#')
+      ? '[ "${HUNTERCARD_SELF_REEXEC:-}" = "1" ] && exit 0'
+      : '  exit 0';
+    advanceRemoteWith(sandbox, 'premature', scriptWithInjectedLine(anchor, premature));
+    const snapshot = takeResidentSnapshot(sandbox);
+    const { status, lines, log } = runSandbox(sandbox, extraEnv);
+    assert.equal(status, 1, `${route}: must fail; got ${status}\n${log}`);
+    assert.match(log, failRe, `${route}: exact receipt failure`);
+    assert.match(log, /HUNTERCARD_SCRAPE_STATUS=FAILED/, `${route}: cron must observe FAILED`);
+    assert.doesNotMatch(log, /✅ Done/, `${route}: must never report Done`);
+    assert.equal(someTraced(lines, 'build-database.js'), false, `${route}: sanity — the child did no work`);
+    assert.equal(someTraced(lines, 'push origin'), false, `${route}: nothing was pushed`);
+    assert.equal(fs.existsSync(isoDir), false, `${route}: no ephemeral worktree remains`);
+    if (!anchor.startsWith('#')) assertResidentUntouched(sandbox, snapshot);
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// ─── Case EE (DIC-1167, QA 7f47b457): the DEPLOYED entry point. The cron ran
+// `bash <resident>/scripts/local-scrape-and-push.sh`, so stage 1 was always
+// the stale, locally modified resident copy and origin's fixes (e.g. the
+// CR 4d3610a7 child-lock preflight) were never the scheduled artifact.
+// scripts/scheduler-launch.sh, installed OUTSIDE the resident, must run
+// origin/main's committed script for BOTH stages — from a fresh bootstrap
+// worktree, forced-isolated, resident untouched — end to end with the real
+// scheduler. Every process of a marked script traces SCRIPT_FROM <label>, so
+// a single resident-parsed stage is visible.
+{
+  const sandbox = makeSandbox();
+  const isoDir = path.join(sandbox.dir, 'iso');
+  const stagesMarked = (label) => {
+    const src = markedScript(label);
+    assert.ok(src.includes('\nset -e\n'), 'harness: set -e anchor must exist in the real script');
+    return src.replace('\nset -e\n', `\nset -e\necho "SCRIPT_FROM ${label}" >> "$TRACE_FILE"\n`);
+  };
+  try {
+    fs.copyFileSync(path.join(__dirname, 'scheduler-launch.sh'), path.join(sandbox.repo, 'scripts', 'scheduler-launch.sh'));
+    fs.writeFileSync(residentScriptPath(sandbox), stagesMarked('STALE'));
+    execSync(`${REAL_GIT} add scripts`, { cwd: sandbox.repo });
+    execSync(`${REAL_GIT} -c commit.gpgsign=false commit -q -m "launcher + stale script"`, { cwd: sandbox.repo });
+    execSync(`${REAL_GIT} push -q origin main`, { cwd: sandbox.repo });
+    advanceRemoteWith(sandbox, 'ee', stagesMarked('ORIGIN'));
+    const originHead = execSync(`${REAL_GIT} ls-remote ${sandbox.remote} refs/heads/main`, { encoding: 'utf-8' }).split('\t')[0];
+    // The resident is behind origin AND carries a locally modified script.
+    fs.writeFileSync(residentScriptPath(sandbox), stagesMarked('RESIDENT'));
+    const installed = path.join(sandbox.dir, 'installed-launcher.sh');
+    fs.copyFileSync(path.join(__dirname, 'scheduler-launch.sh'), installed);
+    const snapshot = takeResidentSnapshot(sandbox);
+    const { status, lines, log } = runSandbox(sandbox, { HUNTERCARD_RESIDENT_DIR: sandbox.repo }, installed);
+    assert.equal(status, 0, `EE: launcher → origin scheduler must complete; got ${status}\n${log}`);
+    const stages = lines.filter((l) => l.startsWith('SCRIPT_FROM ')).map((l) => l.slice('SCRIPT_FROM '.length));
+    assert.deepEqual(stages, ['ORIGIN', 'ORIGIN'], `EE: stage 1 AND stage 2 must both be origin's committed script\n${lines.join('\n')}`);
+    assert.deepEqual(pipelineOwners(lines), ['ORIGIN'], 'EE: exactly origin\'s runPipeline runs');
+    assert.match(log, new RegExp(`origin/main ${originHead}`), 'EE: launcher logs the origin SHA it runs');
+    assert.match(log, /⚙️ HUNTERCARD_FORCE_ISOLATED=1/, 'EE: the bootstrap takes the forced-isolated route');
+    assert.doesNotMatch(log, /resident script .* differs from origin\/main/, 'EE: stage 1 is no longer the resident copy');
+    assert.ok(pipelineOwnersOrBuild(lines, isoDir), 'EE: the build runs inside the ephemeral worktree');
+    assert.match(log, /✅ Done \(forced-isolated bootstrap\)/);
+    assert.match(log, /launcher: scheduler exited 0/);
+    assert.ok(someTraced(lines, 'HEAD:refs/heads/bot/scrape/'), 'EE: handoff goes to bot/scrape/<date>');
+    assert.equal(someTraced(lines, 'HEAD:main'), false, 'EE: never pushes HEAD:main');
+    assert.equal(fs.readFileSync(residentScriptPath(sandbox), 'utf-8'), stagesMarked('RESIDENT'), 'EE: resident script untouched');
+    assertResidentUntouched(sandbox, snapshot);
+    const bootParent = path.join(sandbox.dir, '.hermes', 'scheduler');
+    assert.deepEqual(fs.existsSync(bootParent) ? fs.readdirSync(bootParent) : [], [], 'EE: bootstrap removed');
+    assert.equal(fs.existsSync(isoDir), false, 'EE: ephemeral worktree removed');
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+console.log('DIC-1219/DIC-1321/DIC-1334/DIC-1472(+CR-P1 alias/removal/post-link + resident fingerprint)/DIC-1167(CR 028f6a19 clean-path ff/ahead/push + fetch freshness; 09-30 origin-only orchestration W–AA; CR bced44d5 stage-2 attestation + freshness BB–CC; CR 504e8fb5 missing fetch refspec + ref override CC-norefspec/CC-override; CR cb2b3b13 child lock + receipt DD; pid-reuse owner identity DD(c/f/g); CR 4d3610a7 live child lock before any work DD(c/h); QA 7f47b457 deployed launcher runs origin for both stages EE) scheduler dirty-precondition + coverage-gate + no-op + parity + isolated-deps regression checks passed');
