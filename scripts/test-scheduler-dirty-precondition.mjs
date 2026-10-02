@@ -1823,4 +1823,57 @@ for (const [route, extraEnv, anchor, failRe] of [
   }
 }
 
-console.log('DIC-1219/DIC-1321/DIC-1334/DIC-1472(+CR-P1 alias/removal/post-link + resident fingerprint)/DIC-1167(CR 028f6a19 clean-path ff/ahead/push + fetch freshness; 09-30 origin-only orchestration W–AA; CR bced44d5 stage-2 attestation + freshness BB–CC; CR cb2b3b13 child lock + receipt DD; pid-reuse owner identity DD(c/f/g); CR 4d3610a7 live child lock before any work DD(c/h)) scheduler dirty-precondition + coverage-gate + no-op + parity + isolated-deps regression checks passed');
+// ─── Case EE (DIC-1167, QA 7f47b457): the DEPLOYED entry point. The cron ran
+// `bash <resident>/scripts/local-scrape-and-push.sh`, so stage 1 was always
+// the stale, locally modified resident copy and origin's fixes (e.g. the
+// CR 4d3610a7 child-lock preflight) were never the scheduled artifact.
+// scripts/scheduler-launch.sh, installed OUTSIDE the resident, must run
+// origin/main's committed script for BOTH stages — from a fresh bootstrap
+// worktree, forced-isolated, resident untouched — end to end with the real
+// scheduler. Every process of a marked script traces SCRIPT_FROM <label>, so
+// a single resident-parsed stage is visible.
+{
+  const sandbox = makeSandbox();
+  const isoDir = path.join(sandbox.dir, 'iso');
+  const stagesMarked = (label) => {
+    const src = markedScript(label);
+    assert.ok(src.includes('\nset -e\n'), 'harness: set -e anchor must exist in the real script');
+    return src.replace('\nset -e\n', `\nset -e\necho "SCRIPT_FROM ${label}" >> "$TRACE_FILE"\n`);
+  };
+  try {
+    fs.copyFileSync(path.join(__dirname, 'scheduler-launch.sh'), path.join(sandbox.repo, 'scripts', 'scheduler-launch.sh'));
+    fs.writeFileSync(residentScriptPath(sandbox), stagesMarked('STALE'));
+    execSync(`${REAL_GIT} add scripts`, { cwd: sandbox.repo });
+    execSync(`${REAL_GIT} -c commit.gpgsign=false commit -q -m "launcher + stale script"`, { cwd: sandbox.repo });
+    execSync(`${REAL_GIT} push -q origin main`, { cwd: sandbox.repo });
+    advanceRemoteWith(sandbox, 'ee', stagesMarked('ORIGIN'));
+    const originHead = execSync(`${REAL_GIT} ls-remote ${sandbox.remote} refs/heads/main`, { encoding: 'utf-8' }).split('\t')[0];
+    // The resident is behind origin AND carries a locally modified script.
+    fs.writeFileSync(residentScriptPath(sandbox), stagesMarked('RESIDENT'));
+    const installed = path.join(sandbox.dir, 'installed-launcher.sh');
+    fs.copyFileSync(path.join(__dirname, 'scheduler-launch.sh'), installed);
+    const snapshot = takeResidentSnapshot(sandbox);
+    const { status, lines, log } = runSandbox(sandbox, { HUNTERCARD_RESIDENT_DIR: sandbox.repo }, installed);
+    assert.equal(status, 0, `EE: launcher → origin scheduler must complete; got ${status}\n${log}`);
+    const stages = lines.filter((l) => l.startsWith('SCRIPT_FROM ')).map((l) => l.slice('SCRIPT_FROM '.length));
+    assert.deepEqual(stages, ['ORIGIN', 'ORIGIN'], `EE: stage 1 AND stage 2 must both be origin's committed script\n${lines.join('\n')}`);
+    assert.deepEqual(pipelineOwners(lines), ['ORIGIN'], 'EE: exactly origin\'s runPipeline runs');
+    assert.match(log, new RegExp(`origin/main ${originHead}`), 'EE: launcher logs the origin SHA it runs');
+    assert.match(log, /⚙️ HUNTERCARD_FORCE_ISOLATED=1/, 'EE: the bootstrap takes the forced-isolated route');
+    assert.doesNotMatch(log, /resident script .* differs from origin\/main/, 'EE: stage 1 is no longer the resident copy');
+    assert.ok(pipelineOwnersOrBuild(lines, isoDir), 'EE: the build runs inside the ephemeral worktree');
+    assert.match(log, /✅ Done \(forced-isolated bootstrap\)/);
+    assert.match(log, /launcher: scheduler exited 0/);
+    assert.ok(someTraced(lines, 'HEAD:refs/heads/bot/scrape/'), 'EE: handoff goes to bot/scrape/<date>');
+    assert.equal(someTraced(lines, 'HEAD:main'), false, 'EE: never pushes HEAD:main');
+    assert.equal(fs.readFileSync(residentScriptPath(sandbox), 'utf-8'), stagesMarked('RESIDENT'), 'EE: resident script untouched');
+    assertResidentUntouched(sandbox, snapshot);
+    const bootParent = path.join(sandbox.dir, '.hermes', 'scheduler');
+    assert.deepEqual(fs.existsSync(bootParent) ? fs.readdirSync(bootParent) : [], [], 'EE: bootstrap removed');
+    assert.equal(fs.existsSync(isoDir), false, 'EE: ephemeral worktree removed');
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+console.log('DIC-1219/DIC-1321/DIC-1334/DIC-1472(+CR-P1 alias/removal/post-link + resident fingerprint)/DIC-1167(CR 028f6a19 clean-path ff/ahead/push + fetch freshness; 09-30 origin-only orchestration W–AA; CR bced44d5 stage-2 attestation + freshness BB–CC; CR cb2b3b13 child lock + receipt DD; pid-reuse owner identity DD(c/f/g); CR 4d3610a7 live child lock before any work DD(c/h); QA 7f47b457 deployed launcher runs origin for both stages EE) scheduler dirty-precondition + coverage-gate + no-op + parity + isolated-deps regression checks passed');
