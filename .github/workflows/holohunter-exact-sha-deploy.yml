@@ -545,8 +545,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Why this step is last and authoritative
-          # ---------------------------------------
+          # Why this step is authoritative
+          # -----------------------------
           # Everything above proves "a deployment built the right SHA" and
           # "the canonical host answers 200". Neither ties the bytes users
           # receive to THIS run. The deployment payload's `alias` array is a
@@ -563,6 +563,10 @@ jobs:
           # `deployment.id`. It is read-only by construction: the alias WRITE
           # paths are POST /v2/deployments/{id}/aliases and
           # DELETE /v2/aliases/{aliasId}, and this workflow calls neither.
+          #
+          # This proof is a point in time. The recognition probe below runs
+          # after it, so the final step of the job re-reads the same record
+          # and fails closed if the alias moved during that window.
 
           MAX_ATTEMPTS=20
           SLEEP_SECONDS=15
@@ -678,8 +682,13 @@ jobs:
           # earlier would grade the PREVIOUS deployment.
           #
           # It can only turn a success into a failure, never the reverse: the
-          # alias-binding step above remains the sole Production linkage
-          # authority, and this step holds no secret and creates nothing.
+          # alias record remains the sole Production linkage authority, and
+          # this step holds no secret and creates nothing. Because the probe
+          # window spans up to MAX_ATTEMPTS x SLEEP_SECONDS, a concurrent
+          # deploy could move the alias while it runs, and a provisioned
+          # FOREIGN deployment would answer this probe exactly as ours would.
+          # So this step's success is not the run's success: the next (final)
+          # step re-proves the alias binding after the probe.
           #
           # The probe is free by construction. api/recognize-card.ts checks the
           # provider BEFORE the legibility floor, so a valid PNG below 320px is
@@ -726,7 +735,7 @@ jobs:
 
             case "$rc" in
               0)
-                echo "Production recognition is provisioned on the deployment this run placed (${EXPECTED_SHA})."
+                echo "Production recognition probe passed at the canonical host (${EXPECTED_SHA}); the alias binding is re-proven next."
                 exit 0
                 ;;
               2)
@@ -749,4 +758,93 @@ jobs:
           done
 
           echo "::error::Production recognition availability was never proven within the window; refusing to report a Production deploy whose scanner state is unknown."
+          exit 1
+
+      - name: Re-prove the canonical alias is still bound to THIS deployment after the recognition probe
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          set -euo pipefail
+
+          # Why this step exists, and why it is last
+          # ----------------------------------------
+          # The alias binding was proven BEFORE the recognition probe, and the
+          # probe then ran against https://${CANONICAL_HOST} for up to
+          # MAX_ATTEMPTS x SLEEP_SECONDS of its own. A concurrent Vercel/Git
+          # deployment or a manual promotion can move the alias inside that
+          # window; if the deployment it lands on is also provisioned, the
+          # probe passes against somebody else's commit and the run would
+          # report a false exact-SHA Production proof (CR ffba1e2b). So the
+          # last word goes back to the alias record, read again after the
+          # probe, through the same read-only endpoint and the same committed
+          # validator as the binding step above.
+          #
+          # The binding was already proven once, so this read is NOT a
+          # propagation wait. Validator status 2 (well-formed, naming another
+          # deployment) means the alias moved during the probe window: that
+          # is fatal here, never retried — waiting for it to come back would
+          # still leave the probe graded against an unknown deployment. Only
+          # an unreadable record (network, 404, 429, 5xx) is retried, and only
+          # within a short bounded window that ends in a hard failure.
+          #
+          # Residual: two reads bracket the probe, so an alias that leaves and
+          # returns entirely between them is not observable from the alias
+          # side. That needs a concurrent deploy AND a second move back to
+          # this run's deployment inside the probe window.
+          MAX_ATTEMPTS=5
+          SLEEP_SECONDS=10
+          attempt=0
+
+          while [ "$attempt" -lt "$MAX_ATTEMPTS" ]; do
+            attempt=$((attempt + 1))
+
+            # `|| true`, not `|| echo "000"`: curl already prints 000 through
+            # -w when the connection itself fails.
+            code=$(bash scripts/ci/vercel-curl.sh -sS -o /tmp/alias-recheck.json -w '%{http_code}' \
+              "https://api.vercel.com/v4/aliases/${CANONICAL_HOST}?teamId=${VERCEL_ORG_ID}" || true)
+
+            # The alias response body is never printed (see the binding step).
+            case "$code" in
+              200)
+                ;;
+              400|401|403|410)
+                echo "::error::Alias API returned HTTP ${code} for the canonical host on the post-probe recheck."
+                exit 1
+                ;;
+              *)
+                status=$(printf '%s' "$code" | grep -Eo '^[0-9]{3}$' || echo "unreadable")
+                echo "attempt ${attempt}/${MAX_ATTEMPTS}: alias record not readable on the post-probe recheck (HTTP ${status})."
+                sleep "$SLEEP_SECONDS"
+                continue
+                ;;
+            esac
+
+            set +e
+            node scripts/ci/verify-alias-binding.mjs \
+              /tmp/alias-recheck.json "$CANONICAL_HOST" "$DEPLOYMENT_ID"
+            rc=$?
+            set -e
+
+            case "$rc" in
+              0)
+                echo "Production linkage re-proven after the recognition probe: the canonical host still resolves to the deployment this run created (${EXPECTED_SHA})."
+                exit 0
+                ;;
+              2)
+                echo "::error::The canonical alias moved off the deployment this run created during the recognition probe window; the probe may have graded another deployment, so refusing to report an exact-SHA Production deploy."
+                exit 1
+                ;;
+              1)
+                echo "::error::The canonical alias record is unusable on the post-probe recheck; aborting without retrying."
+                exit 1
+                ;;
+              *)
+                echo "::error::Alias binding validator returned unexpected status ${rc} on the post-probe recheck; failing closed."
+                exit 1
+                ;;
+            esac
+          done
+
+          echo "::error::The canonical alias record could not be re-read after the recognition probe; refusing to report a Production deploy whose linkage is no longer proven."
           exit 1

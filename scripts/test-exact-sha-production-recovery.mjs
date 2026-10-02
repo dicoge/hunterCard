@@ -59,6 +59,7 @@
 
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
@@ -736,9 +737,9 @@ if (dep) {
   );
   const vercelCalls = activeRuns.split('\n').filter((line) => /\bcurl\b|vercel-curl\.sh/.test(line));
   check(
-    'every Vercel API call goes through scripts/ci/vercel-curl.sh (six calls)',
-    countMatches(activeRuns, /bash scripts\/ci\/vercel-curl\.sh /g) === 6
-      && countMatches(activeRuns, /api\.vercel\.com/g) === 6,
+    'every Vercel API call goes through scripts/ci/vercel-curl.sh (seven calls: six plus the post-probe alias re-proof)',
+    countMatches(activeRuns, /bash scripts\/ci\/vercel-curl\.sh /g) === 7
+      && countMatches(activeRuns, /api\.vercel\.com/g) === 7,
     `wrapper=${countMatches(activeRuns, /bash scripts\/ci\/vercel-curl\.sh /g)} `
       + `api=${countMatches(activeRuns, /api\.vercel\.com/g)}`,
   );
@@ -752,7 +753,7 @@ if (dep) {
   const wrapperSteps = (job?.steps ?? []).filter((s) => /vercel-curl\.sh/.test(s?.run ?? ''));
   check(
     'every step that calls the wrapper receives VERCEL_TOKEN via step env only',
-    wrapperSteps.length === 6
+    wrapperSteps.length === 7
       && wrapperSteps.every((s) => s?.env?.VERCEL_TOKEN === '${{ secrets.VERCEL_TOKEN }}'),
     `got ${wrapperSteps.length} steps`,
   );
@@ -978,21 +979,29 @@ if (dep) {
     armUnknown !== null && /exit 1/.test(armUnknown),
     `*) arm: ${JSON.stringify(armUnknown)}`,
   );
-  // The recognition smoke (DIC-P0 hBP09) is the ONLY step allowed after the
-  // alias proof, because it grades what users now actually receive — running
-  // it earlier would grade the PREVIOUS deployment. It can only turn a
-  // success into a failure, never the reverse: the alias-binding step stays
-  // the sole Production linkage authority, and the smoke holds no secret and
-  // creates nothing. Its own wiring is asserted in the section below.
+  // The recognition smoke (DIC-P0 hBP09) runs after the alias proof, because
+  // it grades what users now actually receive — running it earlier would
+  // grade the PREVIOUS deployment. Its probe window is long enough for a
+  // concurrent deploy to move the alias, and a provisioned foreign deployment
+  // answers the probe exactly as ours would (CR ffba1e2b). So the alias
+  // record is re-read AFTER the smoke, as the job's final step, and only that
+  // re-proof may end the run green. Wiring of both is asserted below.
   const recogSmokeIdx = stepIndex(/verify-recognition-availability\.mjs/);
+  const aliasRecheckIdx = depSteps.findLastIndex((s) => /\/v4\/aliases\//.test(stepRun(s)));
   check(
-    'alias-binding check runs AFTER the HTTP 200 probe; only the recognition smoke follows it',
+    'alias-binding check runs AFTER the HTTP 200 probe; then the recognition smoke; then the alias re-proof, last',
     httpProbeIdx >= 0
       && aliasBindIdx > httpProbeIdx
-      && aliasBindIdx === depSteps.length - 2
-      && recogSmokeIdx === depSteps.length - 1,
+      && aliasBindIdx === depSteps.length - 3
+      && recogSmokeIdx === depSteps.length - 2
+      && aliasRecheckIdx === depSteps.length - 1,
     `http probe at step ${httpProbeIdx}, alias binding at ${aliasBindIdx}, `
-      + `recognition smoke at ${recogSmokeIdx} of ${depSteps.length}`,
+      + `recognition smoke at ${recogSmokeIdx}, alias re-proof at ${aliasRecheckIdx} of ${depSteps.length}`,
+  );
+  check(
+    'exactly two steps read the alias record: the binding proof and the post-probe re-proof',
+    depSteps.filter((s) => /\/v4\/aliases\//.test(stepRun(s))).length === 2,
+    'a third alias read would be an unreviewed linkage decision',
   );
   check(
     'HTTP 200 probe does not `exit 0` early (that would skip the binding check)',
@@ -1172,6 +1181,139 @@ if (dep) {
     !/upload-artifact/.test(dep.active),
     'an artifact is just a slower way of publishing the same remote bytes',
   );
+
+  // ── Post-probe alias re-proof: the run's terminal linkage authority ──
+  //
+  // CR ffba1e2b: the binding step proved the alias BEFORE the recognition
+  // probe, which then hit the canonical host for up to 10 x 15s. Another
+  // deploy moving the alias in that window, onto a provisioned deployment,
+  // would have produced a green exact-SHA Production proof for a commit this
+  // run did not place. The final step re-reads the alias record through the
+  // same endpoint and committed validator; because the binding was already
+  // proven, "bound elsewhere" now means "moved during the probe" and is fatal,
+  // never a propagation wait.
+  const recheckStep = aliasRecheckIdx >= 0 && aliasRecheckIdx !== aliasBindIdx
+    ? stepRun(depSteps[aliasRecheckIdx]) : '';
+  check(
+    'post-probe alias re-proof reads the alias side at the exact documented endpoint',
+    /https:\/\/api\.vercel\.com\/v4\/aliases\/\$\{CANONICAL_HOST\}\?teamId=\$\{VERCEL_ORG_ID\}/.test(recheckStep),
+    'the re-proof must read the same alias record the binding step proved',
+  );
+  check(
+    'post-probe alias re-proof invokes the committed validator with the host and runtime DEPLOYMENT_ID',
+    /node\s+scripts\/ci\/verify-alias-binding\.mjs/.test(recheckStep)
+      && /"\$CANONICAL_HOST"/.test(recheckStep)
+      && /"\$DEPLOYMENT_ID"/.test(recheckStep)
+      && !/node\s+-e/.test(recheckStep),
+    'an inline copy of the decision cannot be executed by the validator suite',
+  );
+  check(
+    'post-probe alias re-proof authenticates only through the argv-safe wrapper',
+    /bash\s+scripts\/ci\/vercel-curl\.sh/.test(recheckStep) && !/--oauth2-bearer/.test(recheckStep),
+    'the token must not appear in curl argv',
+  );
+  check(
+    'post-probe alias re-proof never prints the alias response body',
+    recheckStep.length > 0 && rawBodyPrintOffenders(recheckStep).length === 0,
+    `offending shapes: ${rawBodyPrintOffenders(recheckStep).join(', ')}`,
+  );
+  const recheckRcCase = (/case\s+"\$rc"\s+in\n([\s\S]*?)\n\s*esac/.exec(recheckStep) ?? [])[1] ?? '';
+  const recheckArm = (label) => {
+    const m = new RegExp(`\\n?\\s*${label}\\)\\n([\\s\\S]*?);;`).exec(recheckRcCase);
+    return m ? m[1] : null;
+  };
+  check(
+    're-proof success (0) is the only exit 0 and it comes from the validator',
+    /exit 0/.test(recheckArm('0') ?? '')
+      && countMatches(recheckStep, /\bexit\s+0\b/g) === 1,
+    `0) arm: ${JSON.stringify(recheckArm('0'))}`,
+  );
+  check(
+    're-proof "bound elsewhere" (2) is FATAL — the alias moved during the probe window',
+    /exit 1/.test(recheckArm('2') ?? ''),
+    `2) arm: ${JSON.stringify(recheckArm('2'))}`,
+  );
+  check(
+    're-proof fatal (1) and unexpected statuses fail closed',
+    /exit 1/.test(recheckArm('1') ?? '') && /exit 1/.test(recheckArm('\\*') ?? ''),
+  );
+  check(
+    're-proof is bounded and hard-fails when the record cannot be re-read',
+    /MAX_ATTEMPTS=\d+/.test(recheckStep)
+      && /could not be re-read[\s\S]*\n\s*exit 1\s*$/.test(recheckStep.trimEnd() + '\n'),
+  );
+
+  // Behaviour, not shape: EXECUTE the re-proof step's own script against a
+  // stubbed alias API. The stub replaces scripts/ci/vercel-curl.sh (it serves
+  // one scripted response per call and counts the calls); the validator is the
+  // committed module, copied in unmodified.
+  if (recheckStep.length > 0) {
+    const ours = 'dpl_ours';
+    const record = (id) => JSON.stringify({ alias: CANONICAL_HOST, deploymentId: id, deployment: { id } });
+    const runRecheck = (responses) => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'alias-recheck-'));
+      try {
+        fs.mkdirSync(path.join(dir, 'scripts', 'ci'), { recursive: true });
+        fs.copyFileSync(ALIAS_HELPER_PATH, path.join(dir, 'scripts', 'ci', 'verify-alias-binding.mjs'));
+        responses.forEach(([code, body], i) => {
+          fs.writeFileSync(path.join(dir, `resp-${i + 1}.code`), code);
+          fs.writeFileSync(path.join(dir, `resp-${i + 1}.json`), body ?? '');
+        });
+        fs.writeFileSync(path.join(dir, 'scripts', 'ci', 'vercel-curl.sh'), [
+          'set -euo pipefail',
+          `d=${JSON.stringify(dir)}`,
+          'n=$(( $(cat "$d/calls" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$d/calls"',
+          'out=""; while [ $# -gt 0 ]; do [ "$1" = "-o" ] && out="$2"; shift; done',
+          '[ -f "$d/resp-$n.code" ] || { printf 000; exit 7; }',
+          'cp "$d/resp-$n.json" "$out"; cat "$d/resp-$n.code"',
+          '',
+        ].join('\n'));
+        const script = recheckStep
+          .replace(/SLEEP_SECONDS=\d+/, 'SLEEP_SECONDS=0')
+          .replaceAll('/tmp/alias-recheck.json', path.join(dir, 'alias-recheck.json'));
+        const res = spawnSync('bash', ['-c', script], {
+          cwd: dir,
+          encoding: 'utf8',
+          env: {
+            PATH: process.env.PATH,
+            CANONICAL_HOST,
+            DEPLOYMENT_ID: ours,
+            EXPECTED_SHA: 'a'.repeat(40),
+            VERCEL_ORG_ID: 'team_sample',
+            VERCEL_TOKEN: 'tok_sample',
+          },
+        });
+        const calls = Number(fs.readFileSync(path.join(dir, 'calls'), 'utf8').trim() || 0);
+        return { status: res.status, calls, out: `${res.stdout}${res.stderr}` };
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    };
+    const scenarios = [
+      { name: 'still bound to this run → exit 0', responses: [['200', record(ours)]], status: 0, calls: 1 },
+      { name: 'moved to another deployment → exit 1 on the FIRST read (no retry)', responses: [['200', record('dpl_foreign')]], status: 1, calls: 1 },
+      { name: 'moved away then back → still exit 1 (a retrying arm would pass here)', responses: [['200', record('dpl_foreign')], ['200', record(ours)]], status: 1, calls: 1 },
+      { name: 'transient 404 then bound → exit 0 after one retry', responses: [['404', ''], ['200', record(ours)]], status: 0, calls: 2 },
+      { name: 'never readable → exit 1 after the bounded window', responses: [], status: 1, calls: Number(/MAX_ATTEMPTS=(\d+)/.exec(recheckStep)?.[1] ?? -1) },
+      { name: 'explicit 403 → exit 1 immediately', responses: [['403', '{}']], status: 1, calls: 1 },
+      { name: 'malformed record → exit 1 immediately', responses: [['200', 'not json']], status: 1, calls: 1 },
+      { name: 'nested id contradicting the top-level id → exit 1', responses: [['200', JSON.stringify({ deploymentId: ours, deployment: { id: 'dpl_foreign' } })]], status: 1, calls: 1 },
+    ];
+    for (const sc of scenarios) {
+      const r = runRecheck(sc.responses);
+      check(
+        `executed post-probe alias re-proof: ${sc.name}`,
+        r.status === sc.status && r.calls === sc.calls,
+        `exit ${r.status} after ${r.calls} call(s); expected exit ${sc.status} after ${sc.calls}`,
+      );
+    }
+    const leak = runRecheck([['200', JSON.stringify({ deploymentId: 'dpl_\u001b[2J::error::INJECTED', deployment: { id: 'dpl_\u001b[2J::error::INJECTED' } })]]);
+    check(
+      'executed post-probe alias re-proof prints no byte of a hostile alias record',
+      leak.status === 1 && !leak.out.includes('INJECTED') && !leak.out.includes('\u001b'),
+      `exit ${leak.status}`,
+    );
+  }
 
   // Shell diagnostics: every variable an `echo` puts in the log must be a
   // workflow constant, a bounded counter, or a value proven safe upstream.

@@ -2,7 +2,7 @@
 /**
  * DIC-1430 — canonical alias binding validator.
  *
- * This is the PRODUCTION decision procedure for the last authoritative step of
+ * This is the PRODUCTION decision procedure for the two alias-record steps of
  * `.github/workflows/holohunter-exact-sha-deploy.yml`: given the body of a
  * `GET /v4/aliases/{idOrAlias}` 200 response, decide whether the canonical host
  * is bound to the deployment THIS run created.

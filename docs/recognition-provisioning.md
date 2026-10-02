@@ -39,7 +39,9 @@ does the rest on every run:
    entry exists — all before any deployment is created;
 3. only then does it create the Production deployment, and after the alias
    proof it re-verifies availability against the real
-   `/api/recognize-card` endpoint (the readback proof below).
+   `/api/recognize-card` endpoint (the readback proof below), then re-reads
+   the alias record and fails if the canonical host moved off this run's
+   deployment during that probe window.
 
 If an existing `GEMINI_API_KEY` entry targets Production **and** another
 environment (preview, development, a git branch, a custom environment), the
