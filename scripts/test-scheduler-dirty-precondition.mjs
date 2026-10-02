@@ -1228,7 +1228,7 @@ function assertCleanPathFailedClosed(route, result, reasonRe) {
     const newRemote = advanceRemote(sandbox, 'u');
     const { status, lines, log } = runSandbox(sandbox);
     assert.equal(status, 0, `U: dirty isolated handoff must complete; got ${status}\n${log}`);
-    const fetch = lines.findIndex((l) => l.includes('git fetch origin main'));
+    const fetch = lines.findIndex((l) => l.includes('git fetch --write-fetch-head origin +refs/heads/main:refs/remotes/origin/main'));
     const add = lines.findIndex((l) => l.includes(`git worktree add --detach ${isoDir} `));
     assert.ok(fetch !== -1 && add !== -1 && fetch < add, 'U: fetch must precede the isolated worktree creation');
     assert.ok(
@@ -1561,13 +1561,100 @@ for (const [route, extraEnv, residue] of [
       new RegExp(`${label} stage 2: worktree HEAD ${pinned} is not the freshly fetched origin/main ${advanced} \\(stage 1 pinned ${pinned}\\); refusing stale orchestration`),
     );
     assert.ok(someTraced(result.lines, `git worktree add --detach ${isoDir} ${pinned}`), `${route}: stage 1 pinned the pre-advance head`);
-    assert.equal(result.lines.filter((l) => l.startsWith('git fetch origin main')).length, 2, `${route}: both stages fetched`);
+    assert.equal(result.lines.filter((l) => l.startsWith('git fetch --write-fetch-head origin +refs/heads/main:refs/remotes/origin/main')).length, 2, `${route}: both stages fetched`);
     assert.deepEqual(pipelineOwners(result.lines), [], `${route}: no runPipeline may run`);
     assert.equal(someTraced(result.lines, 'bot/scrape/'), false, `${route}: no bot/scrape handoff`);
     assert.match(result.log, new RegExp(`${label} stage 2 failed — cron reports failure`), `${route}: stage 1 propagates the refusal`);
     assert.doesNotMatch(result.log, /✅ Done/, `${route}: must never report Done`);
     assertResidentUntouched(sandbox, snapshot);
     assert.equal(fs.existsSync(isoDir), false, `${route}: stage 1 removes the ephemeral worktree`);
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// ─── Case CC-norefspec (CR 504e8fb5): the same mid-run advance on a resident
+// whose remote.origin.fetch is MISSING. A plain `git fetch origin main` then
+// writes FETCH_HEAD only, the tracking ref keeps stage 1's commit, and stage 2
+// compared the pinned snapshot against that same stale value — it built and
+// handed off the stale snapshot. Every fetch must move the explicit tracking
+// ref, so stage 2 still sees the advance and refuses. Run with and without the
+// launcher's fully qualified HUNTERCARD_REMOTE_REF. ─────────────────────────
+for (const [route, extraEnv, residue] of [
+  ['CC-norefspec forced route (launcher ref)', { HUNTERCARD_FORCE_ISOLATED: '1', HUNTERCARD_REMOTE_REF: 'refs/remotes/origin/main' }, false],
+  ['CC-norefspec forced route (default ref)', { HUNTERCARD_FORCE_ISOLATED: '1' }, false],
+  ['CC-norefspec dirty route', {}, true],
+]) {
+  const sandbox = makeSandbox();
+  const isoDir = path.join(sandbox.dir, 'iso');
+  try {
+    if (residue) {
+      fs.writeFileSync(path.join(sandbox.repo, 'data', 'price-history', 'hCN-001_hFOO_C.json'), '{}');
+    }
+    execSync(`${REAL_GIT} config --unset-all remote.origin.fetch`, { cwd: sandbox.repo });
+    const pinned = execSync(`${REAL_GIT} rev-parse HEAD`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim();
+    const other = path.join(sandbox.dir, 'other-cn');
+    execSync(`${REAL_GIT} clone -q ${sandbox.remote} ${other}`);
+    fs.writeFileSync(path.join(other, 'remote-cn.txt'), 'cn\n');
+    execSync(`${REAL_GIT} add remote-cn.txt`, { cwd: other });
+    execSync(`${REAL_GIT} -c user.email=o@example.com -c user.name=o -c commit.gpgsign=false commit -q -m "remote cn"`, { cwd: other });
+    const advanced = execSync(`${REAL_GIT} rev-parse HEAD`, { cwd: other, encoding: 'utf-8' }).trim();
+    const hook = path.join(sandbox.dir, 'advance-hook.sh');
+    fs.writeFileSync(hook, `${REAL_GIT} -C ${other} push -q origin main\n`);
+    const snapshot = takeResidentSnapshot(sandbox);
+    const result = runSandbox(sandbox, {
+      ...extraEnv,
+      ADVANCE_ON_FETCH_N: '2',
+      ADVANCE_HOOK: hook,
+      FETCH_COUNT_FILE: path.join(sandbox.dir, 'fetch-count'),
+    });
+    const label = residue ? 'isolated' : 'forced-isolated';
+    assertFailedClosedNoMutation(
+      route,
+      result,
+      new RegExp(`${label} stage 2: worktree HEAD ${pinned} is not the freshly fetched origin/main ${advanced} \\(stage 1 pinned ${pinned}\\); refusing stale orchestration`),
+    );
+    assert.ok(someTraced(result.lines, `git worktree add --detach ${isoDir} ${pinned}`), `${route}: stage 1 pinned the pre-advance head`);
+    assert.equal(result.lines.filter((l) => l.startsWith('git fetch --write-fetch-head origin +refs/heads/main:refs/remotes/origin/main')).length, 2, `${route}: both stages fetched the explicit tracking ref`);
+    assert.deepEqual(pipelineOwners(result.lines), [], `${route}: no runPipeline may run`);
+    assert.equal(someTraced(result.lines, 'bot/scrape/'), false, `${route}: no bot/scrape handoff`);
+    assert.match(result.log, new RegExp(`${label} stage 2 failed — cron reports failure`), `${route}: stage 1 propagates the refusal`);
+    assert.doesNotMatch(result.log, /✅ Done/, `${route}: must never report Done`);
+    assert.equal(
+      execSync(`${REAL_GIT} rev-parse refs/remotes/origin/main`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim(),
+      advanced,
+      `${route}: the tracking ref moved to the advanced commit despite the missing refspec`,
+    );
+    assert.equal(
+      execSync(`${REAL_GIT} config --get-all remote.origin.fetch || true`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim(),
+      '',
+      `${route}: the resident's fetch config is left as found`,
+    );
+    assertResidentUntouched(sandbox, snapshot);
+    assert.equal(fs.existsSync(isoDir), false, `${route}: stage 1 removes the ephemeral worktree`);
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// ─── Case CC-override (CR 504e8fb5): the scheduler resolves only origin/main.
+// A HUNTERCARD_REMOTE_REF naming anything else (an older SHA, a tag) is
+// refused before any fetch, worktree or pipeline. ──────────────────────────
+for (const [route, ref] of [
+  ['CC-override stale sha', 'sha'],
+  ['CC-override tag', 'refs/tags/stale'],
+]) {
+  const sandbox = makeSandbox();
+  try {
+    const head = execSync(`${REAL_GIT} rev-parse HEAD`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim();
+    execSync(`${REAL_GIT} tag stale ${head}`, { cwd: sandbox.repo });
+    const snapshot = takeResidentSnapshot(sandbox);
+    const result = runSandbox(sandbox, { HUNTERCARD_FORCE_ISOLATED: '1', HUNTERCARD_REMOTE_REF: ref === 'sha' ? head : ref });
+    assertFailedClosedNoMutation(route, result, /HUNTERCARD_REMOTE_REF=\S+ is refused: the scheduler only runs the freshly fetched origin\/main/);
+    assert.equal(someTraced(result.lines, 'git fetch'), false, `${route}: refused before fetching`);
+    assert.equal(someTraced(result.lines, 'git worktree add'), false, `${route}: no worktree`);
+    assert.deepEqual(pipelineOwners(result.lines), [], `${route}: no runPipeline may run`);
+    assertResidentUntouched(sandbox, snapshot);
   } finally {
     cleanup(sandbox);
   }
@@ -1876,4 +1963,4 @@ for (const [route, extraEnv, anchor, failRe] of [
   }
 }
 
-console.log('DIC-1219/DIC-1321/DIC-1334/DIC-1472(+CR-P1 alias/removal/post-link + resident fingerprint)/DIC-1167(CR 028f6a19 clean-path ff/ahead/push + fetch freshness; 09-30 origin-only orchestration W–AA; CR bced44d5 stage-2 attestation + freshness BB–CC; CR cb2b3b13 child lock + receipt DD; pid-reuse owner identity DD(c/f/g); CR 4d3610a7 live child lock before any work DD(c/h); QA 7f47b457 deployed launcher runs origin for both stages EE) scheduler dirty-precondition + coverage-gate + no-op + parity + isolated-deps regression checks passed');
+console.log('DIC-1219/DIC-1321/DIC-1334/DIC-1472(+CR-P1 alias/removal/post-link + resident fingerprint)/DIC-1167(CR 028f6a19 clean-path ff/ahead/push + fetch freshness; 09-30 origin-only orchestration W–AA; CR bced44d5 stage-2 attestation + freshness BB–CC; CR 504e8fb5 missing fetch refspec + ref override CC-norefspec/CC-override; CR cb2b3b13 child lock + receipt DD; pid-reuse owner identity DD(c/f/g); CR 4d3610a7 live child lock before any work DD(c/h); QA 7f47b457 deployed launcher runs origin for both stages EE) scheduler dirty-precondition + coverage-gate + no-op + parity + isolated-deps regression checks passed');

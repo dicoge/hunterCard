@@ -353,7 +353,7 @@ exit 0
 {
   const { status, lines } = runPipeline();
   assert.strictEqual(status, 0, 'pipeline must succeed when every step succeeds');
-  const fetch = indexOfCall(lines, 'git fetch origin main');
+  const fetch = indexOfCall(lines, 'git fetch --write-fetch-head origin +refs/heads/main:refs/remotes/origin/main');
   const pull = indexOfCall(lines, 'git pull --ff-only origin main');
   const official = indexOfCall(lines, 'scrape-official-cards.js');
   assert.ok(fetch !== -1, 'pipeline must refresh origin/main before resolving the isolated-worktree baseline');
@@ -363,7 +363,7 @@ exit 0
     fetch < official && pull < official,
     'stale durable checkout convergence (fetch + pull) must happen before scrape-official-cards.js writes data/official artifacts',
   );
-  const revParse = indexOfCall(lines, 'git rev-parse --verify origin/main');
+  const revParse = indexOfCall(lines, 'git rev-parse --verify --quiet refs/remotes/origin/main^{commit}');
   assert.ok(revParse !== -1 && fetch < revParse, 'remote head must be resolved AFTER the refresh fetch');
 }
 
@@ -371,7 +371,7 @@ exit 0
 {
   const { status, lines } = runPipeline({ env: { FAIL_FETCH: '1' } });
   assert.notStrictEqual(status, 0, 'pipeline must exit non-zero when the pre-mutation origin/main refresh fails');
-  assert.ok(indexOfCall(lines, 'git fetch origin main') !== -1, 'sanity: pipeline must attempt the pre-mutation fetch');
+  assert.ok(indexOfCall(lines, 'git fetch --write-fetch-head origin +refs/heads/main:refs/remotes/origin/main') !== -1, 'sanity: pipeline must attempt the pre-mutation fetch');
   for (const forbidden of ['scrape-official-cards.js', 'git worktree add', 'git add', 'commit -m', 'git push']) {
     assert.strictEqual(
       indexOfCall(lines, forbidden),
@@ -385,7 +385,7 @@ exit 0
 {
   const { status, lines } = runPipeline({ env: { HUNTERCARD_FORCE_ISOLATED: '1' } });
   assert.strictEqual(status, 0, `forced-isolated bootstrap must succeed when every step succeeds\ntrace:\n${lines.join('\n')}`);
-  const fetch = indexOfCall(lines, 'git fetch origin main');
+  const fetch = indexOfCall(lines, 'git fetch --write-fetch-head origin +refs/heads/main:refs/remotes/origin/main');
   const worktreeAdd = indexOfCall(lines, 'git worktree add --detach');
   const official = indexOfCall(lines, 'scrape-official-cards.js');
   const handoffPush = lines.findIndex((l) => l.includes('git push origin HEAD:refs/heads/bot/scrape/'));
