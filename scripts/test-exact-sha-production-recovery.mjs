@@ -1237,6 +1237,13 @@ if (dep) {
     're-proof fatal (1) and unexpected statuses fail closed',
     /exit 1/.test(recheckArm('1') ?? '') && /exit 1/.test(recheckArm('\\*') ?? ''),
   );
+  const recheckCodeCase = (/case\s+"\$code"\s+in\n([\s\S]*?)\n\s*esac/.exec(recheckStep) ?? [])[1] ?? '';
+  const recheck404Arm = (/\n\s*404\)\n([\s\S]*?);;/.exec(recheckCodeCase) ?? [])[1];
+  check(
+    're-proof HTTP 404 is FATAL — the alias was proven bound, so not-found means it was removed (CR 53aa6513)',
+    recheck404Arm !== undefined && /exit 1/.test(recheck404Arm) && !/continue/.test(recheck404Arm),
+    `404) arm: ${JSON.stringify(recheck404Arm)}`,
+  );
   check(
     're-proof is bounded and hard-fails when the record cannot be re-read',
     /MAX_ATTEMPTS=\d+/.test(recheckStep)
@@ -1293,7 +1300,10 @@ if (dep) {
       { name: 'still bound to this run → exit 0', responses: [['200', record(ours)]], status: 0, calls: 1 },
       { name: 'moved to another deployment → exit 1 on the FIRST read (no retry)', responses: [['200', record('dpl_foreign')]], status: 1, calls: 1 },
       { name: 'moved away then back → still exit 1 (a retrying arm would pass here)', responses: [['200', record('dpl_foreign')], ['200', record(ours)]], status: 1, calls: 1 },
-      { name: 'transient 404 then bound → exit 0 after one retry', responses: [['404', ''], ['200', record(ours)]], status: 0, calls: 2 },
+      { name: '404 after the proven binding → exit 1 on the FIRST read (no retry)', responses: [['404', '']], status: 1, calls: 1 },
+      { name: '404 then rebound → still exit 1 (a retrying 404 arm would pass here)', responses: [['404', ''], ['200', record(ours)]], status: 1, calls: 1 },
+      { name: 'transient 503 then bound → exit 0 after one retry', responses: [['503', ''], ['200', record(ours)]], status: 0, calls: 2 },
+      { name: 'transient 429 then bound → exit 0 after one retry', responses: [['429', ''], ['200', record(ours)]], status: 0, calls: 2 },
       { name: 'never readable → exit 1 after the bounded window', responses: [], status: 1, calls: Number(/MAX_ATTEMPTS=(\d+)/.exec(recheckStep)?.[1] ?? -1) },
       { name: 'explicit 403 → exit 1 immediately', responses: [['403', '{}']], status: 1, calls: 1 },
       { name: 'malformed record → exit 1 immediately', responses: [['200', 'not json']], status: 1, calls: 1 },

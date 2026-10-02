@@ -784,9 +784,15 @@ jobs:
           # propagation wait. Validator status 2 (well-formed, naming another
           # deployment) means the alias moved during the probe window: that
           # is fatal here, never retried — waiting for it to come back would
-          # still leave the probe graded against an unknown deployment. Only
-          # an unreadable record (network, 404, 429, 5xx) is retried, and only
-          # within a short bounded window that ends in a hard failure.
+          # still leave the probe graded against an unknown deployment.
+          # HTTP 404 is fatal for the same reason: the binding step already
+          # read this record, so "alias not found" now means the alias was
+          # removed or unassigned after it was proven, not that it has yet to
+          # propagate — retrying would let a later rebind to this deployment
+          # turn an observed gap into a pass (CR 53aa6513). Only a record that
+          # is unreadable for reasons that say nothing about the binding
+          # (network, 429, 5xx) is retried, and only within a short bounded
+          # window that ends in a hard failure.
           #
           # Residual: two reads bracket the probe, so an alias that leaves and
           # returns entirely between them is not observable from the alias
@@ -807,6 +813,10 @@ jobs:
             # The alias response body is never printed (see the binding step).
             case "$code" in
               200)
+                ;;
+              404)
+                echo "::error::The canonical alias was not found on the post-probe recheck after it had been proven bound; it was removed during the recognition probe window, so refusing to report an exact-SHA Production deploy."
+                exit 1
                 ;;
               400|401|403|410)
                 echo "::error::Alias API returned HTTP ${code} for the canonical host on the post-probe recheck."
