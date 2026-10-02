@@ -2,14 +2,14 @@
   "cardId": "hBP02-072",
   "name": "魔法少女シオン",
   "nameZh": "魔法少女詩音",
-  "trend": "up",
-  "score": 0.63,
+  "trend": "stable",
+  "score": 0.03,
   "confidence": 0.7,
   "components": {
-    "priceTrend": 1,
+    "priceTrend": 0,
     "ytTrend": 0,
-    "newsSentiment": 0.14
+    "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-09-27T12:14:34.723Z",
-  "dataPoints": 70
+  "lastUpdated": "2026-10-02T12:09:08.316Z",
+  "dataPoints": 71
 }

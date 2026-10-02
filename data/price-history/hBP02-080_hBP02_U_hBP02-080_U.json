@@ -26,8 +26,16 @@
       "currency": "JPY",
       "cardId": "hBP02-080_hBP02_U_hBP02-080_U",
       "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-10-02",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-080_hBP02_U_hBP02-080_U",
+      "sourceProduct": "hBP02"
     }
   ],
-  "lastUpdated": "2026-09-27T12:14:25.871Z",
+  "lastUpdated": "2026-10-02T12:08:53.847Z",
   "nameZh": "秘密結社holoX"
 }

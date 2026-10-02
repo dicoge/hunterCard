@@ -10,8 +10,16 @@
       "currency": "JPY",
       "cardId": "hBP01-090_hEB01_SR_hBP01-090_SR_02",
       "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-02",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-090_hEB01_SR_hBP01-090_SR_02",
+      "sourceProduct": "hEB01"
     }
   ],
-  "lastUpdated": "2026-09-27T12:14:25.847Z",
+  "lastUpdated": "2026-10-02T12:08:53.814Z",
   "nameZh": "姆娜·霍希諾瓦"
 }
