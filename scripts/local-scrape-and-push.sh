@@ -204,8 +204,9 @@ physDir() {
   [ -n "$1" ] && (cd "$1" 2>/dev/null && pwd -P) || true
 }
 
-# clearOrphanChildLock <lock>: run by a parent that holds its own lock, just
-# before it spawns the child that will take <lock>. A child lock that still
+# clearOrphanChildLock <lock>: run by a parent that holds its own lock, before
+# any work (CR 4d3610a7) and again just before it spawns the child that will
+# take <lock>. A child lock that still
 # exists then is residue of a killed run — unless its recorded owner is still
 # alive, in which case another delegated run is in flight: fail closed, never
 # steal it. Returns 0 iff <lock> is absent afterwards.
@@ -735,6 +736,22 @@ runPipeline() {
 }
 
 # ─── Main dispatch ─────────────────────────────────────────────────────────
+# DIC-1167 (CR 4d3610a7): a delegated child (stage 2 / in-place re-exec)
+# outlives a parent that was killed (EXIT trap ran, primary lock released)
+# and keeps working in its checkout — stage 2 inside the isolated worktree,
+# the re-exec in the resident one. A new run must find that out BEFORE it
+# touches anything the child may be using: removeStaleIsolatedWorktree used
+# to force-remove a live stage 2's worktree, and the in-place fast-forward
+# would move the resident under a live re-exec, before the child lock was
+# checked just ahead of the spawn. So every child lock is resolved here,
+# first: an orphan is cleared, a live owner fails the run with no work done.
+for CHILD_LOCK_SUFFIX in stage2 reexec; do
+  if ! clearOrphanChildLock "${LOCK_FILE}.${CHILD_LOCK_SUFFIX}"; then
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
+done
+
 # DIC-1461: verify AND refresh origin before mutating anything. Both the
 # dirty-worktree route and the forced-isolated bootstrap create their isolated
 # worktree from REMOTE_HEAD; resolving it from a stale local origin/main cache

@@ -1651,18 +1651,28 @@ for (const [route, extraEnv, residue, ownerPid] of [
 // DD(c): a stage-2 lock whose recorded owner is ALIVE — the same process: its
 // recorded start time matches, or (legacy lock, no start time) it is still
 // running this scraper — is never stolen; stage 1 fails closed before the
-// child runs and leaves that lock in place.
-for (const [route, legacy] of [
-  ['DD(c) live stage-2 lock owner (start time matches)', false],
-  ['DD(c) live stage-2 lock owner (legacy lock, live scraper command)', true],
+// child runs and leaves that lock in place. CR 4d3610a7: that live stage 2
+// may still be working in the isolated worktree, so stage 1 must fail BEFORE
+// it prunes/removes or (re)creates any worktree — a registered checkout at
+// the isolated path survives untouched, and no worktree is ever created.
+for (const [route, legacy, existingWorktree] of [
+  ['DD(c) live stage-2 lock owner (start time matches)', false, false],
+  ['DD(c) live stage-2 lock owner (legacy lock, live scraper command)', true, false],
+  ['DD(c) live stage-2 lock owner + its live isolated worktree (start time matches)', false, true],
+  ['DD(c) live stage-2 lock owner + its live isolated worktree (legacy lock)', true, true],
 ]) {
   const sandbox = makeSandbox();
   const isoDir = path.join(sandbox.dir, 'iso');
+  const marker = path.join(isoDir, 'live-stage2-in-progress');
   const staleLock = path.join(sandbox.dir, 'scrape.lock.stage2');
   // A live stand-in owner whose command line names this scraper. `; :` keeps
   // bash from exec'ing sleep, so the pid keeps that command line.
   const owner = spawn('bash', ['-c', 'sleep 120; :', 'local-scrape-and-push.sh'], { stdio: 'ignore' });
   try {
+    if (existingWorktree) {
+      execSync(`${REAL_GIT} worktree add --detach ${isoDir} HEAD >/dev/null 2>&1`, { cwd: sandbox.repo });
+      fs.writeFileSync(marker, 'stage 2 work in progress\n');
+    }
     fs.mkdirSync(staleLock);
     fs.writeFileSync(path.join(staleLock, 'pid'), `${owner.pid}\n`);
     const startRecorded = legacy ? null : `${procStartTime(owner.pid)}\n`;
@@ -1677,9 +1687,61 @@ for (const [route, legacy] of [
     assert.deepEqual(pipelineOwners(result.lines), [], `${route}: no runPipeline may run`);
     assert.doesNotMatch(result.log, /✅ Done/, `${route}: must never report Done`);
     assert.doesNotMatch(result.log, /removing orphaned child lock/, `${route}: a live owner is never treated as an orphan`);
+    assert.doesNotMatch(result.log, /removing stale isolated worktree/, `${route}: a live stage 2's worktree is never treated as stale`);
+    assert.equal(someTraced(result.lines, 'git worktree'), false, `${route}: no worktree may be pruned, removed or added`);
+    assert.equal(someTraced(result.lines, 'git fetch'), false, `${route}: fails before any other work`);
     assert.equal(fs.readFileSync(path.join(staleLock, 'pid'), 'utf-8'), `${owner.pid}\n`, `${route}: a live owner's lock must not be removed`);
     if (startRecorded) assert.equal(fs.readFileSync(path.join(staleLock, 'start'), 'utf-8'), startRecorded, `${route}: the owner's start time is kept`);
-    assert.equal(fs.existsSync(isoDir), false, `${route}: stage 1 removes the ephemeral worktree`);
+    if (existingWorktree) {
+      assert.ok(fs.existsSync(marker), `${route}: the live stage 2's checkout must not be removed`);
+      assert.equal(fs.readFileSync(marker, 'utf-8'), 'stage 2 work in progress\n', `${route}: the live stage 2's checkout must survive untouched`);
+      const registered = execSync(`${REAL_GIT} worktree list --porcelain`, { cwd: sandbox.repo, encoding: 'utf-8' });
+      assert.ok(
+        registered.includes(`worktree ${isoDir}\n`) || registered.includes(`worktree ${fs.realpathSync(isoDir)}\n`),
+        `${route}: the live stage 2's worktree must stay registered\n${registered}`,
+      );
+    } else {
+      assert.equal(fs.existsSync(isoDir), false, `${route}: no ephemeral worktree is created`);
+    }
+    assertResidentUntouched(sandbox, snapshot);
+  } finally {
+    owner.kill('SIGKILL');
+    cleanup(sandbox);
+  }
+}
+
+// DD(h) (CR 4d3610a7): a live delegated child is detected before ANY work on
+// every route — a live re-exec child runs in the resident checkout, so the
+// clean in-place route must not fetch/fast-forward under it either; nor may a
+// clean run start a second pipeline beside a live stage 2.
+for (const [route, suffix, extraEnv] of [
+  ['DD(h) clean in-place route, live re-exec lock owner', 'reexec', {}],
+  ['DD(h) clean in-place route, live stage-2 lock owner', 'stage2', {}],
+  ['DD(h) forced route, live re-exec lock owner', 'reexec', { HUNTERCARD_FORCE_ISOLATED: '1' }],
+]) {
+  const sandbox = makeSandbox();
+  const isoDir = path.join(sandbox.dir, 'iso');
+  const liveLock = path.join(sandbox.dir, `scrape.lock.${suffix}`);
+  const owner = spawn('bash', ['-c', 'sleep 120; :', 'local-scrape-and-push.sh'], { stdio: 'ignore' });
+  try {
+    fs.mkdirSync(liveLock);
+    fs.writeFileSync(path.join(liveLock, 'pid'), `${owner.pid}\n`);
+    fs.writeFileSync(path.join(liveLock, 'start'), `${procStartTime(owner.pid)}\n`);
+    const snapshot = takeResidentSnapshot(sandbox);
+    const result = runSandbox(sandbox, extraEnv);
+    assertFailedClosedNoMutation(
+      route,
+      result,
+      new RegExp(`child lock \\S+scrape\\.lock\\.${suffix} is held by live pid ${owner.pid} \\(started [^)]+\\); refusing to start a second delegated run`),
+    );
+    assert.deepEqual(pipelineOwners(result.lines), [], `${route}: no runPipeline may run`);
+    assert.doesNotMatch(result.log, /✅ Done/, `${route}: must never report Done`);
+    assert.equal(someTraced(result.lines, 'git fetch'), false, `${route}: fails before fetching`);
+    assert.equal(someTraced(result.lines, 'git pull'), false, `${route}: never fast-forwards under a live child`);
+    assert.equal(someTraced(result.lines, 'git worktree'), false, `${route}: no worktree may be pruned, removed or added`);
+    assert.equal(fs.existsSync(isoDir), false, `${route}: no ephemeral worktree is created`);
+    assert.equal(fs.readFileSync(path.join(liveLock, 'pid'), 'utf-8'), `${owner.pid}\n`, `${route}: a live owner's lock must not be removed`);
+    assert.equal(fs.existsSync(path.join(sandbox.dir, 'scrape.lock')), false, `${route}: the primary lock is released`);
     assertResidentUntouched(sandbox, snapshot);
   } finally {
     owner.kill('SIGKILL');
@@ -1761,4 +1823,4 @@ for (const [route, extraEnv, anchor, failRe] of [
   }
 }
 
-console.log('DIC-1219/DIC-1321/DIC-1334/DIC-1472(+CR-P1 alias/removal/post-link + resident fingerprint)/DIC-1167(CR 028f6a19 clean-path ff/ahead/push + fetch freshness; 09-30 origin-only orchestration W–AA; CR bced44d5 stage-2 attestation + freshness BB–CC; CR cb2b3b13 child lock + receipt DD; pid-reuse owner identity DD(c/f/g)) scheduler dirty-precondition + coverage-gate + no-op + parity + isolated-deps regression checks passed');
+console.log('DIC-1219/DIC-1321/DIC-1334/DIC-1472(+CR-P1 alias/removal/post-link + resident fingerprint)/DIC-1167(CR 028f6a19 clean-path ff/ahead/push + fetch freshness; 09-30 origin-only orchestration W–AA; CR bced44d5 stage-2 attestation + freshness BB–CC; CR cb2b3b13 child lock + receipt DD; pid-reuse owner identity DD(c/f/g); CR 4d3610a7 live child lock before any work DD(c/h)) scheduler dirty-precondition + coverage-gate + no-op + parity + isolated-deps regression checks passed');
