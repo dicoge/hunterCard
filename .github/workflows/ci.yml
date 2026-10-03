@@ -190,6 +190,9 @@ jobs:
       - name: Verify buy-price regeneration is deterministic (DIC-856)
         run: npm run test:buy-price-regen
 
+      - name: Verify daily rebuild keeps cumulative buyPriceHistory per exact printing (DIC-1167 CR 2660774f)
+        run: npm run test:dic1167-buy-price-history
+
       - name: Verify scrape pipeline fail-fast + atomic commit ordering (DIC-989)
         run: npm run test:scrape-pipeline
 

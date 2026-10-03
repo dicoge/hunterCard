@@ -90,6 +90,7 @@
     "test:yt-null-semantics": "node scripts/test-yt-null-semantics.mjs",
     "test:web-export-artifact": "node scripts/test-web-export-artifact.mjs",
     "test:buy-price-regen": "node scripts/test-buy-price-regen-deterministic.mjs",
+    "test:dic1167-buy-price-history": "node scripts/test-dic1167-buy-price-history-preservation.mjs",
     "test:scrape-pipeline": "node scripts/test-scrape-pipeline-failfast.mjs",
     "test:dic1167-yuyu-stage-budget": "node scripts/test-dic1167-yuyu-stage-budget.mjs",
     "test:yuyu-crash-recovery": "node scripts/test-yuyu-crash-recovery.mjs",

@@ -26,8 +26,16 @@
       "currency": "JPY",
       "cardId": "hBP05-041_hBP05_U_hBP05-041_U",
       "sourceProduct": "hBP05"
+    },
+    {
+      "date": "2026-10-03",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-041_hBP05_U_hBP05-041_U",
+      "sourceProduct": "hBP05"
     }
   ],
-  "lastUpdated": "2026-09-27T12:14:25.793Z",
+  "lastUpdated": "2026-10-03T12:08:32.133Z",
   "nameZh": "貓又小粥"
 }

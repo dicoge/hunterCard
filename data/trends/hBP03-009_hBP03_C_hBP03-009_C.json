@@ -2,14 +2,14 @@
   "cardId": "hBP03-009",
   "name": "姫森ルーナ",
   "nameZh": "姬森璐娜",
-  "trend": "up",
-  "score": 0.39,
+  "trend": "stable",
+  "score": 0.03,
   "confidence": 0.8,
   "components": {
-    "priceTrend": 0.6,
+    "priceTrend": 0,
     "ytTrend": 0,
-    "newsSentiment": 0.14
+    "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-09-27T12:14:34.727Z",
-  "dataPoints": 71
+  "lastUpdated": "2026-10-03T12:08:42.450Z",
+  "dataPoints": 72
 }

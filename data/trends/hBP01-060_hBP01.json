@@ -3,13 +3,13 @@
   "name": "鷹嶺ルイ",
   "nameZh": "鷹嶺琉衣",
   "trend": "down",
-  "score": -0.52,
+  "score": -0.51,
   "confidence": 0.4,
   "components": {
     "priceTrend": -0.91,
     "ytTrend": 0,
-    "newsSentiment": 0.14
+    "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-09-27T12:14:34.711Z",
+  "lastUpdated": "2026-10-03T12:08:42.311Z",
   "dataPoints": 64
 }

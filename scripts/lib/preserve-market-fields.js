@@ -1024,3 +1024,63 @@ export function applyPreservedMarketFields(currentCard, previous, { matchKind = 
   }
   return summary;
 }
+
+// DIC-1167 CR 2660774f: `buyPriceHistory` is a cumulative time series of
+// exact-print buy observations — each date was written by merge-buy-prices.js
+// only after the source proved THIS printing. 240416acb correctly stopped
+// restoring the stale scalar `buyPrice` / `prices[].buyPrice` claims across a
+// rebuild, but dropped the history with them, so every daily rebuild replaced
+// the series with a single new date (757 2026-09-27 observations lost on
+// ecb30bd59). History is carried forward by EXACT printing id only (no
+// signature / cross-printing fallback), and only well-formed date→price
+// records survive. Current listing claims are never restored here.
+const BUY_HISTORY_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+export function sanitizeBuyPriceHistory(history) {
+  if (!history || typeof history !== 'object' || Array.isArray(history)) return null;
+  const out = {};
+  for (const [date, value] of Object.entries(history)) {
+    if (!BUY_HISTORY_DATE_RE.test(date)) continue;
+    if (!Number.isFinite(value) || value <= 0) continue;
+    out[date] = value;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+function sameBuyHistoryPrinting(current, previous) {
+  const num = (c) => String(c?.cardNumber || '').trim().toUpperCase();
+  const rarity = (c) => String(c?.rarity || '').trim().toUpperCase();
+  return num(current) !== '' && num(current) === num(previous) && rarity(current) === rarity(previous);
+}
+
+/**
+ * Carry each previous row's `buyPriceHistory` onto the rebuilt row with the
+ * same id. Dates already present on the current row win (a fresh observation
+ * is never overwritten by an older one). Mutates `cards` in place.
+ */
+export function restoreBuyPriceHistory(cards, prevCards) {
+  const summary = { cards: 0, observations: 0, skippedIdentityMismatch: 0 };
+  if (!cards || typeof cards !== 'object' || !prevCards || typeof prevCards !== 'object') return summary;
+  for (const [id, previous] of Object.entries(prevCards)) {
+    const saved = sanitizeBuyPriceHistory(previous?.buyPriceHistory);
+    if (!saved) continue;
+    const current = cards[id];
+    if (!current || typeof current !== 'object') continue;
+    if (!sameBuyHistoryPrinting(current, previous)) {
+      summary.skippedIdentityMismatch += 1;
+      continue;
+    }
+    const merged = sanitizeBuyPriceHistory(current.buyPriceHistory) || {};
+    let added = 0;
+    for (const [date, value] of Object.entries(saved)) {
+      if (Object.hasOwn(merged, date)) continue;
+      merged[date] = value;
+      added += 1;
+    }
+    if (added === 0) continue;
+    current.buyPriceHistory = Object.fromEntries(Object.entries(merged).sort(([a], [b]) => a.localeCompare(b)));
+    summary.cards += 1;
+    summary.observations += added;
+  }
+  return summary;
+}

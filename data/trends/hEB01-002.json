@@ -3,13 +3,13 @@
   "name": "宝鐘マリン",
   "nameZh": "寶鍾瑪琳",
   "trend": "down",
-  "score": -0.21,
+  "score": -0.2,
   "confidence": 0.1,
   "components": {
     "priceTrend": -0.39,
     "ytTrend": 0,
-    "newsSentiment": 0.14
+    "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-09-27T12:14:34.771Z",
+  "lastUpdated": "2026-10-03T12:08:42.635Z",
   "dataPoints": 5
 }
