@@ -116,11 +116,15 @@ export function loadMonthlyReports(tournamentsDir) {
     });
 }
 
+export function reportMonth(entry) {
+  return entry.report.month ?? entry.fileName.slice(0, -5);
+}
+
 export function extractDecks(monthlyReports) {
   const decks = [];
   const excludedIncompleteDecks = [];
   for (const entry of monthlyReports) {
-    const month = entry.report.month ?? entry.fileName.slice(0, -5);
+    const month = reportMonth(entry);
     for (const event of entry.report.events ?? []) {
       for (const deck of event.decks ?? []) {
         const normalized = {
@@ -407,17 +411,29 @@ export function analyzeReports(monthlyReports, options = {}) {
 // month-scoped singleton could report another month's representative archetype,
 // core cards and presence counts (DIC-1042). Every summary below is therefore
 // recomputed from the month subset.
+//
+// `generatedAt` follows the same rule: it is derived from THAT month's own
+// input reports, never from the whole set. Deriving it from every report made
+// each month artifact a function of the newest month on disk, so simply adding
+// a newer report retroactively rewrote the `generatedAt` of every earlier
+// month artifact. A scheduled collector run that adds one month therefore
+// invalidated every previously committed month artifact, and the deterministic
+// regeneration check failed on the OLDEST month (2026-07) rather than the new
+// one. Deriving per month keeps each artifact byte-stable when unrelated months
+// are added, so adding a month only changes that month's artifact plus the
+// index that lists them all.
 export function analyzeMonth(monthlyReports, month, options = {}) {
   const config = mergeConfig(DEFAULT_CONFIG, options.config ?? {});
-  const generatedAt = options.generatedAt ?? deterministicGeneratedAt(monthlyReports);
   const { decks, excludedIncompleteDecks } = extractDecks(monthlyReports);
+  const monthReports = monthlyReports.filter((entry) => reportMonth(entry) === month);
+  const generatedAt = options.generatedAt ?? deterministicGeneratedAt(monthReports);
   return analyzeDeckSet(
     decks.filter((deck) => deck.month === month),
     {
       config,
       generatedAt,
       month,
-      inputReports: monthlyReports.filter((entry) => (entry.report.month ?? entry.fileName.slice(0, -5)) === month),
+      inputReports: monthReports,
       excludedIncompleteDecks: excludedIncompleteDecks.filter((deck) => deck.month === month),
     },
   );
@@ -449,7 +465,7 @@ function analyzeDeckSet(decks, { config, generatedAt, month, inputReports, exclu
     },
     inputReports: inputReports.map((entry) => ({
       file: entry.fileName,
-      month: entry.report.month ?? entry.fileName.slice(0, -5),
+      month: reportMonth(entry),
       contentSha256: entry.hash,
       generatedAt: entry.report.generatedAt ?? null,
     })),
@@ -526,6 +542,27 @@ export function analyticsIndex(monthArtifacts, generatedAt) {
 function deterministicGeneratedAt(monthlyReports) {
   const dates = monthlyReports.map((entry) => entry.report.generatedAt).filter(Boolean).sort();
   return dates.at(-1) ?? '1970-01-01T00:00:00.000Z';
+}
+
+// The ONE definition of the analytics artifact set, shared by the CLI
+// (`analyze-tournaments.mjs`) and the scheduled collector. Both produced
+// artifacts independently before, so the collector could commit a report whose
+// analytics nobody regenerated: the committed artifact then diverged from a
+// deterministic re-run and the committed-artifact test failed on the next
+// bot PR that added a month. One builder means the collector's output is
+// byte-identical to `npm run analyze:tournaments` by construction, not by
+// convention.
+//
+// Returns `{ index, months }` where `months` is one artifact per report month.
+export function buildAnalyticsArtifacts(monthlyReports, options = {}) {
+  const config = mergeConfig(DEFAULT_CONFIG, options.config ?? {});
+  const months = [...new Set(monthlyReports.map((entry) => reportMonth(entry)))].sort();
+  const monthArtifacts = months.map((month) =>
+    analyzeMonth(monthlyReports, month, { generatedAt: options.generatedAt ?? undefined, config }),
+  );
+  // The index spans every month, so its timestamp is the newest input overall.
+  const indexGeneratedAt = options.generatedAt ?? deterministicGeneratedAt(monthlyReports);
+  return { index: analyticsIndex(monthArtifacts, indexGeneratedAt), months: monthArtifacts };
 }
 
 function mergeConfig(base, override) {

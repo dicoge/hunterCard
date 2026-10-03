@@ -191,6 +191,187 @@ test('re-running an unchanged source rewrites nothing (idempotent, no churn)', (
   assert.equal(fs.readFileSync(path.join(tree.out, 'index.json'), 'utf8'), before.index);
 });
 
+// ── DIC-1496: the collector must regenerate deterministic analytics ───────────
+// Analytics are generated artifacts that CI asserts are byte-identical to a
+// deterministic re-run of the analyzer. The collector wrote month reports and
+// never touched analytics, so every run that added or changed a report left
+// analytics one run behind — and the drift surfaced as a Validate failure on
+// the next bot PR, blaming the OLDEST month instead of the changed one.
+//
+// Each test below drives the REAL collector over a fixture tree and compares
+// against the REAL analyzer, so a divergence between the two code paths fails
+// here rather than only in CI.
+const ANALYZER = path.join(__dirname, 'analyze-tournaments.mjs');
+
+function runAnalyzer(tournamentsDir, outDir) {
+  const res = spawnSync(process.execPath, [ANALYZER, '--tournaments-dir', tournamentsDir, '--out-dir', outDir], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  });
+  assert.equal(res.status, 0, `analyzer should succeed:\n${res.stderr}`);
+}
+
+// `dir` is an analytics directory itself: the collector's out/analytics, or the
+// analyzer's --out-dir.
+function analyticsFiles(dir) {
+  if (!fs.existsSync(dir)) return {};
+  return Object.fromEntries(
+    fs.readdirSync(dir).sort().map((f) => [f, fs.readFileSync(path.join(dir, f), 'utf8')]),
+  );
+}
+
+const treeAnalytics = (tree) => analyticsFiles(path.join(tree.out, 'analytics'));
+
+function assertMatchesAnalyzer(tree) {
+  // The analyzer's --out-dir IS the analytics directory (the collector's is the
+  // reports directory, with analytics/ beneath it).
+  const regen = path.join(tree.dir, 'regen-analytics');
+  fs.rmSync(regen, { recursive: true, force: true });
+  fs.mkdirSync(regen, { recursive: true });
+  runAnalyzer(tree.out, regen);
+  assert.deepEqual(
+    treeAnalytics(tree),
+    analyticsFiles(regen),
+    'collector-written analytics must be byte-identical to deterministic regeneration',
+  );
+}
+
+test('collector regenerates analytics for the month it wrote', () => {
+  const tree = seeded();
+  assert.deepEqual(Object.keys(treeAnalytics(tree)), ['2026-07.json', 'index.json']);
+  assertMatchesAnalyzer(tree);
+});
+
+test('collector analytics regeneration is idempotent (no churn on re-run)', () => {
+  const tree = seeded();
+  const before = treeAnalytics(tree);
+  const mtimes = Object.fromEntries(
+    Object.keys(before).map((f) => [f, fs.statSync(path.join(tree.out, 'analytics', f)).mtimeMs]),
+  );
+  assert.equal(runCollector(tree, '2027-01-01T00:00:00Z').code, 0);
+  assert.deepEqual(treeAnalytics(tree), before, 'an unchanged re-run must not rewrite analytics');
+  for (const [f, mtime] of Object.entries(mtimes)) {
+    assert.equal(
+      fs.statSync(path.join(tree.out, 'analytics', f)).mtimeMs,
+      mtime,
+      `unchanged analytics file ${f} must not be rewritten at all`,
+    );
+  }
+});
+
+// The regression that broke CI: adding a NEWER month retroactively changed the
+// generatedAt of every EARLIER month artifact, so the committed 2026-07
+// artifact no longer matched a deterministic re-run once 2026-09 arrived.
+test('adding a newer month leaves earlier months analytics byte-identical', () => {
+  const tree = seeded();
+  const julBefore = fs.readFileSync(path.join(tree.out, 'analytics', '2026-07.json'), 'utf8');
+
+  fs.writeFileSync(
+    path.join(tree.sources, 'sep.json'),
+    JSON.stringify({ ...GOOD_SOURCE, month: '2026-09' }, null, 2),
+  );
+  assert.equal(runCollector(tree, '2026-09-30T20:00:00Z').code, 0);
+
+  assert.equal(
+    fs.readFileSync(path.join(tree.out, 'analytics', '2026-07.json'), 'utf8'),
+    julBefore,
+    'an unrelated newer month must not rewrite an earlier month artifact',
+  );
+  assert.ok(
+    fs.existsSync(path.join(tree.out, 'analytics', '2026-09.json')),
+    'the new month gets its own artifact',
+  );
+  assertMatchesAnalyzer(tree);
+});
+
+test('a source failure leaves committed analytics untouched (last-known-good)', () => {
+  const tree = seeded();
+  const before = treeAnalytics(tree);
+
+  fs.writeFileSync(path.join(tree.sources, 'jul.json'), '{ broken');
+  assert.equal(runCollector(tree, '2026-10-01T00:00:00Z').code, 1);
+
+  assert.deepEqual(
+    treeAnalytics(tree),
+    before,
+    'a failed source must not disturb the analytics built from the good report',
+  );
+  assertMatchesAnalyzer(tree);
+});
+
+test('analytics for a month with no report is pruned', () => {
+  const tree = seeded();
+  const stale = path.join(tree.out, 'analytics', '2026-05.json');
+  fs.writeFileSync(stale, '{}\n');
+  assert.equal(runCollector(tree, '2026-11-01T00:00:00Z').code, 0);
+  assert.ok(!fs.existsSync(stale), 'analytics must not advertise a month with no report');
+  assertMatchesAnalyzer(tree);
+});
+
+test('--dry-run writes no analytics and leaves the tree byte-identical', () => {
+  const tree = seeded();
+  fs.writeFileSync(
+    path.join(tree.sources, 'sep.json'),
+    JSON.stringify({ ...GOOD_SOURCE, month: '2026-09' }, null, 2),
+  );
+  const before = treeAnalytics(tree);
+  const res = spawnSync(
+    process.execPath,
+    [
+      '--experimental-strip-types',
+      '--disable-warning=MODULE_TYPELESS_PACKAGE_JSON',
+      '--import',
+      './scripts/register-ts.mjs',
+      COLLECTOR,
+      '--sources-dir',
+      tree.sources,
+      '--out-dir',
+      tree.out,
+      '--now',
+      '2026-09-30T20:00:00Z',
+      '--dry-run',
+    ],
+    { cwd: ROOT, encoding: 'utf8' },
+  );
+  assert.equal(res.status, 0, `dry run should succeed:\n${res.stderr}`);
+  assert.deepEqual(treeAnalytics(tree), before, 'a dry run must not write analytics');
+});
+
+// The staging job commits data/ recursively, so an analytics temp file orphaned
+// by a kill between write and rename gets committed as an orphan. The month-file
+// prune cannot remove it (2026-08.json.tmp does not match MONTH_FILE_RE), so the
+// next run must sweep it.
+test('an orphaned analytics temp file from an interrupted run is swept', () => {
+  const tree = seeded();
+  const analyticsDir = path.join(tree.out, 'analytics');
+  const orphan = path.join(analyticsDir, '2026-07.json.tmp');
+  const indexOrphan = path.join(analyticsDir, 'index.json.tmp');
+  fs.writeFileSync(orphan, '{"truncated": ');
+  fs.writeFileSync(indexOrphan, '{"truncated": ');
+  const sibling = path.join(analyticsDir, 'NOTES.md');
+  fs.writeFileSync(sibling, 'hand-authored, must survive\n');
+
+  assert.equal(runCollector(tree, '2026-09-01T00:00:00Z').code, 0);
+
+  assert.ok(!fs.existsSync(orphan), 'orphaned month temp file must be swept');
+  assert.ok(!fs.existsSync(indexOrphan), 'orphaned index temp file must be swept');
+  assert.ok(fs.existsSync(sibling), 'a hand-authored sibling file must never be swept');
+  assert.deepEqual(
+    Object.keys(treeAnalytics(tree)).filter((f) => f.endsWith('.json')).sort(),
+    ['2026-07.json', 'index.json'],
+    'sweeping must leave exactly the generated analytics artifacts',
+  );
+  // Compare only the generated artifacts: the surviving sibling is not one of
+  // them, so a whole-directory compare would be the wrong assertion here.
+  const regen = path.join(tree.dir, 'regen-analytics');
+  fs.rmSync(regen, { recursive: true, force: true });
+  fs.mkdirSync(regen, { recursive: true });
+  runAnalyzer(tree.out, regen);
+  for (const f of ['2026-07.json', 'index.json']) {
+    assert.equal(treeAnalytics(tree)[f], fs.readFileSync(path.join(regen, f), 'utf8'));
+  }
+});
+
 // ── DIC-1029: committed card arrays are revalidated on every run ─────────────
 // A committed (last-known-good) array is an input, not a certificate. These
 // tests drive the REAL collector over a genuinely valid 1/50/20 deck and over
