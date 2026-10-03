@@ -3,13 +3,13 @@
   "name": "フワワ・アビスガード",
   "nameZh": "雙葉·深淵護衛",
   "trend": "down",
-  "score": -0.33,
+  "score": -0.32,
   "confidence": 0.4,
   "components": {
     "priceTrend": -0.59,
     "ytTrend": 0,
-    "newsSentiment": 0.14
+    "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-09-27T12:14:34.729Z",
+  "lastUpdated": "2026-10-03T12:08:42.463Z",
   "dataPoints": 66
 }

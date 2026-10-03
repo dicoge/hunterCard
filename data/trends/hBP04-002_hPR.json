@@ -3,13 +3,13 @@
   "name": "儒烏風亭らでん",
   "nameZh": "儒烏風亭螺鈿",
   "trend": "up",
-  "score": 0.33,
+  "score": 0.34,
   "confidence": 0.5,
   "components": {
     "priceTrend": 0.51,
     "ytTrend": 0,
-    "newsSentiment": 0.14
+    "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-09-27T12:14:34.735Z",
+  "lastUpdated": "2026-10-03T12:08:42.486Z",
   "dataPoints": 66
 }
