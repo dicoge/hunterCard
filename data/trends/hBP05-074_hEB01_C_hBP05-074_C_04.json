@@ -2,14 +2,14 @@
   "cardId": "hBP05-074",
   "name": "フレンドリーパソコン",
   "nameZh": "友善電腦",
-  "trend": "stable",
-  "score": 0.03,
+  "trend": "up",
+  "score": 0.36,
   "confidence": 0.3,
   "components": {
-    "priceTrend": 0,
+    "priceTrend": 0.56,
     "ytTrend": 0,
-    "newsSentiment": 0.14
+    "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-09-27T12:14:34.748Z",
-  "dataPoints": 1
+  "lastUpdated": "2026-10-02T12:09:08.447Z",
+  "dataPoints": 2
 }

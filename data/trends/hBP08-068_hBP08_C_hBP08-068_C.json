@@ -2,14 +2,14 @@
   "cardId": "hBP08-068",
   "name": "一伊那尓栖",
   "nameZh": "一伊那爾棲",
-  "trend": "up",
-  "score": 0.43,
+  "trend": "stable",
+  "score": 0.03,
   "confidence": 1,
   "components": {
-    "priceTrend": 0.67,
+    "priceTrend": 0,
     "ytTrend": 0,
-    "newsSentiment": 0.14
+    "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-09-27T12:14:34.767Z",
-  "dataPoints": 65
+  "lastUpdated": "2026-10-02T12:09:08.515Z",
+  "dataPoints": 66
 }

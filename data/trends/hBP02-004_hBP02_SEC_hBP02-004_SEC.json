@@ -3,13 +3,13 @@
   "name": "沙花叉クロヱ",
   "nameZh": "沙花叉克蘿伊",
   "trend": "stable",
-  "score": 0.11,
+  "score": 0.12,
   "confidence": 0.6,
   "components": {
     "priceTrend": 0.14,
     "ytTrend": 0,
-    "newsSentiment": 0.14
+    "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-09-27T12:14:34.718Z",
+  "lastUpdated": "2026-10-02T12:09:08.289Z",
   "dataPoints": 65
 }
