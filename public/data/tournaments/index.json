@@ -1,7 +1,12 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-16T12:36:37.696Z",
+  "generatedAt": "2026-09-29T00:29:49.743Z",
   "months": [
+    {
+      "month": "2026-09",
+      "events": 2,
+      "observedDecks": 3
+    },
     {
       "month": "2026-08",
       "events": 1,

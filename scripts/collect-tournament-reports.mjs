@@ -50,7 +50,9 @@
  * (post_news, category 16 = イチ推し！デッキ紹介) and confirms each committed
  * result tweet still resolves via fxtwitter. A strictly newer official
  * publication is an ALERT, never an auto-collect; when discovery is
- * unavailable the last-known-good data is preserved.
+ * unavailable the last-known-good data is preserved. Each newer post is
+ * classified from its article body (DIC-1494): only posts that publish player
+ * placements — or that cannot be classified — demand curation.
  *
  *  Run:
  *   # offline (deterministic, from committed sources — CI/manual default):
@@ -71,6 +73,8 @@ import {
   cardsFromDecklog,
   verifyDeckCards,
   classifyFreshness,
+  classifyOfficialPost,
+  officialArticleText,
   HOCG_DECKLOG_GAME_TITLE_ID,
 } from '../src/utils/tournamentReport.ts';
 
@@ -491,6 +495,96 @@ async function liveCollectDecklogCards(catalogNumbers) {
   return changedAny;
 }
 
+// DIC-1494: the feed's newest post is not necessarily a tournament column
+// (vol.13 is a set-release sample recipe; the producer letter shares the
+// category), and a sample recipe published after an uncurated event pick-up
+// used to hide it. So EVERY post newer than the newest curated source is
+// classified from its own article body:
+//   • tournament-results / unknown → discovery stub + ERROR (fail-closed:
+//     the collector exits non-zero until a human curates or disproves it);
+//   • no-tournament-results → INFO only — no stub, no demand for events that
+//     do not exist.
+function isOfficialSiteUrl(link) {
+  try {
+    const u = new URL(link);
+    return u.protocol === 'https:' && u.hostname === 'hololive-official-cardgame.com';
+  } catch {
+    return false;
+  }
+}
+
+async function classifyOfficialPostAt(post) {
+  const title = post?.title?.rendered ?? post?.title ?? null;
+  const link = typeof post?.link === 'string' ? post.link : null;
+  if (!link || !isOfficialSiteUrl(link)) {
+    return { kind: 'unknown', reason: `no official article link (${link ?? 'missing'})` };
+  }
+  try {
+    const html = await fetchWithRetry(link);
+    return classifyOfficialPost(title, officialArticleText(html));
+  } catch (err) {
+    return { kind: 'unknown', reason: `article unreachable (${err.message})` };
+  }
+}
+
+async function classifyNewerOfficialPosts(posts, knownNewest) {
+  const dated = Array.isArray(posts)
+    ? posts
+        .map((p) => ({ post: p, date: String(p?.date ?? '').trim() }))
+        .filter((p) => p.date)
+        .sort((a, b) => a.date.localeCompare(b.date))
+    : [];
+  const newest = dated.length > 0 ? dated[dated.length - 1].date : null;
+  const newer = dated.filter((p) => classifyFreshness(p.date, knownNewest) === 'newer');
+  if (newer.length === 0) {
+    alert('info', `Official column freshness: ${classifyFreshness(newest, knownNewest)} (newest ${newest ?? 'n/a'})`, {
+      discovered: newest,
+      known: knownNewest,
+    });
+    return;
+  }
+  for (const [i, { post, date }] of newer.entries()) {
+    if (i > 0) await sleep(400);
+    const link = typeof post?.link === 'string' ? post.link : null;
+    const title = post?.title?.rendered ?? post?.title ?? null;
+    const { kind, reason } = await classifyOfficialPostAt(post);
+    if (kind === 'no-tournament-results') {
+      alert('info', `Newer official post ${date} carries no tournament results (${reason}); nothing to curate.`, {
+        discovered: date,
+        known: knownNewest,
+        link,
+        classification: kind,
+      });
+      continue;
+    }
+    // Stub + ERROR, as before DIC-1494: the stub persists the acquisition
+    // for a human maintainer, and the non-zero exit makes the scheduled
+    // workflow surface the missing curation instead of shipping stale data.
+    const discovered = ensureDiscoveryStub({
+      publishedDate: date,
+      knownNewest,
+      officialLink: link,
+      officialTitle: title,
+    });
+    alert(
+      'error',
+      `A newer official deck-showcase column was published (${date}); ` +
+        `classification ${kind}: ${reason}; ` +
+        (discovered.wrote
+          ? `discovery stub written to ${discovered.relativePath} — fill in the events[] array and re-run.`
+          : `stub already present at ${discovered.relativePath} — fill in the events[] array before the next run.`),
+      {
+        discovered: date,
+        known: knownNewest,
+        link,
+        classification: kind,
+        stub: discovered.relativePath,
+        stubWrote: discovered.wrote,
+      },
+    );
+  }
+}
+
 // Freshness discovery (issue requirement 6; DIC-1380 W7 acquisition fix).
 // Newest official publication found vs newest committed source publication.
 // An unavailable source just warns and preserves last-known-good — but the
@@ -521,59 +615,17 @@ async function discoverFreshness() {
   const knownNewest = knownDates[knownDates.length - 1] ?? null;
 
   // 1) Official WordPress news feed: category 16 = イチ推し！デッキ紹介 column.
+  let posts;
   try {
     const body = await fetchWithRetry(
       'https://hololive-official-cardgame.com/wp-json/wp/v2/post_news' +
         '?cat_news=16&per_page=10&_fields=date,link,title',
     );
-    const posts = JSON.parse(body);
-    const newest = Array.isArray(posts)
-      ? posts.map((p) => String(p.date ?? '').trim()).filter(Boolean).sort().pop() ?? null
-      : null;
-    const newestPost = Array.isArray(posts)
-      ? posts.filter((p) => String(p?.date ?? '').trim() === newest)[0] ?? null
-      : null;
-    const verdict = classifyFreshness(newest, knownNewest);
-    if (verdict === 'newer') {
-      // DIC-1380 W7 CR fix: discovery of a NEWER official column now
-      // does two sustainable things.
-      //   1. It writes a discovery-stub source file to SOURCES_DIR so
-      //      the acquisition is persisted — a human maintainer can fill
-      //      the empty `events[]` and re-run the collector, and the
-      //      next --live discovery leg no longer flags THIS column as
-      //      "newer than everything committed".
-      //   2. It raises the alert to ERROR so the collector exits
-      //      non-zero, so a scheduled workflow that finds a new column
-      //      but cannot ingest it surfaces the miss instead of exiting
-      //      0 and pretending everything is fine (Mac-Codex W7 evidence).
-      const discovered = ensureDiscoveryStub({
-        publishedDate: newest,
-        knownNewest,
-        officialLink: typeof newestPost?.link === 'string' ? newestPost.link : null,
-        officialTitle: newestPost?.title?.rendered ?? newestPost?.title ?? null,
-      });
-      alert(
-        'error',
-        `A newer official deck-showcase column was published (${newest}); ` +
-          (discovered.wrote
-            ? `discovery stub written to ${discovered.relativePath} — fill in the events[] array and re-run.`
-            : `stub already present at ${discovered.relativePath} — fill in the events[] array before the next run.`),
-        {
-          discovered: newest,
-          known: knownNewest,
-          stub: discovered.relativePath,
-          stubWrote: discovered.wrote,
-        },
-      );
-    } else {
-      alert('info', `Official column freshness: ${verdict} (newest ${newest ?? 'n/a'})`, {
-        discovered: newest,
-        known: knownNewest,
-      });
-    }
+    posts = JSON.parse(body);
   } catch (err) {
     alert('warn', `Official news feed unreachable (${err.message}); last-known-good preserved.`);
   }
+  if (posts !== undefined) await classifyNewerOfficialPosts(posts, knownNewest);
 
   // 2) Result-tweet liveness via fxtwitter (source-discovery only).
   const tweetCodes = [];
@@ -663,6 +715,10 @@ async function mainAsync() {
       });
       continue;
     }
+    // DIC-1494: an uncurated discovery stub is a to-do for the maintainer,
+    // not data. Bucketing it would publish an empty month (0 events / 0
+    // decks) to the index; discovery already alerts on it every live run.
+    if (src._stub && src.events.length === 0) continue;
     const bucket = byMonth.get(src.month) ?? { events: [], source: src.source };
     for (const rawEvent of src.events) {
       try {
