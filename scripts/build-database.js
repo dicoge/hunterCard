@@ -35,6 +35,7 @@ import {
   yuyuImageProductPath,
   isKnownPromoPath,
   promoPathMatchesCardNumber,
+  restoreBuyPriceHistory,
 } from './lib/preserve-market-fields.js';
 import { orderCardsForDetailAlignment } from './lib/order-cards-for-detail-alignment.js';
 import { collectPriceEvidence, writePriceEvidenceAtomic } from './lib/price-evidence.js';
@@ -3156,12 +3157,18 @@ async function buildDatabase() {
   // Step 6b: Do not restore stale buy prices from the previous database. Buy prices
   // are source-listing claims, not history like sell prices; merge-buy-prices.js is
   // the only writer allowed to attach current exact-print provenance.
+  // The cumulative buyPriceHistory IS history, though: carry it forward by exact
+  // printing id so merge-buy-prices.js appends today's date instead of replacing
+  // the series (DIC-1167 CR 2660774f).
+  const buyHistory = restoreBuyPriceHistory(database.cards, prevCards);
+  console.log(`  [buyPriceHistory] Carried ${buyHistory.observations} observations onto ${buyHistory.cards} cards`
+    + (buyHistory.skippedIdentityMismatch > 0 ? `; skipped ${buyHistory.skippedIdentityMismatch} identity mismatches` : ''));
 
   // Step 7: Merge VTuber YouTube stats (subscriber/view counts + growth) (DIC-249)
   console.log('\n── Step 7: Merge VTuber YouTube stats ──');
   mergeYtStats(database);
 
-  // Re-write database.json with priceHistory + preserved buyPrice included
+  // Re-write database.json with priceHistory + preserved buyPriceHistory included
   fs.writeFileSync(OUTPUT_PATH, `${JSON.stringify(database, null, 2)}\n`);
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(1);

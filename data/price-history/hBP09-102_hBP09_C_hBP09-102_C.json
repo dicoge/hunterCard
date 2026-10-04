@@ -26,8 +26,16 @@
       "currency": "JPY",
       "cardId": "hBP09-102_hBP09_C_hBP09-102_C",
       "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-10-03",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-102_hBP09_C_hBP09-102_C",
+      "sourceProduct": "hBP09"
     }
   ],
-  "lastUpdated": "2026-09-27T12:14:25.976Z",
+  "lastUpdated": "2026-10-03T12:08:32.501Z",
   "nameZh": "班長之舞"
 }

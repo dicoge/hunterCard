@@ -1,150 +1,150 @@
 {
-  "lastUpdated": "2026-09-27T12:14:35.097Z",
+  "lastUpdated": "2026-10-03T12:08:43.115Z",
   "totalCards": 4202,
   "summary": {
-    "up": 406,
-    "down": 264,
-    "stable": 3532
+    "up": 142,
+    "down": 235,
+    "stable": 3825
   },
   "topGainers": [
     {
-      "cardId": "hBP01-014",
-      "name": "天音かなた",
-      "nameZh": "天音彼方",
-      "score": 0.63,
-      "trend": "up"
-    },
-    {
-      "cardId": "hBP01-023",
+      "cardId": "hBP05-013",
       "name": "ときのそら",
       "nameZh": "時乃空",
       "score": 0.63,
       "trend": "up"
     },
     {
-      "cardId": "hBP01-024",
-      "name": "ベスティア・ゼータ",
-      "nameZh": "貝絲緹亞·澤塔",
+      "cardId": "hBP05-013",
+      "name": "ときのそら",
+      "nameZh": "時乃空",
       "score": 0.63,
       "trend": "up"
     },
     {
-      "cardId": "hBP01-024",
-      "name": "ベスティア・ゼータ",
-      "nameZh": "貝絲緹亞·澤塔",
+      "cardId": "hBP06-090",
+      "name": "ブルームステージ",
+      "nameZh": "花綻舞台",
       "score": 0.63,
       "trend": "up"
     },
     {
-      "cardId": "hBP01-027",
-      "name": "ベスティア・ゼータ",
-      "nameZh": "貝絲緹亞·澤塔",
+      "cardId": "hBP06-090",
+      "name": "ブルームステージ",
+      "nameZh": "花綻舞台",
       "score": 0.63,
       "trend": "up"
     },
     {
-      "cardId": "hBP01-028",
-      "name": "IRyS",
-      "nameZh": "IRyS",
+      "cardId": "hBP06-090",
+      "name": "ブルームステージ",
+      "nameZh": "花綻舞台",
       "score": 0.63,
       "trend": "up"
     },
     {
-      "cardId": "hBP01-032",
-      "name": "アキ・ローゼンタール",
-      "nameZh": "亞綺·羅森塔爾",
+      "cardId": "hBP07-048",
+      "name": "エリザベス・ローズ・ブラッドフレイム",
+      "nameZh": "伊莉莎白·蘿絲·布拉德弗雷姆",
       "score": 0.63,
       "trend": "up"
     },
     {
-      "cardId": "hBP01-038",
-      "name": "兎田ぺこら",
-      "nameZh": "兔田佩克拉",
+      "cardId": "hBP08-034",
+      "name": "モココ・アビスガード",
+      "nameZh": "雙子·深淵護衛",
       "score": 0.63,
       "trend": "up"
     },
     {
-      "cardId": "hBP01-041",
-      "name": "兎田ぺこら",
-      "nameZh": "兔田佩克拉",
+      "cardId": "hSD04-003",
+      "name": "癒月ちょこ",
+      "nameZh": "癒月巧可",
       "score": 0.63,
       "trend": "up"
     },
     {
-      "cardId": "hBP01-043",
-      "name": "兎田ぺこら",
-      "nameZh": "兔田佩克拉",
+      "cardId": "hSD12-013",
+      "name": "モココ・アビスガード",
+      "nameZh": "雙子·深淵護衛",
       "score": 0.63,
       "trend": "up"
     },
     {
-      "cardId": "hBP01-044",
-      "name": "AZKi",
-      "nameZh": "AZKi",
+      "cardId": "hSD13-018",
+      "name": "Popo",
+      "nameZh": "Popo",
       "score": 0.63,
       "trend": "up"
     },
     {
-      "cardId": "hBP01-044",
-      "name": "AZKi",
-      "nameZh": "AZKi",
-      "score": 0.63,
+      "cardId": "hBP07-005",
+      "name": "オーロ・クロニー",
+      "nameZh": "奧羅·克洛尼",
+      "score": 0.52,
       "trend": "up"
     },
     {
-      "cardId": "hBP01-047",
-      "name": "AZKi",
-      "nameZh": "AZKi",
-      "score": 0.63,
+      "cardId": "hBP07-005",
+      "name": "オーロ・クロニー",
+      "nameZh": "奧羅·克洛尼",
+      "score": 0.52,
       "trend": "up"
     },
     {
-      "cardId": "hBP01-048",
+      "cardId": "hSD10-009",
+      "name": "綺々羅々ヴィヴィ",
+      "nameZh": "綺綺羅羅薇薇",
+      "score": 0.52,
+      "trend": "up"
+    },
+    {
+      "cardId": "hSD12-014",
+      "name": "フワワ・アビスガード",
+      "nameZh": "雙葉·深淵護衛",
+      "score": 0.44,
+      "trend": "up"
+    },
+    {
+      "cardId": "hBP08-016",
+      "name": "ときのそら",
+      "nameZh": "時乃空",
+      "score": 0.43,
+      "trend": "up"
+    },
+    {
+      "cardId": "hBP08-016",
+      "name": "ときのそら",
+      "nameZh": "時乃空",
+      "score": 0.43,
+      "trend": "up"
+    },
+    {
+      "cardId": "hBP08-029",
       "name": "風真いろは",
       "nameZh": "風真伊呂波",
-      "score": 0.63,
+      "score": 0.43,
       "trend": "up"
     },
     {
-      "cardId": "hBP01-051",
+      "cardId": "hBP08-029",
       "name": "風真いろは",
       "nameZh": "風真伊呂波",
-      "score": 0.63,
+      "score": 0.43,
       "trend": "up"
     },
     {
-      "cardId": "hBP01-056",
-      "name": "鷹嶺ルイ",
-      "nameZh": "鷹嶺琉衣",
-      "score": 0.63,
+      "cardId": "hBP08-035",
+      "name": "モココ・アビスガード",
+      "nameZh": "雙子·深淵護衛",
+      "score": 0.43,
       "trend": "up"
     },
     {
-      "cardId": "hBP01-067",
-      "name": "小鳥遊キアラ",
-      "nameZh": "小鳥遊琪亞拉",
-      "score": 0.63,
-      "trend": "up"
-    },
-    {
-      "cardId": "hBP01-068",
-      "name": "尾丸ポルカ",
-      "nameZh": "尾丸波爾卡",
-      "score": 0.63,
-      "trend": "up"
-    },
-    {
-      "cardId": "hBP01-071",
-      "name": "尾丸ポルカ",
-      "nameZh": "尾丸波爾卡",
-      "score": 0.63,
-      "trend": "up"
-    },
-    {
-      "cardId": "hBP01-076",
-      "name": "星街すいせい",
-      "nameZh": "星街彗星",
-      "score": 0.63,
+      "cardId": "hBP08-036",
+      "name": "モココ・アビスガード",
+      "nameZh": "雙子·深淵護衛",
+      "score": 0.43,
       "trend": "up"
     }
   ],
@@ -178,27 +178,6 @@
       "trend": "down"
     },
     {
-      "cardId": "hBP01-060",
-      "name": "鷹嶺ルイ",
-      "nameZh": "鷹嶺琉衣",
-      "score": -0.52,
-      "trend": "down"
-    },
-    {
-      "cardId": "hBP01-060",
-      "name": "鷹嶺ルイ",
-      "nameZh": "鷹嶺琉衣",
-      "score": -0.52,
-      "trend": "down"
-    },
-    {
-      "cardId": "hSD02-007",
-      "name": "百鬼あやめ",
-      "nameZh": "百鬼綾目",
-      "score": -0.52,
-      "trend": "down"
-    },
-    {
       "cardId": "hBP01-021",
       "name": "ときのそら",
       "nameZh": "時乃空",
@@ -209,6 +188,20 @@
       "cardId": "hBP01-021",
       "name": "ときのそら",
       "nameZh": "時乃空",
+      "score": -0.51,
+      "trend": "down"
+    },
+    {
+      "cardId": "hBP01-060",
+      "name": "鷹嶺ルイ",
+      "nameZh": "鷹嶺琉衣",
+      "score": -0.51,
+      "trend": "down"
+    },
+    {
+      "cardId": "hBP01-060",
+      "name": "鷹嶺ルイ",
+      "nameZh": "鷹嶺琉衣",
       "score": -0.51,
       "trend": "down"
     },
@@ -269,16 +262,9 @@
       "trend": "down"
     },
     {
-      "cardId": "hBP03-034",
-      "name": "赤井はあと",
-      "nameZh": "赤井心",
-      "score": -0.48,
-      "trend": "down"
-    },
-    {
-      "cardId": "hBP03-034",
-      "name": "赤井はあと",
-      "nameZh": "赤井心",
+      "cardId": "hBP03-050",
+      "name": "FUWAMOCO",
+      "nameZh": "FUWAMOCO",
       "score": -0.48,
       "trend": "down"
     },
@@ -287,6 +273,20 @@
       "name": "FUWAMOCO",
       "nameZh": "FUWAMOCO",
       "score": -0.48,
+      "trend": "down"
+    },
+    {
+      "cardId": "hBP01-039",
+      "name": "兎田ぺこら",
+      "nameZh": "兔田佩克拉",
+      "score": -0.47,
+      "trend": "down"
+    },
+    {
+      "cardId": "hBP01-039",
+      "name": "兎田ぺこら",
+      "nameZh": "兔田佩克拉",
+      "score": -0.47,
       "trend": "down"
     }
   ]
