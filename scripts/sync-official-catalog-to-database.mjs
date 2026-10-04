@@ -6,6 +6,7 @@ import {
   buildPreservationIndex,
   findPreservedMatch,
   applyPreservedMarketFields,
+  restoreBuyPriceHistory,
 } from './lib/preserve-market-fields.js';
 import { printingId, imageSuffix } from './lib/printing-identity.js';
 import { broadcastYtStats } from './lib/yt-stats-fanout.js';
@@ -150,7 +151,17 @@ function dbCardSignature(id, card) {
   ].join('|');
 }
 
-function toDatabaseCard(card, id) {
+// DIC-1511: localImage is owned by build-database.js Step 2, which derives it
+// from the presence of data/images/<cardNumber>.jpg. The sync used to hardcode
+// '' here, so every official refresh blanked 3,105 rows that the next rebuild
+// restored — pure generated-data churn. Apply the same file-existence rule so
+// both writers produce the same value for the same printing.
+function localImageFor(cardNumber, imagesDirectory) {
+  if (!cardNumber || !imagesDirectory) return '';
+  return fs.existsSync(path.join(imagesDirectory, `${cardNumber}.jpg`)) ? `/images/${cardNumber}.jpg` : '';
+}
+
+function toDatabaseCard(card, id, imagesDirectory) {
   return {
     id,
     cardNumber: card.cardNumber || '',
@@ -167,7 +178,7 @@ function toDatabaseCard(card, id) {
     yuyuImage: '',
     prices: [],
     officialImage: card.imageUrl || '',
-    localImage: '',
+    localImage: localImageFor(card.cardNumber, imagesDirectory),
     hp: card.hp || '',
     life: card.life || '',
     arts: card.arts || '',
@@ -204,6 +215,7 @@ export function syncOfficialCatalogToDatabase({
   effectsZhPath: zhEffectsPath = effectsZhPath,
 } = {}) {
   const db = readJson(databasePath);
+  const imagesDirectory = path.join(path.dirname(databasePath), 'images');
   if (!db.cards || typeof db.cards !== 'object') throw new Error('data/database.json missing cards map');
 
   // DIC-1421: brand-new printings (new id, new sourceProduct) have no previous
@@ -240,7 +252,7 @@ export function syncOfficialCatalogToDatabase({
       canonicalSignatures.add(cardSignature(card));
       const id = printingId(card);
       if (!id || !card.cardNumber) continue;
-      const preview = toDatabaseCard(card, id);
+      const preview = toDatabaseCard(card, id, imagesDirectory);
       const match = findPreservedMatch(preservationIndex, id, preview);
       const previous = match?.card || db.cards[id] || {};
       const matchKind = match?.matchKind || 'exact-id';
@@ -288,6 +300,18 @@ export function syncOfficialCatalogToDatabase({
   // current then pre-sync rows). Runs before pruning so a to-be-pruned row can
   // still serve as the proven seed for its member's surviving printings.
   const ytStatsBroadcast = broadcastYtStats(db.cards, previousCards);
+
+  // DIC-1511: every upserted row is rebuilt from `toDatabaseCard`, which has no
+  // `buyPriceHistory`, and `applyPreservedMarketFields` only carries yuyu sell
+  // fields. #239 taught build-database.js to carry the cumulative buy series
+  // (DIC-1167 CR 2660774f) but this writer was missed, so the scheduled sync on
+  // PR #212 (b2f7a0d) dropped 1,279 dated observations on 651 printings and
+  // regen-buy-alignment then re-seeded only the snapshot date. Carry the series
+  // by EXACT printing id with the same cardNumber+rarity identity check (no
+  // signature / cross-printing fallback); current dates win and the stale
+  // scalar `buyPrice` / `prices[].buyPrice` claims are never restored — the
+  // buy-alignment step re-derives those from the committed sources.
+  const buyPriceHistory = restoreBuyPriceHistory(db.cards, previousCards);
 
   let pruned = 0;
   const prunedIds = new Set();
@@ -353,6 +377,7 @@ export function syncOfficialCatalogToDatabase({
     sellPreserved,
     pruned,
     ytStatsBroadcast,
+    buyPriceHistory,
     totalCards: db.totalCards,
     priceGate: { before: gate.before, after: gate.after, rejections: dic1482Rejections.length },
   };
@@ -361,6 +386,7 @@ export function syncOfficialCatalogToDatabase({
 function main() {
   const result = syncOfficialCatalogToDatabase();
   console.log(`✓ synced ${result.upserted} official sourceProduct printings into data/database.json (totalCards=${result.totalCards}; preservedSell=${result.sellPreserved}; pruned=${result.pruned}; ytStatsBroadcast=${result.ytStatsBroadcast})`);
+  console.log(`[buyPriceHistory] Carried ${result.buyPriceHistory.observations} observations onto ${result.buyPriceHistory.cards} rebuilt printings (identity mismatches refused: ${result.buyPriceHistory.skippedIdentityMismatch})`);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) main();
