@@ -42,8 +42,16 @@
       "currency": "JPY",
       "cardId": "hBP09-101_hBP09_S_hBP09-101_S",
       "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-10-04",
+      "price": 1280,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-101_hBP09_S_hBP09-101_S",
+      "sourceProduct": "hBP09"
     }
   ],
-  "lastUpdated": "2026-10-03T12:08:32.501Z",
+  "lastUpdated": "2026-10-04T12:08:56.883Z",
   "nameZh": "笨蛋！變態！吵死了！我不認識你！"
 }

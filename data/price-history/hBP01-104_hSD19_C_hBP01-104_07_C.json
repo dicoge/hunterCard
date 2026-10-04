@@ -42,8 +42,16 @@
       "currency": "JPY",
       "cardId": "hBP01-104_hSD19_C_hBP01-104_07_C",
       "sourceProduct": "hSD19"
+    },
+    {
+      "date": "2026-10-04",
+      "price": 500,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-104_hSD19_C_hBP01-104_07_C",
+      "sourceProduct": "hSD19"
     }
   ],
-  "lastUpdated": "2026-10-03T12:08:32.209Z",
+  "lastUpdated": "2026-10-04T12:08:56.653Z",
   "nameZh": "普通電腦"
 }

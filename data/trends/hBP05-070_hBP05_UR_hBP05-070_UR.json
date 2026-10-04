@@ -3,13 +3,13 @@
   "name": "白上フブキ",
   "nameZh": "白上吹雪",
   "trend": "up",
-  "score": 0.36,
+  "score": 0.37,
   "confidence": 0.5,
   "components": {
     "priceTrend": 0.56,
     "ytTrend": 0,
-    "newsSentiment": 0.15
+    "newsSentiment": 0.16
   },
-  "lastUpdated": "2026-10-03T12:08:42.536Z",
+  "lastUpdated": "2026-10-04T12:09:06.810Z",
   "dataPoints": 65
 }

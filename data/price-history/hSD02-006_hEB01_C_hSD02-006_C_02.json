@@ -26,8 +26,16 @@
       "currency": "JPY",
       "cardId": "hSD02-006_hEB01_C_hSD02-006_C_02",
       "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-04",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD02-006_hEB01_C_hSD02-006_C_02",
+      "sourceProduct": "hEB01"
     }
   ],
-  "lastUpdated": "2026-10-03T12:08:32.521Z",
+  "lastUpdated": "2026-10-04T12:08:56.892Z",
   "nameZh": "百鬼綾目"
 }
