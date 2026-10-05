@@ -8,7 +8,7 @@
 // FROM the source of truth and asserts the legal pages state them.
 //
 // Truth sources:
-//   • src/services/permissionService.ts — MONTHLY_SCAN_LIMIT (100)
+//   • src/services/permissionService.ts — MONTHLY_SCAN_LIMIT (50, shared by guest + free_user)
 //   • src/config/releaseFlags.ts        — FEATURES.premium (Store MVP
 //     disables premium → subscriber collapses to free_user)
 //   • src/services/accountSyncClient.ts / accountSyncOrchestrator.ts
@@ -81,7 +81,9 @@ const syncsSettings = /\bsettings\b/.test(returnedFields);
 const syncsScanQuota = /scanQuota/i.test(returnedFields);
 const syncsSubscription = /subscription/i.test(returnedFields);
 
-ok('code sanity: MONTHLY_SCAN_LIMIT is 100', scanLimit === 100);
+ok('code sanity: MONTHLY_SCAN_LIMIT is 50', scanLimit === 50);
+ok('code sanity: guests are not hard-blocked from scanning (no guest early-return in isQuotaExceeded)',
+  !/role\s*===\s*'guest'\)\s*return\s+true/.test(permissionSrc));
 ok('code sanity: FEATURES.premium is derived from STORE_MVP (Store MVP disables premium)', premiumGate);
 ok('code sanity: effectiveRole collapses subscriber → free_user when premium is off', collapse);
 ok('code sanity: sync payload includes favorites/decks/collection/priceAlerts/settings', syncsFavorites && syncsDecks && syncsCollection && syncsPriceAlerts && syncsSettings);
@@ -104,6 +106,13 @@ for (const [page, raw] of [['support.html', supportRaw], ['privacy.html', privac
     /(尚未開放|not open yet|not implemented|no payment or subscription mechanism)/i.test(raw));
   ok(`${page} describes scan quota as a per-device counter today (matches scanQuotaStore local persist)`,
     /(裝置端計數|per-device counter|per device counter|local counter)/i.test(raw));
+  ok(`${page} states guests can scan (matches canScanWithRemaining — guest shares the device allowance)`,
+    /(訪客.{0,40}掃描|Guest.{0,80}(scan|scanning))/i.test(raw));
+  ok(`${page} does NOT still claim guests cannot scan / scanning requires sign-in`,
+    !/訪客模式不支援掃描/.test(raw) && !/guest mode does not support scanning/i.test(raw)
+      && !/card scanning \(camera OCR\)<\/strong>.{0,80}require/i.test(raw) && !/需要您以 Google 或 Apple 帳號登入後方能使用/.test(raw));
+  ok(`${page} does NOT state the retired 100/month limit`,
+    !/100 ?(次|張|scans|card scans|times per month)/i.test(raw));
   // "Server-side quota enforcement" claims must be flagged as future,
   // never as implemented. Assert no page says "server-side" enforcement
   // is live TODAY.

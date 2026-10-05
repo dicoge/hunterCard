@@ -63,7 +63,6 @@ export const ja: Record<keyof typeof zh, string> = {
   // Scan
   scan_title: 'カードスキャン',
   scan_camera_prompt: 'カードを枠内に合わせてください',
-  scan_guest_limit: 'ゲストはスキャン機能を使用できません。ログインしてください。',
   scan_candidate_select: '候補カードを選択',
   scan_quota_remaining: '本日の残りスキャン回数：{{count}}',
   scan_quota_exceeded: '本日のスキャン上限に達しました',
@@ -172,16 +171,16 @@ export const ja: Record<keyof typeof zh, string> = {
   // Login Screen
   login_tagline: 'hOCG 価格トラッキング・スキャン査定・デッキ整理',
   login_welcome: 'カードハントの旅へ',
-  login_description: 'ログインするとお気に入り保存、スキャン、価格推移チェックが可能です',
+  login_description: 'ログインするとお気に入り保存、価格推移チェックが可能です。ゲストも毎月 50 枚までスキャンできます',
   // Store MVP: no favorites / alerts / price-trend promise (DIC-1256).
   // DIC-1381 W10 CR — Store MVP does NOT install the account-sync
   // binding (App.tsx gates it on FEATURES.favorites | .watchlist |
   // .premium, all false under STORE_MVP), so decks / settings /
   // favorites / price alerts live on-device only.
-  login_description_store: 'ログインするとカードスキャンとアカウント機能が利用できます。このバージョンではデッキと設定は端末内に保存されます。',
+  login_description_store: 'ログインするとアカウント機能が利用できます。ゲストも毎月 50 枚までスキャンできます（ログイン後もこの端末の上限を共有）。このバージョンではデッキと設定は端末内に保存されます。',
   login_or: 'または',
   login_guest_button: 'ゲストとして利用',
-  login_guest_hint: 'ゲストはルール閲覧と検索が可能ですが、スキャン機能は利用できません',
+  login_guest_hint: 'ゲストはルール閲覧・検索に加え、毎月 50 枚までカードをスキャンできます',
   login_terms_footer: 'ログインすることでプライバシーポリシーと利用規約に同意したとみなされます',
 
   // Common actions and states
@@ -287,7 +286,7 @@ export const ja: Record<keyof typeof zh, string> = {
   settings_guest_sync: 'ログインしていません。ログインするとお気に入りを端末間で同期できます。',
   // DIC-1381 W10 CR — Store MVP does NOT install the account-sync
   // binding, so decks/settings do not sync. State this truthfully.
-  settings_guest_sync_store: 'ログインしていません。ログインするとカードスキャンが利用できます。このバージョンではデッキと設定は端末内に保存されます。',
+  settings_guest_sync_store: 'ログインしていません。ゲストも毎月 50 枚までスキャンでき、ログインしても上限は増えずリセットもされません。このバージョンではデッキと設定は端末内に保存されます。',
   settings_footer: 'hololive PCGプレイヤーのために',
 
   // Tutorial landing
@@ -664,12 +663,9 @@ export const ja: Record<keyof typeof zh, string> = {
   // Scan flow
   scan_duplicate_title: '追加済みです',
   scan_duplicate_body: '{{name}} は今回のスキャン一覧に追加済みです。重複追加はしません。',
-  scan_login_title: 'ログインが必要です',
-  scan_login_body: 'カードスキャンを使うにはログインしてください',
-  scan_login_action: 'ログイン',
   scan_quota_title: 'スキャン上限に達しました',
-  scan_quota_body: '今月の上限（100枚）に達しました。翌月にリセットされます。',
-  scan_quota_premium_body: '今月の上限（100枚）に達しました。アップグレードすると無制限でスキャンできます。',
+  scan_quota_body: '今月の無料スキャン上限（50枚）に達しました（ゲストと無料会員はこの端末の上限を共有します）。翌月にリセットされます。',
+  scan_quota_premium_body: '今月の無料スキャン上限（50枚）に達しました。アップグレードすると無制限でスキャンできます。',
   scan_later: '後で',
   scan_upgrade: 'アップグレード',
   scan_ok: 'OK',
@@ -736,11 +732,11 @@ export const ja: Record<keyof typeof zh, string> = {
   scan_other_versions: 'ほかのシリーズ・版',
   scan_dismiss_hint: 'タップして閉じる',
   scan_quota_unlimited: '会員 — スキャン無制限',
-  scan_quota_login: 'スキャンを使うにはログインしてください',
-  scan_quota_exhausted: '⚠️ 今月のスキャン上限に達しました（{{count}}/100）',
-  scan_quota_remaining_banner: '📷 今月の残りスキャン：{{count}}/100',
+  scan_quota_exhausted: '⚠️ 今月のスキャン上限に達しました（{{count}}/50）',
+  scan_quota_remaining_banner: '📷 今月の残りスキャン：{{count}}/50',
   scan_role_subscriber: '会員',
   scan_role_free: '無料会員',
+  scan_role_guest: 'ゲスト',
   scan_candidate_low_title: 'カードを特定できません',
   scan_candidate_mid_title: '正しいカードを確認してください',
   scan_candidate_low_body: '認識の確度が低いため、撮り直すか手動検索をおすすめします。一致する候補があれば直接選べます。',

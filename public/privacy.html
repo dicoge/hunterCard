@@ -286,7 +286,7 @@
       <h2>1. 我們只支援第三方登入 (OAuth) 與訪客模式</h2>
       <p>為了保障使用者的帳號密碼安全，HoloHunter 採用現代化的身分驗證機制：</p>
       <div class="highlight-card">
-        <p><strong>🔒 重要產品決策：</strong> 本 App <strong>不提供也不支援</strong> 自行註冊 Email 帳號與設定密碼。我們僅支援安全第三方驗證，包含 <strong>Google 帳號登入</strong> 與 <strong>Apple ID 登入</strong>。同時我們提供「訪客模式」，無須登入即可閱讀規則與手動查卡。</p>
+        <p><strong>🔒 重要產品決策：</strong> 本 App <strong>不提供也不支援</strong> 自行註冊 Email 帳號與設定密碼。我們僅支援安全第三方驗證，包含 <strong>Google 帳號登入</strong> 與 <strong>Apple ID 登入</strong>。同時我們提供「訪客模式」，無須登入即可閱讀規則、手動查卡，並使用每月 50 次的卡牌掃描額度。</p>
       </div>
       <p>我們絕對不會要求您輸入、也不會儲存您的任何密碼。身分驗證程序均直接在 Google 或 Apple 的安全防護端進行。</p>
 
@@ -295,7 +295,7 @@
       <ul>
         <li><strong>多方綁定</strong>：您可以用 Google 登入後再綁定 Apple 帳號，或是用 Apple 登入後再綁定 Google 帳號。</li>
         <li><strong>同一識別碼</strong>：綁定後，該 Google 與 Apple 帳號將共同對應到同一個內部使用者識別碼 (Internal User ID)。每月掃描配額目前為裝置端計數（同一 Internal User ID 不會跨裝置合計），付費訂閱權限目前尚未實作；兩者會隨伺服器端 quota 與 App 內購上線時再納入 Internal User ID 的共享範圍。</li>
-        <li><strong>權限模型</strong>：目前 App 只提供訪客 (guest) 與免費會員 (free_user) 兩種角色。免費會員可使用卡牌掃描，每月上限 <strong>100 次</strong>（與 App 內 <code>MONTHLY_SCAN_LIMIT</code> 一致）；訪客模式不支援掃描與價格預測功能。付費訂閱會員 (subscriber) 為未來版本規劃，需等 App 內購與金流上線後才會啟用；在啟用之前，App 內部會把任何 subscriber 角色狀態強制回退為 free_user，因此不會出現任何裝置端偽造解鎖的路徑。</li>
+        <li><strong>權限模型</strong>：目前 App 只提供訪客 (guest) 與免費會員 (free_user) 兩種角色。訪客與免費會員皆可使用卡牌掃描，兩者共用同一裝置的每月上限 <strong>50 次</strong>（與 App 內 <code>MONTHLY_SCAN_LIMIT</code> 一致；只計入成功加入清單的掃描，辨識失敗或取消不計；切換訪客／登入身分不會重置或增加次數）；訪客模式不支援價格預測功能。付費訂閱會員 (subscriber) 為未來版本規劃，需等 App 內購與金流上線後才會啟用；在啟用之前，App 內部會把任何 subscriber 角色狀態強制回退為 free_user，因此不會出現任何裝置端偽造解鎖的路徑。</li>
         <li><strong>身分識別原則</strong>：我們<strong>不使用 Email 作為唯一身分依據</strong>（以防 Apple Private Relay 隱藏真實 Email，或不同平台的 Email 不一致）。身分綁定完全基於第三方 Provider 提供的非敏感帳號唯一識別碼。</li>
       </ul>
 
@@ -305,7 +305,7 @@
         <li><strong>電子郵件地址 (Email)</strong>：用於帳號聯絡、客服驗證與通知；不作為唯一登入或帳號合併依據，實際身分綁定以 Google/Apple Provider User ID 為準。</li>
         <li><strong>顯示名稱 (Display Name)</strong>：用於在 App 介面上提供個人化的歡迎資訊。</li>
         <li><strong>第三方帳號識別碼 (Provider User ID)</strong>：Google 或 Apple 提供的一串非敏感的唯一識別代碼。</li>
-        <li><strong>使用量與配額紀錄 (Scan Quota Logs)</strong>：目前掃描次數為裝置端計數（每月 100 次上限；清除快取或重裝會重置），用於實施免費版每月 100 次的裝置端額度控管。伺服器端配額同步與防竄改機制為未來版本規劃，屆時會與付費訂閱同時上線。</li>
+        <li><strong>使用量與配額紀錄 (Scan Quota Logs)</strong>：目前掃描次數為裝置端計數（網頁版存於瀏覽器 localStorage、手機 App 存於 App 本機儲存；每月 50 次上限，依裝置當地時間的日曆月重置；清除快取或重裝會重置），用於實施訪客與免費版共用的每月 50 次裝置端額度控管，計數不會上傳到伺服器。伺服器端配額同步與防竄改機制為未來版本規劃，屆時會與付費訂閱同時上線。</li>
         <li><strong>付費訂閱狀態 (Subscription Status)</strong>：<strong>目前未實作。</strong>本 App 尚未串接任何金流，不會取得、傳輸或儲存交易代碼、購買紀錄、信用卡號或任何其他財務資料。此欄位為未來版本規劃，屆時將先更新本政策再實裝。</li>
       </ul>
       
@@ -392,7 +392,7 @@
       <h2>1. Third-Party Authentication Only (OAuth) & Guest Mode</h2>
       <p>To ensure account credential security, HoloHunter employs modern authentication mechanisms:</p>
       <div class="highlight-card">
-        <p><strong>🔒 Critical Product Decision:</strong> The App <strong>does not provide or support</strong> custom email/password registration. We exclusively support secure third-party login via <strong>Google Sign-In</strong> and <strong>Sign in with Apple</strong>. We also provide a "Guest Mode" allowing users to read game rules and manually search cards without logging in.</p>
+        <p><strong>🔒 Critical Product Decision:</strong> The App <strong>does not provide or support</strong> custom email/password registration. We exclusively support secure third-party login via <strong>Google Sign-In</strong> and <strong>Sign in with Apple</strong>. We also provide a "Guest Mode" allowing users to read game rules, manually search cards and use the 50-per-month card-scan allowance without logging in.</p>
       </div>
       <p>We will never ask for, transmit, or store your passwords. All authentication procedures are performed directly on Google's or Apple's secure servers.</p>
 
@@ -401,7 +401,7 @@
       <ul>
         <li><strong>Account Linking</strong>: You can log in with Google and then link your Apple account, or log in with Apple and link your Google account.</li>
         <li><strong>Single Identity ID</strong>: Once linked, both Google and Apple identities point to a single Internal User ID. Monthly scan quota is currently a per-device counter (the same Internal User ID does not aggregate across devices), and paid subscription state is not yet implemented; both will be folded into what the Internal User ID actually shares once server-side quota and app in-app purchase ship.</li>
-        <li><strong>Permission Model</strong>: The current build only ships two active roles — guest and free_user. Free users can scan cards up to <strong>100 times per month</strong> (matches the app's <code>MONTHLY_SCAN_LIMIT</code> constant); guest mode does not support scanning or price forecasts. The paid subscriber role is a future plan that becomes active once app in-app purchase / billing ships; until then, any subscriber state is forcibly collapsed back to free_user inside the app, so there is no "local demo unlock" path.</li>
+        <li><strong>Permission Model</strong>: The current build only ships two active roles — guest and free_user. Guests and free users can both scan cards and share one per-device allowance of <strong>50 scans per month</strong> (matches the app's <code>MONTHLY_SCAN_LIMIT</code> constant; only scans successfully added to the list count — failed or cancelled recognitions do not; switching between guest and signed-in does not reset or add scans); guest mode does not support price forecasts. The paid subscriber role is a future plan that becomes active once app in-app purchase / billing ships; until then, any subscriber state is forcibly collapsed back to free_user inside the app, so there is no "local demo unlock" path.</li>
         <li><strong>Identification Principle</strong>: We **do NOT use Email as the primary unique key** (to prevent issues with Apple's Private Relay email hiding, or mismatching emails between providers). All linking is tied to the unique provider account ID.</li>
       </ul>
 
@@ -411,7 +411,7 @@
         <li><strong>Email Address</strong>: Used for account contact, support verification, and notifications. It is not used as the unique login or account-linking key; Google/Apple Provider User ID is the source of truth.</li>
         <li><strong>Display Name</strong>: Used to personalize greetings on the App interface.</li>
         <li><strong>Provider User ID</strong>: A non-sensitive unique ID string provided by Google or Apple.</li>
-        <li><strong>Scan Usage & Quota Logs</strong>: Scan count is currently kept as a per-device counter (100/month cap; clearing cache or reinstalling resets it), used to enforce the free-tier monthly limit on-device. Server-side quota sync and tamper prevention are future plans; they will ship together with paid subscriptions.</li>
+        <li><strong>Scan Usage & Quota Logs</strong>: Scan count is currently kept as a per-device counter (browser localStorage on the web, app-local storage on iOS / Android; 50/month cap, resetting each calendar month in the device's local time; clearing cache or reinstalling resets it), used to enforce the shared guest / free-tier monthly limit on-device. The count is not uploaded to our servers. Server-side quota sync and tamper prevention are future plans; they will ship together with paid subscriptions.</li>
         <li><strong>Paid Subscription Status</strong>: <strong>Not implemented.</strong> The App is not connected to any payment processor and does not obtain, transmit, or store transaction identifiers, purchase history, credit card numbers, or any other financial data. This field describes a future plan; we will update this policy before any of it takes effect.</li>
       </ul>
       

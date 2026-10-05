@@ -45,7 +45,7 @@ import { mapViewportRectToSource, Rect } from '../utils/scanGeometry';
 import { mapApiCardToCardInfo } from '../utils/apiCardMapper';
 import { useAuthStore } from '../store/authStore';
 import { useScanQuotaStore } from '../store/scanQuotaStore';
-import { effectiveRole } from '../services/permissionService';
+import { canScanWithRemaining } from '../services/permissionService';
 import { stripDisabledCardFields } from '../utils/cardReleaseFilter';
 import { FEATURES, releaseCardFlags, STORE_MVP } from '../config/releaseFlags';
 import { useTranslation, type TranslationKey } from '../i18n';
@@ -398,8 +398,8 @@ export default function ScanScreen({ navigation }: any) {
       const video = document.querySelector('video');
       if (video && video.readyState >= 2) {
         const result = analyzeFrameWithStability(video, scanArea);
-        // Gate auto-scan through the same role/quota check as manual scan so a
-        // guest / over-quota user in the scanner UI can't auto-record cards.
+        // Gate auto-scan through the same role/quota check as manual scan so an
+        // over-quota user (guest or free) in the scanner UI can't auto-record cards.
         if (result.isStable && result.confidence > 0.85 && canScanNow()) {
           const now = Date.now();
           if (now - lastScanTimeRef.current > SCAN_COOLDOWN_MS) {
@@ -509,25 +509,14 @@ export default function ScanScreen({ navigation }: any) {
   // Single role/quota gate, read from live store state (no stale closures — the
   // auto-scan rAF loop calls this outside the render cycle).
   const canScanNow = (): boolean => {
-    // effectiveRole collapses subscriber→free_user in Store MVP, so unlimited
-    // scan is never granted when premium is disabled (CR DIC-913 #2).
-    const currentRole = effectiveRole(useAuthStore.getState().role);
-    if (currentRole === 'guest') return false;
-    if (currentRole === 'subscriber') return true;
-    return getRemaining() > 0;
+    // canScanWithRemaining applies effectiveRole (subscriber→free_user in Store
+    // MVP, CR DIC-913 #2). Guests share the free users' monthly device allowance.
+    return canScanWithRemaining(useAuthStore.getState().role, getRemaining());
   };
 
+  // Only reached when the shared monthly allowance is used up. Guests get the same
+  // quota prompt as free users — signing in does not add scans, so no login CTA.
   const promptScanBlocked = () => {
-    const currentRole = effectiveRole(useAuthStore.getState().role);
-    if (currentRole === 'guest') {
-      // Route to the real login flow: clearing the guest session drops the app
-      // back to LoginScreen (no-op CTA removed — CR DIC-913 #4).
-      Alert.alert(t('scan_login_title'), t('scan_login_body'), [
-        { text: t('common_cancel'), style: 'cancel' },
-        { text: t('scan_login_action'), onPress: () => useAuthStore.getState().logout() },
-      ]);
-      return;
-    }
     // Store MVP 不賣訂閱，額度已滿時不露出升級/付費入口（DIC-908）。
     if (FEATURES.premium) {
       Alert.alert(t('scan_quota_title'), t('scan_quota_premium_body'), [
@@ -605,7 +594,7 @@ export default function ScanScreen({ navigation }: any) {
   // OCR 識別功能（支援 web/native，自動降級）
   const captureAndRecognize = async () => {
     // Enforce the same role/quota gate as handleScan. Auto-scan and retry paths
-    // funnel through here, so guests / over-quota users can't trigger recognition.
+    // funnel through here, so over-quota users (guest or free) can't trigger recognition.
     // Silent by design — auto-scan must not spam alerts; interactive callers
     // prompt via handleScan.
     if (!canScanNow()) return;

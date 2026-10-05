@@ -150,12 +150,12 @@ for (const [label, viewport] of [['mobile 390', MOBILE], ['desktop 1440', DESKTO
     } finally { await cleanup(); }
   });
 
-  await test(`${label}: Pen Free plan lists 100 掃描 scans/month + 全部卡表檢索`, async () => {
+  await test(`${label}: Pen Free plan lists 50 掃描 scans/month + 全部卡表檢索`, async () => {
     const { container, cleanup } = await renderLanding(viewport);
     try {
       const freePlan = byTestId(container, 'landing-plan-free');
       const text = freePlan.textContent;
-      assert.ok(text.includes('100') && text.includes('掃描'), 'Free plan lists the 100 scans/month quota');
+      assert.ok(text.includes('50 次') && text.includes('掃描') && !text.includes('100 次'), 'Free plan lists the 50 scans/month quota (not the retired 100)');
       assert.ok(text.includes('全部卡表檢索與篩選'), 'Free plan lists the 全部卡表檢索與篩選 feature');
       assert.ok(text.includes('賽事月報'), 'Free plan lists 賽事月報');
     } finally { await cleanup(); }
@@ -365,14 +365,14 @@ await test('desktop 1440: FAQ accordion expands/collapses with real state (DIC-1
     const item1 = byTestId(container, 'landing-faq-item-1');
     assert.ok(item0 && item1, 'FAQ accordion items mount');
     assert.ok(/App Store \/ Google Play \/ Stripe/.test(item0.textContent), 'first FAQ answer is open by default (desktop)');
-    assert.ok(!/拍照掃描需登入 Google 或 Apple 帳號/.test(item1.textContent), 'second FAQ answer starts collapsed on desktop');
+    assert.ok(!/拍照掃描每月也可免登入使用 50 次/.test(item1.textContent), 'second FAQ answer starts collapsed on desktop');
     const toggle1 = byTestId(container, 'landing-faq-toggle-1');
     await act(async () => {
       toggle1.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
     const item1After = byTestId(container, 'landing-faq-item-1');
-    assert.ok(/拍照掃描需登入 Google 或 Apple 帳號/.test(item1After.textContent), 'toggling reveals the reviewed answer (real state)');
+    assert.ok(/拍照掃描每月也可免登入使用 50 次/.test(item1After.textContent), 'toggling reveals the reviewed answer (real state)');
   } finally { await cleanup(); }
 });
 

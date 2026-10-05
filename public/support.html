@@ -318,14 +318,14 @@
       <div class="faq-item">
         <div class="faq-question">Q: 訪客模式 (Guest Mode) 有何功能限制？</div>
         <div class="faq-answer">
-          訪客模式僅開放「規則導覽」與「手動搜尋卡牌」。為了防止頻寬與伺服器資源濫用，<strong>卡牌相機掃描 (OCR)</strong> 與 <strong>AI 價格趨勢預測</strong> 等功能，需要您以 Google 或 Apple 帳號登入後方能使用。
+          訪客模式無須登入即可使用「規則導覽」、「手動搜尋卡牌」與<strong>卡牌掃描</strong>（每月 50 次，與登入後的免費會員共用同一裝置的額度）。<strong>AI 價格趨勢預測</strong>等進階功能尚未開放。
         </div>
       </div>
 
       <div class="faq-item">
         <div class="faq-question">Q: 免費版會員的每月掃描配額 (Quota) 是多少？</div>
         <div class="faq-answer">
-          凡是登入但未付費訂閱的免費版會員，每個月會提供 <strong>100 次的卡牌相機掃描額度</strong>。當月額度使用完畢後，相機將自動鎖定，直到次月 1 號 (UTC) 自動重置；未來訂閱方案上線後，付費會員可立即解除次數限制。<br><br><strong>目前版本：</strong>掃描計數目前為裝置本機計數（清除快取或重裝 App 會重置）。伺服器端的每月額度控管將於後續版本上線；Google / Apple 登入本身已在後端運作，帳號 sync binding 目前於 Store MVP 版本並未安裝，僅在 feature flag 打開的建置（例如 Web Develop / Staging）才會啟用。
+          訪客與登入但未付費訂閱的免費版會員，共用每台裝置每個月 <strong>50 次的卡牌掃描額度</strong>（只計入成功加入清單的掃描；辨識失敗或取消不計；在訪客與登入之間切換不會重置或增加次數）。當月額度使用完畢後將無法再掃描，直到裝置當地時間的次月 1 號自動重置；未來訂閱方案上線後，付費會員可立即解除次數限制。<br><br><strong>目前版本：</strong>掃描計數目前為裝置本機計數（清除快取或重裝 App 會重置）。伺服器端的每月額度控管將於後續版本上線；Google / Apple 登入本身已在後端運作，帳號 sync binding 目前於 Store MVP 版本並未安裝，僅在 feature flag 打開的建置（例如 Web Develop / Staging）才會啟用。
         </div>
       </div>
 
@@ -333,7 +333,7 @@
         <div class="faq-question">Q: 升級「訂閱版會員 (Subscriber)」有哪些專屬功能？</div>
         <div class="faq-answer">
           訂閱會員未來可享受以下專屬高級功能：<br>
-          1. <strong>無限卡牌掃描</strong>：完全解除每月 100 張的掃描上限限制。<br>
+          1. <strong>無限卡牌掃描</strong>：完全解除每月 50 張的掃描上限限制。<br>
           2. <strong>AI 價格與趨勢預測</strong>：解鎖獨家的價格走向預測，結合 YT 社群訂閱趨勢、新聞情緒與市場歷史數據綜合演算分析，助您精準掌握卡牌交易的最佳時機。<br><br><strong>目前版本狀態：</strong>付費訂閱與 App 內購尚未開放；付費方案上線後將透過 <strong>Apple StoreKit 2 / Google Play Billing / Stripe Checkout</strong> 依平台處理，並以 Store API 動態載入方案定價，App 內不會硬編碼任何金額。訂閱狀態解鎖以真實付款事件為準，本機不會出現「示範解鎖」路徑。
         </div>
       </div>
@@ -413,14 +413,14 @@
       <div class="faq-item">
         <div class="faq-question">Q: What are the restrictions in Guest Mode?</div>
         <div class="faq-answer">
-          Guest Mode only permits browsing game rules and manually searching cards. To prevent server resources abuse, <strong>card scanning (camera OCR)</strong> and <strong>AI price trend forecasts</strong> require you to log in with a Google or Apple account.
+          Guest Mode needs no sign-in and includes browsing game rules, manually searching cards and <strong>card scanning</strong> (50 per month, sharing one per-device allowance with signed-in free users). Advanced features such as <strong>AI price trend forecasts</strong> are not available yet.
         </div>
       </div>
 
       <div class="faq-item">
         <div class="faq-question">Q: What is the monthly scan quota for Free Users?</div>
         <div class="faq-answer">
-          Registered free tier users receive <strong>100 card scans per month</strong>. Once you exhaust this quota, the scanning capability locks until the 1st of the next month (UTC), when it resets. When a paid subscription launches, subscribers will be able to unlock the cap.<br><br><strong>Current build:</strong> the scan count is currently a per-device counter (clearing cache or reinstalling resets it). Server-side monthly quota enforcement will land in a subsequent build; Google / Apple sign-in itself already runs on the real backend, but the account sync binding is NOT installed under Store MVP — only feature-flag-enabled builds (e.g. Web Develop / Staging) install it today.
+          Guests and signed-in free tier users share <strong>50 card scans per month per device</strong> (only scans successfully added to the list count; failed or cancelled recognitions do not; switching between guest and signed-in does not reset or add scans). Once you exhaust this quota, scanning is unavailable until the 1st of the next month in the device's local time, when it resets. When a paid subscription launches, subscribers will be able to unlock the cap.<br><br><strong>Current build:</strong> the scan count is currently a per-device counter (clearing cache or reinstalling resets it). Server-side monthly quota enforcement will land in a subsequent build; Google / Apple sign-in itself already runs on the real backend, but the account sync binding is NOT installed under Store MVP — only feature-flag-enabled builds (e.g. Web Develop / Staging) install it today.
         </div>
       </div>
 

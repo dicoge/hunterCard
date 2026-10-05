@@ -495,6 +495,9 @@ jobs:
       - name: Verify legal-page claims match actual STORE_MVP behavior (DIC-1380 W7 CR)
         run: npm run test:legal-copy-vs-behavior
 
+      - name: Verify guest scan + shared 50/month device allowance (guest-scan-50)
+        run: npm run test:guest-scan-quota
+
       - name: Verify Apple-linked delete + copy match the shipping stub (DIC-1380 W12 CR)
         run: npm run test:apple-delete-truth-copy
 

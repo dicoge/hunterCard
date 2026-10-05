@@ -61,7 +61,6 @@ export const zh = {
   // Scan
   scan_title: '掃描卡牌',
   scan_camera_prompt: '請將卡牌置於中央框架內',
-  scan_guest_limit: '訪客無法使用掃描功能，請先登入',
   scan_candidate_select: '選擇比對卡牌',
   scan_quota_remaining: '今日剩餘掃描次數：{{count}}',
   scan_quota_exceeded: '今日掃描次數已達上限',
@@ -172,17 +171,17 @@ export const zh = {
   // Login Screen
   login_tagline: '追蹤 hOCG 價格・掃描估值・整理牌組',
   login_welcome: '開始獵卡之旅',
-  login_description: '登入後可追蹤卡牌收藏、掃描卡牌、查看價格趨勢',
+  login_description: '登入後可追蹤卡牌收藏、查看價格趨勢；訪客也能每月掃描 50 張卡牌',
   // Store MVP: no 收藏 / 提醒 / 價格趨勢 promise (DIC-1256).
   // DIC-1381 W10 CR — Store MVP does NOT install the account-sync binding
   // (App.tsx gates installAccountSyncBinding on FEATURES.favorites |
   // .watchlist | .premium, all false under STORE_MVP), so favorites /
   // decks / price alerts / settings live on-device only. Do not promise
   // cross-device sync here.
-  login_description_store: '登入後可掃描卡牌並使用帳號功能。此版本的牌組與設定為裝置本機儲存。',
+  login_description_store: '登入後可使用帳號功能；訪客也能每月掃描 50 張卡牌（與登入後共用此裝置額度）。此版本的牌組與設定為裝置本機儲存。',
   login_or: '或',
   login_guest_button: '以訪客身份進入',
-  login_guest_hint: '訪客可瀏覽規則與查詢卡片，但無法使用掃描功能',
+  login_guest_hint: '訪客可瀏覽規則、查詢卡片，並每月掃描 50 張卡牌',
   login_terms_footer: '登入即表示同意隱私權政策與服務條款',
 
   // Common actions and states
@@ -290,7 +289,7 @@ export const zh = {
   settings_guest_sync: '尚未登入。登入後可跨裝置同步收藏。',
   // DIC-1381 W10 CR — Store MVP does NOT install the account-sync
   // binding, so decks/settings do not sync. State this truthfully.
-  settings_guest_sync_store: '尚未登入。登入後可使用卡牌掃描。此版本的牌組與設定為裝置本機儲存。',
+  settings_guest_sync_store: '尚未登入。訪客每月可掃描 50 張卡牌，登入不會增加或重置額度。此版本的牌組與設定為裝置本機儲存。',
   settings_footer: '專為 hololive PCG 玩家打造',
 
   // Tutorial landing
@@ -667,12 +666,9 @@ export const zh = {
   // Scan flow
   scan_duplicate_title: '已在清單中',
   scan_duplicate_body: '{{name}} 已在本次掃描清單，未重複加入。',
-  scan_login_title: '需要登入',
-  scan_login_body: '請登入以使用卡片掃描功能',
-  scan_login_action: '登入',
   scan_quota_title: '掃描額度已用完',
-  scan_quota_body: '本月掃描額度已達上限（100 張），下個月會重置。',
-  scan_quota_premium_body: '本月掃描額度已達上限（100 張）。升級訂閱即可無限掃描。',
+  scan_quota_body: '本月 50 張免費掃描額度已用完（訪客與免費會員共用此裝置的額度），下個月會重置。',
+  scan_quota_premium_body: '本月 50 張免費掃描額度已用完。升級訂閱即可無限掃描。',
   scan_later: '稍後',
   scan_upgrade: '升級訂閱',
   scan_ok: '好',
@@ -739,11 +735,11 @@ export const zh = {
   scan_other_versions: '其他系列版本',
   scan_dismiss_hint: '點擊關閉',
   scan_quota_unlimited: '訂閱會員 — 無限掃描',
-  scan_quota_login: '請登入以使用掃描功能',
-  scan_quota_exhausted: '⚠️ 本月掃描額度已用完（{{count}}/100）',
-  scan_quota_remaining_banner: '📷 本月剩餘掃描：{{count}}/100',
+  scan_quota_exhausted: '⚠️ 本月掃描額度已用完（{{count}}/50）',
+  scan_quota_remaining_banner: '📷 本月剩餘掃描：{{count}}/50',
   scan_role_subscriber: '訂閱會員',
   scan_role_free: '免費會員',
+  scan_role_guest: '訪客',
   scan_candidate_low_title: '無法確定是哪張卡',
   scan_candidate_mid_title: '請確認正確的卡牌',
   scan_candidate_low_body: '辨識信心偏低，建議重新拍攝或手動搜尋。若下方有相符的卡牌也可直接點選加入。',
