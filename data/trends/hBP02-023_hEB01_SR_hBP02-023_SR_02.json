@@ -4,12 +4,12 @@
   "nameZh": "帕沃莉亞·蕾內",
   "trend": "stable",
   "score": 0.03,
-  "confidence": 0.3,
+  "confidence": 0.7,
   "components": {
     "priceTrend": 0,
     "ytTrend": 0,
-    "newsSentiment": 0.15
+    "newsSentiment": 0.16
   },
-  "lastUpdated": "2026-10-03T12:08:42.349Z",
-  "dataPoints": 2
+  "lastUpdated": "2026-10-05T12:09:55.513Z",
+  "dataPoints": 4
 }

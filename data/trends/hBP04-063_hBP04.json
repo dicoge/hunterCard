@@ -3,13 +3,13 @@
   "name": "古石ビジュー",
   "nameZh": "古石比珠",
   "trend": "down",
-  "score": -0.2,
+  "score": -0.19,
   "confidence": 0.5,
   "components": {
     "priceTrend": -0.37,
     "ytTrend": 0,
-    "newsSentiment": 0.15
+    "newsSentiment": 0.16
   },
-  "lastUpdated": "2026-10-03T12:08:42.502Z",
+  "lastUpdated": "2026-10-05T12:09:55.627Z",
   "dataPoints": 66
 }

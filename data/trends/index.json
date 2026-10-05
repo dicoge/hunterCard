@@ -1,10 +1,10 @@
 {
-  "lastUpdated": "2026-10-03T12:08:43.115Z",
+  "lastUpdated": "2026-10-05T12:09:56.438Z",
   "totalCards": 4202,
   "summary": {
-    "up": 142,
-    "down": 235,
-    "stable": 3825
+    "up": 141,
+    "down": 234,
+    "stable": 3827
   },
   "topGainers": [
     {
@@ -102,7 +102,7 @@
       "cardId": "hSD12-014",
       "name": "フワワ・アビスガード",
       "nameZh": "雙葉·深淵護衛",
-      "score": 0.44,
+      "score": 0.45,
       "trend": "up"
     },
     {
@@ -178,20 +178,6 @@
       "trend": "down"
     },
     {
-      "cardId": "hBP01-021",
-      "name": "ときのそら",
-      "nameZh": "時乃空",
-      "score": -0.51,
-      "trend": "down"
-    },
-    {
-      "cardId": "hBP01-021",
-      "name": "ときのそら",
-      "nameZh": "時乃空",
-      "score": -0.51,
-      "trend": "down"
-    },
-    {
       "cardId": "hBP01-060",
       "name": "鷹嶺ルイ",
       "nameZh": "鷹嶺琉衣",
@@ -217,6 +203,20 @@
       "name": "オーロ・クロニー",
       "nameZh": "奧羅·克洛尼",
       "score": -0.51,
+      "trend": "down"
+    },
+    {
+      "cardId": "hBP01-021",
+      "name": "ときのそら",
+      "nameZh": "時乃空",
+      "score": -0.5,
+      "trend": "down"
+    },
+    {
+      "cardId": "hBP01-021",
+      "name": "ときのそら",
+      "nameZh": "時乃空",
+      "score": -0.5,
       "trend": "down"
     },
     {
@@ -259,20 +259,6 @@
       "name": "猫又おかゆ",
       "nameZh": "貓又小粥",
       "score": -0.49,
-      "trend": "down"
-    },
-    {
-      "cardId": "hBP03-050",
-      "name": "FUWAMOCO",
-      "nameZh": "FUWAMOCO",
-      "score": -0.48,
-      "trend": "down"
-    },
-    {
-      "cardId": "hBP03-050",
-      "name": "FUWAMOCO",
-      "nameZh": "FUWAMOCO",
-      "score": -0.48,
       "trend": "down"
     },
     {
@@ -284,6 +270,20 @@
     },
     {
       "cardId": "hBP01-039",
+      "name": "兎田ぺこら",
+      "nameZh": "兔田佩克拉",
+      "score": -0.47,
+      "trend": "down"
+    },
+    {
+      "cardId": "hBP01-041",
+      "name": "兎田ぺこら",
+      "nameZh": "兔田佩克拉",
+      "score": -0.47,
+      "trend": "down"
+    },
+    {
+      "cardId": "hBP01-041",
       "name": "兎田ぺこら",
       "nameZh": "兔田佩克拉",
       "score": -0.47,

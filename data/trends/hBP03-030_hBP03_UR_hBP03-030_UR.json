@@ -3,13 +3,13 @@
   "name": "さくらみこ",
   "nameZh": "櫻巫女",
   "trend": "stable",
-  "score": -0.05,
+  "score": -0.04,
   "confidence": 0.6,
   "components": {
     "priceTrend": -0.12,
     "ytTrend": 0,
-    "newsSentiment": 0.15
+    "newsSentiment": 0.16
   },
-  "lastUpdated": "2026-10-03T12:08:42.456Z",
+  "lastUpdated": "2026-10-05T12:09:55.567Z",
   "dataPoints": 65
 }
