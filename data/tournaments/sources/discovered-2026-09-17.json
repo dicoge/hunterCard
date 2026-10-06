@@ -1,0 +1,14 @@
+{
+  "month": "2026-09",
+  "publishedDate": "2026-09-17T18:04:18",
+  "liveDecklog": false,
+  "discoveredAt": "2026-09-30T23:21:16.926Z",
+  "discoveredFromKnownNewest": "2026-08-09",
+  "officialSource": {
+    "link": "https://hololive-official-cardgame.com/news/post/deck-showcase_vol-13/",
+    "title": "イチ推し！デッキ紹介！vol.13 ～ボリュームヴォルテックス～"
+  },
+  "events": [],
+  "resultTweets": [],
+  "_stub": "Discovery stub written by scripts/collect-tournament-reports.mjs --live. Fill in `events[]` from the official column, set liveDecklog=true if you want the Deck Log fetch leg to run, and re-execute the collector to acquire cards."
+}
