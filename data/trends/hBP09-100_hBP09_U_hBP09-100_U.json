@@ -4,12 +4,12 @@
   "nameZh": "諾艾爾的特盛牛丼",
   "trend": "stable",
   "score": 0.03,
-  "confidence": 0.7,
+  "confidence": 0.5,
   "components": {
     "priceTrend": 0,
     "ytTrend": 0,
-    "newsSentiment": 0.15
+    "newsSentiment": 0.16
   },
-  "lastUpdated": "2026-10-03T12:08:42.635Z",
-  "dataPoints": 4
+  "lastUpdated": "2026-10-06T12:08:37.016Z",
+  "dataPoints": 5
 }
