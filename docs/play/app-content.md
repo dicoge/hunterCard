@@ -34,11 +34,14 @@ listing's "Contains ads" badge must change in the same release.
 
 The app opens on a sign-in screen offering Google sign-in or **以訪客身份進入** (continue as
 guest). Guests can browse sets, search cards, open card details with prices, read the rules
-tutorial and view tournament reports. Guests **cannot** use card scanning
-(`src/services/permissionService.ts:17`, `canScan = role !== 'guest'`).
+tutorial, view tournament reports **and scan cards** (guest scan, 2026-10-05): guests and
+signed-in free users share one device-local allowance of 50 successful scans per calendar
+month (`MONTHLY_SCAN_LIMIT` / `canScanWithRemaining` in `src/services/permissionService.ts`).
 
-Provide one instruction set covering the guest path, and one login credential for the
-scan feature.
+> **OWNER — re-check before answering.** Scanning no longer needs credentials. Re-verify
+> which features (if any) are still sign-in-only in the build you submit before choosing
+> "restricted" vs "all functionality available"; this draft does not decide that for you.
+> The earlier v33 Play draft predates this change and is obsolete.
 
 **Reviewer instructions — paste into "Instructions" (English):**
 
@@ -48,9 +51,9 @@ Most of the app is usable without any account. On the first screen, tap
 browse card sets, search cards, open card details (card artwork, card number, type, colour,
 rarity, skills and effects), read the rules tutorial, and view tournament reports.
 
-Card scanning requires a signed-in account. To review that feature, tap the first button
-("Sign in with Google") and use the test account below. After signing in, open the menu
-(top-left) and choose "掃描卡牌" (Scan card), then point the camera at any trading card.
+Card scanning also works as a guest (up to 50 successful scans per month on the device).
+Open the menu (top-left) and choose "掃描卡牌" (Scan card), then point the camera at any
+trading card. Signing in with Google (first button, test account below) does not add scans.
 
 Test account: <OWNER: Google account address>
 Password: <OWNER: password>
@@ -63,8 +66,8 @@ affiliated with or endorsed by COVER Corporation.
 > **OWNER — blocking.** Play requires working credentials for any gated functionality.
 > Create a dedicated Google account for review, disable 2-Step Verification on it, sign in
 > with it once on a real device so Google does not treat the reviewer's sign-in as
-> suspicious, and never reuse a personal account. A reviewer who cannot reach the scan
-> feature will reject the release under "App access".
+> suspicious, and never reuse a personal account. A reviewer who cannot reach gated
+> functionality will reject the release under "App access".
 
 ## Content rating (IARC questionnaire)
 

@@ -199,7 +199,7 @@ const FREE_FEATURES = [
   '市場價格與 7D/30D/90D 歷史',
   '收藏、牌組編輯器與缺卡預估',
   '賽事月報、規則教學與模擬戰',
-  '每月 100 次卡片辨識掃描',
+  '每月 50 次卡片辨識掃描（訪客也可用）',
 ];
 
 const COMING_SOON_FEATURES = [
@@ -209,7 +209,7 @@ const COMING_SOON_FEATURES = [
 ];
 
 const HOW_IT_WORKS = [
-  { step: '01', tint: T.accent, title: '先逛或先登入', body: '訪客就能查卡、讀規則與跑模擬戰。登入後才開放掃描與收藏；跨裝置同步為即將推出。' },
+  { step: '01', tint: T.accent, title: '先逛或先登入', body: '訪客就能查卡、讀規則、跑模擬戰，每月也能掃描 50 張卡。登入後開放收藏；跨裝置同步為即將推出。' },
   { step: '02', tint: T.accent3, title: '掃描或搜尋建卡表', body: '對著卡片拍照就辨識卡號與版本，也可以直接搜卡名或卡號。連續掃完一盒會給你整份估值清單與總計。' },
   { step: '03', tint: T.accent2, title: '組牌並盯價', body: '在編輯器組牌、看缺卡預估總額，再對想補的卡指定版本與價格區間，價格進區間時推播通知你。' },
 ] as const;
@@ -219,11 +219,11 @@ const HOW_IT_WORKS = [
 const FAQ = [
   {
     q: '需要付費才能使用嗎？',
-    a: 'HoloHunter 目前所有查詢、收藏、組牌、賽事月報與規則教學都是免費。每月 100 次卡片辨識掃描亦包含在免費會員內。訂閱與 App 內購尚未開放；未來付費方案上線時會透過 App Store / Google Play / Stripe 的既有金流處理，金額透過 Store API 動態載入。',
+    a: 'HoloHunter 目前所有查詢、收藏、組牌、賽事月報與規則教學都是免費。每月 50 次卡片辨識掃描免費提供，訪客與免費會員共用同一裝置的額度（裝置本機計數，清除資料或重裝會重置）。訂閱與 App 內購尚未開放；未來付費方案上線時會透過 App Store / Google Play / Stripe 的既有金流處理，金額透過 Store API 動態載入。',
   },
   {
     q: '沒有帳號可以先試用嗎？',
-    a: '可以。以訪客身份直接進入即可使用卡表檢索、規則教學、模擬對局與牌組編輯器；拍照掃描需登入 Google 或 Apple 帳號。收藏、牌組與到價提醒目前在 Store MVP 版本上為本機儲存，不會發出 /api/auth/sync 請求；未來啟用同步功能的建構會在登入後把上述資料同步到雲端。',
+    a: '可以。以訪客身份直接進入即可使用卡表檢索、規則教學、模擬對局與牌組編輯器，拍照掃描每月也可免登入使用 50 次（與登入後共用同一裝置額度）。收藏、牌組與到價提醒目前在 Store MVP 版本上為本機儲存，不會發出 /api/auth/sync 請求；未來啟用同步功能的建構會在登入後把上述資料同步到雲端。',
   },
   {
     q: '卡牌影像會被上傳到伺服器嗎？',
@@ -481,8 +481,8 @@ export default function LandingScreen({ navigation }: any = {}) {
     : 'hOCG · 非官方查詢工具 · 支援中日文';
 
   const noteText = isDesktop
-    ? '訪客可查卡與看規則 · 掃描與本機收藏需登入（Google 登入即將推出；跨裝置同步僅限啟用同步的建構）'
-    : '訪客可查卡與看規則 · 掃描與本機收藏需登入（Google／Apple 登入即將推出；跨裝置同步僅限啟用同步的建構）';
+    ? '訪客可查卡、看規則並每月掃描 50 張 · 本機收藏需登入（Google 登入即將推出；跨裝置同步僅限啟用同步的建構）'
+    : '訪客可查卡、看規則並每月掃描 50 張 · 本機收藏需登入（Google／Apple 登入即將推出；跨裝置同步僅限啟用同步的建構）';
 
   const googleCtaLabel = isDesktop ? '使用 Google 帳號開始（即將推出）' : '⧖  使用 Google 帳號（即將推出）';
 
@@ -876,7 +876,7 @@ export default function LandingScreen({ navigation }: any = {}) {
               只有掃描有額度，其他都免費
             </Text>
             <Text style={[styles.sectionSubhead, isDesktop && styles.textCenter]}>
-              查詢、收藏、組牌、賽事月報與規則教學都不收費。卡片辨識掃描每月 100 次。訂閱付費暫未開放。
+              查詢、收藏、組牌、賽事月報與規則教學都不收費。卡片辨識掃描每月 50 次（訪客免登入也可用）。訂閱付費暫未開放。
             </Text>
           </View>
           <View style={[styles.plansGrid, isDesktop && styles.plansGridDesktop]}>

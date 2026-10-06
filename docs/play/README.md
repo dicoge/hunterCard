@@ -73,7 +73,7 @@ comment** — put credentials and keys straight into Play Console or an EAS secr
 | 1 | Play Console account **type** (Personal / Organisation) and **creation date** | Decides whether the 12-tester / 14-day closed-test requirement applies (`testing-plan.md`) |
 | 2 | Identity verification (and organisation verification if applicable) complete | Play blocks publishing until it clears |
 | 3 | Public developer name, contact email, website, physical address | Store listing and account settings |
-| 4 | A dedicated **Google test account** for reviewers, with 2-Step Verification disabled and signed in once on a real device | App access — scanning is gated behind sign-in, so review fails without it |
+| 4 | A dedicated **Google test account** for reviewers, with 2-Step Verification disabled and signed in once on a real device | App access — guests can now scan (50/month, 2026-10-05); re-check whether any feature is still sign-in-only before deciding this credential is needed |
 | 5 | **12+ Gmail addresses or a Google Group** for closed testing; recruit 14–15 to absorb dropouts | Closed test track |
 | 6 | Countries and regions for distribution | Store listing |
 | 7 | Play Console app record created with package `com.dicoge.holohunter` (irreversible) | Everything |

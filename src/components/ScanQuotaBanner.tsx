@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Platform } from 'react-native';
 import { FEATURES } from '../config/releaseFlags';
 import { useAuthStore } from '../store/authStore';
 import { useScanQuotaStore } from '../store/scanQuotaStore';
-import { getRoleLabel } from '../services/permissionService';
+import { getRoleLabel, MONTHLY_SCAN_LIMIT } from '../services/permissionService';
 import { useTranslation } from '../i18n';
 import { PALETTE, SEMANTIC, FONTS } from '../theme/tokensV2';
 
@@ -11,8 +11,8 @@ import { PALETTE, SEMANTIC, FONTS } from '../theme/tokensV2';
  * Pen App/04 `LQDgk` quota pill — the compact top-bar chip that carries
  * the REAL scan-quota state. DIC-1409 CR fix: restyled from the legacy
  * COLORS banner onto the Pen v2 tokens and moved into the scan top bar;
- * every state branch (subscriber-unlimited under FEATURES.premium, guest
- * login prompt, low/exhausted tints, role tag) is behavior-identical.
+ * state branches: subscriber-unlimited under FEATURES.premium, low/exhausted
+ * tints, role tag. Guests share the 50/month device allowance (no lock pill).
  */
 export default function ScanQuotaBanner() {
   const { t, language } = useTranslation();
@@ -30,15 +30,8 @@ export default function ScanQuotaBanner() {
     );
   }
 
-  if (role === 'guest') {
-    return (
-      <View style={styles.pill} testID="scan-quota-pill">
-        <Text style={styles.icon}>🔒</Text>
-        <Text style={styles.text}>{t('scan_quota_login')}</Text>
-      </View>
-    );
-  }
-
+  // Guests share the free users' monthly device allowance, so they get the same
+  // remaining/exhausted pill — only the role tag differs.
   const isLow = remaining <= 10;
   const isExhausted = remaining <= 0;
 
@@ -53,12 +46,14 @@ export default function ScanQuotaBanner() {
       <Text style={styles.icon}>◉</Text>
       <Text style={styles.text} numberOfLines={1}>
         {isExhausted
-          ? t('scan_quota_exhausted', { count: scanCount })
+          // Cap the display: a count carried over from the retired 100/month
+          // limit must not render as e.g. "73/50".
+          ? t('scan_quota_exhausted', { count: Math.min(scanCount, MONTHLY_SCAN_LIMIT) })
           : t('scan_quota_remaining_banner', { count: remaining })}
       </Text>
       <Text style={styles.roleTag} numberOfLines={1}>
         {language === 'ja'
-          ? (role === 'subscriber' ? t('scan_role_subscriber') : t('scan_role_free'))
+          ? (role === 'subscriber' ? t('scan_role_subscriber') : role === 'guest' ? t('scan_role_guest') : t('scan_role_free'))
           : getRoleLabel(role)}
       </Text>
     </View>
