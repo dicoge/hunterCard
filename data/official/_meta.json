@@ -1,6 +1,7 @@
 {
-  "updatedAt": "2026-10-03T12:02:59.812Z",
+  "updatedAt": "2026-10-10T21:49:57.022Z",
   "discoveredSeries": [
+    "hCO03",
     "hBP09",
     "hEB01",
     "hBP08",
@@ -18,6 +19,7 @@
     "hBP06",
     "hSD10",
     "hSD01",
+    "hCO02",
     "hSD11",
     "hBP01",
     "hYS01",
@@ -39,6 +41,7 @@
     "hBP05"
   ],
   "series": [
+    "hCO03",
     "hBP09",
     "hEB01",
     "hBP08",
@@ -56,6 +59,7 @@
     "hBP06",
     "hSD10",
     "hSD01",
+    "hCO02",
     "hSD11",
     "hBP01",
     "hYS01",
@@ -76,15 +80,23 @@
     "hCS01",
     "hBP05"
   ],
-  "totalCards": 3136,
+  "totalCards": 3157,
   "seriesStats": [
+    {
+      "code": "hCO03",
+      "name": "エクストリーマーカップ25-26 Final オフィシャルホロカコレクションB",
+      "expectedCount": 6,
+      "ingestedCount": 6,
+      "missingCount": 0,
+      "lastSuccessfulSync": "2026-10-10T21:47:24.450Z"
+    },
     {
       "code": "hBP09",
       "name": "ブースターパック「ボリュームヴォルテックス」",
       "expectedCount": 255,
       "ingestedCount": 255,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:01:09.875Z"
+      "lastSuccessfulSync": "2026-10-10T21:47:34.565Z"
     },
     {
       "code": "hEB01",
@@ -92,7 +104,7 @@
       "expectedCount": 214,
       "ingestedCount": 214,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:01:17.137Z"
+      "lastSuccessfulSync": "2026-10-10T21:47:45.785Z"
     },
     {
       "code": "hBP08",
@@ -100,7 +112,7 @@
       "expectedCount": 251,
       "ingestedCount": 251,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:01:25.410Z"
+      "lastSuccessfulSync": "2026-10-10T21:47:58.925Z"
     },
     {
       "code": "hWF01",
@@ -108,7 +120,7 @@
       "expectedCount": 34,
       "ingestedCount": 34,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:01:26.567Z"
+      "lastSuccessfulSync": "2026-10-10T21:48:00.747Z"
     },
     {
       "code": "hCO01",
@@ -116,7 +128,7 @@
       "expectedCount": 8,
       "ingestedCount": 8,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:01:26.827Z"
+      "lastSuccessfulSync": "2026-10-10T21:48:01.285Z"
     },
     {
       "code": "hSD14",
@@ -124,7 +136,7 @@
       "expectedCount": 17,
       "ingestedCount": 17,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:01:27.596Z"
+      "lastSuccessfulSync": "2026-10-10T21:48:02.456Z"
     },
     {
       "code": "hSD15",
@@ -132,7 +144,7 @@
       "expectedCount": 17,
       "ingestedCount": 17,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:01:28.341Z"
+      "lastSuccessfulSync": "2026-10-10T21:48:03.863Z"
     },
     {
       "code": "hSD16",
@@ -140,7 +152,7 @@
       "expectedCount": 17,
       "ingestedCount": 17,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:01:29.072Z"
+      "lastSuccessfulSync": "2026-10-10T21:48:05.191Z"
     },
     {
       "code": "hSD17",
@@ -148,7 +160,7 @@
       "expectedCount": 17,
       "ingestedCount": 17,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:01:29.732Z"
+      "lastSuccessfulSync": "2026-10-10T21:48:06.625Z"
     },
     {
       "code": "hSD18",
@@ -156,7 +168,7 @@
       "expectedCount": 16,
       "ingestedCount": 16,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:01:30.484Z"
+      "lastSuccessfulSync": "2026-10-10T21:48:08.343Z"
     },
     {
       "code": "hSD19",
@@ -164,7 +176,7 @@
       "expectedCount": 17,
       "ingestedCount": 17,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:01:31.185Z"
+      "lastSuccessfulSync": "2026-10-10T21:48:10.051Z"
     },
     {
       "code": "hBP07",
@@ -172,7 +184,7 @@
       "expectedCount": 249,
       "ingestedCount": 249,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:01:40.152Z"
+      "lastSuccessfulSync": "2026-10-10T21:48:21.293Z"
     },
     {
       "code": "hSD12",
@@ -180,7 +192,7 @@
       "expectedCount": 26,
       "ingestedCount": 26,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:01:41.119Z"
+      "lastSuccessfulSync": "2026-10-10T21:48:22.461Z"
     },
     {
       "code": "hSD13",
@@ -188,7 +200,7 @@
       "expectedCount": 25,
       "ingestedCount": 25,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:01:41.884Z"
+      "lastSuccessfulSync": "2026-10-10T21:48:23.760Z"
     },
     {
       "code": "hBP06",
@@ -196,7 +208,7 @@
       "expectedCount": 243,
       "ingestedCount": 243,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:01:49.808Z"
+      "lastSuccessfulSync": "2026-10-10T21:48:33.998Z"
     },
     {
       "code": "hSD10",
@@ -204,7 +216,7 @@
       "expectedCount": 19,
       "ingestedCount": 19,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:01:50.691Z"
+      "lastSuccessfulSync": "2026-10-10T21:48:35.185Z"
     },
     {
       "code": "hSD01",
@@ -212,7 +224,15 @@
       "expectedCount": 23,
       "ingestedCount": 23,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:01:51.428Z"
+      "lastSuccessfulSync": "2026-10-10T21:48:36.295Z"
+    },
+    {
+      "code": "hCO02",
+      "name": "エクストリーマーカップ25-26 Final オフィシャルホロカコレクションA",
+      "expectedCount": 6,
+      "ingestedCount": 6,
+      "missingCount": 0,
+      "lastSuccessfulSync": "2026-10-10T21:48:36.772Z"
     },
     {
       "code": "hSD11",
@@ -220,7 +240,7 @@
       "expectedCount": 19,
       "ingestedCount": 19,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:01:52.203Z"
+      "lastSuccessfulSync": "2026-10-10T21:48:37.839Z"
     },
     {
       "code": "hBP01",
@@ -228,7 +248,7 @@
       "expectedCount": 153,
       "ingestedCount": 153,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:01:57.347Z"
+      "lastSuccessfulSync": "2026-10-10T21:48:45.024Z"
     },
     {
       "code": "hYS01",
@@ -236,15 +256,15 @@
       "expectedCount": 8,
       "ingestedCount": 8,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:01:57.641Z"
+      "lastSuccessfulSync": "2026-10-10T21:48:45.835Z"
     },
     {
       "code": "hPR",
       "name": "PRカード",
-      "expectedCount": 438,
-      "ingestedCount": 438,
+      "expectedCount": 447,
+      "ingestedCount": 447,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:02:21.574Z"
+      "lastSuccessfulSync": "2026-10-10T21:49:04.865Z"
     },
     {
       "code": "hBP02",
@@ -252,7 +272,7 @@
       "expectedCount": 219,
       "ingestedCount": 219,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:02:28.758Z"
+      "lastSuccessfulSync": "2026-10-10T21:49:16.038Z"
     },
     {
       "code": "hSD02",
@@ -260,7 +280,7 @@
       "expectedCount": 20,
       "ingestedCount": 20,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:02:29.452Z"
+      "lastSuccessfulSync": "2026-10-10T21:49:17.219Z"
     },
     {
       "code": "hSD03",
@@ -268,7 +288,7 @@
       "expectedCount": 20,
       "ingestedCount": 20,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:02:30.195Z"
+      "lastSuccessfulSync": "2026-10-10T21:49:18.361Z"
     },
     {
       "code": "hSD04",
@@ -276,7 +296,7 @@
       "expectedCount": 20,
       "ingestedCount": 20,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:02:31.208Z"
+      "lastSuccessfulSync": "2026-10-10T21:49:19.592Z"
     },
     {
       "code": "hSD05",
@@ -284,7 +304,7 @@
       "expectedCount": 20,
       "ingestedCount": 20,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:02:31.908Z"
+      "lastSuccessfulSync": "2026-10-10T21:49:20.650Z"
     },
     {
       "code": "hSD06",
@@ -292,7 +312,7 @@
       "expectedCount": 20,
       "ingestedCount": 20,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:02:32.657Z"
+      "lastSuccessfulSync": "2026-10-10T21:49:21.740Z"
     },
     {
       "code": "hSD07",
@@ -300,7 +320,7 @@
       "expectedCount": 20,
       "ingestedCount": 20,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:02:33.353Z"
+      "lastSuccessfulSync": "2026-10-10T21:49:22.810Z"
     },
     {
       "code": "hBP03",
@@ -308,7 +328,7 @@
       "expectedCount": 244,
       "ingestedCount": 244,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:02:41.542Z"
+      "lastSuccessfulSync": "2026-10-10T21:49:32.898Z"
     },
     {
       "code": "hPC01",
@@ -316,7 +336,7 @@
       "expectedCount": 5,
       "ingestedCount": 5,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:02:41.800Z"
+      "lastSuccessfulSync": "2026-10-10T21:49:33.392Z"
     },
     {
       "code": "hBP04",
@@ -324,7 +344,7 @@
       "expectedCount": 225,
       "ingestedCount": 225,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:02:49.368Z"
+      "lastSuccessfulSync": "2026-10-10T21:49:42.295Z"
     },
     {
       "code": "hSD08",
@@ -332,7 +352,7 @@
       "expectedCount": 17,
       "ingestedCount": 17,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:02:50.094Z"
+      "lastSuccessfulSync": "2026-10-10T21:49:43.885Z"
     },
     {
       "code": "hSD09",
@@ -340,7 +360,7 @@
       "expectedCount": 17,
       "ingestedCount": 17,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:02:50.781Z"
+      "lastSuccessfulSync": "2026-10-10T21:49:45.755Z"
     },
     {
       "code": "hSD2025summer",
@@ -348,7 +368,7 @@
       "expectedCount": 1,
       "ingestedCount": 1,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:02:51.025Z"
+      "lastSuccessfulSync": "2026-10-10T21:49:46.437Z"
     },
     {
       "code": "hCS01",
@@ -356,7 +376,7 @@
       "expectedCount": 5,
       "ingestedCount": 5,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:02:51.333Z"
+      "lastSuccessfulSync": "2026-10-10T21:49:47.464Z"
     },
     {
       "code": "hBP05",
@@ -364,7 +384,7 @@
       "expectedCount": 217,
       "ingestedCount": 217,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-03T12:02:59.810Z"
+      "lastSuccessfulSync": "2026-10-10T21:49:57.020Z"
     }
   ]
 }
