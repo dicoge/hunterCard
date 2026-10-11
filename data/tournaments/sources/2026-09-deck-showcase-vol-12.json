@@ -1,0 +1,537 @@
+{
+  "schemaVersion": 1,
+  "month": "2026-09",
+  "publishedDate": "2026-09-04",
+  "liveDecklog": true,
+  "provenance": "DIC-1494 curation. Official column 「イチ推し！デッキ紹介」vol.12 ～Grand Stage 2026 大阪注目デッキピックアップ～ (2026-09-04). Human-verified extraction: player, WGPロード bracket/block, placement label and Deck Log code are published in the column prose; the event ran 2026-08-29/30 at インテックス大阪, but the column does not say which day each block ran, so event dates stay unknown. rank is set only where the placement is ordinal (優勝 → 1); 入賞 stays unranked. Oshi is the Deck Log oshi card; colors are read off the single-colour yell pack (赤 / 紫), or — for VFNCY, which runs a mixed yell pack — off its main-deck holomen (all 緑). Card lists fetched from the public Deck Log view API and strict-validated (1 oshi / 50 main / 20 yell, every cardNumber in data/database.json) by the collector's --live path. Participant counts and full standings are not published by the source.",
+  "source": {
+    "name": "hololive OFFICIAL CARD GAME — 公式コラム「イチ推し！デッキ紹介」vol.12",
+    "url": "https://hololive-official-cardgame.com/news/post/deck-showcase_vol-12/",
+    "disclaimer": "資料僅來自官方專欄公開的精選牌組，非完整賽事結果。每篇專欄僅精選少數牌組；官方不公開參賽人數、完整名次或全部牌組。占比僅反映已觀測樣本，不代表整體 meta。"
+  },
+  "events": [
+    {
+      "eventId": "grand-stage-2026-osaka-wgp-road-individual-b",
+      "name": "Grand Stage 2026 大阪 WGPロード 個人戦 Bブロック",
+      "nameZh": "Grand Stage 2026 大阪 WGP Road 個人戰 B 組",
+      "date": null,
+      "region": "大阪",
+      "format": null,
+      "entrants": null,
+      "sourceUrl": "https://hololive-official-cardgame.com/news/post/deck-showcase_vol-12/",
+      "sourceType": "official-column",
+      "coverageNote": "官方專欄僅展示 1 副入賞牌組（未公開具體名次）；活動於 2026-08-29～30 舉行，該組比賽日、完整名次與參賽數未公開。牌組卡表已透過 Deck Log 公開 API 驗證。",
+      "decks": [
+        {
+          "decklogCode": "108R5W",
+          "playerName": "AJI",
+          "block": "B",
+          "rank": null,
+          "rankLabel": "個人戦Bブロック入賞",
+          "archetypeId": "tokino-sora",
+          "archetypeLabel": "ときのそら（赤・推し一伊那尓栖）",
+          "oshi": "一伊那尓栖",
+          "colors": [
+            "赤"
+          ],
+          "cards": [
+            {
+              "zone": "oshi",
+              "cardNumber": "hBP08-006",
+              "version": "OUR",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-021",
+              "version": null,
+              "count": 5
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-022",
+              "version": "P",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP05-013",
+              "version": "SR",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP08-015",
+              "version": "C",
+              "count": 3
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP08-016",
+              "version": "U",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP08-017",
+              "version": "R",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hEB01-004",
+              "version": "C",
+              "count": 3
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hEB01-005",
+              "version": "U",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hEB01-007",
+              "version": "SR",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hEB01-008",
+              "version": "R",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hEB01-009",
+              "version": "SR",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hEB01-010",
+              "version": "SR",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP03-088",
+              "version": "S",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP05-080",
+              "version": "SR",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP06-090",
+              "version": "SR",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-094",
+              "version": "P",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hEB01-032",
+              "version": "U",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD01-017",
+              "version": "C",
+              "count": 3
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-104",
+              "version": "C",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-118",
+              "version": "C",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP05-074",
+              "version": "C",
+              "count": 2
+            },
+            {
+              "zone": "yell",
+              "cardNumber": "hY03-001",
+              "version": "S",
+              "count": 20
+            }
+          ],
+          "cardsVerified": true,
+          "fetchedAt": "2026-09-29T00:32:00.064Z"
+        }
+      ]
+    },
+    {
+      "eventId": "grand-stage-2026-osaka-wgp-road-trio-b",
+      "name": "Grand Stage 2026 大阪 WGPロード トリオバトル Bブロック",
+      "nameZh": "Grand Stage 2026 大阪 WGP Road 三人團體戰 B 組",
+      "date": null,
+      "region": "大阪",
+      "format": null,
+      "entrants": null,
+      "sourceUrl": "https://hololive-official-cardgame.com/news/post/deck-showcase_vol-12/",
+      "sourceType": "official-column",
+      "coverageNote": "官方專欄展示 2 副牌組：優勝隊伍 1 名成員與入賞 1 名（未公開具體名次）；活動於 2026-08-29～30 舉行，該組比賽日、隊伍其他成員牌組、完整名次與參賽數未公開。牌組卡表已透過 Deck Log 公開 API 驗證。",
+      "decks": [
+        {
+          "decklogCode": "H2QS8",
+          "playerName": "おかぱふマン(ぱねぱね)",
+          "block": "B",
+          "rank": 1,
+          "rankLabel": "トリオバトルBブロック優勝",
+          "archetypeId": "takane-lui",
+          "archetypeLabel": "鷹嶺ルイ（紫単）",
+          "oshi": "鷹嶺ルイ",
+          "colors": [
+            "紫"
+          ],
+          "cards": [
+            {
+              "zone": "oshi",
+              "cardNumber": "hBP08-005",
+              "version": "SEC",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-048",
+              "version": "HR",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-050",
+              "version": "P",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD06-005",
+              "version": "SR",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-056",
+              "version": "HR",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-060",
+              "version": "SR",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-061",
+              "version": "P",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP04-054",
+              "version": "HR",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-073",
+              "version": "SR",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-074",
+              "version": "UR",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP08-061",
+              "version": "P",
+              "count": 3
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP08-062",
+              "version": "S",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP08-064",
+              "version": "S",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP08-065",
+              "version": "SR",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP08-067",
+              "version": "SR",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP03-088",
+              "version": "S",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP06-093",
+              "version": "P",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-094",
+              "version": "P",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-104",
+              "version": "SR",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP02-086",
+              "version": "S",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP05-074",
+              "version": "S",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP08-109",
+              "version": "S",
+              "count": 4
+            },
+            {
+              "zone": "yell",
+              "cardNumber": "hY05-001",
+              "version": "S",
+              "count": 20
+            }
+          ],
+          "cardsVerified": true,
+          "fetchedAt": "2026-09-29T00:29:54.986Z"
+        },
+        {
+          "decklogCode": "VFNCY",
+          "playerName": "meta",
+          "block": "B",
+          "rank": null,
+          "rankLabel": "トリオバトルBブロック入賞",
+          "archetypeId": "pavolia-reine",
+          "archetypeLabel": "パヴォリア・レイネ（緑・推しこぼ・かなえる）",
+          "oshi": "こぼ・かなえる",
+          "colors": [
+            "緑"
+          ],
+          "cards": [
+            {
+              "zone": "oshi",
+              "cardNumber": "hBP01-008",
+              "version": "OSR",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP08-031",
+              "version": "R",
+              "count": 3
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP02-018",
+              "version": "C",
+              "count": 6
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP02-019",
+              "version": "P",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP02-020",
+              "version": "S",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP02-021",
+              "version": "U",
+              "count": 3
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP02-022",
+              "version": "R",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP02-023",
+              "version": "SR",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP08-030",
+              "version": "C",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP08-033",
+              "version": "RR",
+              "count": 3
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP02-084",
+              "version": "U",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP03-088",
+              "version": "U",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP05-080",
+              "version": "U",
+              "count": 3
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP06-089",
+              "version": "C",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP06-090",
+              "version": "U",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD01-017",
+              "version": "C",
+              "count": 3
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-104",
+              "version": "C",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP02-094",
+              "version": "C",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP05-074",
+              "version": "C",
+              "count": 3
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP08-091",
+              "version": "U",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP08-099",
+              "version": "U",
+              "count": 1
+            },
+            {
+              "zone": "yell",
+              "cardNumber": "hY01-001",
+              "version": "S",
+              "count": 2
+            },
+            {
+              "zone": "yell",
+              "cardNumber": "hY02-001",
+              "version": "S",
+              "count": 8
+            },
+            {
+              "zone": "yell",
+              "cardNumber": "hY02-012",
+              "version": "SY",
+              "count": 1
+            },
+            {
+              "zone": "yell",
+              "cardNumber": "hY03-001",
+              "version": "S",
+              "count": 2
+            },
+            {
+              "zone": "yell",
+              "cardNumber": "hY04-001",
+              "version": "S",
+              "count": 2
+            },
+            {
+              "zone": "yell",
+              "cardNumber": "hY05-001",
+              "version": "S",
+              "count": 2
+            },
+            {
+              "zone": "yell",
+              "cardNumber": "hY06-001",
+              "version": "S",
+              "count": 3
+            }
+          ],
+          "cardsVerified": true,
+          "fetchedAt": "2026-09-29T00:29:55.688Z"
+        }
+      ]
+    }
+  ]
+}

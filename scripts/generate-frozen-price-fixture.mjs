@@ -17,6 +17,9 @@
  * catalog.
  *
  * Write:  node scripts/generate-frozen-price-fixture.mjs [--ref <git-ref>]
+ * Extend: node scripts/generate-frozen-price-fixture.mjs --extend --ref <git-ref>
+ *         (adds only the required card numbers the snapshot lacks, from <git-ref>;
+ *         every already-frozen entry is kept byte-for-byte — DIC-1494)
  * Verify: node scripts/generate-frozen-price-fixture.mjs --check
  */
 import fs from 'node:fs';
@@ -25,6 +28,7 @@ import {
   FIXTURE_PATH,
   LIVE_DB_PATH,
   buildFixtureString,
+  extendFixtureString,
   fixtureCardNumbers,
 } from './lib/frozen-price-fixture.mjs';
 
@@ -87,6 +91,21 @@ function main() {
   if (refFlag !== -1 && !ref) {
     console.error('✗ --ref needs a git ref, e.g. --ref a00676629');
     process.exit(1);
+  }
+  if (process.argv.includes('--extend')) {
+    if (!ref) {
+      console.error('✗ --extend needs --ref <git-ref> to freeze the additions from');
+      process.exit(1);
+    }
+    const extended = extendFixtureString({ ref });
+    if (extended === null) {
+      console.log(`✓ ${rel(FIXTURE_PATH)} already covers every required card number`);
+      return;
+    }
+    fs.writeFileSync(FIXTURE_PATH, extended, 'utf8');
+    const { additions } = JSON.parse(extended).source;
+    console.log(`✓ extended ${rel(FIXTURE_PATH)} with ${additions.at(-1).cardNumbers.length} card numbers @ ${ref}`);
+    return;
   }
   const contents = buildFixtureString({ ref });
   fs.mkdirSync(path.dirname(FIXTURE_PATH), { recursive: true });

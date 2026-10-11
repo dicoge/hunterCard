@@ -1,11 +1,21 @@
 {
-  "generatedAt": "2026-08-17T15:10:27.067Z",
+  "generatedAt": "2026-09-29T00:31:56.176Z",
   "alerts": [
     {
       "level": "info",
-      "message": "Official column freshness: older (newest 2026-07-31T18:02:17)",
-      "discovered": "2026-07-31T18:02:17",
-      "known": "2026-08-09"
+      "message": "Newer official post 2026-09-17T18:04:08 carries no tournament results (not a deck-showcase column and no player placement); nothing to curate.",
+      "discovered": "2026-09-17T18:04:08",
+      "known": "2026-09-04",
+      "link": "https://hololive-official-cardgame.com/news/post/producer_letter/",
+      "classification": "no-tournament-results"
+    },
+    {
+      "level": "info",
+      "message": "Newer official post 2026-09-17T18:04:18 carries no tournament results (sample-recipe column (サンプルレシピ) with no player placement); nothing to curate.",
+      "discovered": "2026-09-17T18:04:18",
+      "known": "2026-09-04",
+      "link": "https://hololive-official-cardgame.com/news/post/deck-showcase_vol-13/",
+      "classification": "no-tournament-results"
     },
     {
       "level": "info",
@@ -16,6 +26,12 @@
       "level": "info",
       "message": "Result tweet 2086358733987410177 resolves (date unknown)",
       "file": "2026-08-extreamer-cup-tokai-2.json"
+    },
+    {
+      "level": "info",
+      "message": "Deck Log 108R5W: verified 1/50/20",
+      "file": "2026-09-deck-showcase-vol-12.json",
+      "decklogCode": "108R5W"
     }
   ]
 }

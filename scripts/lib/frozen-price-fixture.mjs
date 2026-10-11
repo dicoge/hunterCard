@@ -27,6 +27,8 @@
  * Regenerate deliberately (never as a fix for a failing assertion — a changed
  * frozen price changes what the tests mean):
  *   node scripts/generate-frozen-price-fixture.mjs
+ * Cover card numbers a new tournament deck adds, keeping every frozen price:
+ *   node scripts/generate-frozen-price-fixture.mjs --extend --ref <git-sha>
  * Verify the committed file is what the generator produces:
  *   node scripts/generate-frozen-price-fixture.mjs --check
  */
@@ -101,6 +103,21 @@ export function listingsByCardNumber(rawCards, numbers) {
   return rows;
 }
 
+/** cardNumber → every distinct listing across its rows (see extendFixtureString). */
+export function listingUnionByCardNumber(rawCards, numbers) {
+  const byNumber = new Map();
+  for (const raw of rawCards) {
+    if (!numbers.has(raw.cardNumber)) continue;
+    if (!byNumber.has(raw.cardNumber)) byNumber.set(raw.cardNumber, new Map());
+    const seen = byNumber.get(raw.cardNumber);
+    for (const listing of raw.prices ?? []) {
+      const key = JSON.stringify(listing);
+      if (!seen.has(key)) seen.set(key, listing);
+    }
+  }
+  return new Map([...byNumber].map(([cardNumber, seen]) => [cardNumber, [...seen.values()]]));
+}
+
 /** The live database as some git ref committed it, for a reproducible snapshot. */
 export function databaseAtRef(ref, root = repoRoot) {
   return execFileSync('git', ['show', `${ref}:public/data/database.json`], {
@@ -134,6 +151,51 @@ export function buildFixtureString({ ref = null, root = repoRoot } = {}) {
     source: {
       path: 'public/data/database.json',
       ref: ref ?? '(working tree)',
+    },
+    cards,
+  }, null, 2)}\n`;
+}
+
+/**
+ * The committed fixture plus listings for every required card number it does
+ * not cover yet, taken from `ref` (DIC-1494).
+ *
+ * A new tournament deck brings card numbers the base snapshot never froze, and
+ * some of them (e.g. hEB01) did not exist yet at the base ref, so a full rebuild
+ * would have to move to a newer ref and change prices the regressions already
+ * pin. Extending never touches an existing entry: the base ref stays the source
+ * of every price that was already frozen, and each addition is recorded with the
+ * exact ref and card numbers it came from.
+ *
+ * Since 2026-09-14 the database stores each printing's listings on that
+ * printing's own row instead of repeating the whole set on every row, so
+ * `listingsByCardNumber` rightly refuses it. The card-number-wide set this
+ * fixture freezes is then the union of those rows' listings, in row order, with
+ * an identical listing counted once — `listingUnionByCardNumber`.
+ */
+export function extendFixtureString({ ref, root = repoRoot, fixturePath = FIXTURE_PATH }) {
+  if (!ref) throw new Error('extending the frozen fixture needs a pinned git ref');
+  const existing = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
+  const missing = fixtureCardNumbers(root).filter((n) => !(n in existing.cards));
+  if (missing.length === 0) return null;
+  const live = JSON.parse(databaseAtRef(ref, root));
+  const listings = listingUnionByCardNumber(Object.values(live.cards ?? {}), new Set(missing));
+  const absent = missing.filter((n) => !listings.has(n));
+  if (absent.length > 0) {
+    throw new Error(`the source database at ${ref} has no row for: ${absent.join(', ')}`);
+  }
+  const merged = { ...existing.cards };
+  for (const cardNumber of missing) merged[cardNumber] = listings.get(cardNumber);
+  const cards = {};
+  for (const cardNumber of Object.keys(merged).sort()) cards[cardNumber] = merged[cardNumber];
+  return `${JSON.stringify({
+    ...existing,
+    source: {
+      ...existing.source,
+      additions: [
+        ...(existing.source?.additions ?? []),
+        { ref, listings: 'union of the per-printing rows', cardNumbers: missing },
+      ],
     },
     cards,
   }, null, 2)}\n`;
