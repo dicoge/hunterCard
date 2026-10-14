@@ -145,7 +145,16 @@ globalThis.fetch = async (url, init = {}) => {
 
 // Collapse the 15s request deadline so the timeout leg runs in milliseconds.
 const realSetTimeout = globalThis.setTimeout;
-globalThis.setTimeout = (fn, ms, ...rest) => realSetTimeout(fn, ms === 15000 ? 5 : ms, ...rest);
+const realClearTimeout = globalThis.clearTimeout;
+// Track the request-deadline timers so the suite can prove none is leaked.
+const deadlineTimers = new Set();
+globalThis.setTimeout = (fn, ms, ...rest) => {
+  if (ms !== 15000) return realSetTimeout(fn, ms, ...rest);
+  const id = realSetTimeout((...a) => { deadlineTimers.delete(id); fn(...a); }, 5, ...rest);
+  deadlineTimers.add(id);
+  return id;
+};
+globalThis.clearTimeout = (id) => { deadlineTimers.delete(id); return realClearTimeout(id); };
 
 const { recognizeCardFromImage } = await import(pathToFileURL(path.join(ROOT, 'src/services/cardRecognition.ts')).href);
 const { runNativeCameraScan, NO_TEXT_GUIDANCE, PHOTO_NOT_UPLOADED_GUIDANCE } = await import(
@@ -238,6 +247,41 @@ await check('an already-cancelled scan sends nothing', async () => {
   assert.equal(captured.length, 0);
 });
 
+/** A signal whose listener registrations are counted, to prove cleanup. */
+function countedSignal(controller) {
+  const signal = controller.signal;
+  const counts = { add: 0, remove: 0 };
+  const add = signal.addEventListener.bind(signal);
+  const remove = signal.removeEventListener.bind(signal);
+  signal.addEventListener = (...a) => { counts.add += 1; return add(...a); };
+  signal.removeEventListener = (...a) => { counts.remove += 1; return remove(...a); };
+  return { signal, counts };
+}
+
+await check('abort while the payload is being prepared (valid base64, aborted right after the call): no fetch, cancelled', async () => {
+  reset('success');
+  const controller = new AbortController();
+  const pending = recognizeCardFromImage(FILE_URI, { base64: JPEG_B64, signal: controller.signal });
+  controller.abort(); // lands inside the await of payload preparation
+  const result = await pending;
+  assert.equal(captured.length, 0, 'a cancelled scan must not upload');
+  assert.equal(result.cancelled, true);
+  assert.equal(deadlineTimers.size, 0, 'no request timer was armed');
+});
+
+await check('success / timeout / cancel each release the deadline timer and the abort listener', async () => {
+  for (const [m, abortMidway] of [['success', false], ['hang', false], ['hang', true]]) {
+    reset(m);
+    const ctrl = new AbortController();
+    const wrapped = countedSignal(ctrl);
+    const pending = recognizeCardFromImage(FILE_URI, { base64: JPEG_B64, signal: wrapped.signal });
+    if (abortMidway) { await new Promise((r) => realSetTimeout(r, 1)); ctrl.abort(); }
+    await pending;
+    assert.equal(wrapped.counts.add, wrapped.counts.remove, `${m}${abortMidway ? '+abort' : ''}: listener leaked`);
+    assert.equal(deadlineTimers.size, 0, `${m}${abortMidway ? '+abort' : ''}: deadline timer leaked`);
+  }
+});
+
 // ------------------------------------------------- flow + quota (real store)
 process.stdout.write('\nNative flow, OCR fallback and the shared 50/month quota\n');
 
@@ -322,6 +366,20 @@ await check('cancel mid-request: no charge, no OCR, nothing committed', async ()
   await pending;
   assert.equal(count(), 10);
   assert.equal(h.ocrCalls(), 0);
+  assert.deepEqual(h.committed, []);
+});
+
+await check('flow: abort during payload preparation → no upload, no OCR fallback, no charge', async () => {
+  seedQuota(10);
+  reset('success');
+  const controller = new AbortController();
+  const h = harness({ signal: controller.signal });
+  const pending = runNativeCameraScan(FILE_URI, h.io, h.ui);
+  controller.abort();
+  await pending;
+  assert.equal(captured.length, 0);
+  assert.equal(h.ocrCalls(), 0);
+  assert.equal(count(), 10);
   assert.deepEqual(h.committed, []);
 });
 

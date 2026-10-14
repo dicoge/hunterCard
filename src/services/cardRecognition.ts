@@ -487,11 +487,17 @@ async function recognizeViaApi(imageUri: string, options: RecognizeImageOptions 
   if (options.signal?.aborted) return { success: false, cancelled: true, error: '' };
 
   const payload = await recognitionPayload(imageUri, options);
+  // Preparing the payload is async (web canvas re-encode; a microtask boundary on
+  // native), so a cancel can land while it runs — before any listener exists. Re-check
+  // here: a cancelled scan never uploads, never falls back to OCR, never charges.
+  if (options.signal?.aborted) return { success: false, cancelled: true, error: '' };
   if (!payload.ok) {
     console.warn(`[cardRecognition] photo not uploaded: ${payload.code}`);
     return { success: false, imageRejected: payload.code, error: '' };
   }
 
+  // From here the listener is attached synchronously after the check above, so no
+  // abort can slip between them; the timer and listener are released in `finally`.
   const controller = new AbortController();
   let timedOut = false;
   const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, RECOGNITION_REQUEST_TIMEOUT_MS);

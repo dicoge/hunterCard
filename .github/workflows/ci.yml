@@ -573,6 +573,9 @@ jobs:
       - name: Verify recognize-card image contract, client-abort forwarding, consent gate and disclosure copy (native AI photo upload 2026-10-14)
         run: npm run test:native-ai-photo-upload
 
+      - name: Verify leaving the Scan screen cancels the running scan — no off-screen commit or charge (CR 2026-10-14 P2)
+        run: npm run test:scan-cancel-lifecycle
+
       - name: Verify Scan screen fails safe on native crashes (DIC-1286)
         run: npm run test:scan-screen-fail-safe
 

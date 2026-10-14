@@ -217,7 +217,10 @@ await check('ScanScreen wires the gate before every upload path (camera, gallery
   const capture = scan.slice(scan.indexOf('const captureAndRecognize'), scan.indexOf('takePictureAsync'));
   assert.ok(capture.includes('if (!hasUploadConsent()) return;'), 'auto-scan / capture must not upload without consent');
   assert.ok(/takePictureAsync\(\{\s*quality: 0\.7,\s*base64: true,/.test(scan), 'native capture must request bytes');
-  assert.ok(/if \(!mountedRef\.current\) return false;/.test(scan), 'commitCard must refuse after unmount');
+  // Behaviour (blur / close / late result through the real navigator) is proven by
+  // scripts/test-scan-cancel-lifecycle.mjs; this only pins that commitCard keeps the guard.
+  assert.ok(/if \(!mountedRef\.current \|\| !lifecycle\.isFocused\(\)\) return false;/.test(scan),
+    'commitCard must refuse while the screen is unmounted or not focused');
 });
 
 console.log('\nDisclosure copy is the same story everywhere');
