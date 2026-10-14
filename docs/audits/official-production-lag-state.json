@@ -1,4 +1,23 @@
 {
-  "updatedAt": "2026-09-18T04:43:12.259Z",
-  "missingSince": {}
+  "updatedAt": "2026-10-13T22:50:09.379Z",
+  "missingSince": {
+    "hCO03": {
+      "firstMissingAt": "2026-10-13T22:50:09.379Z",
+      "officialCount": 6,
+      "productionCount": 0,
+      "lastObservedAt": "2026-10-13T22:50:09.379Z"
+    },
+    "hCO02": {
+      "firstMissingAt": "2026-10-13T22:50:09.379Z",
+      "officialCount": 6,
+      "productionCount": 0,
+      "lastObservedAt": "2026-10-13T22:50:09.379Z"
+    },
+    "hPR": {
+      "firstMissingAt": "2026-10-13T22:50:09.379Z",
+      "officialCount": 447,
+      "productionCount": 438,
+      "lastObservedAt": "2026-10-13T22:50:09.379Z"
+    }
+  }
 }
