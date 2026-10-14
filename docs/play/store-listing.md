@@ -73,8 +73,8 @@ HoloHunter 是為 hololive OFFICIAL CARD GAME 玩家製作的非官方輔助工�
 
 用相機掃描卡牌
 - 用相機對準卡片，或從相簿選取照片，HoloHunter 會為你辨識。
-- 辨識在你的裝置上完成，卡牌影像不會上傳到我們的伺服器。
-- 掃描功能需要免費帳號；查詢與瀏覽不需要登入。
+- 掃描時，照片會在你同意後上傳到 HoloHunter 伺服器，並交由 Google Gemini 辨識；不同意也可手動搜尋。
+- 訪客也能掃描；訪客與免費會員共用每台裝置每月 50 次掃描額度。
 
 組牌
 - 建立與編輯牌組，並依遊戲的牌組構築規則檢查。
@@ -88,10 +88,11 @@ HoloHunter 並非 COVER Corporation 或 hololive OFFICIAL CARD GAME 官方授權
 應用程式。所有卡片名稱、圖像與商標均屬各自權利人所有。
 ```
 
-The scan paragraph states that recognition is on-device. Play compares the listing, the
-privacy policy and the Data safety form against each other, so keep this line consistent
-with `data-safety.md` — if the native path ever starts uploading images, this sentence has
-to change in the same release.
+The scan paragraph states that the photo is uploaded to our server and Google Gemini
+(since 2026-10-14). Play compares the listing, the privacy policy and the Data safety form
+against each other, so keep this line consistent with `data-safety.md` and the public
+privacy page. **Release gate:** this text is a draft in the repo — the live Play listing is
+NOT updated until the owner pastes it into Play Console.
 
 ## Graphics
 

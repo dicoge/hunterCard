@@ -74,9 +74,13 @@ any of them outstanding.
 - [ ] News app: No. Financial features: No. Government app: No. Health: No.
 - [ ] Advertising ID: not used.
 - [ ] Data deletion: in-app path plus contact email declared.
-- [ ] Data safety form completed from `data-safety.md`. Photos = not collected (recognition
-      runs on-device); the one answer needing an owner decision is whether the Expo Push
-      Service transfer counts as service-provider processing.
+- [ ] Data safety form completed from `data-safety.md`. Photos = **collected** (uploaded to our
+      backend → Google Gemini since 2026-10-14). Owner decisions, verified against the live
+      Gemini API terms for the project's billing tier: Photos shared vs service-provider
+      exception, ephemeral processing; plus whether the Expo Push Service transfer counts as
+      service-provider processing. Not self-certified by the dev change.
+- [ ] Public privacy page (holohunter.dicoge.com/privacy.html) actually deployed with the
+      2026-10-14 photo-upload text BEFORE the build that uploads is submitted.
 
 ## E. Store listing
 

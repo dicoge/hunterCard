@@ -63,7 +63,7 @@ Requested explicitly by the app:
 
 | Permission | Runtime prompt | Feature it serves | Disclosure |
 | --- | --- | --- | --- |
-| `CAMERA` | Yes | Card scanning on the Scan screen (`src/screens/ScanScreen.tsx`) | In-app rationale string `允許 HoloHunter 存取相機以掃描卡牌`. Recognition runs on-device, so Data safety declares Photos as not collected — see `data-safety.md` |
+| `CAMERA` | Yes | Card scanning on the Scan screen (`src/screens/ScanScreen.tsx`) | In-app rationale string `允許 HoloHunter 存取相機以掃描卡牌`. Since 2026-10-14 the captured photo is uploaded (our backend → Google Gemini) after an in-app disclosure + consent, so Data safety must declare Photos as collected — see `data-safety.md` |
 
 Inherited from `expo-notifications`, kept only for internal / full-feature builds:
 

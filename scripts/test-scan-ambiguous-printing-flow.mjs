@@ -210,7 +210,7 @@ check('found a single-printing control with a price', !!uniqueRow);
     reason: ranking.reason,
     raw: 'CARD_NUMBER: hBP01-024',
   };
-  const galleryResult = await recognizeCardFromImage('data:image/png;base64,iVBORw0KGgo=');
+  const galleryResult = await recognizeCardFromImage('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA' /* valid PNG signature: the client refuses to upload anything else */);
   apiResponse = null;
 
   check('client: preserves success=false, lowConfidence=true for the real handler payload',

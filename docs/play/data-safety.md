@@ -11,59 +11,33 @@ Every row below is derived from code, with the file and line that proves it.
 
 ---
 
-## The card image question, answered properly
+## The card image question (re-derived 2026-10-14 — photos ARE uploaded)
 
-This is the single answer most likely to be got wrong, in either direction, so the whole
-derivation is written out.
+**Owner decision 2026-10-14: "正式支援上傳照片給 AI 並同步隱私告知".** The previous answer
+("no image leaves the device") was true only by accident: native posted the bare `file://`
+path, the server wrapped it as `data:image/jpeg;base64,file:///...`, Gemini could not decode
+it, and native AI recognition never worked. That defect is fixed, so the answer flips.
 
-**Reading the call graph suggests every scan uploads a photo. It does not.**
+What the Android binary now sends, per scan, after the user accepted the in-app disclosure
+(`src/services/photoUploadDisclosure.ts`, `ScanScreen.requestPhotoUploadConsent`):
 
-`recognizeCardFromImage()` calls `recognizeViaApi()` as step 0 on every platform
-(`src/services/cardRecognition.ts:466-475`), and `recognizeViaApi()` POSTs `{ image }` to
-`/api/recognize-card` (`:372-386`), which forwards to Google Gemini
-(`api/recognize-card.ts:320`). Taken at face value that means native uploads card photos.
+- `takePictureAsync({ quality: 0.7, base64: true })` / `launchImageLibraryAsync({ base64: true })`
+  return the photo bytes; `buildRecognitionDataUrl` types them from their signature bytes
+  (JPEG / PNG / WebP only) and caps one image at 2.5 MB decoded
+  (`src/services/recognitionImagePolicy.ts`). Nothing else is sent; the `file://` uri never is.
+- `POST /api/recognize-card` (HTTPS) → the handler validates the same rules and answers 400
+  before resolving a provider for anything else → forwards the image to Google Gemini
+  (`generativelanguage.googleapis.com`, `gemini-2.5-flash`).
+- Our server does not write the image anywhere and logs no image content.
+- If the scan is cancelled, the client abort is forwarded to the Gemini fetch.
 
-What it actually sends depends on `preprocessCardImage()`
-(`src/services/imagePreprocessor.ts:10`):
-
-- The module is written entirely against the DOM — `new Image()`,
-  `document.createElement('canvas')`, `canvas.toDataURL(...)`.
-- React Native polyfills `fetch`, `Blob`, `File`, `FileReader`, `URL`, `FormData` and
-  friends (`node_modules/react-native/Libraries/Core/setUpXHR.js`) but defines **no global
-  `Image` and no `document`**. Expo's winter runtime adds `FormData`, `TextDecoder` and
-  fetch, not `Image`.
-- So on native `new Image()` throws inside the promise executor, the outer `catch` returns
-  the **original uri unchanged** (`imagePreprocessor.ts:13-16`), and that uri is a
-  `file:///...` path.
-- Nothing upstream turns it into image data: `takePictureAsync({ quality: 0.8 })`
-  (`src/screens/ScanScreen.tsx:559`) and `launchImageLibraryAsync({ quality: 0.8 })`
-  (`:602`) are both called without `base64: true`.
-
-So what leaves an Android device is a **local file path string**, not pixels. The server
-wraps the unrecognised string as `data:image/jpeg;base64,file:///...`
-(`api/recognize-card.ts:350`), Gemini cannot decode it, the call fails, and
-`recognizeCardFromImage` falls through to the on-device OCR path (`expo-ocr-kit`).
-
-**Conclusion: no card image content is transmitted off-device by the Android binary.**
-Photos are therefore **not collected**. The web build genuinely does upload, because there
-the DOM path works — but the web build is not what Play is asked about.
-
-> **This is true by accident, not by design, and it is fragile.** Adding a native image
-> preprocessor, a `.native.ts` variant of `imagePreprocessor`, `expo-image-manipulator`, or
-> `base64: true` on either capture call would start uploading real photos silently, and the
-> Data safety declaration would become false with nothing failing.
-> Two CI gates cover this. `npm run test:privacy-disclosure` fails on each of those known
-> mechanisms. `npm run test:native-scan-no-upload` is the one that matters more: it runs the
-> real `recognizeCardFromImage` under React-Native-shaped globals with `fetch` intercepted and
-> asserts that the value POSTed as `image` is still the input uri, so it catches any route to
-> real image data — including ones nobody has enumerated. Adversarial review defeated the
-> static checks alone with nothing but RN built-ins (`fetch(uri)` piped through
-> `FileReader.readAsDataURL`); the behavioural gate catches exactly that.
-
-> **Latent bug worth fixing separately.** Every native scan still makes a doomed round trip
-> to `/api/recognize-card` carrying a useless path string, and only then falls back to local
-> OCR. That is wasted latency and a wasted Gemini call on the server. It is out of scope for
-> the submission and is listed as a follow-up in `README.md`.
+**What we cannot assert.** Google's handling depends on which Gemini API terms apply.
+Per https://ai.google.dev/gemini-api/terms (effective 2026-03-23, read 2026-10-14):
+Unpaid Services content may be used to improve Google products and may be human-reviewed;
+Paid Services (Cloud project with an active billing account) carry the no-product-improvement
+terms, with limited logging for safety/abuse. **The production project's billing tier has not
+been verified**, so nothing in the app, policy or this form may promise that Google does not
+retain or train on the photos.
 
 ---
 
@@ -71,7 +45,7 @@ the DOM path works — but the web build is not what Play is asked about.
 
 | # | Data | Trigger | Destination | Evidence |
 | --- | --- | --- | --- | --- |
-| 1 | **Not the image** — a local `file://` path string | Every scan | `POST /api/recognize-card`, forwarded to Gemini as undecodable data | See the derivation above. Contains no user data; it is an app-private cache path. |
+| 1 | **Card photo** (JPEG/PNG/WebP bytes, ≤2.5 MB) | Every AI scan, only after the in-app disclosure was accepted | `POST /api/recognize-card` → Google Gemini | `src/services/cardRecognition.ts` (`recognitionPayload`), `api/recognize-card.ts`. See the section above. |
 | 2 | Google ID token (email, display name, avatar URL, Google subject ID) | Sign-in with Google | `POST /api/auth/login` → identity record in Vercel KV | `src/services/authService.ts:379-418`, `:822-826`; `api/_lib/identity-store.ts:44-53` |
 | 3 | ~~Expo push token + platform~~ — **does not happen in the review build** | Would be app launch, but `App.tsx:11` gates it on `FEATURES.pushAlerts` and `pushAlerts: !STORE_MVP`; the manifest also strips `POST_NOTIFICATIONS` for this profile (DIC-1259) so the runtime prompt is gone | — | `App.tsx:11`; `src/config/releaseFlags.ts:52`; `eas.json` sets `EXPO_PUBLIC_STORE_MVP=1` on both store profiles; `app.config.js` adds `POST_NOTIFICATIONS` to `blockedPermissions` under that flag |
 | 4 | ~~Price-alert definitions~~ — **does not happen in the review build** | `watchlist: !STORE_MVP` removes the feature that creates them | — | `src/config/releaseFlags.ts:50` |
@@ -110,18 +84,18 @@ the manifest level.
 
 | Field | Answer |
 | --- | --- |
-| Collected | **No** |
+| Collected | **Yes** |
+| Shared | **OWNER DECISION** — Google Gemini receives the photo. Play's service-provider exception applies only if Google processes it on our behalf under terms that fit that exception; under Unpaid Gemini API terms Google may use content to improve its products, which likely makes it "shared". Verify the billing tier / terms in force, then answer. |
+| Processed ephemerally | **OWNER DECISION** — our server keeps nothing beyond the request, but "ephemeral" covers the whole processing, including Google's retention under the applicable terms. Do not tick it unless the owner has confirmed Google-side retention fits Play's definition. |
+| Required or optional | **Optional** — scanning is optional and declining the disclosure uploads nothing; manual search works without it. |
+| Purpose | App functionality (card recognition). Not advertising, analytics or personalisation. |
 
-Justification: recognition runs on-device via `expo-ocr-kit`; no image bytes are
-transmitted. See the derivation above. Camera captures are written to the app's private
-cache directory by `takePictureAsync` and are not cleared by the app, but on-device storage
-is not collection.
+Justification: see "The card image question" above. Camera captures are also written to the
+app's private cache directory by `takePictureAsync` and are not cleared by the app; on-device
+storage alone is not collection, but the upload is.
 
-Because Collected = No, the follow-up questions (shared, ephemeral, purpose) are not asked.
-Do **not** tick "ephemeral processing" — that option only applies to data you collect.
-
-Play may still surface Photos as a suggested data type because of the camera permission.
-A permission is not collection; answer No.
+These owner answers are **not** self-certified by the development change and the Play
+Console form has **not** been edited.
 
 ### Personal info → Name, Email address, User IDs
 
@@ -206,11 +180,14 @@ and docs, Web browsing history, Installed apps: **not collected**. See section 2
 
 ## 5. Prominent disclosure
 
-Not required for the card image, because on Android no image is transmitted. The privacy
-policy states the split plainly: on-device on mobile, uploaded to Gemini on web
-(`public/privacy.html`, sections 3 and 6, both languages). Keep that split accurate — if
-the native path ever starts uploading, Play expects an in-app disclosure before the first
-upload, not just a policy line.
+**Required and implemented (2026-10-14).** Before the first upload the app shows a system
+dialog (`scan_ai_disclosure_*` in `src/i18n/locales/{zh,ja}.ts`): photo → HoloHunter server →
+Google Gemini; used only for that recognition; our server keeps nothing; Google handles it
+under its own terms and we cannot promise on its behalf; account deletion does not cover
+Google-side processing. Upload happens only after an explicit "同意並上傳"; declining
+uploads nothing. Bumping `PHOTO_UPLOAD_DISCLOSURE_VERSION` re-asks every device. The public
+privacy policy says the same (`public/privacy.html`, section 3, zh + en) — it must be
+**deployed** before the uploading build is submitted (release gate, not done by this change).
 
 ## 6. Corrections to `docs/release-testflight-google-play-closed-testing.md`
 
@@ -218,7 +195,7 @@ That document's conclusion about images was right; several of its other claims a
 
 | Claim in that document | Reality |
 | --- | --- |
-| "native binary 完全不傳送影像 off-device" | **Correct**, and confirmed here by a fuller derivation — though the mechanism is accidental and now guarded by `test:privacy-disclosure`. |
+| "native binary 完全不傳送影像 off-device" | **No longer true since 2026-10-14** — native uploads the photo after consent (see above). |
 | "無帳號機制" / "無帳號" | **False.** Google Sign-In, a cloud identity store, account linking, deletion and cross-device sync are all live. |
 | Push tokens written to `data/push-tokens.json` in the GitHub repo | **Stale.** They are in Vercel KV under `push:tokens` (`api/_lib/kv-storage.ts:32-39`). |
 | "App access：若不需要登入選全部功能免登入" | **Wrong for this app.** Scanning requires an account (`src/services/permissionService.ts:17`), so reviewer instructions and credentials are required. |

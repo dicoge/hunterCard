@@ -54,8 +54,13 @@ const OPENROUTER_KEY = 'openrouter-secret-value-must-not-leak';
 
 const REPLY = 'CHARACTER: ラプラス・ダークネス\nHP: NONE\nRARITY: SEC\nBLOOM_LEVEL: NONE\nCARD_NUMBER: hBP04-005\nTITLE: NONE';
 
-const FULL_FRAME = 'data:image/jpeg;base64,ZnVsbC1mcmFtZQ==';
-const CROP = 'data:image/png;base64,Y3JvcC1hcmVh';
+// Signature bytes + a label: the handler now requires a real JPEG / PNG header that
+// matches the declared type (recognitionImagePolicy), and the header carries no size
+// marker, so the legibility floor fails open exactly as before.
+const FULL_FRAME_B64 = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('full-frame')]).toString('base64');
+const CROP_B64 = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('crop-area')]).toString('base64');
+const FULL_FRAME = `data:image/jpeg;base64,${FULL_FRAME_B64}`;
+const CROP = `data:image/png;base64,${CROP_B64}`;
 
 const UPSTREAM_BODY = 'upstream stack trace: quota project holo-secret-project';
 
@@ -211,7 +216,7 @@ const check = (label, fn) => { fn(); results.push(label); };
     const inline = parts.filter(p => p.inline_data);
     assert.equal(inline.length, 2);
     assert.deepEqual(inline.map(p => p.inline_data.mime_type), ['image/jpeg', 'image/png']);
-    assert.deepEqual(inline.map(p => p.inline_data.data), ['ZnVsbC1mcmFtZQ==', 'Y3JvcC1hcmVh']);
+    assert.deepEqual(inline.map(p => p.inline_data.data), [FULL_FRAME_B64, CROP_B64]);
   });
 }
 
