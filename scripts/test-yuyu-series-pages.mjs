@@ -44,4 +44,36 @@ for (const p of pages) {
 assert.equal(new Set(pages.map((p) => p.name)).size, pages.length, 'duplicate series page');
 console.log(`  ✓ ${pages.length} pages, each named by an exact committed series code`);
 
+// hCO02 / hCO03 (エクストリーマーカップ25-26 Final コレクションA / B) have no yuyu
+// product (read-only evidence 2026-10-14, see the NO_PAGE_SERIES comment). Page-less
+// is only safe if (1) every scraper agrees, (2) no page is generated for them, and
+// (3) no sibling printing's listing (hBP/hEB01/promo of the same cardNumber) was
+// ingested as their price.
+const readNoPage = (rel) => {
+  const src = fs.readFileSync(path.join(__dirname, rel), 'utf8');
+  const m = src.match(/const NO_PAGE_SERIES = new Set\(\[([^\]]*)\]\);/);
+  assert.ok(m, `${rel} declares NO_PAGE_SERIES`);
+  return [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]).sort();
+};
+const canonicalNoPage = [...NO_PAGE_SERIES].sort();
+for (const rel of ['scrape-yuyu-prices.js', 'fix-prices-scraper.mjs']) {
+  assert.deepEqual(readNoPage(rel), canonicalNoPage, `${rel} NO_PAGE_SERIES drifted from build-database.js`);
+}
+console.log('  ✓ build-database / scrape-yuyu-prices / fix-prices-scraper agree on NO_PAGE_SERIES');
+
+for (const code of ['hCO02', 'hCO03']) {
+  assert.ok(NO_PAGE_SERIES.has(code), `${code} is page-less on yuyu (documented evidence)`);
+  assert.ok(!byName.has(code), `${code} must not get a guessed page`);
+  const rows = Object.values(db.cards).filter((c) => c.series === code);
+  assert.equal(rows.length, 6, `fixture precondition: committed catalog carries 6 ${code} printings`);
+  for (const c of rows) {
+    assert.ok(!String(c.cardNumber).startsWith(code), `${c.id} is a reprint of another product's cardNumber`);
+    assert.equal(c.sellPrice ?? null, null, `${c.id} carries no sibling yuyu sell price`);
+    assert.equal(c.buyPrice ?? null, null, `${c.id} carries no sibling yuyu buy price`);
+    assert.deepEqual(c.prices ?? [], [], `${c.id} carries no sibling yuyu price rows`);
+    assert.equal(c.yuyuName || '', '', `${c.id} carries no sibling yuyu listing name`);
+  }
+}
+console.log('  ✓ hCO02 / hCO03: page-less, no guessed page, no sibling-reprint price ingested');
+
 console.log('\n✅ yuyu series pages OK');

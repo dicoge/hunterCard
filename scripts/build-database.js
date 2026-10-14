@@ -125,7 +125,16 @@ const SPECIAL_URLS = {
 };
 
 // Series without a yuyu-tei page (skip with warning)
-const NO_PAGE_SERIES = new Set(['hCO01', 'hWF01']);
+// hCO02 / hCO03 (エクストリーマーカップ25-26 Final オフィシャルホロカコレクションA / B,
+// first synced 2026-10-13): yuyu-tei listed no such product when checked read-only
+// 2026-10-14T16:14–16:17Z — the hocg product navigation (38 vers[] entries) had no
+// コレクションA/B / Final entry, and the card-number searches for all 12 printings
+// returned only their hBP/hSD/hEB01/promo siblings — yuyu labels collection-set
+// printings explicitly (e.g. ohc02 "(パラレル/2025ライブセット)"), and none says
+// コレクションA/B. Re-check and map to the real page once yuyu adds the product.
+// Sibling listings cannot leak in: yuyuEntryMatchesOfficial requires the listing's
+// sourceSeries to equal the printing's own product.
+const NO_PAGE_SERIES = new Set(['hCO01', 'hCO02', 'hCO03', 'hWF01']);
 
 /**
  * Generate series page list from database.json, replacing hardcoded SERIES_PAGES.
