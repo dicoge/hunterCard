@@ -1,39 +1,22 @@
 #!/usr/bin/env node
 /**
- * Privacy-policy / code agreement (DIC-1248).
+ * Privacy-policy / code agreement (DIC-1248, re-derived 2026-10-14).
  *
- * The Play Data safety answer for Photos rests on one fact: the native binary
- * does not transmit card image bytes off-device. That fact is NOT obvious from
- * reading the call graph, and it is easy to break by accident.
+ * Two-directional, as before: read the code to decide whether card photos leave the
+ * device, then require the published policy to say the same. The DIRECTION flipped on
+ * 2026-10-14 (owner decision: "正式支援上傳照片給 AI 並同步隱私告知"):
  *
- * Reading the call graph alone suggests the opposite. recognizeCardFromImage()
- * calls recognizeViaApi() as step 0 on every platform, and recognizeViaApi()
- * POSTs `{ image }` to /api/recognize-card, which forwards to Google Gemini. It
- * looks like every scan uploads a photo. It does not, because of what
- * preprocessCardImage() returns on native:
+ *   - native capture now returns the photo bytes (`base64: true`) and recognizeViaApi
+ *     uploads a validated data URL to /api/recognize-card, which forwards it to Google
+ *     Gemini. The old accidental behaviour (posting a `file://` path Gemini could not
+ *     decode) is gone.
+ *   - an in-app disclosure + consent gates the first upload.
  *
- *   - src/services/imagePreprocessor.ts is written entirely against the DOM
- *     (`new Image()`, `document.createElement('canvas')`, `canvas.toDataURL`).
- *   - React Native polyfills fetch, Blob, File, FileReader, URL and friends, but
- *     defines no global `Image` and no `document`.
- *   - So on native `new Image()` throws inside the promise executor, the outer
- *     try/catch returns the ORIGINAL uri, and that uri is a `file:///...` path.
- *   - ScanScreen never requests base64 — `takePictureAsync({ quality: 0.8 })`
- *     and `launchImageLibraryAsync({ quality: 0.8 })` both yield a path.
- *
- * What is POSTed on native is therefore a local file path string, not image
- * data. Gemini cannot decode it, recognition fails, and the local OCR fallback
- * runs. No pixels leave the device.
- *
- * That makes the Photos = "not collected" answer correct today and fragile
- * tomorrow. Adding a native image preprocessor (expo-image-manipulator, a
- * `.native.ts` variant) or passing `base64: true` would start uploading real
- * photos silently, with no test failing and the published policy still promising
- * the opposite. This gate is the thing that fails in that case.
- *
- * It is two-directional: it reads the code to decide whether image bytes can
- * leave the device, then requires the policy to match that direction. Neither
- * side can be edited alone.
+ * So this gate now fails if the code uploads WITHOUT the consent gate, or if the policy
+ * still promises on-device recognition / makes a Google retention promise, or if the
+ * upload path loses its image validation. The behavioural bytes-on-the-wire proof is
+ * scripts/test-native-scan-no-image-upload.mjs; the server + copy proof is
+ * scripts/test-native-ai-photo-upload.mjs.
  */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -57,111 +40,66 @@ const preprocessor = read('src/services/imagePreprocessor.ts');
 const scanScreen = read('src/screens/ScanScreen.tsx');
 const policy = read('public/privacy.html');
 
-// ------------------------------------- can image bytes leave the device?
+// ------------------------------------- do card photos leave the device, and how?
 
-process.stdout.write('\nWhat the native scan can actually transmit\n');
+process.stdout.write('\nWhat the native scan actually transmits (upload direction since 2026-10-14)\n');
 
-check('the image preprocessor is still DOM-only, so it returns its input unchanged on native', () => {
-  assert.ok(
-    /new Image\(\)/.test(preprocessor) && /document\.createElement/.test(preprocessor),
-    'imagePreprocessor.ts no longer looks like browser-only code. If it gained a native ' +
-      'implementation, scans now upload real image bytes — re-answer Data safety for Photos ' +
-      'and update the privacy policy before changing this gate.',
-  );
-  assert.ok(
-    /catch\s*\{[\s\S]{0,120}return imageUri;/.test(preprocessor),
-    'preprocessCardImage must still fall back to returning the original uri when the DOM path ' +
-      'throws; that fallback is the reason no pixels leave the device on native.',
-  );
+const recognition = read('src/services/cardRecognition.ts');
+
+check('native capture and library pick request the photo bytes', () => {
+  assert.ok(/takePictureAsync\(\{\s*quality: 0\.7,\s*base64: true,/.test(scanScreen), 'camera capture must request base64');
+  assert.ok(/base64: !isWeb,/.test(scanScreen), 'library pick must request base64 on native');
 });
 
-check('no native-only image preprocessor variant has been added', () => {
-  for (const variant of [
-    'src/services/imagePreprocessor.native.ts',
-    'src/services/imagePreprocessor.android.ts',
-    'src/services/imagePreprocessor.ios.ts',
-  ]) {
-    assert.ok(
-      !fs.existsSync(path.join(ROOT, variant)),
-      `${variant} exists. A native preprocessor would produce real base64 image data, which ` +
-        'recognizeViaApi would then upload. Photos would become collected data.',
-    );
+check('every upload path is gated by the photo-upload disclosure', () => {
+  assert.ok(/requestPhotoUploadConsent/.test(scanScreen) && /hasUploadConsent\(\)/.test(scanScreen),
+    'ScanScreen must ask for consent before uploading — Play requires a prominent disclosure before collection');
+});
+
+check('the upload path still exists and only sends a validated image data URL', () => {
+  assert.ok(/recognizeViaApi/.test(recognition) && /\/api\/recognize-card/.test(recognition));
+  assert.ok(/buildRecognitionDataUrl/.test(recognition) && /validateRecognitionDataUrl/.test(recognition),
+    'cardRecognition must build/validate the payload with recognitionImagePolicy');
+  assert.ok(!/data:image\/jpeg;base64,\$\{imageUri\}/.test(recognition), 'a uri must never be wrapped as base64');
+});
+
+check('the web preprocessor is still DOM-only and is not the native byte source', () => {
+  assert.ok(/new Image\(\)/.test(preprocessor) && /document\.createElement/.test(preprocessor));
+  for (const variant of ['src/services/imagePreprocessor.native.ts', 'src/services/imagePreprocessor.android.ts', 'src/services/imagePreprocessor.ios.ts']) {
+    assert.ok(!fs.existsSync(path.join(ROOT, variant)), `${variant} appeared — re-derive the payload contract`);
   }
-});
-
-check('no native image-manipulation dependency that could produce base64 has appeared', () => {
-  const pkg = JSON.parse(read('package.json'));
-  const deps = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies });
-  const manipulators = deps.filter((name) =>
-    /^expo-image-manipulator$|^react-native-image-resizer|^@bam\.tech\/react-native-image-resizer/.test(name),
-  );
-  assert.deepEqual(
-    manipulators,
-    [],
-    `${manipulators.join(', ')} was added. It can turn a file uri into base64 on native, which ` +
-      'is exactly what would start uploading card photos. Re-answer Data safety before allowing this.',
-  );
-});
-
-check('the scan never requests base64 from the camera or the picker', () => {
-  assert.ok(
-    !/base64:\s*true/.test(scanScreen),
-    'ScanScreen requests base64 image data. That data would be POSTed to /api/recognize-card, ' +
-      'so card photos would leave the device — Photos must then be declared as collected.',
-  );
-});
-
-// The gate is only meaningful while the recognition call actually exists.
-check('the recognition upload path still exists and is still measured', () => {
-  const recognition = read('src/services/cardRecognition.ts');
-  assert.ok(
-    /recognizeViaApi/.test(recognition) && /\/api\/recognize-card/.test(recognition),
-    'cardRecognition.ts no longer posts to /api/recognize-card — re-derive this gate against the ' +
-      'new code rather than deleting it.',
-  );
 });
 
 // ------------------------------------------ policy must match that direction
 
 process.stdout.write('\nThe published policy must describe the same behaviour\n');
 
-check('the policy tells mobile users their card image stays on the device', () => {
+check('the policy states that mobile uploads the image too (both languages)', () => {
+  for (const claim of ['手機 App（iOS / Android）與網頁版皆會上傳影像', 'The image is uploaded on mobile (iOS / Android) as well as on the web']) {
+    assert.ok(policy.includes(claim), `public/privacy.html must state "${claim}"`);
+  }
+});
+
+check('the policy no longer promises the image stays on the device', () => {
   for (const claim of ['卡牌影像都不會離開您的裝置', 'the card image never leaves your device']) {
-    assert.ok(
-      policy.includes(claim),
-      `public/privacy.html must state "${claim}". On native the image is recognised on-device and ` +
-        'no pixels are transmitted; the policy has to say so in both languages.',
-    );
+    assert.ok(!policy.includes(claim), `public/privacy.html still claims "${claim}"`);
   }
 });
 
-check('the policy still discloses the web upload to Google Gemini', () => {
-  for (const phrase of ['/api/recognize-card', 'Google Gemini']) {
-    assert.ok(
-      policy.includes(phrase),
-      `public/privacy.html must keep disclosing "${phrase}" — the web build does upload the image.`,
-    );
+check('the policy discloses our endpoint, Google Gemini, and the consent step', () => {
+  for (const phrase of ['/api/recognize-card', 'Google Gemini', '同意並上傳', 'Agree and upload']) {
+    assert.ok(policy.includes(phrase), `public/privacy.html must mention "${phrase}"`);
   }
 });
 
-check('the policy does not claim a mobile upload that does not happen', () => {
-  for (const claim of [
-    '手機 App（iOS / Android）與網頁版皆會上傳影像',
-    'The image is uploaded on mobile (iOS / Android) as well as on the web',
-  ]) {
-    assert.ok(
-      !policy.includes(claim),
-      `public/privacy.html claims "${claim}", but native recognition runs on-device. ` +
-        'Over-declaring is a mismatch too — Play compares the policy against the Data safety form.',
-    );
-  }
+check('the policy makes no promise about Google-side retention or training', () => {
+  assert.ok(policy.includes('無法代 Google 承諾') && policy.includes("cannot make promises on Google's behalf"));
 });
 
 check('the policy discloses that captured photos are written to the app cache', () => {
   assert.ok(
     policy.includes('快取') && /cache/i.test(policy),
-    'takePictureAsync writes the photo to the app cache directory and the app does not clear it. ' +
-      'The policy must not imply the photo is held only in memory.',
+    'takePictureAsync writes the photo to the app cache directory and the app does not clear it.',
   );
 });
 

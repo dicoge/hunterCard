@@ -5,6 +5,11 @@
  * No heavy CLAHE — that was causing timeout on mobile browsers.
  * 
  * If preprocessing fails at any point, gracefully falls back to original image.
+ *
+ * Web only. Native bundles never call this: the photo's bytes come from the capture call
+ * itself (`base64: true`) and are checked by recognitionImagePolicy. The output is only
+ * uploaded if it is a valid image data URL, so a fallback to a blob: / file: uri is
+ * refused by cardRecognition rather than sent.
  */
 
 export async function preprocessCardImage(imageUri: string): Promise<string> {
@@ -34,11 +39,13 @@ function resizeAndSharpen(imageUri: string): Promise<string> {
         // Keep tiny card numbers readable for vision/OCR matching.
         const MAX = 1536;
         if (w <= MAX && h <= MAX) {
-          resolve(imageUri); // already small enough
-          return;
-        }
-
-        if (w > h) { h = Math.round((h / w) * MAX); w = MAX; }
+          // Already small enough. A data URL can go as-is; anything else (a picker's
+          // blob: uri) is re-encoded below so what gets uploaded is image data.
+          if (/^data:image\//.test(imageUri)) {
+            resolve(imageUri);
+            return;
+          }
+        } else if (w > h) { h = Math.round((h / w) * MAX); w = MAX; }
         else { w = Math.round((w / h) * MAX); h = MAX; }
 
         const canvas = document.createElement('canvas');

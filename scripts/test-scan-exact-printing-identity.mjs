@@ -138,7 +138,7 @@ function assertAmbiguous(label, result) {
 {
   apiCallCount = 0;
   apiResponse = { success: true, cardNumber: AMBIGUOUS };
-  const result = await recognizeCardFromImage('data:image/png;base64,iVBORw0KGgo=');
+  const result = await recognizeCardFromImage('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA' /* valid PNG signature: the client refuses to upload anything else */);
   check('API fallback: the recognition endpoint was really called', apiCallCount > 0, `calls=${apiCallCount}`);
   assertAmbiguous('API fallback', result);
 }

@@ -82,7 +82,7 @@ Answer as an app, not a game. The intended answers:
 | Shares user location | No |
 | Allows purchases | No — no billing integration exists in this build |
 | Digital purchases / in-app purchases | No |
-| Personal information shared with third parties | **No** for the review build. Card images are not shared (recognition is on-device), and the push token is never registered because `pushAlerts: !STORE_MVP` disables the code path AND `app.config.js` strips `POST_NOTIFICATIONS` from the store-mvp manifest (DIC-1259). Answer consistently with Data safety. |
+| Personal information shared with third parties | **OWNER DECISION (2026-10-14).** Card photos are now uploaded to our backend and forwarded to Google Gemini for recognition (in-app disclosure + consent first). Whether that transfer is "shared" or falls under Play's service-provider exception depends on the Gemini API terms that actually apply to the project's billing tier (Unpaid vs Paid differ — see `data-safety.md` → Photos); the owner must verify and answer in Play Console. Push: the push token is never registered because `pushAlerts: !STORE_MVP` disables the code path AND `app.config.js` strips `POST_NOTIFICATIONS` from the store-mvp manifest (DIC-1259). Answer consistently with Data safety. |
 
 Expected outcome: Everyone / PEGI 3 / ESRB E. The rating is issued by IARC from the
 answers; do not hand-pick a rating.

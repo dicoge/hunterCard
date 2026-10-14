@@ -103,7 +103,7 @@ check('module and client agree on RECOGNITION_UNAVAILABLE', MODULE_CODE === CLIE
     `the handler still answers the resolution-floor 404 "${RECOGNITION_PROBE_404_ERROR}"`,
     at >= 0 && arm.endsWith('404)') && arm.length < 200,
   );
-  const visionAt = handlerSource.indexOf('callVision(images)');
+  const visionAt = handlerSource.indexOf('callVision(images, req.signal)');
   check(
     'the resolution-floor arm returns before the handler calls vision',
     at >= 0 && visionAt > at,

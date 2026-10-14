@@ -28,16 +28,14 @@ profiles set `EXPO_PUBLIC_STORE_MVP=1`. The token is never requested or uploaded
 submitted artifact, and neither are price alerts. Corrected — over-declaring is a mismatch
 too, and the answer flips on that one environment variable.
 
-**1. Card images are not transmitted by the Android app — but only by accident.** Reading
-the call graph says the opposite: `recognizeCardFromImage` posts `{ image }` to
-`/api/recognize-card` on every platform, and the server forwards to Google Gemini. What
-saves it is that `preprocessCardImage` is DOM-only code and React Native defines no global
-`Image` or `document`, so on native it returns the original `file://` path and a path
-string is what gets posted, not pixels. Recognition then fails over to on-device OCR.
-Photos are correctly declared **not collected** — see the full derivation at the top of
-`data-safety.md`. Because the behaviour is incidental rather than designed, adding a native
-image preprocessor or `base64: true` would start uploading real photos silently;
-`npm run test:privacy-disclosure` fails on exactly those changes and is wired into CI.
+**1. Card photos ARE uploaded by the Android app (since 2026-10-14, owner-authorised).**
+Previously native posted the bare `file://` path, which the server wrapped as base64 and
+Gemini could never decode — native AI recognition never worked and the "not collected"
+answer was true only by accident. Now the capture returns its bytes (`base64: true`), the
+app shows a disclosure and asks consent before the first upload, and the photo goes to
+`/api/recognize-card` → Google Gemini. Photos must be declared **collected**; the shared /
+ephemeral answers are owner decisions (see `data-safety.md`). Contract gates:
+`npm run test:native-scan-no-upload`, `test:native-ai-photo-upload`, `test:privacy-disclosure`.
 
 **2. Build 6 requested three permissions nothing uses.** `SYSTEM_ALERT_WINDOW` (from React
 Native's debug-only manifest), `READ_EXTERNAL_STORAGE` and `WRITE_EXTERNAL_STORAGE` are now
@@ -82,7 +80,7 @@ comment** — put credentials and keys straight into Play Console or an EAS secr
 
 | # | Question | Why it matters |
 | --- | --- | --- |
-| 8 | Confirm the Android app is the only thing being submitted, and that the **web** build's Gemini image upload is out of scope for this listing | Play asks about the installed binary. The web build does upload card images; the Android build does not. Keep the two straight when answering, and revisit if a WebView or PWA wrapper is ever shipped to Play. |
+| 8 | Verify the Gemini API billing tier / terms in force for the production key, then answer Photos shared / ephemeral | Both the web build and (since 2026-10-14) the Android build upload card photos to Gemini. Unpaid and Paid Gemini API terms differ on use of content to improve Google products; the Data safety answer must follow the tier actually in force. |
 | 9 | Is there a service-provider agreement covering Expo Push Service? | Decides the "shared" answer for the push token. Absent one, declare it shared. |
 | 10 | Ship screenshots containing hololive card artwork, or only the two without it? | IP takedown risk on a fan-made listing. See `store-listing.md`. |
 
@@ -132,11 +130,9 @@ content rating all have to be re-answered.
 Each changes user-facing behaviour or adds a public page, so each belongs in its own
 reviewed change rather than being bundled into a submission-prep PR.
 
-1. **Remove the doomed recognition round trip on native.** Every native scan posts a
-   `file://` path string to `/api/recognize-card`, waits for it to fail, and only then runs
-   on-device OCR. That is wasted latency on the device and a wasted Gemini call on the
-   server. Making the platform split explicit would also turn today's accidental
-   privacy-safe behaviour into an intentional one.
+1. ~~Remove the doomed recognition round trip on native.~~ Done 2026-10-14 the other way
+   round (owner decision): native now uploads real photo bytes with disclosure + consent,
+   and the server refuses `file://` / `content://` strings with 400 before any provider call.
 2. **A public data-deletion page** at `https://holohunter.dicoge.com/delete-account`. Play
    prefers a web URL over an email address for users who have uninstalled.
 3. **A push-token unregister endpoint.** Today the token survives account deletion and

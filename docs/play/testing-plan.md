@@ -32,7 +32,7 @@ is either a known risk from this submission work or a path the store review will
 | 1 | Fresh install, cold launch, no crash | Baseline |
 | 2 | Guest path: tap 以訪客身份進入, browse sets, search, open a card detail | Exactly what a reviewer following the App access instructions will do. After DIC-1256 the card detail must show **no** price or market data, and the drawer no 收藏／入手提醒 |
 | 3 | Google sign-in with the review test account | If this fails for the reviewer, the release is rejected |
-| 4 | Scan with the camera, confirm a card is recognised | Recognition on native runs on-device; confirm it still resolves a card after the DIC-1245 API-origin change |
+| 4 | Scan with the camera: the photo-upload disclosure appears before the first upload; decline uploads nothing; accept → card recognised via AI | Since 2026-10-14 native uploads the photo (our backend → Google Gemini). Also check: airplane mode → local OCR fallback and no quota charge; leaving the screen mid-scan charges nothing |
 | 5 | **Pick an image from the gallery and confirm recognition runs** | Directly exercises the `READ_EXTERNAL_STORAGE` / `WRITE_EXTERNAL_STORAGE` removal. Test on an Android 10 or older device or emulator, where the legacy storage path would have mattered |
 | 6 | Confirm **no** notification prompt ever appears | Push registration is gated on `FEATURES.pushAlerts` (`!STORE_MVP`), so the review build must never ask. A prompt appearing means the store profile lost `EXPO_PUBLIC_STORE_MVP=1`, which would also make the Data safety answers wrong |
 | 7 | Settings → 刪除帳號, confirm the account is deleted and the app signs out | Play's data-deletion answer depends on this working |

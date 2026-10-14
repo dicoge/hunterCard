@@ -561,14 +561,17 @@ jobs:
       - name: Verify Play store-listing assets are dimensioned AND in the right PNG colour type (DIC-1259)
         run: npm run test:play-store-assets
 
-      - name: Verify the privacy policy matches what the code actually sends off-device (DIC-1248)
+      - name: Verify the privacy policy matches what the code actually sends off-device (DIC-1248, re-derived 2026-10-14)
         run: npm run test:privacy-disclosure
 
       - name: Verify legal / pricing / terms / support pages stay consistent (DIC-1380)
         run: npm run test:legal-pages-consistency
 
-      - name: Verify a native scan transmits no image bytes (DIC-1248)
+      - name: Verify a native scan uploads only validated photo bytes, never charges on failure/cancel (native AI photo upload 2026-10-14)
         run: npm run test:native-scan-no-upload
+
+      - name: Verify recognize-card image contract, client-abort forwarding, consent gate and disclosure copy (native AI photo upload 2026-10-14)
+        run: npm run test:native-ai-photo-upload
 
       - name: Verify Scan screen fails safe on native crashes (DIC-1286)
         run: npm run test:scan-screen-fail-safe

@@ -247,21 +247,25 @@ const check = (label, fn) => { fn(); results.push(label); };
     assert.equal(isBelowLegibleResolution([withTail(THUMBNAIL, 64)]), true);
   });
 
-  // The real handler, not just the helper: an illegible frame padded out to 64 MiB is
-  // still refused on its header, without a provider call and without reading the tail.
+  // The real handler, not just the helper: a frame padded out to 64 MiB is refused
+  // without a provider call and without scanning the tail. Since the native AI photo
+  // upload contract (2026-10-14) the size cap answers first — 400 IMAGE_TOO_LARGE on the
+  // string length alone — so the bounded-work guarantee no longer depends on the header.
   const started = process.hrtime.bigint();
   const refused = await scan([withTail(THUMBNAIL, 64)], REPLY_FROM_THUMBNAIL);
   const handlerMs = Number(process.hrtime.bigint() - started) / 1e6;
-  check('the real handler refuses a 64 MiB illegible frame on its header alone', () => {
-    assert.equal(refused.res.status, 404);
+  check('the real handler refuses a 64 MiB frame on its length alone, before any provider call', () => {
+    assert.equal(refused.res.status, 400);
     assert.equal(refused.body.success, false);
-    assert.deepEqual(refused.body.candidates, []);
+    assert.equal(refused.body.code, 'IMAGE_TOO_LARGE');
     assert.deepEqual(refused.providerCalls, []);
     assert.ok(handlerMs < 1000, `refusal took ${handlerMs.toFixed(1)}ms`);
   });
 
-  const accepted = await scan([withTail(LEGIBLE, 8)], REPLY_FROM_FULL_RESOLUTION);
-  check('the real handler still recognises a legible frame carrying a huge tail', () => {
+  // 2 MiB of tail keeps the frame inside MAX_RECOGNITION_IMAGE_BYTES; anything past the
+  // cap is the 400 above, not a recognition.
+  const accepted = await scan([withTail(LEGIBLE, 2)], REPLY_FROM_FULL_RESOLUTION);
+  check('the real handler still recognises a legible frame carrying a large in-cap tail', () => {
     assert.equal(accepted.res.status, 200);
     assert.equal(accepted.body.success, true);
     assert.equal(accepted.body.card.cardNumber, 'hBP07-029');

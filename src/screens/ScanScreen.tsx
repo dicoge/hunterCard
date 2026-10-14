@@ -25,6 +25,10 @@ import * as ImagePicker from 'expo-image-picker';
 import { COLORS, convertPrice } from '../constants';
 import { recognizeCard, recognizeCardFromOcr, recognizeCardFromImage, searchCards, CardInfo, RecognizedCandidate } from '../services/cardRecognition';
 import { RECOGNITION_REQUEST_TIMEOUT_MS } from '../services/recognitionOutcome';
+import { chooseRecognitionPictureSize, validateRecognitionImages } from '../services/recognitionImagePolicy';
+import { ensurePhotoUploadConsent, hasPhotoUploadConsent } from '../services/photoUploadDisclosure';
+import { usePhotoUploadConsentStore } from '../store/photoUploadConsentStore';
+import { showAlert } from '../utils/platformAlert';
 import {
   runWebCameraScan,
   runNativeCameraScan,
@@ -135,6 +139,13 @@ export default function ScanScreen({ navigation }: any) {
   const scanAreaViewportRef = useRef<Rect | null>(null);
   // 在手勢鏈中取得的 stream，避免 iOS Safari 阻擋 getUserMedia
   const webStreamRef = useRef<MediaStream | null>(null);
+  // One recognition at a time; the in-flight one is aborted when the screen goes away,
+  // and nothing is committed (or charged) after that.
+  const mountedRef = useRef(true);
+  const scanInFlightRef = useRef(false);
+  const scanAbortRef = useRef<AbortController | null>(null);
+  // Native capture size chosen from the device's list so one JPEG fits the upload cap.
+  const [nativePictureSize, setNativePictureSize] = useState<string | undefined>(undefined);
   const addCard = useScanSessionStore(s => s.addCard);
   const [lastScannedCard, setLastScannedCard] = useState<CardInfo | null>(null);
   
@@ -212,6 +223,8 @@ export default function ScanScreen({ navigation }: any) {
   // quota should be charged in future — only confirmed/high-confidence adds count,
   // never error retries. Guards against recording the same card twice in one session.
   const commitCard = (card: CardInfo): boolean => {
+    // A result that lands after the screen was left belongs to a cancelled scan.
+    if (!mountedRef.current) return false;
     const existing = useScanSessionStore.getState().cards;
     if (existing.some(c => c.id === card.id)) {
       Alert.alert(
@@ -299,6 +312,14 @@ export default function ScanScreen({ navigation }: any) {
       setResultCard({ visible: true, card, confidence: 1 });
     }
   };
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      scanAbortRef.current?.abort();
+    };
+  }, []);
 
   // 显式请求相机权限 - 修复 Android/iOS 权限问题（web 版跳過，由 WebCamera 直接處理）
   useEffect(() => {
@@ -530,12 +551,48 @@ export default function ScanScreen({ navigation }: any) {
     ]);
   };
 
+  // Prominent disclosure before any photo is uploaded (our backend → Google Gemini).
+  // Uses the existing Alert (window.confirm on web via showAlert); declining uploads
+  // nothing and charges nothing.
+  const requestPhotoUploadConsent = () => ensurePhotoUploadConsent({
+    acceptedVersion: () => usePhotoUploadConsentStore.getState().acceptedVersion,
+    recordAcceptance: (version) => usePhotoUploadConsentStore.getState().accept(version),
+    prompt: () => new Promise<boolean>((resolve) => {
+      showAlert(t('scan_ai_disclosure_title'), t('scan_ai_disclosure_body'), [
+        { text: t('scan_ai_disclosure_decline'), style: 'cancel', onPress: () => resolve(false) },
+        { text: t('scan_ai_disclosure_accept'), onPress: () => resolve(true) },
+      ]);
+    }),
+  });
+  const hasUploadConsent = () => hasPhotoUploadConsent(usePhotoUploadConsentStore.getState().acceptedVersion);
+
+  // Starts a scan: refuses re-entry, aborts nothing else (there is nothing else), and
+  // hands back the signal that cancels this one when the screen unmounts.
+  const beginScan = (): AbortSignal | null => {
+    if (scanInFlightRef.current) return null;
+    scanInFlightRef.current = true;
+    scanAbortRef.current = new AbortController();
+    return scanAbortRef.current.signal;
+  };
+  const endScan = () => {
+    scanInFlightRef.current = false;
+    scanAbortRef.current = null;
+  };
+
   // 相機辨識流程本身住在 scanRecognitionFlow，這兩個 adapter 只把 I/O 與 setState 接上，
   // 所以 Node 回歸能執行到與相機完全相同的分支。
-  const buildScanFlowIo = (recognitionImages?: string[]): ScanFlowIo => ({
+  const buildScanFlowIo = (
+    recognitionImages?: string[],
+    scanInput?: { base64?: string | null; signal?: AbortSignal },
+  ): ScanFlowIo => ({
     callRecognitionApi: async () => {
+      // Same rules the handler enforces; a frame that would be refused is not sent and
+      // the flow takes its local-OCR fallback instead.
+      if (!validateRecognitionImages(recognitionImages).ok) throw new Error('IMAGE_REJECTED');
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), RECOGNITION_REQUEST_TIMEOUT_MS);
+      const forwardAbort = () => controller.abort();
+      scanInput?.signal?.addEventListener('abort', forwardAbort);
       try {
         const resp = await fetch(window.location.origin + '/api/recognize-card', {
           method: 'POST',
@@ -550,9 +607,13 @@ export default function ScanScreen({ navigation }: any) {
         return { status: resp.status, body: await resp.json() };
       } finally {
         clearTimeout(timeoutId);
+        scanInput?.signal?.removeEventListener('abort', forwardAbort);
       }
     },
-    recognizeFromImage: (uri) => recognizeCardFromImage(uri),
+    recognizeFromImage: (uri) => recognizeCardFromImage(uri, {
+      base64: scanInput?.base64,
+      signal: scanInput?.signal,
+    }),
     ocrText: (uri) => performOcr(uri),
     recognizeFromOcr: (text) => recognizeCardFromOcr(text),
     searchCards: (text, limit) => searchCards(text, limit),
@@ -598,6 +659,8 @@ export default function ScanScreen({ navigation }: any) {
     // Silent by design — auto-scan must not spam alerts; interactive callers
     // prompt via handleScan.
     if (!canScanNow()) return;
+    // No upload without the disclosure accepted; handleScan asks, auto-scan never does.
+    if (!hasUploadConsent()) return;
     if (isWeb) {
       if (!webCameraRef.current) {
         Alert.alert(t('scan_error_title'), t('scan_camera_not_ready'));
@@ -607,6 +670,9 @@ export default function ScanScreen({ navigation }: any) {
       Alert.alert(t('scan_error_title'), t('scan_camera_not_ready'));
       return;
     }
+
+    const signal = beginScan();
+    if (!signal) return;
 
     try {
       setIsProcessingOCR(true);
@@ -623,8 +689,11 @@ export default function ScanScreen({ navigation }: any) {
           quality: 0.8,
         });
       } else {
+        // The bytes come from the capture itself: the uri is a device-local path and is
+        // never what gets uploaded (recognitionImagePolicy refuses it).
         photo = await cameraRef.current?.takePictureAsync({
-          quality: 0.8,
+          quality: 0.7,
+          base64: true,
         });
       }
 
@@ -639,12 +708,16 @@ export default function ScanScreen({ navigation }: any) {
         setScanningStatus(t('scan_processing_image'));
         setScanProgress(2);
         const recognitionImages = await captureWebRecognitionImages(photo.uri);
-        await runWebCameraScan(photo.uri, buildScanFlowIo(recognitionImages), scanFlowUi);
+        await runWebCameraScan(photo.uri, buildScanFlowIo(recognitionImages, { signal }), scanFlowUi);
       } else {
-        await runNativeCameraScan(photo.uri, buildScanFlowIo(), scanFlowUi);
+        await runNativeCameraScan(
+          photo.uri,
+          buildScanFlowIo(undefined, { base64: (photo as { base64?: string }).base64, signal }),
+          scanFlowUi,
+        );
       }
     } catch (error) {
-      console.error('OCR Error:', error);
+      console.error(`OCR Error: ${(error as any)?.name || 'Error'}`);
       setIsProcessingOCR(false);
       setIsScanning(false);
       setScanningStatus('');
@@ -652,6 +725,7 @@ export default function ScanScreen({ navigation }: any) {
 
       setScanError(t('scan_failed_retry_manual'));
     } finally {
+      endScan();
       // Reset auto-scan stability buffer on every exit (success or failure) so the
       // same still frame can't immediately re-trigger a scan. Combined with the
       // store-level dedup, this keeps a single card from being recorded twice.
@@ -665,21 +739,28 @@ export default function ScanScreen({ navigation }: any) {
       promptScanBlocked();
       return;
     }
+    if (!(await requestPhotoUploadConsent())) return;
+    const signal = beginScan();
+    if (!signal) return;
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
-        quality: 0.8,
+        quality: 0.7,
+        // Native uploads these bytes; on web the picker already yields a data URL.
+        base64: !isWeb,
       });
 
       if (!result.canceled && result.assets[0]?.uri) {
+        const recognizeOptions = { base64: result.assets[0].base64, signal };
         setIsProcessingOCR(true);
         setIsScanning(true);
 
         setScanError(null);
         setCapturedPhotoUri(result.assets[0].uri);
 
-        const galleryVisionResult = await recognizeCardFromImage(result.assets[0].uri);
+        const galleryVisionResult = await recognizeCardFromImage(result.assets[0].uri, recognizeOptions);
+        if (galleryVisionResult.cancelled) return;
         if (galleryVisionResult.success && galleryVisionResult.card) {
           setIsProcessingOCR(false);
           setIsScanning(false);
@@ -740,7 +821,7 @@ export default function ScanScreen({ navigation }: any) {
 
         if (isWeb) {
           // Web: 卡號優先 OCR
-          const cardResult = await recognizeCardFromImage(result.assets[0].uri);
+          const cardResult = await recognizeCardFromImage(result.assets[0].uri, recognizeOptions);
 
           setIsProcessingOCR(false);
           setIsScanning(false);
@@ -788,20 +869,23 @@ export default function ScanScreen({ navigation }: any) {
           }
         }
       }
-    } catch (error) {
-      console.error('Gallery OCR Error:', error);
+    } catch (error: any) {
+      console.error(`Gallery OCR Error: ${error?.name || 'Error'}`);
       setIsProcessingOCR(false);
       setIsScanning(false);
       setScanError(t('scan_image_failed'));
+    } finally {
+      endScan();
     }
   };
 
-  const handleScan = () => {
-    if (isScanning || isProcessingOCR) return;
+  const handleScan = async () => {
+    if (isScanning || isProcessingOCR || scanInFlightRef.current) return;
     if (!canScanNow()) {
       promptScanBlocked();
       return;
     }
+    if (!(await requestPhotoUploadConsent())) return;
     captureAndRecognize();
   };
 
@@ -818,6 +902,16 @@ export default function ScanScreen({ navigation }: any) {
   const handleCameraReady = () => {
     setIsCameraReady(true);
     setCameraError(null);
+    if (!isWeb && !nativePictureSize) {
+      // Best effort: an unknown list keeps the device default, and the payload is
+      // size-checked after capture either way.
+      cameraRef.current?.getAvailablePictureSizesAsync?.()
+        .then((sizes) => {
+          const chosen = chooseRecognitionPictureSize(sizes);
+          if (chosen && mountedRef.current) setNativePictureSize(chosen);
+        })
+        .catch(() => {});
+    }
   };
 
   // 相機載入錯誤的回調
@@ -1099,6 +1193,7 @@ export default function ScanScreen({ navigation }: any) {
           style={styles.camera}
           facing={facing}
           flash={flash ? 'on' : 'off'}
+          pictureSize={nativePictureSize}
           onCameraReady={handleCameraReady}
           onMountError={handleMountError}
         >

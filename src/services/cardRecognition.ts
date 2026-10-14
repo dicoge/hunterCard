@@ -12,7 +12,17 @@ import { mapApiCardToCardInfo } from '../utils/apiCardMapper';
 import { stripDisabledCardFields } from '../utils/cardReleaseFilter';
 import { releaseCardFlags, STORE_MVP } from '../config/releaseFlags';
 import { PRODUCTION_ORIGIN } from '../config/apiOrigin';
-import { isRecognitionInfrastructureFailure, RECOGNITION_UNAVAILABLE_MESSAGE } from './recognitionOutcome';
+import {
+  isRecognitionInfrastructureFailure,
+  RECOGNITION_REQUEST_TIMEOUT_MS,
+  RECOGNITION_UNAVAILABLE_MESSAGE,
+} from './recognitionOutcome';
+import {
+  buildRecognitionDataUrl,
+  validateRecognitionDataUrl,
+  type RecognitionImageErrorCode,
+} from './recognitionImagePolicy';
+import { SCAN_RUNTIME } from './scanRuntime';
 
 // ── 類型定義 ──
 
@@ -71,6 +81,23 @@ export interface RecognitionResult {
   serviceUnavailable?: boolean;
   /** Top 3-5 alternative matches for the candidate-confirmation UI. */
   candidates?: RecognizedCandidate[];
+  /** The caller aborted (screen left / scan superseded). Nothing may be committed. */
+  cancelled?: boolean;
+  /** The recognition request ran past RECOGNITION_REQUEST_TIMEOUT_MS and was aborted. */
+  timedOut?: boolean;
+  /** The photo was refused locally by recognitionImagePolicy and was NOT uploaded. */
+  imageRejected?: RecognitionImageErrorCode;
+}
+
+/** How a photo reaches recognizeCardFromImage. */
+export interface RecognizeImageOptions {
+  /**
+   * Native only: the capture's raw base64 (`takePictureAsync` / `launchImageLibraryAsync`
+   * with `base64: true`). The uri alone is a device-local path and is never uploaded.
+   */
+  base64?: string | null;
+  /** Aborts the upload; the result then comes back `cancelled`. */
+  signal?: AbortSignal;
 }
 
 // ── 資料庫快取 ──
@@ -415,35 +442,6 @@ function cleanOcrText(rawText: string): string[] {
   return [...new Set([...withId, ...shortName, ...meaningful])];
 }
 
-/**
- * Resize an image to max dimension, returns data URI.
- * Works on web via canvas.
- */
-async function resizeImage(imageUri: string, maxDim: number): Promise<string> {
-  if (typeof document === 'undefined') return imageUri;
-  return new Promise<string>((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      let { width, height } = img;
-      if (width <= maxDim && height <= maxDim) {
-        resolve(imageUri.startsWith('data:') ? imageUri : `data:image/jpeg;base64,${imageUri}`);
-        return;
-      }
-      if (width > height) { height = (height / width) * maxDim; width = maxDim; }
-      else { width = (width / height) * maxDim; height = maxDim; }
-      const c = document.createElement('canvas');
-      c.width = Math.round(width);
-      c.height = Math.round(height);
-      const ctx = c.getContext('2d');
-      if (!ctx) { resolve(imageUri); return; }
-      ctx.drawImage(img, 0, 0, c.width, c.height);
-      resolve(c.toDataURL('image/jpeg', 0.85));
-    };
-    img.onerror = () => resolve(imageUri);
-    img.src = imageUri;
-  });
-}
-
 /** Map a raw API card payload into the app's CardInfo shape (single shared mapper). */
 function mapApiCard(apiCard: any): CardInfo {
   return stripDisabledCardFields(mapApiCardToCardInfo(apiCard), releaseCardFlags());
@@ -461,13 +459,46 @@ function mapApiCandidates(raw: any): RecognizedCandidate[] | undefined {
 }
 
 /**
- * Try to recognize card via server-side API (direct Gemini Vision).
- * Falls back gracefully without throwing
+ * The image to upload, as a validated data URL — or why there is none.
+ *
+ * Native: the capture's own base64, typed from its signature bytes. Web: the canvas
+ * preprocessor's data URL. Either way the result has passed the same rules the handler
+ * enforces, so a file:// / content:// path or a bare string is never sent.
  */
-async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
+async function recognitionPayload(
+  imageUri: string,
+  options: RecognizeImageOptions,
+): Promise<{ ok: true; dataUrl: string } | { ok: false; code: RecognitionImageErrorCode }> {
+  if (SCAN_RUNTIME === 'native') {
+    const built = buildRecognitionDataUrl(options.base64);
+    return built.ok ? { ok: true, dataUrl: built.dataUrl } : built;
+  }
+  const processed = await preprocessCardImage(imageUri);
+  const check = validateRecognitionDataUrl(processed);
+  return check.ok ? { ok: true, dataUrl: processed } : check;
+}
+
+/**
+ * Try to recognize card via server-side API (our backend → Google Gemini).
+ * Falls back gracefully without throwing. Never logs the image, the payload or the
+ * response body.
+ */
+async function recognizeViaApi(imageUri: string, options: RecognizeImageOptions = {}): Promise<RecognitionResult> {
+  if (options.signal?.aborted) return { success: false, cancelled: true, error: '' };
+
+  const payload = await recognitionPayload(imageUri, options);
+  if (!payload.ok) {
+    console.warn(`[cardRecognition] photo not uploaded: ${payload.code}`);
+    return { success: false, imageRejected: payload.code, error: '' };
+  }
+
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, RECOGNITION_REQUEST_TIMEOUT_MS);
+  const forwardAbort = () => controller.abort();
+  options.signal?.addEventListener('abort', forwardAbort);
+
   try {
-    // Preprocess with OpenCV: enhance contrast, sharpen, resize
-    const processedImage = await preprocessCardImage(imageUri);
 
     // Call the API — web uses current origin; native uses the canonical production
     // API host (DIC-1245). The old holocard-hunter.vercel.app alias must never
@@ -480,7 +511,8 @@ async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
     const apiResponse = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: processedImage, storeMvp: STORE_MVP }),
+      body: JSON.stringify({ image: payload.dataUrl, storeMvp: STORE_MVP }),
+      signal: controller.signal,
     });
 
     if (!apiResponse.ok) {
@@ -551,9 +583,18 @@ async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
     console.warn(`[cardRecognition] API found cardNumber ${cardNumber} but no DB match`);
     return { success: false, error: '' };
 
-  } catch (e) {
-    console.warn('[cardRecognition] API call failed:', e);
-    return { success: false, error: '' };
+  } catch (e: any) {
+    if (options.signal?.aborted) return { success: false, cancelled: true, error: '' };
+    if (timedOut) {
+      console.warn('[cardRecognition] API call timed out');
+      return { success: false, timedOut: true, serviceUnavailable: true, error: RECOGNITION_UNAVAILABLE_MESSAGE };
+    }
+    // Name only: a transport error never carries the request body, but keep it that way.
+    console.warn(`[cardRecognition] API call failed: ${e?.name || 'Error'}`);
+    return { success: false, serviceUnavailable: true, error: RECOGNITION_UNAVAILABLE_MESSAGE };
+  } finally {
+    clearTimeout(timeoutId);
+    options.signal?.removeEventListener('abort', forwardAbort);
   }
 }
 
@@ -561,11 +602,16 @@ async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
  * 用於 OCR 卡牌的智能識別（先裁切找卡號，再比對資料庫）
  * 從圖片直接辨識，優先找卡號（比全圖名稱匹配更可靠）
  */
-export async function recognizeCardFromImage(imageUri: string): Promise<RecognitionResult> {
+export async function recognizeCardFromImage(
+  imageUri: string,
+  options: RecognizeImageOptions = {},
+): Promise<RecognitionResult> {
   // Step 0: Try server-side Gemini Vision API first
   let serviceUnavailable = false;
+  let apiFailure: Pick<RecognitionResult, 'timedOut' | 'imageRejected'> = {};
   try {
-    const apiResult = await recognizeViaApi(imageUri);
+    const apiResult = await recognizeViaApi(imageUri, options);
+    if (apiResult.cancelled) return apiResult;
     if (apiResult.success && apiResult.card) {
       return apiResult;
     }
@@ -573,11 +619,29 @@ export async function recognizeCardFromImage(imageUri: string): Promise<Recognit
       return apiResult;
     }
     serviceUnavailable = !!apiResult.serviceUnavailable;
-  } catch (e) {
-    console.warn('[cardRecognition] API recognition failed, falling back to local:', e);
+    apiFailure = { timedOut: apiResult.timedOut, imageRejected: apiResult.imageRejected };
+  } catch (e: any) {
+    console.warn(`[cardRecognition] API recognition failed, falling back to local: ${e?.name || 'Error'}`);
   }
 
-  const { cardId, rawText } = await recognizeCardNumber(imageUri);
+  // Native local OCR is expo-ocr-kit, run by the caller (scanRecognitionFlow / ScanScreen
+  // `performOcr`). Tesseract is web-only; on native this returns so that fallback runs.
+  if (SCAN_RUNTIME === 'native') {
+    return {
+      success: false,
+      error: serviceUnavailable ? RECOGNITION_UNAVAILABLE_MESSAGE : '',
+      serviceUnavailable,
+      ...apiFailure,
+    };
+  }
+
+  let cardId: string | null = null;
+  try {
+    ({ cardId } = await recognizeCardNumber(imageUri));
+  } catch (e: any) {
+    // A Tesseract load / run failure is "local OCR read nothing", not a crash.
+    console.warn(`[cardRecognition] local OCR failed: ${e?.name || 'Error'}`);
+  }
 
   if (!cardId || cardId.trim().length === 0) {
     // A down backend must not masquerade as a badly-lit photo — the local OCR pass

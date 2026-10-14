@@ -13,6 +13,9 @@ import { isRecognitionInfrastructureFailure, RECOGNITION_UNAVAILABLE_MESSAGE } f
 /** 本地 OCR 也讀不到字時的一般引導；服務本身掛掉時不得使用。 */
 export const NO_TEXT_GUIDANCE = '無法自動辨識卡牌文字。請使用手動搜尋或從下方搜尋結果中選擇。';
 
+/** The photo was refused before upload (too large / unsupported) and local OCR read nothing either. */
+export const PHOTO_NOT_UPLOADED_GUIDANCE = '這張照片無法送出辨識（檔案過大或格式不支援），本機文字辨識也沒有讀到卡號。請靠近卡片重新拍攝，或改用手動搜尋。';
+
 export interface RecognitionApiResponse {
   status: number;
   body: any;
@@ -219,6 +222,12 @@ export async function runNativeCameraScan(imageUri: string, io: ScanFlowIo, ui: 
   ui.setStatus('🤖 AI 辨識中…', 3);
 
   const vision = await io.recognizeFromImage(imageUri);
+  // Cancelled (screen left / scan superseded): stop here. No OCR, no commit, no quota.
+  if (vision.cancelled) {
+    ui.setBusy(false);
+    ui.setStatus('', 0);
+    return;
+  }
   if (routeAmbiguousPrinting(vision, ui)) return;
 
   if (vision.success && vision.card) {
@@ -239,7 +248,8 @@ export async function runNativeCameraScan(imageUri: string, io: ScanFlowIo, ui: 
     return;
   }
 
-  // 後端不可用時這段本地 OCR 仍照跑；它失敗只代表本地讀不到字，不代表照片有問題。
+  // 後端不可用、逾時、或照片未通過上傳前檢查時，這段本地 OCR（expo-ocr-kit）仍照跑；
+  // 它失敗只代表本地讀不到字，不代表照片有問題。Tesseract 不會在 native 執行。
   ui.setStatus('🔍 OCR 辨識中…');
   const trimmedText = (await io.ocrText(imageUri)).trim();
   ui.setRecognizedText(trimmedText);
@@ -258,5 +268,9 @@ export async function runNativeCameraScan(imageUri: string, io: ScanFlowIo, ui: 
     return;
   }
 
-  ui.setScanError(vision.serviceUnavailable ? RECOGNITION_UNAVAILABLE_MESSAGE : NO_TEXT_GUIDANCE);
+  ui.setScanError(
+    vision.serviceUnavailable ? RECOGNITION_UNAVAILABLE_MESSAGE
+      : vision.imageRejected ? PHOTO_NOT_UPLOADED_GUIDANCE
+        : NO_TEXT_GUIDANCE,
+  );
 }

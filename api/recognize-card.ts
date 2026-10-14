@@ -1,12 +1,21 @@
 import { normalizeCardIdentity } from '../src/utils/cardNormalization';
+import {
+  validateRecognitionImages,
+  type RecognitionImageErrorCode,
+} from '../src/services/recognitionImagePolicy';
 
 /**
  * @version 8
  * recognize-card.ts — Gemini Vision + deterministic candidate ranking for Hololive TCG cards.
  *
- * Accepts one or more image data URIs. The web scanner sends both a full-frame image
+ * Accepts one or two image data URIs. The web scanner sends both a full-frame image
  * and a scan-area crop so the model can read tiny bottom-edge card numbers without
- * losing whole-card context.
+ * losing whole-card context; the native app sends one camera / library photo.
+ *
+ * Every image must pass src/services/recognitionImagePolicy (data:image/{jpeg,png,webp},
+ * strict base64 whose signature matches the type, bounded size) BEFORE a provider is
+ * resolved. A local file:// / content:// path or any other bare string is answered 400 —
+ * it is never wrapped as base64 and forwarded to Gemini (native AI photo upload, 2026-10-14).
  *
  * The vision call is served exclusively by Google direct (GEMINI_API_KEY). Any other
  * provider — in particular OpenRouter — is a hard denylist (DIC-1185 FinOps repair):
@@ -293,15 +302,29 @@ export function isBelowLegibleResolution(images: any[]): boolean {
   return edge !== null && edge < MIN_LEGIBLE_IMAGE_PX;
 }
 
+// Only reached with images validateRecognitionImages accepted, so the head is a known
+// `data:<allowed mime>;base64,` prefix. Slicing at the first comma keeps this bounded.
 function dataUriToGeminiPart(image: string) {
-  const match = image.match(/^data:([^;]+);base64,(.+)$/);
+  const comma = image.indexOf(',');
   return {
     inline_data: {
-      mime_type: match?.[1] || 'image/jpeg',
-      data: match?.[2] || image,
+      mime_type: image.slice('data:'.length, comma - ';base64'.length),
+      data: image.slice(comma + 1),
     },
   };
 }
+
+/** User-safe wording per rejection; the stable `code` is what clients branch on. */
+const IMAGE_REJECTION_MESSAGES: Record<RecognitionImageErrorCode, string> = {
+  IMAGE_MISSING: '未收到照片，請重新拍攝',
+  IMAGE_TOO_MANY: '一次最多只能送出兩張照片',
+  IMAGE_URI_NOT_ALLOWED: '照片格式錯誤，請重新拍攝',
+  IMAGE_NOT_DATA_URL: '照片格式錯誤，請重新拍攝',
+  IMAGE_UNSUPPORTED_TYPE: '僅支援 JPEG、PNG 或 WebP 照片',
+  IMAGE_INVALID_BASE64: '照片資料損毀，請重新拍攝',
+  IMAGE_TYPE_MISMATCH: '照片資料損毀，請重新拍攝',
+  IMAGE_TOO_LARGE: '照片檔案過大，請靠近卡片重新拍攝',
+};
 
 const visionPrompt = `You are identifying a real Hololive OFFICIAL CARD GAME card from camera photos.
 
@@ -328,7 +351,7 @@ TITLE: [title or NONE]`;
 type VisionAdapter = {
   provider: string;
   model: string;
-  request: (images: string[], timeoutMs: number) => Promise<Response>;
+  request: (images: string[], timeoutMs: number, clientSignal?: AbortSignal) => Promise<Response>;
   extract: (data: any) => string;
 };
 
@@ -338,7 +361,7 @@ type VisionAdapter = {
 const googleAdapter = (apiKey: string): VisionAdapter => ({
   provider: 'gemini',
   model: GEMINI_MODEL,
-  request: (images, timeoutMs) => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
+  request: (images, timeoutMs, clientSignal) => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
     body: JSON.stringify({
@@ -348,11 +371,32 @@ const googleAdapter = (apiKey: string): VisionAdapter => ({
       }],
       generationConfig: { temperature: 0, maxOutputTokens: VISION_MAX_TOKENS },
     }),
-    signal: AbortSignal.timeout(timeoutMs),
+    signal: withClientAbort(AbortSignal.timeout(timeoutMs), clientSignal),
   }),
   extract: (data) => (data?.candidates?.[0]?.content?.parts || [])
     .map((part: any) => part.text || '').join('\n').trim(),
 });
+
+/**
+ * The provider call is abandoned when the scanner abandons us: the runtime aborts
+ * `request.signal` when the client disconnects (scan cancelled, screen left, client
+ * timeout), and that abort is forwarded to the Gemini fetch so no vision work continues
+ * for a scan nobody is waiting for. Quota is device-local and charged only when the app
+ * commits a card, so an aborted request can never charge — the server holds no quota.
+ */
+export class ClientAbortedError extends Error {}
+
+function withClientAbort(timeout: AbortSignal, clientSignal?: AbortSignal): AbortSignal {
+  if (!clientSignal) return timeout;
+  const anyFn = (AbortSignal as any).any as ((signals: AbortSignal[]) => AbortSignal) | undefined;
+  if (anyFn) return anyFn([timeout, clientSignal]);
+  const controller = new AbortController();
+  const forward = () => controller.abort();
+  if (timeout.aborted || clientSignal.aborted) controller.abort();
+  timeout.addEventListener('abort', forward, { once: true });
+  clientSignal.addEventListener('abort', forward, { once: true });
+  return controller.signal;
+}
 
 function readKey(name: string): string | null {
   const value = process.env[name];
@@ -367,8 +411,9 @@ function resolveAdapters(): VisionAdapter[] {
   return geminiKey ? [googleAdapter(geminiKey)] : [];
 }
 
-async function callVision(images: string[]): Promise<{ reply: string; provider: string; model: string }> {
-  const imageList = images.filter(Boolean).slice(0, 2).map(img => img.startsWith('data:') ? img : `data:image/jpeg;base64,${img}`);
+async function callVision(images: string[], clientSignal?: AbortSignal): Promise<{ reply: string; provider: string; model: string }> {
+  // Already validated by the handler; nothing is coerced into a data URI here.
+  const imageList = images;
   const adapters = resolveAdapters();
   if (adapters.length === 0) throw new RecognitionUnavailableError('no vision provider key configured');
 
@@ -382,10 +427,15 @@ async function callVision(images: string[]): Promise<{ reply: string; provider: 
   // reduced to provider + HTTP status before it can reach a client response or a log.
   let reply: string;
   try {
-    const res = await adapter.request(imageList, legBudget);
+    if (clientSignal?.aborted) throw new ClientAbortedError('client aborted');
+    const res = await adapter.request(imageList, legBudget, clientSignal);
     if (!res.ok) throw new Error(`${adapter.provider} API error (${res.status})`);
     reply = adapter.extract(await res.json());
   } catch (e: any) {
+    if (e instanceof ClientAbortedError || clientSignal?.aborted) {
+      console.warn(`[recognize-card] client aborted; provider ${adapter.provider} call abandoned`);
+      throw new ClientAbortedError('client aborted');
+    }
     const safeError = e instanceof Error && /^\w+ API error \(\d+\)$/.test(e.message)
       ? e
       : new Error(`${adapter.provider} API request failed`);
@@ -493,10 +543,23 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204 });
   if (req.method !== 'POST') return json({ success: false, error: 'Method not allowed' }, 405);
 
+  // A parse failure's message can quote the request body (i.e. image data), so it is
+  // never echoed or logged.
+  let body: any;
   try {
-    const body = await req.json();
-    const images = Array.isArray(body.images) ? body.images : [body.image];
-    if (!images[0] || typeof images[0] !== 'string') return json({ success: false, error: 'Invalid image' }, 400);
+    body = await req.json();
+  } catch {
+    return json({ success: false, code: 'INVALID_REQUEST_BODY', error: '請求格式錯誤' }, 400);
+  }
+
+  try {
+    const images = Array.isArray(body?.images) ? body.images : [body?.image];
+    // Image rules run before the provider is resolved: a malformed or oversized image is
+    // the client's fault on every deployment and must not cost a vision call.
+    const imageCheck = validateRecognitionImages(images);
+    if (!imageCheck.ok) {
+      return json({ success: false, code: imageCheck.code, error: IMAGE_REJECTION_MESSAGES[imageCheck.code] }, 400);
+    }
     // Store MVP clients send `storeMvp: true` so forbidden fields never cross the wire.
     const storeMvp = body?.storeMvp === true;
 
@@ -506,7 +569,9 @@ export default async function handler(req: Request): Promise<Response> {
     //
     // The provider check comes first on purpose: a deployment that cannot recognise
     // anything owes the user a 503 even for a bad photo. Answering "retake it" on an
-    // unprovisioned backend is exactly the DIC-1013 defect.
+    // unprovisioned backend is exactly the DIC-1013 defect. (The 400 image-contract
+    // check above is not a photo-quality verdict: a well-formed photo always passes it,
+    // including the deploy probe's 64×89 PNG.)
     if (resolveAdapters().length > 0 && isBelowLegibleResolution(images)) {
       return json({
         success: false,
@@ -516,7 +581,7 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     const [{ reply, provider, model }, cards] = await Promise.all([
-      callVision(images),
+      callVision(images, req.signal),
       getDatabase(),
     ]);
     if (!reply) return json({ success: false, error: '服務回傳空回應', debug: { provider, model } }, 502);
@@ -571,6 +636,10 @@ export default async function handler(req: Request): Promise<Response> {
       debug,
     });
   } catch (e: any) {
+    if (e instanceof ClientAbortedError) {
+      // Nobody is listening; a stable code for logs / tests, no body content.
+      return json({ success: false, code: 'CLIENT_ABORTED', error: '請求已取消' }, 499);
+    }
     if (e instanceof RecognitionUnavailableError) {
       // Operator-facing detail (which variable is missing) stays in the runtime log;
       // the wire only carries the stable code + a user-safe message.
