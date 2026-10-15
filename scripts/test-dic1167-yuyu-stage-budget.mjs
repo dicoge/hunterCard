@@ -25,6 +25,10 @@
 //       full launch budget would outlive the scheduler's run budget), and a
 //       rotation seed rotates the VISIT order while prices still merge in
 //       canonical series order (tight-budget days cannot starve one tail);
+//   (g1b) DIC-1500: when the stage clock still reports 1ms at the relaunch
+//       decision the relaunch is granted — and bounded to that 1ms it must die
+//       rather than push the build past the deadline (the exact condition a
+//       loaded runner hit on main 8be9e6d);
 //   (e) end-to-end: a real `node scripts/build-database.js` run with a
 //       fault-injected forever-hanging yuyu stage still exits 0 within budget,
 //       publishes the full official catalog, and preserves previously
@@ -378,13 +382,34 @@ const fetchStub = () => async () => ({ prices: {}, fetchedCards: 0, seriesFetche
 {
   // (g1) the hang consumes the whole remaining stage budget, so the relaunch
   // that would follow must be skipped rather than granted a fresh launch budget.
+  //
+  // The wedged browser here closes on a REAL 50ms timer on purpose.
+  // relaunchBrowser disposes the browser FIRST and only then reads the stage
+  // clock (build-database.js: disposeBrowser → stageDeadline - nowFn()), while the
+  // per-series guard timer is armed with exactly the remaining stage budget
+  // (Math.min(seriesBudgetMs, remainingMs)) — so its callback lands on the
+  // deadline's own millisecond. libuv arms that timer off a cached loop clock
+  // that can trail Date.now() by 1ms; when it does, the guard legitimately sees
+  // 1ms of budget left, starts the relaunch, and the launch dies on its own 1ms
+  // budget (`launches === 2`). That is the flake this case used to have (main
+  // 8be9e6d: CI attempts 1-2 `2 !== 1` at this assertion, attempt 3 green), not
+  // a deadline violation — the relaunch is abandoned, truncated is set and the
+  // catalog is never blocked (g1b below pins that behaviour deterministically).
+  // A teardown that takes real time moves the decision unambiguously past the
+  // deadline (50ms of margin against ±1ms of timer jitter) while keeping the
+  // real-timer proof that the stage ends at its deadline instead of after a
+  // fresh 60s launch budget.
   let launches = 0;
+  const slowTeardownBrowser = () => ({
+    close: () => new Promise((resolve) => setTimeout(resolve, 50)),
+    process: () => null,
+  });
   const t0 = Date.now();
   const result = await scrapeYuyuPrices({
     launchBrowserFn: async () => {
       launches++;
       if (launches > 1) return new Promise(() => {});
-      return fakeBrowser();
+      return slowTeardownBrowser();
     },
     scrapeSeriesPageFn: (browser, url) =>
       url.endsWith('/hang') ? new Promise(() => {}) : Promise.resolve(cardsFor('hBP01-001')),
@@ -404,6 +429,45 @@ const fetchStub = () => async () => ({ prices: {}, fetchedCards: 0, seriesFetche
   assert.ok(elapsed < 3_000, `stage must end at its deadline, not after a fresh launch budget (took ${elapsed}ms)`);
   assert.equal(result.truncated, true);
   assert.deepEqual(Object.keys(result.prices), ['hBP01-001']);
+
+  // (g1b) the near-boundary condition a loaded runner actually produced: the
+  // stage clock still reports 1ms of budget when the relaunch decision runs, so
+  // the relaunch IS granted — and it must die on that 1ms instead of outliving
+  // the stage deadline, exactly as main 8be9e6d logged
+  // (`puppeteer relaunch (hang on hang) exceeded its 1ms wall-clock budget —
+  // abandoning remaining series with partial prices`). The clock is injected so
+  // the 1ms margin is exact rather than a ±1ms timer race.
+  let relaunches = 0;
+  let budgetClock = 0;
+  const nearBoundary = await scrapeYuyuPrices({
+    launchBrowserFn: async () => {
+      relaunches++;
+      if (relaunches > 1) return new Promise(() => {});
+      return fakeBrowser();
+    },
+    scrapeSeriesPageFn: (browser, url) => {
+      if (!url.endsWith('/hang')) return Promise.resolve(cardsFor('hBP01-001'));
+      // the hung series burns all but the final 1ms of the stage budget
+      setTimeout(() => { budgetClock = 299; }, 0);
+      return new Promise(() => {});
+    },
+    seriesPages: [
+      { name: 'ok1', url: '/ok1' },
+      { name: 'hang', url: '/hang' },
+      { name: 'never', url: '/never' },
+    ],
+    sleepFn: async () => {},
+    nowFn: () => budgetClock,
+    fetchAllFn: () => new Promise(() => {}),
+    seriesBudgetMs: 60_000,
+    stageBudgetMs: 300,
+    launchBudgetMs: 60_000,
+  });
+  assert.equal(relaunches, 2, 'with 1ms of stage budget left the relaunch starts and is bounded by that 1ms');
+  assert.equal(nearBoundary.truncated, true);
+  assert.equal(nearBoundary.totalCards, 1);
+  assert.deepEqual(Object.keys(nearBoundary.prices), ['hBP01-001'],
+    'a relaunch that could not finish within the stage budget never blocks catalog publication');
 
   // (g2) rotation helper
   const pages = ['a', 'b', 'c', 'd'].map((name) => ({ name, url: `/${name}` }));
