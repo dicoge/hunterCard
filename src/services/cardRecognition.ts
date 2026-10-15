@@ -24,6 +24,7 @@ import {
   type RecognitionImageErrorCode,
 } from './recognitionImagePolicy';
 import { SCAN_RUNTIME } from './scanRuntime';
+import { findCardNumberTokens } from '../utils/cardNumberToken';
 import { matchFromWire } from './scanPresentation';
 
 // ── 類型定義 ──
@@ -251,19 +252,10 @@ export function resolvePrintingByCardNumber(
 
   let matches = allCards.filter(c => flatten(c.cardNumber) === q);
 
-  if (matches.length === 0 && fuzzy) {
-    // Same tolerance the previous fuzzy pass used, but applied to cardNumber —
-    // the printing suffix must never be what makes a query "match".
-    matches = allCards.filter(c => {
-      const n = flatten(c.cardNumber);
-      return n === q || n.includes(q) || q.includes(n);
-    });
-    // A fuzzy pass that spans several DIFFERENT card numbers is not evidence of
-    // any one card; treat it as no match rather than guessing.
-    if (new Set(matches.map(c => flatten(c.cardNumber))).size > 1) {
-      return { status: 'none' };
-    }
-  }
+  // `fuzzy` used to accept substring overlaps (q.includes(n) / n.includes(q)), which
+  // turned a truncated or extended number into a different real card (CR 2026-10-15
+  // P2_2). Numbers are now whole-token parsed upstream, so only exact equality counts.
+  void fuzzy;
 
   if (matches.length === 0) return { status: 'none' };
   if (matches.length === 1) return { status: 'unique', card: matches[0] };
@@ -380,56 +372,10 @@ function keywordsMatch(cardKeywords: string[], searchKeywords: string[]): number
  * 從雜亂的 OCR 文字中提取可能的卡號（如 hBP04-001, hSD01-003 等）
  */
 function extractCardIds(text: string): string[] {
-  const normalized = normalizeText(text);
-  // 卡號模式：hBP01-001, hSD02-003, hPR-002, hSP-001 等
-  const patterns = [
-    /h[a-z]{2}\d{0,2}-\d{1,3}/gi,
-    /[a-z]{2}\d{2}-\d{3}/gi,
-    /NP\d{2}[-‾\s]?\d{3}/gi,
-    /BP\d{2}[-‾\s]?\d{3}/gi,
-    /SD\d{2}[-‾\s]?\d{3}/gi,
-    /PR[-‾\s]?\d{3}/gi,
-    /hOCG[-‾\s]?\d{3}/gi,
-    /\d{3}[-‾/]\d{3}/gi,
-  ];
-  // 卡號前綴別名對照表：實體卡上的編號 → 資料庫的系列 prefix
-  const prefixAliases: Record<string, string> = {
-    np: 'hbp',
-    bp: 'hbp',
-    sd: 'hsd',
-    pr: 'hpr',
-    sp: 'hsp',
-    ocg: 'hocg',
-    pc: 'hpc',
-    cs: 'hcs',
-    co: 'hco',
-    wf: 'hwf',
-    ys: 'hys',
-    ent: 'hent',
-  };
-  const ids = new Set<string>();
-  for (const pattern of patterns) {
-    const matches = normalized.match(pattern);
-    if (matches) {
-      for (const m of matches) {
-        // 正規化：移除空白、特殊符號、轉小寫
-        let clean = m.replace(/[‾\s]/g, '-').toLowerCase().replace(/-$/, '');
-        // 如果格式是 'abc12-345'，檢查是否需要 prefix 別名
-        const prefixMatch = clean.match(/^([a-z]{2})(\d+.*)$/);
-        if (prefixMatch) {
-          const prefix = prefixMatch[1];
-          const rest = prefixMatch[2];
-          if (prefixAliases[prefix]) {
-            clean = prefixAliases[prefix] + rest;
-          }
-        }
-        // 確保以 'h' 開頭（某些別名已包含 h, 但 NP/BP 等沒有）
-        if (!clean.startsWith('h')) clean = 'h' + clean;
-        ids.add(clean);
-      }
-    }
-  }
-  return Array.from(ids);
+  // Whole-token parse only (src/utils/cardNumberToken): extra digits / letters fail
+  // closed instead of being trimmed into a different, real card number.
+  // Raw text: the tokenizer applies the O/l → 0/1 confusions to digit groups only.
+  return findCardNumberTokens(text);
 }
 
 /**

@@ -1,4 +1,5 @@
 import { normalizeCardIdentity } from '../src/utils/cardNormalization';
+import { parseCardNumberToken } from '../src/utils/cardNumberToken';
 import {
   validateRecognitionImages,
   type RecognitionImageErrorCode,
@@ -74,30 +75,14 @@ async function getDatabase(): Promise<Record<string, any> | null> {
   return dbFetchPromise;
 }
 
-const prefixMap: Record<string, string> = {
-  np: 'hbp', bp: 'hbp', sd: 'hsd', pr: 'hpr',
-  sp: 'hsp', ocg: 'hocg', pc: 'hpc', cs: 'hcs',
-  co: 'hco', wf: 'hwf', ys: 'hys', ent: 'hent', bd: 'hbd',
-};
 
+/**
+ * The model's CARD_NUMBER answer as a canonical catalog number, or null. The whole
+ * answer must be one card number (src/utils/cardNumberToken): `hBP01-0100` is not
+ * hBP01-010, and a reply with extra text is not a number (CR 2026-10-15 P2_2).
+ */
 export function normalizeCardNumber(raw: string | null | undefined): string | null {
-  if (!raw) return null;
-  let cleaned = raw.trim().replace(/^['"`\s]+|['"`\s]+$/g, '').replace(/\.$/, '').toLowerCase();
-  if (!cleaned || cleaned === 'none' || cleaned === 'unknown') return null;
-  cleaned = cleaned
-    .normalize('NFKC')
-    .replace(/[oO〇]/g, '0')
-    .replace(/[lI｜]/g, '1')
-    .replace(/[－‐‑‒–—―−_\s]+/g, '-');
-  const m = cleaned.match(/(h?[a-z]{2,3}\d{0,2}-?\d{1,3})/i);
-  if (!m) return null;
-  let r = m[1].replace(/-+/g, '-');
-  if (!r.includes('-')) r = r.replace(/(\d)(\d{2,3})$/, '$1-$2');
-  if (!r.startsWith('h')) {
-    const p = r.slice(0, 2), rest = r.slice(2);
-    r = (prefixMap[p] || 'h' + p) + rest;
-  }
-  return r;
+  return parseCardNumberToken(raw);
 }
 
 function normalizeText(v: any): string {

@@ -579,6 +579,9 @@ jobs:
       - name: Verify scan best-match — aligned portrait frame/crop, explicit verdicts, preview before commit, one charge per confirmed card (2026-10-15)
         run: npm run test:scan-best-match
 
+      - name: Verify the NATIVE ScanScreen branch crops to the measured frame and OCRs the crop (CR 2026-10-15 P2_1)
+        run: npm run test:scan-native-crop-render
+
       - name: Verify Scan screen fails safe on native crashes (DIC-1286)
         run: npm run test:scan-screen-fail-safe
 

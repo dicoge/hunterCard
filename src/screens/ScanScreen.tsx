@@ -1286,7 +1286,7 @@ export default function ScanScreen({ navigation }: any) {
           />
         </WebCamera>
       ) : (
-        <View ref={cameraBoxRef} style={styles.camera} collapsable={false}>
+        <View ref={cameraBoxRef} style={styles.camera} collapsable={false} testID="scan-camera-box">
         <CameraView
           ref={cameraRef}
           style={styles.camera}
@@ -1304,6 +1304,9 @@ export default function ScanScreen({ navigation }: any) {
             flash={flash}
             autoScanActive={autoScanActive}
             autoScanSupported={false}
+            // Native crop (CR 2026-10-15 P2_1): the frame is measured in window coords at
+            // capture; without this ref every native capture fell back to the full photo.
+            scanAreaRef={scanFrameRef}
             onOpenSession={() => setSessionOpenRequest((n) => n + 1)}
             isCameraReady={isCameraReady}
             cameraError={cameraError}

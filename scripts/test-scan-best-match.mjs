@@ -319,6 +319,36 @@ await test('a one-character slip in the SET prefix is never corrected into a sib
   assert.equal(r.match.status, 'no_match');
   assert.equal(r.match.reason, 'number_not_in_database');
 });
+await test('CR P2_2: an over-long number is NOT truncated into a real card (hBP01-0100 / hBP09-0100)', () => {
+  for (const raw of ['hBP01-0100', 'hBP09-0100', 'hBP01-010SR', 'hBP01-010 hBP02-011', 'xhBP01-010', 'hBP01-01']) {
+    const r = verdict({ cardNumberRaw: raw, characterName: '天音かなた' });
+    assert.equal(r.normalizedCardNumber, null, `${raw} must not normalise`);
+    assert.notEqual(r.match.status, 'matched', `${raw} must not match`);
+    assert.equal(r.match.printingResolved, false);
+  }
+  assert.equal(verdict({ cardNumberRaw: 'hBP01-0100', characterName: '天音かなた' }).match.reason, 'no_card_number');
+});
+await test('every canonical catalog number round-trips (as-is, upper, full-width, no dash); prefix letters never OCR-mapped', async () => {
+  const { parseCardNumberToken } = await import('../src/utils/cardNumberToken.ts');
+  const nums = [...new Set(Object.values(DB.cards).map((c) => c.cardNumber))];
+  const fw = (x) => x.replace(/[!-~]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) + 0xfee0));
+  const bad = nums.filter((n) => {
+    const want = n.toLowerCase();
+    return [n, n.toUpperCase(), fw(n), n.replace('-', ''), n.replace('-', ' – ')].some((v) => parseCardNumberToken(v) !== want);
+  });
+  assert.deepEqual(bad, [], `${bad.length} catalog numbers fail to round-trip`);
+  assert.equal(parseCardNumberToken('hBP0l-O1O'), 'hbp01-010', 'O/l confusions fixed in digit groups');
+  assert.equal(parseCardNumberToken('hbo01-010'), 'hbo01-010', 'a prefix letter is never turned into a digit (stays an unknown prefix → no catalog match)');
+  assert.equal(verdict({ cardNumberRaw: 'hbo01-010', characterName: '天音かなた' }).match.status, 'no_match');
+});
+await test('local OCR callers use the same strict tokens: free text with hBP01-0100 resolves nothing', async () => {
+  const { recognizeCardFromOcr } = await import('../src/services/cardRecognition.ts');
+  const { findCardNumberTokens } = await import('../src/utils/cardNumberToken.ts');
+  assert.deepEqual(findCardNumberTokens('天音かなた hBP01-0100 SR'), []);
+  assert.deepEqual(findCardNumberTokens('NP04 005 / hBP01-010'), ['hbp04-005', 'hbp01-010']);
+  const r = await recognizeCardFromOcr('hBP01-0100');
+  assert.notEqual(r.success && r.card?.cardNumber === 'hBP01-010', true, 'local OCR must not resolve the truncated number');
+});
 await test('client: candidates with mixed numbers are a no-match with suggestions, never a forced picker', () => {
   const p = presentCandidates([{ card: { cardNumber: 'a-1', id: 'x' }, confidence: 0.4 }, { card: { cardNumber: 'b-2', id: 'y' }, confidence: 0.3 }]);
   assert.equal(p.kind, 'none');
