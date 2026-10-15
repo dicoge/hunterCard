@@ -196,13 +196,14 @@ const check = (label, fn) => { fn(); results.push(label); };
   check('ranking still scores an exact card number the same way', () => {
     assert.match(body.debug.reason, /cardNumber exact/);
   });
-  // The hallucinated number names a different character than the one read: since
-  // 2026-10-15 that contradiction is a no-match, offered only as a correction.
-  check('an exact number contradicted by the character reading is not accepted', () => {
-    assert.equal(res.status, 404);
-    assert.equal(body.match.reason, 'number_name_conflict');
-    assert.deepEqual(body.candidates, []);
-    assert.equal(body.match.alternatives[0].cardNumber, 'hBP01-024');
+  // The thumbnail reply names the character in romaji ('Oozora Subaru') while the catalog
+  // stores Japanese names, so no contradiction may be inferred across scripts
+  // (2026-10-15). hBP01-024 C exists in several products → printing stays unresolved,
+  // never auto-accepted. Same-script contradictions are pinned in test:scan-best-match.
+  check('a cross-script character reading neither confirms nor contradicts; printing stays unresolved', () => {
+    assert.equal(res.status, 200);
+    assert.equal(body.success, false);
+    assert.equal(body.match.status, 'identity_only');
   });
 }
 
@@ -262,15 +263,18 @@ const check = (label, fn) => { fn(); results.push(label); };
   // without a provider call and without scanning the tail. Since the native AI photo
   // upload contract (2026-10-14) the size cap answers first — 400 IMAGE_TOO_LARGE on the
   // string length alone — so the bounded-work guarantee no longer depends on the header.
-  const started = process.hrtime.bigint();
+  // Deterministic proof of "length alone" (no wall-clock bound, which flaked under load):
+  // a tail that is NOT valid base64 is still answered IMAGE_TOO_LARGE, so the size check
+  // ran before anything read the content.
   const refused = await scan([withTail(THUMBNAIL, 64)], REPLY_FROM_THUMBNAIL);
-  const handlerMs = Number(process.hrtime.bigint() - started) / 1e6;
+  const refusedGarbage = await scan([THUMBNAIL + '!'.repeat(64 * MIB)], REPLY_FROM_THUMBNAIL);
   check('the real handler refuses a 64 MiB frame on its length alone, before any provider call', () => {
-    assert.equal(refused.res.status, 400);
-    assert.equal(refused.body.success, false);
-    assert.equal(refused.body.code, 'IMAGE_TOO_LARGE');
-    assert.deepEqual(refused.providerCalls, []);
-    assert.ok(handlerMs < 1000, `refusal took ${handlerMs.toFixed(1)}ms`);
+    for (const r of [refused, refusedGarbage]) {
+      assert.equal(r.res.status, 400);
+      assert.equal(r.body.success, false);
+      assert.equal(r.body.code, 'IMAGE_TOO_LARGE');
+      assert.deepEqual(r.providerCalls, []);
+    }
   });
 
   // 2 MiB of tail keeps the frame inside MAX_RECOGNITION_IMAGE_BYTES; anything past the

@@ -331,7 +331,7 @@ You may receive two images: (1) full card/context and (2) a cropped scan area. U
 
 Critical reading order:
 1. CARD_NUMBER: tiny text near the bottom edge/bottom-right. Examples: hBP01-001, hBP08-024, hSD13-014, hBD24-007. Preserve prefix and digits exactly.
-2. CHARACTER: main character/holomem name, usually top area.
+2. CHARACTER: main character/holomem name, usually top area. Transcribe it exactly as printed on the card (normally Japanese); never translate or romanize it.
 3. HP: number in top-right if present.
 4. RARITY: C, U, R, RR, S, SR, SEC, OUR, P, etc. near card number.
 5. BLOOM_LEVEL / card type: Spot, Debut, 1st, 2nd, Buzz, Oshi, Support, Event, etc.
@@ -525,8 +525,19 @@ export function rankCandidates(cards: Record<string, any>, extracted: any, store
     confidence: Math.round(confidence * 100) / 100,
     reason: ranked[0]?.reasons.join(', ') || 'no candidate',
     candidates,
-    match: decideMatch(ranked, { normalizedNumber, rarity, hasCharacter: !!character, hasTitle: !!title }, toCandidate),
+    match: decideMatch(ranked, {
+      normalizedNumber, rarity, hasCharacter: !!character, hasTitle: !!title,
+      characterScript: character ? scriptOf(String(extracted.characterName || '')) : null,
+    }, toCandidate),
   };
+}
+
+type Script = 'japanese' | 'latin' | 'other';
+/** Kana/kanji anywhere → japanese; only ASCII letters/digits/punctuation → latin. */
+function scriptOf(text: string): Script {
+  if (/[\u3040-\u30ff\u3400-\u9fff\uff66-\uff9f]/.test(text)) return 'japanese';
+  if (/^[\x20-\x7e\u00c0-\u024f]+$/.test(text.trim())) return 'latin';
+  return 'other';
 }
 
 export type MatchStatus = 'matched' | 'identity_only' | 'no_match';
@@ -553,28 +564,37 @@ export interface MatchVerdict<C = any> {
  */
 function decideMatch<C>(
   ranked: { entry: any; score: number; reasons: string[]; charScore: number; titleScore: number }[],
-  read: { normalizedNumber: string | null; rarity: string; hasCharacter: boolean; hasTitle: boolean },
+  read: { normalizedNumber: string | null; rarity: string; hasCharacter: boolean; hasTitle: boolean; characterScript: Script | null },
   toCandidate: (item: any) => C,
 ): MatchVerdict<C> {
   const none = (reason: NoMatchReason, alternatives: C[] = []): MatchVerdict<C> =>
     ({ status: 'no_match', best: null, printingResolved: false, reason, evidence: [], alternatives });
   if (ranked.length === 0) return none(read.normalizedNumber ? 'number_not_in_database' : 'no_evidence');
 
+  // A character reading can only contradict (or corroborate) a catalog name written in
+  // the same script: Gemini may answer in romaji ("Amane Kanata") for a name the
+  // catalog stores in Japanese, and edit distance across scripts says nothing.
+  const comparable = (r: { entry: any }) => read.characterScript !== null
+    && read.characterScript === scriptOf(String(r.entry.name || ''));
+
   const nameEvidenced = ranked.filter(r => r.charScore >= 0.55 || r.titleScore >= 0.55).slice(0, 5).map(toCandidate);
   if (!read.normalizedNumber) return none('no_card_number', nameEvidenced);
 
-  let numbered = ranked.filter(r => r.reasons.includes('cardNumber exact'));
+  const numbered = ranked.filter(r => r.reasons.includes('cardNumber exact'));
   if (numbered.length === 0) {
-    // OCR-level number error (one character off) is accepted only when the name
-    // reading independently agrees and points at a single card number.
-    const fuzzy = ranked.filter(r => r.reasons.includes('cardNumber fuzzy-1') && r.charScore >= 0.9);
-    const numbers = new Set(fuzzy.map(r => String(r.entry.cardNumber).toLowerCase()));
-    if (numbers.size !== 1) return none('number_not_in_database', nameEvidenced);
-    numbered = fuzzy;
+    // Fail closed on any number the catalog does not hold. A one-character-off number
+    // with the same character is NOT promoted to a match: one holomem has many cards per
+    // set, so a valid-but-uncovered card (or a new set) would be fabricated into a
+    // sibling. Known OCR confusions (O/0, l/I/1, dash variants) are already folded in
+    // normalizeCardNumber; near-number cards with name evidence stay correction options.
+    const near = ranked.filter(r => r.reasons.some(x => x.startsWith('cardNumber fuzzy')) && r.charScore >= 0.55);
+    const suggestions = [...near, ...ranked.filter(r => !near.includes(r) && (r.charScore >= 0.55 || r.titleScore >= 0.55))]
+      .slice(0, 5).map(toCandidate);
+    return none('number_not_in_database', suggestions);
   }
 
   // A number that names someone else than the character read is a misread, not a match.
-  if (read.hasCharacter && numbered.every(r => r.charScore < 0.55)
+  if (read.hasCharacter && numbered.every(r => comparable(r) && r.charScore < 0.55)
       && !(read.hasTitle && numbered.some(r => r.titleScore >= 0.55))) {
     return none('number_name_conflict', numbered.slice(0, 5).map(toCandidate));
   }

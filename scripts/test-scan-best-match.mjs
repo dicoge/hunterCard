@@ -121,6 +121,7 @@ const SCREENS = [
   { name: 'tablet 768×1024', width: 768, height: 1024 },
   { name: 'desktop 1440×900', width: 1440, height: 900 },
   { name: 'landscape phone 844×390', width: 844, height: 390 },
+  { name: 'short browser window 1024×420', width: 1024, height: 420 },
 ];
 await test('frame keeps the 63:88 card ratio and fits inside every viewport', () => {
   for (const s of SCREENS) {
@@ -129,6 +130,7 @@ await test('frame keeps the 63:88 card ratio and fits inside every viewport', ()
     assert.ok(f.width <= s.width, `${s.name}: wider than viewport`);
     const r = geo.defaultScanFrameRect(s);
     assert.ok(r.x >= 0 && r.x + r.width <= s.width, `${s.name}: x out of bounds`);
+    assert.ok(r.y + r.height <= s.height, `${s.name}: frame taller than the viewport`);
     if (s.height >= geo.FRAME_RESERVED.top + geo.FRAME_RESERVED.bottom + geo.MIN_FRAME_WIDTH * geo.CARD_ASPECT) {
       assert.ok(r.y >= geo.FRAME_RESERVED.top && r.y + r.height <= s.height - geo.FRAME_RESERVED.bottom + 1, `${s.name}: overlaps bars`);
     }
@@ -139,6 +141,15 @@ await test('frame is LARGER than v37 (min(0.64w, 280) × 1.4) on phones and desk
     const v37 = Math.min(s.width * 0.64, 280);
     assert.ok(geo.computeScanFrameSize(s).width > v37, `${s.name}: ${geo.computeScanFrameSize(s).width} <= v37 ${v37}`);
   }
+});
+await test('very short viewport with large insets: frame shrinks below the 160px minimum rather than leaving the screen', () => {
+  // v38 first cut forced width >= 160 (height 224): at 320×300 with 47/34 insets that put the
+  // frame bottom at 343px, off a 300px screen.
+  const vp = { width: 320, height: 300 };
+  const insets = { top: 47, bottom: 34 };
+  const r = geo.defaultScanFrameRect(vp, insets);
+  assert.ok(r.y + r.height <= vp.height, `frame bottom ${r.y + r.height} > ${vp.height}`);
+  assert.ok(r.width > 0 && near(r.height / r.width, 88 / 63, 0.05));
 });
 await test('safe-area insets shrink the frame instead of letting it run under the notch / home bar', () => {
   const plain = geo.computeScanFrameSize({ width: 390, height: 700 });
@@ -280,14 +291,33 @@ await test('several printings, nothing singles one out → identity_only (no pri
   assert.equal(p.card.sellPrice, null);
   assert.deepEqual(p.card.prices, []);
 });
-await test('one-character OCR slip is accepted only when the character independently agrees', () => {
-  assert.equal(verdict({ cardNumberRaw: 'hBP01-910', characterName: '天音かなた' }).match.status, 'matched');
+await test('a number one digit off the catalog is never promoted to a sibling, even with the same character', () => {
+  // hBP01-910 is not in the catalog; hBP01-010 (same character) is one digit away. A new or
+  // uncovered card must not be fabricated into it — it is only offered as a correction.
+  const r = verdict({ cardNumberRaw: 'hBP01-910', characterName: '天音かなた' });
+  assert.equal(r.match.status, 'no_match');
+  assert.equal(r.match.reason, 'number_not_in_database');
+  assert.equal(r.match.best, null);
+  assert.ok(r.match.alternatives.some((c) => c.cardNumber === 'hBP01-010'), 'near card offered as correction only');
   assert.equal(verdict({ cardNumberRaw: 'hBP01-910' }).match.status, 'no_match');
+});
+await test('documented OCR confusions (O→0, l→1) in the number still resolve exactly', () => {
+  assert.equal(verdict({ cardNumberRaw: 'hBP0l-O1O', characterName: '天音かなた' }).match.best?.id, 'hBP01-010_hBP01_U_hBP01-010_U');
 });
 await test('language / set identity: the printing comes from the catalog id, never from a sibling set', () => {
   const r = verdict({ cardNumberRaw: 'hBP01-001', rarity: 'OSR', characterName: '天音かなた' });
   assert.equal(r.match.best.id, 'hBP01-001_hBP01_OSR_hBP01-001_OSR');
   assert.equal(r.match.best.series, 'hBP01');
+});
+await test('romaji character reading vs Japanese catalog name is not treated as a contradiction', () => {
+  const r = verdict({ cardNumberRaw: 'hBP01-010', characterName: 'Amane Kanata' });
+  assert.equal(r.match.status, 'matched');
+  assert.equal(r.match.best.id, 'hBP01-010_hBP01_U_hBP01-010_U');
+});
+await test('a one-character slip in the SET prefix is never corrected into a sibling set', () => {
+  const r = verdict({ cardNumberRaw: 'hBP11-010', characterName: '天音かなた' });
+  assert.equal(r.match.status, 'no_match');
+  assert.equal(r.match.reason, 'number_not_in_database');
 });
 await test('client: candidates with mixed numbers are a no-match with suggestions, never a forced picker', () => {
   const p = presentCandidates([{ card: { cardNumber: 'a-1', id: 'x' }, confidence: 0.4 }, { card: { cardNumber: 'b-2', id: 'y' }, confidence: 0.3 }]);

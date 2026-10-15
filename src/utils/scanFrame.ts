@@ -31,7 +31,14 @@ export function computeScanFrameSize(viewport: Size, insets: Insets = {}): Size 
     - FRAME_RESERVED.top - FRAME_RESERVED.bottom;
   const byWidth = Math.min(viewport.width * FRAME_MAX_WIDTH_RATIO, MAX_FRAME_WIDTH);
   const byHeight = availableHeight / CARD_ASPECT;
-  const width = Math.max(MIN_FRAME_WIDTH, Math.min(byWidth, byHeight));
+  let width = Math.min(byWidth, byHeight);
+  if (width < MIN_FRAME_WIDTH) {
+    // Short viewport (landscape phone / small browser window): grow towards the
+    // minimum, but never past the viewport itself — the controls may then overlap the
+    // frame's lower edge, the frame never leaves the screen.
+    const hardMaxHeight = viewport.height - (insets.top ?? 0) - (insets.bottom ?? 0) - FRAME_RESERVED.top - 40;
+    width = Math.max(0, Math.min(MIN_FRAME_WIDTH, byWidth, hardMaxHeight / CARD_ASPECT));
+  }
   return { width: Math.round(width), height: Math.round(width * CARD_ASPECT) };
 }
 
