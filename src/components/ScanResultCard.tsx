@@ -140,12 +140,6 @@ export default function ScanResultCard({
     return `${symbol}${value.toLocaleString()} (¥${price.toLocaleString()})`;
   };
 
-  const confidencePercent = Math.round(confidence * 100);
-  const confidenceColor = confidencePercent >= 80
-    ? '#10b981'
-    : confidencePercent >= 50
-      ? '#f59e0b'
-      : '#ef4444';
 
   const variants = card.variants && card.variants.length > 0 ? card.variants : null;
   const sellPriceNull = card.sellPrice == null;
@@ -175,11 +169,8 @@ export default function ScanResultCard({
           <View style={[styles.rarityBadge, { backgroundColor: getRarityColor(card.rarity) }]}>
             <Text style={styles.rarityText}>{card.rarity}</Text>
           </View>
-          <View style={[styles.confidenceBadge, { borderColor: confidenceColor }]}>
-            <Text style={[styles.confidenceText, { color: confidenceColor }]}>
-              {confidencePercent}%
-            </Text>
-          </View>
+          {/* No confidence percentage: the ranker score is not a calibrated probability. */}
+          <View style={{ flex: 1 }} />
           <TouchableOpacity onPress={handleDismiss} style={styles.closeBtn}>
             <Text style={styles.closeText}>✕</Text>
           </TouchableOpacity>

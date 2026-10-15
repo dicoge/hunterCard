@@ -36,7 +36,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   Animated,
-  Dimensions,
+  useWindowDimensions,
   LayoutChangeEvent,
 } from 'react-native';
 import { COLORS } from '../constants';
@@ -45,13 +45,11 @@ import { useTranslation } from '../i18n';
 import { useScanSessionStore } from '../stores/scanSessionStore';
 import ScanTopBar from './ScanTopBar';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-// DIC-1409 Phase 4 — Pen `App / 04 掃描卡牌` (frame eurld) scan frame is a
-// PORTRAIT card window (node Aj73G, 250×350 at 390 ≈ 0.64 screen width,
-// 1.4 aspect). The crop pipeline measures the frame via onLayout, so the
-// aspect change flows through recognition without any constant duplication.
-const SCAN_AREA_SIZE = Math.min(SCREEN_WIDTH * 0.64, 280);
-const SCAN_AREA_HEIGHT = SCAN_AREA_SIZE * 1.4;
+import { computeScanFrameSize } from '../utils/scanFrame';
+// Scan frame: a PORTRAIT card window at the real 63:88 card ratio, sized per viewport
+// by computeScanFrameSize (Pen docs/pen-scan/holohunter-scan-best-match.pen, A USowC /
+// F i51Hi). v37 capped it at min(0.64 × width, 280px). The same function sizes the web
+// ROI fallback and the native crop plan, and the crop itself uses the measured layout.
 
 export interface ScanOverlayProps {
   // Animation values
@@ -80,6 +78,8 @@ export interface ScanOverlayProps {
   // responsible for surfacing that error — never this overlay.
   onGallery: () => void;
   onScanAreaLayout?: (event: LayoutChangeEvent) => void;
+  /** Native crop: measured in window coordinates at capture time. */
+  scanAreaRef?: React.Ref<View>;
   /** Pen `x7iIL` top-bar close — dismisses the scan flow (back to Home). */
   onClose?: () => void;
   /** DIC-1427 Pen Cys7V: the 自動掃描/手動 pill renders ONLY where the
@@ -105,12 +105,15 @@ export default function ScanOverlay({
   onRetry,
   onGallery,
   onScanAreaLayout,
+  scanAreaRef,
   onClose,
   autoScanSupported = false,
   onToggleAutoScan,
   onOpenSession,
 }: ScanOverlayProps) {
   const { t } = useTranslation();
+  const viewport = useWindowDimensions();
+  const frame = computeScanFrameSize({ width: viewport.width, height: viewport.height });
   // Real session size for the Pen AQf9b count box — read straight from the
   // store so the badge can never drift from the actual session.
   const sessionCount = useScanSessionStore((s) => s.cardCount);
@@ -170,13 +173,17 @@ export default function ScanOverlay({
           <Animated.View
             style={[
               styles.scanAreaPulse,
+              frame,
               { transform: [{ scale: pulseAnim }] },
             ]}
             pointerEvents="box-none"
           >
             <Animated.View
+              ref={scanAreaRef as any}
+              testID="scan-frame"
               style={[
                 styles.scanArea,
+                frame,
                 {
                   borderColor: borderAnim.interpolate({
                     inputRange: [0, 1],
@@ -193,7 +200,7 @@ export default function ScanOverlay({
                     transform: [{
                       translateY: scanLineAnim.interpolate({
                         inputRange: [0, 1],
-                        outputRange: [0, SCAN_AREA_HEIGHT - 4],
+                        outputRange: [0, frame.height - 4],
                       }),
                     }],
                     opacity: scanLineAnim.interpolate({
@@ -354,8 +361,6 @@ const styles = StyleSheet.create({
   },
   // Pen scan frame (node Aj73G): portrait card window, #FFFFFF08 fill, r16.
   scanArea: {
-    width: SCAN_AREA_SIZE,
-    height: SCAN_AREA_HEIGHT,
     position: 'relative',
     borderWidth: 2,
     borderColor: COLORS.primary,
@@ -372,10 +377,7 @@ const styles = StyleSheet.create({
   // borderColor-animated child so JS-driven `borderColor` and native-driven
   // `transform` never share a single Animated.View — the crash pattern from
   // the API-36 emulator logcat.
-  scanAreaPulse: {
-    width: SCAN_AREA_SIZE,
-    height: SCAN_AREA_HEIGHT,
-  },
+  scanAreaPulse: {},
   scanLine: {
     position: 'absolute',
     left: 10,

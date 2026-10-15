@@ -20,9 +20,11 @@ import {
 import {
   buildRecognitionDataUrl,
   validateRecognitionDataUrl,
+  validateRecognitionImages,
   type RecognitionImageErrorCode,
 } from './recognitionImagePolicy';
 import { SCAN_RUNTIME } from './scanRuntime';
+import { matchFromWire } from './scanPresentation';
 
 // ── 類型定義 ──
 
@@ -87,6 +89,21 @@ export interface RecognitionResult {
   timedOut?: boolean;
   /** The photo was refused locally by recognitionImagePolicy and was NOT uploaded. */
   imageRejected?: RecognitionImageErrorCode;
+  /**
+   * The server's explicit verdict (scan best-match fix 2026-10-15). `matched` = one
+   * printing proven by the photo; `identity_only` = card known, printing (and price)
+   * not; `no_match` = no valid answer, with optional evidence-backed alternatives.
+   */
+  match?: ScanMatch;
+}
+
+export interface ScanMatch {
+  status: 'matched' | 'identity_only' | 'no_match';
+  printingResolved: boolean;
+  reason?: 'no_evidence' | 'no_card_number' | 'number_not_in_database' | 'number_name_conflict' | null;
+  /** Evidence tokens such as 'cardNumber exact', 'rarity' — never a probability. */
+  evidence: string[];
+  alternatives: RecognizedCandidate[];
 }
 
 /** How a photo reaches recognizeCardFromImage. */
@@ -96,6 +113,8 @@ export interface RecognizeImageOptions {
    * with `base64: true`). The uri alone is a device-local path and is never uploaded.
    */
   base64?: string | null;
+  /** Native only: the scan-frame crop's raw base64 (nativeScanCapture). Sent second. */
+  cropBase64?: string | null;
   /** Aborts the upload; the result then comes back `cancelled`. */
   signal?: AbortSignal;
 }
@@ -468,14 +487,25 @@ function mapApiCandidates(raw: any): RecognizedCandidate[] | undefined {
 async function recognitionPayload(
   imageUri: string,
   options: RecognizeImageOptions,
-): Promise<{ ok: true; dataUrl: string } | { ok: false; code: RecognitionImageErrorCode }> {
+): Promise<{ ok: true; images: string[] } | { ok: false; code: RecognitionImageErrorCode }> {
   if (SCAN_RUNTIME === 'native') {
     const built = buildRecognitionDataUrl(options.base64);
-    return built.ok ? { ok: true, dataUrl: built.dataUrl } : built;
+    const crop = options.cropBase64 ? buildRecognitionDataUrl(options.cropBase64) : null;
+    // [context photo, frame crop] like the web scanner; if the pair would exceed the
+    // request cap the crop (the card itself) goes alone; without a crop, the photo.
+    if (built.ok && crop?.ok && validateRecognitionImages([built.dataUrl, crop.dataUrl]).ok) {
+      return { ok: true, images: [built.dataUrl, crop.dataUrl] };
+    }
+    if (crop?.ok) return { ok: true, images: [crop.dataUrl] };
+    return built.ok ? { ok: true, images: [built.dataUrl] } : built;
   }
   const processed = await preprocessCardImage(imageUri);
   const check = validateRecognitionDataUrl(processed);
-  return check.ok ? { ok: true, dataUrl: processed } : check;
+  return check.ok ? { ok: true, images: [processed] } : check;
+}
+
+function mapMatch(raw: any): ScanMatch | undefined {
+  return matchFromWire(raw, mapApiCandidates);
 }
 
 /**
@@ -517,7 +547,7 @@ async function recognizeViaApi(imageUri: string, options: RecognizeImageOptions 
     const apiResponse = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: payload.dataUrl, storeMvp: STORE_MVP }),
+      body: JSON.stringify({ image: payload.images[0], images: payload.images, storeMvp: STORE_MVP }),
       signal: controller.signal,
     });
 
@@ -528,7 +558,9 @@ async function recognizeViaApi(imageUri: string, options: RecognizeImageOptions 
       if (isRecognitionInfrastructureFailure(apiResponse.status, errorBody)) {
         return { success: false, serviceUnavailable: true, error: RECOGNITION_UNAVAILABLE_MESSAGE };
       }
-      return { success: false, error: '' };
+      // 404 = the backend looked at this photo and has no valid answer. Its verdict
+      // (and any evidence-backed alternatives) is what the UI explains.
+      return { success: false, error: '', match: mapMatch(errorBody?.match) };
     }
 
     const data = await apiResponse.json();
@@ -552,6 +584,10 @@ async function recognizeViaApi(imageUri: string, options: RecognizeImageOptions 
         raw: data.raw,
         debug: data.debug,
         lowConfidence: !!data.lowConfidence,
+        match: mapMatch(data.match),
+        // identity_only: the card the backend identified (no printing → its price is
+        // withheld by the UI until the user picks a printing).
+        card: data.match?.status === 'identity_only' && data.card ? mapApiCard(data.card) : undefined,
       };
     }
 
@@ -563,6 +599,7 @@ async function recognizeViaApi(imageUri: string, options: RecognizeImageOptions 
         card: cardInfo,
         confidence: typeof data.confidence === 'number' ? data.confidence : undefined,
         candidates: mapApiCandidates(data.candidates),
+        match: mapMatch(data.match),
       };
     }
 
@@ -618,6 +655,10 @@ export async function recognizeCardFromImage(
   try {
     const apiResult = await recognizeViaApi(imageUri, options);
     if (apiResult.cancelled) return apiResult;
+    // An explicit backend verdict is final for this photo: local OCR is a fallback for
+    // an AI path that could not answer, never a second opinion that could replace a
+    // no-match with a weaker guess.
+    if (apiResult.match) return apiResult;
     if (apiResult.success && apiResult.card) {
       return apiResult;
     }

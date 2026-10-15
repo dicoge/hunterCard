@@ -40,7 +40,6 @@ const VISION_MIN_LEG_MS = 1500;
 // host allowlist; the value must stay in lock-step with PRODUCTION_ORIGIN in
 // src/config/apiOrigin.ts and is enforced by scripts/test-native-bundle-origin.
 const DATABASE_URL = 'https://holohunter.dicoge.com/data/database.json';
-const AUTO_ACCEPT_CONFIDENCE = 0.82;
 
 // A card number occupies roughly 3% of a card's height, so a frame shorter than this
 // cannot physically carry a legible one. Asked anyway, the model does not answer NONE —
@@ -488,11 +487,20 @@ export function rankCandidates(cards: Record<string, any>, extracted: any, store
     if (hp && entryHp && entryHp === hp) { score += 8; reasons.push('hp'); }
     if (bloom && entryBloom && (entryBloom.includes(bloom) || bloom.includes(entryBloom))) { score += 5; reasons.push('bloom/type'); }
 
+    // Only photo evidence makes a candidate: a card number, or a character / title
+    // reading. Rarity / HP / type alone match hundreds of cards and are tie-breakers,
+    // never grounds for a candidate (scan best-match fix 2026-10-15).
+    const photoEvidence = reasons.some(r => r.startsWith('cardNumber') || r.startsWith('character') || r.startsWith('title'));
+    if (!photoEvidence) return { entry, score: 0, reasons, charScore, titleScore };
+
+    // Series self-consistency is a tie-break between equally evidenced printings
+    // only. It used to be added unconditionally, which let a scan that extracted
+    // nothing still rank every original-print card as a "candidate".
     const prefix = entryNumber.split('-')[0];
     if (String(entry.series || '').toLowerCase() === prefix) score += 1.5;
     else if (String(entry.series || '').toLowerCase() === 'hpr') score -= 1;
 
-    return { entry, score, reasons };
+    return { entry, score, reasons, charScore, titleScore };
   }).filter(c => c.score > 0).sort((a, b) => b.score - a.score);
 
   const topScore = ranked[0]?.score || 0;
@@ -505,12 +513,83 @@ export function rankCandidates(cards: Record<string, any>, extracted: any, store
     score: Math.round(item.score * 10) / 10,
   }));
 
+  const toCandidate = (item: typeof ranked[number]) => ({
+    ...fmt(item.entry, storeMvp),
+    confidence: Math.round(Math.max(0.05, Math.min(0.99, item.score / 118)) * 100) / 100,
+    reason: item.reasons.join(', '),
+    score: Math.round(item.score * 10) / 10,
+  });
+
   return {
     normalizedCardNumber: normalizedNumber,
     confidence: Math.round(confidence * 100) / 100,
     reason: ranked[0]?.reasons.join(', ') || 'no candidate',
     candidates,
+    match: decideMatch(ranked, { normalizedNumber, rarity, hasCharacter: !!character, hasTitle: !!title }, toCandidate),
   };
+}
+
+export type MatchStatus = 'matched' | 'identity_only' | 'no_match';
+export type NoMatchReason = 'no_evidence' | 'no_card_number' | 'number_not_in_database' | 'number_name_conflict';
+
+export interface MatchVerdict<C = any> {
+  status: MatchStatus;
+  /** matched: the one printing. identity_only: the card (no printing → no price). */
+  best: C | null;
+  /** Printing resolved, so the price on `best` belongs to the card in hand. */
+  printingResolved: boolean;
+  reason?: NoMatchReason;
+  /** Human-checkable evidence tokens, e.g. ['cardNumber exact', 'rarity']. */
+  evidence: string[];
+  /** Secondary correction options; each carries its own printing id and price. */
+  alternatives: C[];
+}
+
+/**
+ * Highest score is not an answer. A best match needs the card number read off the
+ * photo and found in the catalog, not contradicted by the character reading, and —
+ * to carry a price — one printing singled out (unique, or by the rarity read).
+ * Everything else is an explicit outcome the client can explain.
+ */
+function decideMatch<C>(
+  ranked: { entry: any; score: number; reasons: string[]; charScore: number; titleScore: number }[],
+  read: { normalizedNumber: string | null; rarity: string; hasCharacter: boolean; hasTitle: boolean },
+  toCandidate: (item: any) => C,
+): MatchVerdict<C> {
+  const none = (reason: NoMatchReason, alternatives: C[] = []): MatchVerdict<C> =>
+    ({ status: 'no_match', best: null, printingResolved: false, reason, evidence: [], alternatives });
+  if (ranked.length === 0) return none(read.normalizedNumber ? 'number_not_in_database' : 'no_evidence');
+
+  const nameEvidenced = ranked.filter(r => r.charScore >= 0.55 || r.titleScore >= 0.55).slice(0, 5).map(toCandidate);
+  if (!read.normalizedNumber) return none('no_card_number', nameEvidenced);
+
+  let numbered = ranked.filter(r => r.reasons.includes('cardNumber exact'));
+  if (numbered.length === 0) {
+    // OCR-level number error (one character off) is accepted only when the name
+    // reading independently agrees and points at a single card number.
+    const fuzzy = ranked.filter(r => r.reasons.includes('cardNumber fuzzy-1') && r.charScore >= 0.9);
+    const numbers = new Set(fuzzy.map(r => String(r.entry.cardNumber).toLowerCase()));
+    if (numbers.size !== 1) return none('number_not_in_database', nameEvidenced);
+    numbered = fuzzy;
+  }
+
+  // A number that names someone else than the character read is a misread, not a match.
+  if (read.hasCharacter && numbered.every(r => r.charScore < 0.55)
+      && !(read.hasTitle && numbered.some(r => r.titleScore >= 0.55))) {
+    return none('number_name_conflict', numbered.slice(0, 5).map(toCandidate));
+  }
+
+  const evidence = (r: { reasons: string[] }) => r.reasons.filter(x => x !== 'bloom/type');
+  if (numbered.length === 1) {
+    return { status: 'matched', best: toCandidate(numbered[0]), printingResolved: true, evidence: evidence(numbered[0]), alternatives: [] };
+  }
+  const byRarity = read.rarity ? numbered.filter(r => normalizeText(r.entry.rarity).toUpperCase() === read.rarity) : [];
+  if (byRarity.length === 1) {
+    const others = numbered.filter(r => r !== byRarity[0]).slice(0, 4).map(toCandidate);
+    return { status: 'matched', best: toCandidate(byRarity[0]), printingResolved: true, evidence: evidence(byRarity[0]), alternatives: others };
+  }
+  const printings = numbered.slice(0, 8).map(toCandidate);
+  return { status: 'identity_only', best: printings[0], printingResolved: false, evidence: evidence(numbered[0]), alternatives: printings };
 }
 
 
@@ -596,44 +675,59 @@ export default async function handler(req: Request): Promise<Response> {
       cardTitle: parseField(reply, 'TITLE'),
     };
     const ranking = rankCandidates(cards, extracted, storeMvp);
+    const { match } = ranking;
+    // Sanitised diagnostics only: what was read and why, never the image.
     const debug = {
       provider,
       model,
-      rawModelOutput: reply,
       extracted,
       normalizedCardNumber: ranking.normalizedCardNumber,
-      candidates: ranking.candidates,
-      confidence: ranking.confidence,
       reason: ranking.reason,
+      matchStatus: match.status,
+      matchReason: match.reason ?? null,
+    };
+    const matchWire = {
+      status: match.status,
+      printingResolved: match.printingResolved,
+      reason: match.reason ?? null,
+      evidence: match.evidence,
+      alternatives: match.alternatives,
     };
 
-    if (ranking.candidates.length === 0) {
-      return json({ success: false, error: '無法辨識此卡牌', raw: reply, debug, candidates: [] }, 404);
+    // No valid match is an explicit failure — never a list of filler candidates.
+    // `candidates: []` keeps released clients (which open a picker on any list) honest;
+    // evidence-backed suggestions travel in match.alternatives for the new UI.
+    if (match.status === 'no_match') {
+      return json({ success: false, error: '無法辨識此卡牌', raw: reply, debug, candidates: [], match: matchWire }, 404);
     }
 
-    const best = ranking.candidates[0];
-    if (ranking.confidence < AUTO_ACCEPT_CONFIDENCE) {
+    // Card known, printing not: no price may be shown for it. Released clients see
+    // the legacy low-confidence picker shape; new clients show the identity first.
+    if (match.status === 'identity_only') {
       return json({
         success: false,
         lowConfidence: true,
-        error: '辨識信心不足，請從候選卡中選擇',
+        error: '已辨識卡牌，但無法確認版本，請選擇手上的版本',
         raw: reply,
-        candidates: ranking.candidates,
+        card: match.best,
+        candidates: match.alternatives,
         confidence: ranking.confidence,
         reason: ranking.reason,
         debug,
+        match: matchWire,
       }, 200);
     }
 
     return json({
       success: true,
-      card: best,
-      matchMethod: ranking.reason,
+      card: match.best,
+      matchMethod: match.evidence.join(', '),
       confidence: ranking.confidence,
-      candidates: ranking.candidates,
+      candidates: [match.best, ...match.alternatives],
       reason: ranking.reason,
       raw: reply,
       debug,
+      match: matchWire,
     });
   } catch (e: any) {
     if (e instanceof ClientAbortedError) {
@@ -650,6 +744,8 @@ export default async function handler(req: Request): Promise<Response> {
         error: '辨識服務暫時無法使用，請稍後再試或改用手動搜尋',
       }, 503);
     }
-    return json({ success: false, error: `Error: ${e.message}` }, 502);
+    // Internal error text can quote request or upstream detail; log the type only.
+    console.error(`[recognize-card] handler failed: ${e?.name || 'Error'}`);
+    return json({ success: false, error: '辨識服務發生錯誤，請稍後再試' }, 502);
   }
 }

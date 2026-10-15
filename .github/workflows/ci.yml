@@ -576,6 +576,9 @@ jobs:
       - name: Verify leaving the Scan screen cancels the running scan — no off-screen commit or charge (CR 2026-10-14 P2)
         run: npm run test:scan-cancel-lifecycle
 
+      - name: Verify scan best-match — aligned portrait frame/crop, explicit verdicts, preview before commit, one charge per confirmed card (2026-10-15)
+        run: npm run test:scan-best-match
+
       - name: Verify Scan screen fails safe on native crashes (DIC-1286)
         run: npm run test:scan-screen-fail-safe
 

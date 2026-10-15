@@ -1,7 +1,9 @@
 /**
  * ScanCandidateSelector.tsx
  *
- * Bottom-sheet picker shown for mid/low-confidence scans. Lists the top 3-5
+ * Correction picker, opened only by the user (「不是這張？更正」/「選擇版本」/「查看可能的卡」)
+ * since the scan best-match fix 2026-10-15 — never forced up front, no percentages.
+ * Originally: bottom-sheet picker shown for mid/low-confidence scans. Lists the top 3-5
  * candidate cards; the card is only added to the session AFTER the user taps a
  * candidate to confirm — this is the point where a scan quota should be charged.
  *
@@ -57,9 +59,6 @@ export default function ScanCandidateSelector({
     return `${symbol}${value.toLocaleString()}`;
   };
 
-  const confidenceColor = (c: number): string =>
-    c >= 0.8 ? '#10b981' : c >= 0.55 ? '#f59e0b' : '#ef4444';
-
   const title = tier === 'low' ? t('scan_candidate_low_title') : t('scan_candidate_mid_title');
   const subtitle =
     tier === 'low'
@@ -91,7 +90,6 @@ export default function ScanCandidateSelector({
         <ScrollView style={styles.list} keyboardShouldPersistTaps="handled">
           {candidates.map((cand, i) => {
             const card = cand.card;
-            const pct = Math.round(cand.confidence * 100);
             const isBest = i === 0;
             const { primary: displayName } = resolveCardDisplayName(card, preferredLanguage);
             return (
@@ -116,18 +114,7 @@ export default function ScanCandidateSelector({
                         使用者分辨哪張才是手上那一版的依據。 */}
                     {FEATURES.sellPrice ? `  ${formatPrice(card.sellPrice)}` : ''}
                   </Text>
-                  <View style={styles.confidenceTrack}>
-                    <View
-                      style={[
-                        styles.confidenceFill,
-                        { width: `${pct}%`, backgroundColor: confidenceColor(cand.confidence) },
-                      ]}
-                    />
-                  </View>
                 </View>
-                <Text style={[styles.itemPct, { color: confidenceColor(cand.confidence) }]}>
-                  {pct}%
-                </Text>
               </TouchableOpacity>
             );
           })}

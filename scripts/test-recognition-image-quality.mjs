@@ -167,15 +167,20 @@ const check = (label, fn) => { fn(); results.push(label); };
 // ── 4. The actual card still survives extraction and candidate handling ───────
 {
   const { res, body, providerCalls } = await scan([LEGIBLE], REPLY_FROM_FULL_RESOLUTION);
-  check('a legible photo of hBP07-029 is recognised as hBP07-029', () => {
+  // hBP07-029 UR is printed in hBP07 AND ent07. The photo proves the card and the
+  // rarity, not which of the two products it came from, so the printing (and its
+  // price) stays unresolved instead of guessing the original print (2026-10-15).
+  check('a legible photo of hBP07-029 is identified as hBP07-029 UR, printing left to the user', () => {
     assert.equal(res.status, 200);
-    assert.equal(body.success, true);
+    assert.equal(body.success, false);
+    assert.equal(body.match.status, 'identity_only');
+    assert.equal(body.match.printingResolved, false);
     assert.equal(body.card.cardNumber, 'hBP07-029');
     assert.equal(body.card.name, '大神ミオ');
-    assert.equal(body.card.rarity, 'UR');
   });
   check('the real card leads the candidate list', () => {
     assert.equal(body.candidates[0].cardNumber, 'hBP07-029');
+    assert.ok(body.candidates.every(c => c.cardNumber === 'hBP07-029'));
     assert.ok(body.candidates.some(c => c.cardNumber === 'hBP07-029' && c.rarity === 'UR'));
   });
   check('a legible photo is still sent to the provider exactly once', () => {
@@ -189,9 +194,15 @@ const check = (label, fn) => { fn(); results.push(label); };
   // before: the guard is the only thing that changed, not the scoring.
   const { res, body } = await scan([LEGIBLE], REPLY_FROM_THUMBNAIL);
   check('ranking still scores an exact card number the same way', () => {
-    assert.equal(res.status, 200);
-    assert.equal(body.candidates[0].cardNumber, 'hBP01-024');
     assert.match(body.debug.reason, /cardNumber exact/);
+  });
+  // The hallucinated number names a different character than the one read: since
+  // 2026-10-15 that contradiction is a no-match, offered only as a correction.
+  check('an exact number contradicted by the character reading is not accepted', () => {
+    assert.equal(res.status, 404);
+    assert.equal(body.match.reason, 'number_name_conflict');
+    assert.deepEqual(body.candidates, []);
+    assert.equal(body.match.alternatives[0].cardNumber, 'hBP01-024');
   });
 }
 
@@ -267,7 +278,7 @@ const check = (label, fn) => { fn(); results.push(label); };
   const accepted = await scan([withTail(LEGIBLE, 2)], REPLY_FROM_FULL_RESOLUTION);
   check('the real handler still recognises a legible frame carrying a large in-cap tail', () => {
     assert.equal(accepted.res.status, 200);
-    assert.equal(accepted.body.success, true);
+    assert.equal(accepted.body.match.status, 'identity_only'); // hBP07 + ent07 UR, see above
     assert.equal(accepted.body.card.cardNumber, 'hBP07-029');
     assert.equal(accepted.providerCalls.length, 1);
   });

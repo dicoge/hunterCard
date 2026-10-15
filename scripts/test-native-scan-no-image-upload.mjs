@@ -202,6 +202,28 @@ await check('line-wrapped base64 from a platform encoder is normalised, not reje
   assert.equal(lastBody().image, `data:image/jpeg;base64,${JPEG_B64}`);
 });
 
+await check('native frame crop: [context photo, crop] are sent as two validated data URLs of exactly those bytes', async () => {
+  reset('success');
+  await recognizeCardFromImage(FILE_URI, { base64: JPEG_B64, cropBase64: PNG_B64 });
+  const body = lastBody();
+  assert.deepEqual(body.images, [`data:image/jpeg;base64,${JPEG_B64}`, `data:image/png;base64,${PNG_B64}`]);
+  assert.equal(body.image, body.images[0], 'v37 servers read `image`; it stays the first image');
+});
+
+await check('native frame crop: if the pair would exceed the request cap the crop (the card) goes alone', async () => {
+  reset('success');
+  const bigJpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(2_400_000, 1)]).toString('base64');
+  const crop = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(800_000, 2)]).toString('base64');
+  await recognizeCardFromImage(FILE_URI, { base64: bigJpeg, cropBase64: crop });
+  assert.deepEqual(lastBody().images, [`data:image/jpeg;base64,${crop}`]);
+});
+
+await check('native frame crop: a corrupt crop is dropped and the valid context photo is still sent', async () => {
+  reset('success');
+  await recognizeCardFromImage(FILE_URI, { base64: JPEG_B64, cropBase64: FILE_URI });
+  assert.deepEqual(lastBody().images, [`data:image/jpeg;base64,${JPEG_B64}`]);
+});
+
 for (const [label, base64, code] of [
   ['no base64 (uri only)', undefined, 'IMAGE_MISSING'],
   ['a file:// uri in the base64 field', FILE_URI, 'IMAGE_URI_NOT_ALLOWED'],
