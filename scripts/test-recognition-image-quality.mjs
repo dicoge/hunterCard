@@ -45,7 +45,8 @@ function pngOfSize(width, height) {
 const LEGIBLE = pngOfSize(1000, 1400);
 
 // Both replies were captured live from the exact-head Preview deployment, through
-// Google Gemini 2.5 Flash direct, on this same card.
+// Google Gemini 2.5 Flash direct, on this same card (historical fixture; the model is now
+// gemini-3.5-flash-lite — these replies only exercise ranking).
 const REPLY_FROM_FULL_RESOLUTION = [
   'CHARACTER: 大神ミオ',
   'HP: 200',

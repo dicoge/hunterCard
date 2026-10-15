@@ -27,8 +27,26 @@ import {
 
 export const config = { runtime: 'edge' };
 
-const GEMINI_MODEL = 'gemini-2.5-flash';
-const VISION_MAX_TOKENS = 180;
+/**
+ * Owner choice 2026-10-15: speed first. Official model card (read 2026-10-15,
+ * ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite): model code
+ * `gemini-3.5-flash-lite`, Stable, inputs text + image. No fallback to another model —
+ * a failure is a failure (503/502 → the app's local OCR), never a silent switch.
+ */
+export const GEMINI_MODEL = 'gemini-3.5-flash-lite';
+/**
+ * Gemini 3 models think by default; 3.5 Flash-Lite defaults to MINIMAL (thinking guide,
+ * 2026-10-15). The REST GenerationConfig documents thinkingConfig.thinkingLevel
+ * (ai.google.dev/api/generate-content), so MINIMAL is pinned explicitly — the documented
+ * default, now immune to a server-side default change. The answer is ~6 short lines;
+ * the cap leaves room for minimal thinking so the answer is not cut off (180 was sized
+ * for a non-thinking 2.5 call). Temperature is left at the Gemini 3 default (1.0): the
+ * Gemini 3 guide strongly recommends against lowering it (looping / degraded output).
+ */
+export const VISION_GENERATION_CONFIG = Object.freeze({
+  maxOutputTokens: 1024,
+  thinkingConfig: Object.freeze({ thinkingLevel: 'MINIMAL' }),
+});
 
 // The scanner abandons the request after RECOGNITION_REQUEST_TIMEOUT_MS (15s, see
 // src/services/recognitionOutcome). The vision call shares ONE budget sized below
@@ -330,7 +348,9 @@ HP: [number only or NONE]
 RARITY: [rarity or NONE]
 BLOOM_LEVEL: [level/type or NONE]
 CARD_NUMBER: [exact card number or NONE]
-TITLE: [title or NONE]`;
+TITLE: [title or NONE]
+SET: [set / product code printed next to the card number, e.g. hBP01, or NONE]
+LANGUAGE: [JA, EN, ZH or another printed card language code, or NONE]`;
 
 type VisionAdapter = {
   provider: string;
@@ -353,12 +373,18 @@ const googleAdapter = (apiKey: string): VisionAdapter => ({
         role: 'user',
         parts: [{ text: visionPrompt }, ...images.map(dataUriToGeminiPart)],
       }],
-      generationConfig: { temperature: 0, maxOutputTokens: VISION_MAX_TOKENS },
+      generationConfig: VISION_GENERATION_CONFIG,
     }),
     signal: withClientAbort(AbortSignal.timeout(timeoutMs), clientSignal),
   }),
-  extract: (data) => (data?.candidates?.[0]?.content?.parts || [])
-    .map((part: any) => part.text || '').join('\n').trim(),
+  extract: (data) => {
+    // A reply cut off at the token cap is not an answer: its CARD_NUMBER line may be
+    // missing or partial. Fail like an upstream error instead of ranking half a reply.
+    if (data?.candidates?.[0]?.finishReason === 'MAX_TOKENS') throw new Error('gemini API error (413)');
+    return (data?.candidates?.[0]?.content?.parts || [])
+      .filter((part: any) => part?.thought !== true)
+      .map((part: any) => part.text || '').join('\n').trim();
+  },
 });
 
 /**
@@ -678,6 +704,9 @@ export default async function handler(req: Request): Promise<Response> {
       bloom: parseField(reply, 'BLOOM_LEVEL'),
       cardNumberRaw: parseField(reply, 'CARD_NUMBER'),
       cardTitle: parseField(reply, 'TITLE'),
+      // Diagnostics only (local scan log); not used for ranking.
+      setCode: parseField(reply, 'SET'),
+      language: parseField(reply, 'LANGUAGE'),
     };
     const ranking = rankCandidates(cards, extracted, storeMvp);
     const { match } = ranking;

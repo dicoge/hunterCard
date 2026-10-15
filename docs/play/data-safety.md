@@ -27,7 +27,7 @@ What the Android binary now sends, per scan, after the user accepted the in-app 
   (`src/services/recognitionImagePolicy.ts`). Nothing else is sent; the `file://` uri never is.
 - `POST /api/recognize-card` (HTTPS) → the handler validates the same rules and answers 400
   before resolving a provider for anything else → forwards the image to Google Gemini
-  (`generativelanguage.googleapis.com`, `gemini-2.5-flash`).
+  (`generativelanguage.googleapis.com`, `gemini-3.5-flash-lite` since 2026-10-15).
 - Our server does not write the image anywhere and logs no image content.
 - If the scan is cancelled, the client abort is forwarded to the Gemini fetch.
 
