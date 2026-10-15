@@ -1,0 +1,29 @@
+fix(dic-1496): sweep orphaned analytics temp files left by an interrupted run
+
+Follow-up to the patrol review on this PR. writeFileAtomic() writes
+`<artifact>.tmp` then renames. A kill between the two left a file such as
+`2026-08.json.tmp` in data/tournaments/analytics/, which the staging job
+commits because it commits data/ recursively -- and the month-file prune cannot
+remove it, since `2026-08.json.tmp` does not match
+MONTH_FILE_RE = /^\d{4}-\d{2}\.json$/.
+
+Low probability and not a correctness bug, but the orphan is ours to clean up
+rather than a file the collector should commit:
+
+- writeFileAtomic() removes its scratch file if the write or rename throws.
+- Each run sweeps orphaned analytics temp files left by an earlier kill,
+  matched only against ^(?:index|\d{4}-\d{2})\.json\.tmp$ so a hand-authored
+  sibling file is never touched, and reports the sweep as an info alert.
+- New test drives the real collector over a tree seeded with both
+  `2026-07.json.tmp` and `index.json.tmp` plus a `NOTES.md` sibling, and
+  asserts the two temp files are swept, the sibling survives, and the
+  remaining generated artifacts are still byte-identical to deterministic
+  regeneration.
+
+Verified end to end on the real tree: seeding both mirrors with orphaned temp
+files and running the collector sweeps them, logs
+"Removed 1 orphaned analytics temp file(s) from an interrupted run", and
+leaves every other artifact byte-stable.
+
+test:tournament-collector 32 tests (was 31), the other seven tournament suites,
+and npx tsc --noEmit all pass locally.

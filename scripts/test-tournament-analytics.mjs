@@ -8,6 +8,7 @@ import { execFileSync } from 'node:child_process';
 import {
   analyzeMonth,
   analyzeReports,
+  buildAnalyticsArtifacts,
   buildAssociations,
   buildClusters,
   buildSimilarity,
@@ -340,6 +341,44 @@ for (const month of committedMonths) {
     fs.readFileSync(reportPath, 'utf8'),
     fs.readFileSync(publicReportPath, 'utf8'),
     `data/ and public/ report ${month}.json must be byte-identical`,
+  );
+}
+
+// ── Month-local generatedAt (DIC-1496) ────────────────────────────────────────
+// The regression that broke Validate on PR #228: every month artifact was
+// stamped with the GLOBAL newest report timestamp, so committing a newer month
+// retroactively rewrote the generatedAt of every earlier committed month. The
+// next CI run regenerated analytics over the new input set, produced different
+// bytes for an UNCHANGED old month, and failed on
+// `analytics 2026-07.json must be byte-identical to deterministic regeneration` —
+// blaming the oldest month instead of the month that actually changed.
+//
+// A month artifact must depend only on its own report. Adding a month must
+// leave earlier artifacts byte-for-byte untouched.
+{
+  const july = [report([deck('deck:july-1', 'a', [card('main', 1, 'V1', 4)])], '2026-07')];
+  const julyAlone = buildAnalyticsArtifacts(july).months.find((m) => m.month === '2026-07');
+  const withSeptember = buildAnalyticsArtifacts([
+    ...july,
+    report([deck('deck:sept-1', 'b', [card('main', 2, 'V1', 2)])], '2026-09'),
+  ]);
+  const julyAfter = withSeptember.months.find((m) => m.month === '2026-07');
+
+  assert.equal(
+    stableStringify(julyAlone),
+    stableStringify(julyAfter),
+    'adding a newer month must not change an earlier month artifact by a single byte',
+  );
+  assert.equal(
+    julyAlone.generatedAt,
+    july[0].report.generatedAt,
+    'a month artifact generatedAt must be derived from that month own reports',
+  );
+  // The index is the one place that legitimately tracks the global newest input.
+  assert.equal(
+    withSeptember.index.generatedAt,
+    '2026-08-17T00:00:00.000Z',
+    'index generatedAt must remain the global newest report timestamp',
   );
 }
 
