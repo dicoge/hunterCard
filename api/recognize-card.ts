@@ -726,6 +726,8 @@ export default async function handler(req: Request): Promise<Response> {
       reason: match.reason ?? null,
       evidence: match.evidence,
       alternatives: match.alternatives,
+      // Deterministic rule score of the best card (diagnostics only — not a probability).
+      ruleScore: typeof (match.best as any)?.score === 'number' ? (match.best as any).score : null,
     };
 
     // No valid match is an explicit failure — never a list of filler candidates.

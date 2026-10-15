@@ -81,6 +81,7 @@
     "test:privacy-disclosure": "node scripts/test-privacy-disclosure.mjs",
     "test:native-scan-no-upload": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-native-scan-no-image-upload.mjs",
     "test:scan-native-crop-render": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-web-render.mjs scripts/test-scan-native-crop-render.mjs",
+    "test:scan-diagnostics": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-web-render.mjs scripts/test-scan-diagnostics.mjs",
     "test:scan-best-match": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-web-render.mjs scripts/test-scan-best-match.mjs",
     "test:scan-cancel-lifecycle": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-web-render.mjs scripts/test-scan-cancel-lifecycle.mjs",
     "test:native-ai-photo-upload": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-native-ai-photo-upload.mjs",

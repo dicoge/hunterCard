@@ -105,6 +105,8 @@ export interface ScanMatch {
   /** Evidence tokens such as 'cardNumber exact', 'rarity' — never a probability. */
   evidence: string[];
   alternatives: RecognizedCandidate[];
+  /** Deterministic ranking score of the best card — diagnostics only, never shown as %. */
+  ruleScore?: number | null;
 }
 
 /** How a photo reaches recognizeCardFromImage. */
@@ -546,6 +548,7 @@ async function recognizeViaApi(imageUri: string, options: RecognizeImageOptions 
         confidence: typeof data.confidence === 'number' ? data.confidence : undefined,
         candidates: mapApiCandidates(data.candidates),
         match: mapMatch(data.match),
+        debug: data.debug,
       };
     }
 

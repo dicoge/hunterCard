@@ -92,5 +92,6 @@ export function matchFromWire(
     reason: raw.reason ?? null,
     evidence: Array.isArray(raw.evidence) ? raw.evidence.filter((e: unknown) => typeof e === 'string') : [],
     alternatives: mapCandidates(raw.alternatives) ?? [],
+    ruleScore: typeof raw.ruleScore === 'number' ? raw.ruleScore : null,
   };
 }

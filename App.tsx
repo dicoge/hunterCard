@@ -4,6 +4,8 @@ import AppNavigator from './src/navigation/AppNavigator';
 import { initPushNotifications } from './src/services/pushNotificationService';
 import { FEATURES } from './src/config/releaseFlags';
 import { installAccountSyncBinding } from './src/services/accountSyncBinding';
+// Registers the local diagnostic log as the recorder for sign-in failures (diagnosticsSink).
+import './src/store/scanDiagnosticsStore';
 
 export default function App() {
   useEffect(() => {
