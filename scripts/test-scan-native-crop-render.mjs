@@ -29,9 +29,11 @@ register(
   'data:text/javascript,' + encodeURIComponent(`
     const RN = ${JSON.stringify(new URL('./fixtures/react-native-android-shim.mjs', import.meta.url).href)};
     const CAMERA = ${JSON.stringify(new URL('./fixtures/native-camera-fixture.mjs', import.meta.url).href)};
+    const PICKER = ${JSON.stringify(new URL('./fixtures/native-image-picker-fixture.mjs', import.meta.url).href)};
     export async function resolve(specifier, context, next) {
       if (specifier === 'react-native' && !String(context.parentURL || '').endsWith('react-native-android-shim.mjs')) return { url: RN, shortCircuit: true };
       if (specifier === 'expo-camera') return { url: CAMERA, shortCircuit: true };
+      if (specifier === 'expo-image-picker') return { url: PICKER, shortCircuit: true };
       // Metro resolves *.native.ts for native bundles; mirror that for the platform split.
       if ((specifier.endsWith('/scanRuntime') || specifier.endsWith('/webOcr')) && context.parentURL) {
         return next(new URL(specifier + '.native.ts', context.parentURL).href, context);
@@ -111,13 +113,14 @@ const DB = JSON.parse(fs.readFileSync(new URL('../public/data/database.json', im
 const handler = (await import('../api/recognize-card.ts')).default;
 process.env.GEMINI_API_KEY = 'test-key-never-sent';
 let providerDown = false;
+let providerReply = 'CARD_NUMBER: hBP01-010\nCHARACTER: 天音かなた';
 const bodies = [];
 globalThis.fetch = async (url, init = {}) => {
   const href = String(url);
   if (href === 'https://holohunter.dicoge.com/data/database.json') return Response.json(DB);
   if (href.includes('generativelanguage.googleapis.com')) {
     if (providerDown) return new Response('down', { status: 500 });
-    return Response.json({ candidates: [{ content: { parts: [{ text: 'CARD_NUMBER: hBP01-010\nCHARACTER: 天音かなた' }] } }] });
+    return Response.json({ candidates: [{ content: { parts: [{ text: providerReply }] } }] });
   }
   if (href.includes('/api/recognize-card')) {
     bodies.push(JSON.parse(init.body));
@@ -137,6 +140,7 @@ const { usePhotoUploadConsentStore } = await import('../src/store/photoUploadCon
 const { PHOTO_UPLOAD_DISCLOSURE_VERSION } = await import('../src/services/photoUploadDisclosure.ts');
 const { useScanQuotaStore } = await import('../src/store/scanQuotaStore.ts');
 const { planNativeCrop } = await import('../src/utils/scanFrame.ts');
+const { useScanDiagnosticsStore } = await import('../src/store/scanDiagnosticsStore.ts');
 
 let passed = 0;
 async function test(label, fn) {
@@ -212,6 +216,69 @@ try {
     await shutter();
     assert.equal(manipulations.length, 0, 'no manipulation without a measured frame');
     assert.deepEqual(bodies.at(-1).images, [`data:image/jpeg;base64,${ORIGINAL_B64}`]);
+  });
+  // CR c9793eb P2: a no-match must keep what the backend read, in the real native
+  // camera and gallery result paths, through the sanitiser — never the raw payload.
+  const NO_MATCH_REPLY = 'CARD_NUMBER: hBP11-010\nCHARACTER: 天音かなた\nSET: hBP11\nLANGUAGE: JA\nTITLE: NONE';
+  const FORBIDDEN = [/data:image\//, /file:\/\//, /content:\/\//, /@[a-z0-9-]+\.[a-z]/i, /test-key-never-sent/, /CARD_NUMBER:/, /\/9j\//];
+  const assertNoMatchEntry = (e, source) => {
+    assert.ok(e, `a ${source} diagnostic entry exists`);
+    assert.equal(e.source, source);
+    assert.equal(e.model, 'gemini-3.5-flash-lite');
+    assert.deepEqual(e.extracted, { name: '天音かなた', number: 'hbp11-010', set: 'hBP11', language: 'JA' });
+    assert.equal(e.match.status, 'no_match');
+    assert.equal(e.match.reason, 'number_not_in_database');
+    assert.ok(e.errors.includes('NO_MATCH'));
+    assert.equal(e.outcome, 'no_match');
+  };
+
+  await test('native camera no-match keeps model + read name/set/language through the sanitiser', async () => {
+    FRAME = { x: 28, y: 150, width: 335, height: 468 };
+    useScanDiagnosticsStore.getState().clear();
+    providerReply = NO_MATCH_REPLY;
+    await shutter();
+    assert.ok(byTestId('scan-match-none'), 'explicit no-match shown');
+    assertNoMatchEntry(useScanDiagnosticsStore.getState().entries.at(-1), 'camera');
+    await click(byTestId('scan-match-retake'));
+  });
+
+  await test('native gallery no-match records the same fields on its own entry', async () => {
+    globalThis.__nativePickerAsset = { uri: 'file:///cache/ImagePicker/pick.jpg', base64: ORIGINAL_B64, width: 1200, height: 1680 };
+    const before = bodies.length;
+    await click(byTestId('scan-gallery-action'));
+    for (let i = 0; i < 30 && bodies.length === before; i++) await tick(10);
+    await tick(80);
+    assert.equal(bodies.length, before + 1, 'gallery pick uploaded once');
+    const entries = useScanDiagnosticsStore.getState().entries;
+    assertNoMatchEntry(entries.at(-1), 'gallery');
+    assert.equal(entries.length, 2, 'one entry per scan');
+  });
+
+  await test('the exported file keeps those fields and carries no payload, uri, key, image or email', () => {
+    const text = useScanDiagnosticsStore.getState().exportText();
+    const parsed = JSON.parse(text);
+    assert.equal(parsed.count, 2);
+    assert.ok(parsed.entries.every((e) => e.extracted.name === '天音かなた' && e.model === 'gemini-3.5-flash-lite'));
+    for (const re of FORBIDDEN) assert.ok(!re.test(text), `export contains ${re}`);
+  });
+
+  await test('hostile debug values (email, key, overlong, bad status) are dropped or redacted, never stored', async () => {
+    const { diagnosticDebug } = await import('../src/services/cardRecognition.ts');
+    const d = diagnosticDebug({
+      model: 'gemini-3.5-flash-lite', provider: 'gemini', rawModelOutput: 'CARD_NUMBER: x', apiKey: 'AIzaSyFAKE',
+      normalizedCardNumber: 'x'.repeat(200), matchStatus: 'hacked',
+      extracted: { characterName: 'mail me a@b.com', setCode: 'AIzaSyFAKEKEYVALUE1234567890', language: 'J'.repeat(100), cardNumberRaw: 'hBP11-010' },
+    });
+    assert.deepEqual(Object.keys(d).sort(), ['extracted', 'matchReason', 'matchStatus', 'model', 'normalizedCardNumber', 'provider']);
+    assert.equal(d.normalizedCardNumber, null, 'overlong dropped');
+    assert.equal(d.extracted.language, undefined, 'overlong dropped');
+    assert.ok(!('cardNumberRaw' in d.extracted) && !('rawModelOutput' in d) && !('apiKey' in d));
+    const { sanitizeEntry, diagnosticsFromResult } = await import('../src/services/scanDiagnostics.ts');
+    const fields = diagnosticsFromResult({ success: false, debug: d, match: { status: 'hacked' } });
+    const e = sanitizeEntry({ id: 'abcdefgh12345678', at: new Date().toISOString(), model: fields.model, extracted: fields.extracted, match: fields.match, errors: fields.errors });
+    assert.equal(e.extracted.name, '[redacted]');
+    assert.equal(e.extracted.set, '[redacted]');
+    assert.equal(e.match.status, 'unknown', 'unknown status fails closed');
   });
 } finally {
   await act(async () => root.unmount());

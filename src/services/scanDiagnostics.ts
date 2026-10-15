@@ -176,6 +176,7 @@ export function diagnosticsFromResult(r: any): { extracted: Partial<DiagEntry['e
   if (r?.serviceUnavailable) errors.push('RECOGNITION_UNAVAILABLE');
   if (typeof r?.imageRejected === 'string') errors.push(r.imageRejected);
   if (typeof r?.code === 'string') errors.push(r.code);
+  if (r?.match?.status === 'no_match') errors.push('NO_MATCH');
   const status = r?.match?.status
     ?? (r?.serviceUnavailable ? 'service_unavailable' : r?.imageRejected ? 'not_uploaded' : undefined);
   return {

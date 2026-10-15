@@ -452,6 +452,40 @@ async function recognitionPayload(
   return check.ok ? { ok: true, images: [processed] } : check;
 }
 
+/**
+ * The subset of the backend's (already sanitised) debug block the app keeps: model id,
+ * normalised number, and the fields read off the card. Everything else — and any value
+ * that is not a short string — is dropped; src/services/scanDiagnostics re-validates
+ * each field again before anything is stored or exported.
+ */
+export function diagnosticDebug(raw: any): RecognitionDebug | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const str = (v: unknown) => (typeof v === 'string' && v.length <= 80 ? v : undefined);
+  const x = raw.extracted && typeof raw.extracted === 'object' ? raw.extracted : {};
+  return {
+    provider: str(raw.provider),
+    model: str(raw.model),
+    normalizedCardNumber: str(raw.normalizedCardNumber) ?? null,
+    matchStatus: str(raw.matchStatus),
+    matchReason: str(raw.matchReason) ?? null,
+    extracted: {
+      characterName: str(x.characterName),
+      cardTitle: str(x.cardTitle),
+      setCode: str(x.setCode),
+      language: str(x.language),
+    },
+  };
+}
+
+export interface RecognitionDebug {
+  provider?: string;
+  model?: string;
+  normalizedCardNumber: string | null;
+  matchStatus?: string;
+  matchReason?: string | null;
+  extracted: { characterName?: string; cardTitle?: string; setCode?: string; language?: string };
+}
+
 function mapMatch(raw: any): ScanMatch | undefined {
   return matchFromWire(raw, mapApiCandidates);
 }
@@ -508,7 +542,10 @@ async function recognizeViaApi(imageUri: string, options: RecognizeImageOptions 
       }
       // 404 = the backend looked at this photo and has no valid answer. Its verdict
       // (and any evidence-backed alternatives) is what the UI explains.
-      return { success: false, error: '', match: mapMatch(errorBody?.match) };
+      // Keep the backend's diagnostic metadata (model, what was read) for the local log —
+      // a failed scan is exactly what needs comparing (CR c9793eb P2). Projected, never
+      // the raw body.
+      return { success: false, error: '', match: mapMatch(errorBody?.match), debug: diagnosticDebug(errorBody?.debug) };
     }
 
     const data = await apiResponse.json();
@@ -530,7 +567,7 @@ async function recognizeViaApi(imageUri: string, options: RecognizeImageOptions 
         confidence: data.confidence,
         reason: data.reason,
         raw: data.raw,
-        debug: data.debug,
+        debug: diagnosticDebug(data.debug),
         lowConfidence: !!data.lowConfidence,
         match: mapMatch(data.match),
         // identity_only: the card the backend identified (no printing → its price is
@@ -548,7 +585,7 @@ async function recognizeViaApi(imageUri: string, options: RecognizeImageOptions 
         confidence: typeof data.confidence === 'number' ? data.confidence : undefined,
         candidates: mapApiCandidates(data.candidates),
         match: mapMatch(data.match),
-        debug: data.debug,
+        debug: diagnosticDebug(data.debug),
       };
     }
 
