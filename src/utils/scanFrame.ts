@@ -26,7 +26,13 @@ export const CROP_PAD = { padXRatio: 0.06, padYRatio: 0.04 } as const;
 
 export interface Insets { top?: number; bottom?: number }
 
-export function computeScanFrameSize(viewport: Size, insets: Insets = {}): Size {
+/** Used when the runtime reports no usable viewport yet (0 / NaN on a first web render). */
+export const FALLBACK_VIEWPORT: Size = { width: 390, height: 844 };
+
+export function computeScanFrameSize(rawViewport: Size, insets: Insets = {}): Size {
+  // An unmeasured viewport must not collapse the frame to 0×0 (nothing to aim at, and the
+  // web ROI would be empty); size it for a typical phone until real dimensions arrive.
+  const viewport = rawViewport.width > 0 && rawViewport.height > 0 ? rawViewport : FALLBACK_VIEWPORT;
   const availableHeight = viewport.height - (insets.top ?? 0) - (insets.bottom ?? 0)
     - FRAME_RESERVED.top - FRAME_RESERVED.bottom;
   const byWidth = Math.min(viewport.width * FRAME_MAX_WIDTH_RATIO, MAX_FRAME_WIDTH);
@@ -43,7 +49,8 @@ export function computeScanFrameSize(viewport: Size, insets: Insets = {}): Size 
 }
 
 /** The frame rect in viewport coordinates when it has not been measured yet. */
-export function defaultScanFrameRect(viewport: Size, insets: Insets = {}): Rect {
+export function defaultScanFrameRect(rawViewport: Size, insets: Insets = {}): Rect {
+  const viewport = rawViewport.width > 0 && rawViewport.height > 0 ? rawViewport : FALLBACK_VIEWPORT;
   const size = computeScanFrameSize(viewport, insets);
   const top = (insets.top ?? 0) + FRAME_RESERVED.top;
   const free = viewport.height - (insets.bottom ?? 0) - FRAME_RESERVED.bottom - top;

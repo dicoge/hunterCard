@@ -151,6 +151,12 @@ await test('very short viewport with large insets: frame shrinks below the 160px
   assert.ok(r.y + r.height <= vp.height, `frame bottom ${r.y + r.height} > ${vp.height}`);
   assert.ok(r.width > 0 && near(r.height / r.width, 88 / 63, 0.05));
 });
+await test('an unmeasured viewport (0×0, as react-native-web reports before layout) never collapses the frame', () => {
+  for (const vp of [{ width: 0, height: 0 }, { width: 390, height: 0 }, { width: NaN, height: NaN }]) {
+    const f = geo.computeScanFrameSize(vp);
+    assert.ok(f.width >= 160 && f.height > f.width, `collapsed at ${JSON.stringify(vp)}: ${JSON.stringify(f)}`);
+  }
+});
 await test('safe-area insets shrink the frame instead of letting it run under the notch / home bar', () => {
   const plain = geo.computeScanFrameSize({ width: 390, height: 700 });
   const inset = geo.computeScanFrameSize({ width: 390, height: 700 }, { top: 47, bottom: 34 });
