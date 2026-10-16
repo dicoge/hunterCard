@@ -15,10 +15,21 @@
  */
 import type { CardInfo, RecognitionResult, RecognizedCandidate } from './cardRecognition';
 
-export type ScanPresentation =
+/**
+ * Which rule produced a presentation — logged separately from the server verdict so a
+ * legacy-backend result is never mistaken for a v39 verdict (or for "unknown").
+ *   server_verdict      the backend's `match`
+ *   legacy_evidence     no verdict; per-candidate ranker evidence from an older backend
+ *   legacy_no_evidence  no verdict and no evidence (older backend list / local OCR list)
+ *   local_ocr           on-device / browser text recognition decision
+ */
+export type PresentationSource = 'server_verdict' | 'legacy_evidence' | 'legacy_no_evidence' | 'local_ocr';
+
+export type ScanPresentation = (
   | { kind: 'best'; card: CardInfo; evidence: string[]; alternatives: RecognizedCandidate[] }
   | { kind: 'identity'; card: CardInfo; printings: RecognizedCandidate[] }
-  | { kind: 'none'; reason: NoneReason; suggestions: RecognizedCandidate[] };
+  | { kind: 'none'; reason: NoneReason; suggestions: RecognizedCandidate[] }
+) & { source?: PresentationSource };
 
 export type NoneReason = 'no_evidence' | 'no_card_number' | 'number_not_in_database' | 'number_name_conflict' | 'low_evidence';
 
@@ -50,6 +61,11 @@ function sameCardNumber(cands: RecognizedCandidate[]): boolean {
  * picks the printing. Without exact-number evidence it stays an explicit no-match.
  */
 export function presentCandidates(cands: RecognizedCandidate[]): ScanPresentation {
+  const p = presentCandidatesInner(cands);
+  return { ...p, source: cands.some((c) => c.evidence) ? 'legacy_evidence' : 'legacy_no_evidence' };
+}
+
+function presentCandidatesInner(cands: RecognizedCandidate[]): ScanPresentation {
   const list = cands.slice(0, 8);
   const exact = list.filter((c) => c.evidence?.includes('cardNumber exact'));
   const lead = exact[0];
@@ -81,6 +97,11 @@ export function presentCandidates(cands: RecognizedCandidate[]): ScanPresentatio
  * verdict (older backend or local OCR) — the caller then uses the legacy routes below.
  */
 export function presentMatch(result: Pick<RecognitionResult, 'match' | 'card' | 'candidates'>): ScanPresentation | null {
+  const p = presentMatchInner(result);
+  return p ? { ...p, source: 'server_verdict' } : null;
+}
+
+function presentMatchInner(result: Pick<RecognitionResult, 'match' | 'card' | 'candidates'>): ScanPresentation | null {
   const m = result.match;
   if (!m) return null;
   if (m.status === 'matched' && result.card) {
@@ -104,12 +125,25 @@ export function presentLegacyDecision(
     | { action: 'commit'; card: CardInfo; confidence: number }
     | { action: 'picker'; tier: 'mid' | 'low'; candidates: RecognizedCandidate[] },
   evidence: string[] = [LOCAL_OCR_EVIDENCE],
+  candidates: RecognizedCandidate[] = [],
 ): ScanPresentation {
-  if (decision.action === 'commit') return { kind: 'best', card: decision.card, evidence, alternatives: [] };
-  if (decision.action === 'ambiguous-picker') {
-    return { kind: 'identity', card: withoutPrintingPrice(decision.candidates[0].card), printings: decision.candidates };
+  if (decision.action === 'commit') {
+    // A backend-accepted card carries its own ranker evidence; only a local OCR read
+    // is labelled as such.
+    const own = candidates.find((c) => c.card.id === decision.card.id && c.evidence?.length);
+    return own
+      ? { kind: 'best', card: decision.card, evidence: own.evidence!, alternatives: [], source: 'legacy_evidence' }
+      : { kind: 'best', card: decision.card, evidence, alternatives: [], source: 'local_ocr' };
   }
-  return { kind: 'none', reason: 'low_evidence', suggestions: decision.candidates.slice(0, 5) };
+  if (decision.action === 'ambiguous-picker') {
+    return { kind: 'identity', card: withoutPrintingPrice(decision.candidates[0].card), printings: decision.candidates, source: 'local_ocr' };
+  }
+  // Scan regression 2026-10-16: an older backend's accepted card below the client's
+  // 0.85 auto-add bar (v37 accepts at 0.82) arrives here with per-candidate evidence.
+  // Judge it by that evidence (same rules as presentCandidates) instead of declaring a
+  // no-match; a list without evidence (local OCR name match) stays a no-match.
+  if (decision.candidates.some((c) => c.evidence)) return presentCandidates(decision.candidates);
+  return { kind: 'none', reason: 'low_evidence', suggestions: decision.candidates.slice(0, 5), source: 'local_ocr' };
 }
 
 /** The backend's `match` object as it travels on the wire → ScanMatch (or undefined). */

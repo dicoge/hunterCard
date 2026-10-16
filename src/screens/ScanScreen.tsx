@@ -194,12 +194,12 @@ export default function ScanScreen({ navigation }: any) {
   };
   const diagResult = (id: string | null, r: any) => {
     const d = diagnosticsFromResult(r);
-    diagUpdate(id, { model: d.model, extracted: d.extracted as any, match: d.match as any, errors: d.errors });
+    diagUpdate(id, { model: d.model, extracted: d.extracted as any, match: d.match as any, errors: d.errors, trace: d.trace });
   };
   const diagOutcome = (outcome: ScanOutcome, extra: Record<string, any> = {}) => {
     const id = diagIdRef.current;
     if (!id) return;
-    diagUpdate(id, { outcome, ...extra });
+    diagUpdate(id, { outcome, ...extra, timeline: [{ e: outcome, t: Date.now() - diagStartRef.current }] });
     if (outcome !== 'no_match') diagIdRef.current = null;
   };
   // 在手勢鏈中取得的 stream，避免 iOS Safari 阻擋 getUserMedia
@@ -344,7 +344,7 @@ export default function ScanScreen({ navigation }: any) {
     // Scan best-match fix (2026-10-15): a decision is SHOWN, never committed or forced
     // into a picker. Commit (and the quota charge) only happens from the sheet's 加入
     // or from picking a correction — one explicit action, one charge.
-    setMatchSheet(presentLegacyDecision(decision));
+    showPresentation(presentLegacyDecision(decision, undefined, candidates ?? []));
   };
 
   // Shows the result sheet for any recognition outcome.
@@ -355,7 +355,16 @@ export default function ScanScreen({ navigation }: any) {
     setScanError(null);
     resetAutoScan();
     setMatchSheet(presentation);
-    diagUpdate(diagIdRef.current, { stagesMs: { total: Date.now() - diagStartRef.current } });
+    diagUpdate(diagIdRef.current, {
+      stagesMs: { total: Date.now() - diagStartRef.current },
+      // The app's own decision, kept apart from the server verdict in `trace`.
+      presentation: {
+        kind: presentation.kind,
+        reason: presentation.kind === 'none' ? presentation.reason : 'none',
+        source: presentation.source ?? 'unknown',
+      },
+      timeline: [{ e: 'presented', t: Date.now() - diagStartRef.current }],
+    });
     if (presentation.kind === 'none') diagOutcome('no_match');
   };
 

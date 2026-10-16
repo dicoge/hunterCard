@@ -26,6 +26,7 @@ import {
 import { SCAN_RUNTIME } from './scanRuntime';
 import { findCardNumberTokens } from '../utils/cardNumberToken';
 import { matchFromWire } from './scanPresentation';
+import { projectTrace, type RecognitionTrace } from './scanTrace';
 
 // ── 類型定義 ──
 
@@ -104,6 +105,8 @@ export interface RecognitionResult {
   timedOut?: boolean;
   /** The photo was refused locally by recognitionImagePolicy and was NOT uploaded. */
   imageRejected?: RecognitionImageErrorCode;
+  /** Typed server trace (v39+ backend), re-validated by projectTrace; undefined from older backends. */
+  trace?: RecognitionTrace;
   /**
    * The server's explicit verdict (scan best-match fix 2026-10-15). `matched` = one
    * printing proven by the photo; `identity_only` = card known, printing (and price)
@@ -488,6 +491,7 @@ export function diagnosticDebug(raw: any): RecognitionDebug | undefined {
       cardTitle: str(x.cardTitle),
       setCode: str(x.setCode),
       language: str(x.language),
+      rarity: str(x.rarity),
     },
   };
 }
@@ -498,7 +502,7 @@ export interface RecognitionDebug {
   normalizedCardNumber: string | null;
   matchStatus?: string;
   matchReason?: string | null;
-  extracted: { characterName?: string; cardTitle?: string; setCode?: string; language?: string };
+  extracted: { characterName?: string; cardTitle?: string; setCode?: string; language?: string; rarity?: string };
 }
 
 function mapMatch(raw: any): ScanMatch | undefined {
@@ -560,7 +564,7 @@ async function recognizeViaApi(imageUri: string, options: RecognizeImageOptions 
       // Keep the backend's diagnostic metadata (model, what was read) for the local log —
       // a failed scan is exactly what needs comparing (CR c9793eb P2). Projected, never
       // the raw body.
-      return { success: false, error: '', match: mapMatch(errorBody?.match), debug: diagnosticDebug(errorBody?.debug) };
+      return { success: false, error: '', match: mapMatch(errorBody?.match), debug: diagnosticDebug(errorBody?.debug), trace: projectTrace(errorBody?.trace) };
     }
 
     const data = await apiResponse.json();
@@ -583,6 +587,7 @@ async function recognizeViaApi(imageUri: string, options: RecognizeImageOptions 
         reason: data.reason,
         raw: data.raw,
         debug: diagnosticDebug(data.debug),
+        trace: projectTrace(data.trace),
         lowConfidence: !!data.lowConfidence,
         match: mapMatch(data.match),
         // identity_only: the card the backend identified (no printing → its price is
@@ -601,6 +606,7 @@ async function recognizeViaApi(imageUri: string, options: RecognizeImageOptions 
         candidates: mapApiCandidates(data.candidates),
         match: mapMatch(data.match),
         debug: diagnosticDebug(data.debug),
+        trace: projectTrace(data.trace),
       };
     }
 

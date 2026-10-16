@@ -582,6 +582,9 @@ jobs:
       - name: Verify the v38 client presents v37-backend (no match verdict) responses by evidence, not as no-match (scan regression 2026-10-16)
         run: npm run test:scan-legacy-backend
 
+      - name: Verify the typed scan trace — field states, provenance, safe names vs hostile values, old-server/new-client log shape, timeline (2026-10-16)
+        run: npm run test:scan-trace
+
       - name: Verify the NATIVE ScanScreen branch crops to the measured frame and OCRs the crop (CR 2026-10-15 P2_1)
         run: npm run test:scan-native-crop-render
 

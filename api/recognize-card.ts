@@ -1,5 +1,6 @@
 import { normalizeCardIdentity } from '../src/utils/cardNormalization';
 import { parseCardNumberToken } from '../src/utils/cardNumberToken';
+import { buildRecognitionTrace, safeCardText } from '../src/services/scanTrace';
 import {
   validateRecognitionImages,
   type RecognitionImageErrorCode,
@@ -408,6 +409,17 @@ function withClientAbort(timeout: AbortSignal, clientSignal?: AbortSignal): Abor
   return controller.signal;
 }
 
+/** Random per-request id for correlating a scan's app log with the server verdict. */
+function newRequestId(): string | null {
+  try {
+    const bytes = new Uint8Array(8);
+    globalThis.crypto.getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  } catch {
+    return null;
+  }
+}
+
 function readKey(name: string): string | null {
   const value = process.env[name];
   return typeof value === 'string' && value.trim() ? value.trim() : null;
@@ -533,6 +545,7 @@ export function rankCandidates(cards: Record<string, any>, extracted: any, store
 
   return {
     normalizedCardNumber: normalizedNumber,
+    candidateCount: ranked.length,
     confidence: Math.round(confidence * 100) / 100,
     reason: ranked[0]?.reasons.join(', ') || 'no candidate',
     candidates,
@@ -695,7 +708,7 @@ export default async function handler(req: Request): Promise<Response> {
       getDatabase(),
     ]);
     if (!reply) return json({ success: false, error: '服務回傳空回應', debug: { provider, model } }, 502);
-    if (!cards) return json({ success: false, error: '資料庫載入失敗', raw: reply }, 502);
+    if (!cards) return json({ success: false, error: '資料庫載入失敗' }, 502);
 
     const extracted = {
       characterName: parseField(reply, 'CHARACTER'),
@@ -711,15 +724,39 @@ export default async function handler(req: Request): Promise<Response> {
     const ranking = rankCandidates(cards, extracted, storeMvp);
     const { match } = ranking;
     // Sanitised diagnostics only: what was read and why, never the image.
+    // Wire copy of what was read: each value through the same safe-text rule as the trace
+    // (unsafe → ''), bounded — the ranking above used the parsed values.
     const debug = {
       provider,
       model,
-      extracted,
+      extracted: {
+        characterName: safeCardText('name', extracted.characterName) ?? '',
+        hp: /^\d{1,4}$/.test(extracted.hp) ? extracted.hp : '',
+        rarity: safeCardText('rarity', extracted.rarity) ?? '',
+        bloom: safeCardText('title', extracted.bloom) ?? '',
+        cardNumberRaw: safeCardText('number', extracted.cardNumberRaw) ?? '',
+        cardTitle: safeCardText('title', extracted.cardTitle) ?? '',
+        setCode: safeCardText('set', extracted.setCode) ?? '',
+        language: safeCardText('language', extracted.language) ?? '',
+      },
       normalizedCardNumber: ranking.normalizedCardNumber,
       reason: ranking.reason,
       matchStatus: match.status,
       matchReason: match.reason ?? null,
     };
+    // Typed, allowlisted trace (src/services/scanTrace): per-field state from the
+    // expected reply lines, top candidates with evidence, verdict, rejection. Never the
+    // raw reply. requestId is random per request; backendSha is the deployed commit
+    // when Vercel provides it as 40 hex, else null. No other env is read.
+    const trace = buildRecognitionTrace({
+      reply,
+      requestId: newRequestId(),
+      backendSha: process.env.VERCEL_GIT_COMMIT_SHA,
+      model,
+      candidates: ranking.candidates,
+      candidateCount: ranking.candidateCount,
+      verdict: { status: match.status, reason: match.reason ?? null },
+    });
     const matchWire = {
       status: match.status,
       printingResolved: match.printingResolved,
@@ -734,7 +771,7 @@ export default async function handler(req: Request): Promise<Response> {
     // `candidates: []` keeps released clients (which open a picker on any list) honest;
     // evidence-backed suggestions travel in match.alternatives for the new UI.
     if (match.status === 'no_match') {
-      return json({ success: false, error: '無法辨識此卡牌', raw: reply, debug, candidates: [], match: matchWire }, 404);
+      return json({ success: false, error: '無法辨識此卡牌', debug, trace, candidates: [], match: matchWire }, 404);
     }
 
     // Card known, printing not: no price may be shown for it. Released clients see
@@ -744,12 +781,12 @@ export default async function handler(req: Request): Promise<Response> {
         success: false,
         lowConfidence: true,
         error: '已辨識卡牌，但無法確認版本，請選擇手上的版本',
-        raw: reply,
         card: match.best,
         candidates: match.alternatives,
         confidence: ranking.confidence,
         reason: ranking.reason,
         debug,
+        trace,
         match: matchWire,
       }, 200);
     }
@@ -761,8 +798,8 @@ export default async function handler(req: Request): Promise<Response> {
       confidence: ranking.confidence,
       candidates: [match.best, ...match.alternatives],
       reason: ranking.reason,
-      raw: reply,
       debug,
+      trace,
       match: matchWire,
     });
   } catch (e: any) {
