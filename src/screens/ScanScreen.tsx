@@ -15,6 +15,7 @@ import {
   SafeAreaView,
   LayoutChangeEvent,
   BackHandler,
+  AppState,
 } from 'react-native';
 import { CameraView, useCameraPermissions, CameraType } from 'expo-camera';
 import WebCamera, { WebCameraHandle } from '../components/WebCamera';
@@ -470,6 +471,28 @@ export default function ScanScreen({ navigation }: any) {
       lifecycle.setFocused(false);
     };
   }, [navigation]);
+
+  // CR 717c3fe P2 #2: leaving the app (inactive / background) usually keeps this route
+  // focused, so navigation blur never fired. Treat it like leaving the screen: cancel the
+  // running scan (its late result is dropped by the job guard, nothing previewed, added
+  // or charged) and drop the held retry photo, the preview and the photo-derived text.
+  // The system gallery picker backgrounds the app by itself — that is part of the scan,
+  // not leaving it. Back in the foreground the scanner is ready for a fresh scan.
+  const pickerOpenRef = useRef(false);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active' || pickerOpenRef.current || !mountedRef.current) return;
+      lifecycle.cancel();
+      resetScanUi();
+      setCandidateSelector({ visible: false, tier: 'mid', candidates: [] });
+      setCapturedPhotoUri(null);
+      setRecognizedText('');
+      setScanError(null);
+      setSearchError(null);
+      setSearchResults([]);
+    });
+    return () => sub.remove();
+  }, []);
 
   // 显式请求相机权限 - 修复 Android/iOS 权限问题（web 版跳過，由 WebCamera 直接處理）
   useEffect(() => {
@@ -958,13 +981,19 @@ export default function ScanScreen({ navigation }: any) {
     if (!job) return;
     const { signal } = job;
     try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        quality: 0.7,
-        // Native uploads these bytes; on web the picker already yields a data URL.
-        base64: !isWeb,
-      });
+      pickerOpenRef.current = true;
+      let result: ImagePicker.ImagePickerResult;
+      try {
+        result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: true,
+          quality: 0.7,
+          // Native uploads these bytes; on web the picker already yields a data URL.
+          base64: !isWeb,
+        });
+      } finally {
+        pickerOpenRef.current = false;
+      }
       if (!job.isCurrent()) return;
 
       if (!result.canceled && result.assets[0]?.uri) {
@@ -1076,16 +1105,29 @@ export default function ScanScreen({ navigation }: any) {
       setIsScanning(false);
     }
     // Fallback 到全圖 OCR
-    const trimmedText = isWeb
-      ? (await recognizeTextWeb(uri)).text.trim()
-      : (await performOcr(uri)).trim();
+    let trimmedText: string;
+    try {
+      trimmedText = isWeb ? (await recognizeTextWeb(uri)).text.trim() : (await performOcr(uri)).trim();
+    } catch (e) {
+      // CR 717c3fe P2 #1: after a service failure a throwing OCR keeps the typed failure
+      // and the retry of this photo instead of a generic image error.
+      if (!serviceFailed) throw e;
+      trimmedText = '';
+    }
     if (!job.isCurrent()) return;
     setRecognizedText(trimmedText);
     setIsProcessingOCR(false);
     setIsScanning(false);
 
     if (trimmedText.length > 0) {
-      const fallbackResult = await recognizeCardFromOcr(trimmedText);
+      let fallbackResult: Awaited<ReturnType<typeof recognizeCardFromOcr>>;
+      try {
+        fallbackResult = await recognizeCardFromOcr(trimmedText);
+      } catch (e) {
+        if (!serviceFailed) throw e;
+        if (job.isCurrent()) failGallery();
+        return;
+      }
       if (!job.isCurrent()) return;
       if (fallbackResult.success && fallbackResult.card) {
         handleRecognized(fallbackResult.card, fallbackResult.confidence ?? 0.85, fallbackResult.candidates, isAmbiguousPrinting(fallbackResult));

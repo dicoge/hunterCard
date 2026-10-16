@@ -249,18 +249,25 @@ async function runWebLocalFallback(
   // Local only (v39 PM review): this used to call io.recognizeFromImage, i.e. upload the
   // same photo to the service a SECOND time inside one scan (and one manual retry).
   // After a known service failure only on-device text recognition runs.
-  const trimmedText = (await io.ocrText(imageUri)).trim();
-  ui.setBusy(false);
-  ui.setRecognizedText(trimmedText);
-
-  if (trimmedText.length > 0) {
-    const fallbackResult = await io.recognizeFromOcr(trimmedText);
-    if (routeAmbiguousPrinting(fallbackResult, ui)) return;
-    if (fallbackResult.success && fallbackResult.card) {
-      ui.onRecognized(fallbackResult.card, fallbackResult.confidence ?? 0.85, fallbackResult.candidates);
-      return;
+  // CR 717c3fe P2 #1: a throwing OCR worker (Tesseract load / run) is "OCR found
+  // nothing" here — it must not escape and lose the typed service failure, or the
+  // screen drops the retry panel and web auto-scan resumes uploading.
+  try {
+    const trimmedText = (await io.ocrText(imageUri)).trim();
+    ui.setRecognizedText(trimmedText);
+    if (trimmedText.length > 0) {
+      const fallbackResult = await io.recognizeFromOcr(trimmedText);
+      if (routeAmbiguousPrinting(fallbackResult, ui)) { ui.setBusy(false); return; }
+      if (fallbackResult.success && fallbackResult.card) {
+        ui.setBusy(false);
+        ui.onRecognized(fallbackResult.card, fallbackResult.confidence ?? 0.85, fallbackResult.candidates);
+        return;
+      }
     }
+  } catch (e: any) {
+    console.warn('[scanFlow] local OCR failed after a service failure:', e?.name || 'Error');
   }
+  ui.setBusy(false);
   // Only reached after the service failed: local OCR found no card, and that is not a
   // verdict about the photo — no 「找不到匹配的卡牌」, no search list in its place.
   reportServiceFailure(ui, failure);
@@ -322,12 +329,29 @@ export async function runNativeCameraScan(imageUri: string, io: ScanFlowIo, ui: 
   // 後端不可用、逾時、或照片未通過上傳前檢查時，這段本地 OCR（expo-ocr-kit）仍照跑；
   // 它失敗只代表本地讀不到字，不代表照片有問題。Tesseract 不會在 native 執行。
   ui.setStatus('🔍 OCR 辨識中…');
-  const trimmedText = (await io.ocrText(imageUri)).trim();
+  let trimmedText: string;
+  try {
+    trimmedText = (await io.ocrText(imageUri)).trim();
+  } catch (e) {
+    // CR 717c3fe P2 #1 (native parity): after a service failure a throwing local OCR
+    // keeps the typed failure and the retry of the same photo.
+    if (!vision.serviceUnavailable) throw e;
+    ui.setBusy(false);
+    reportServiceFailure(ui, vision.failure);
+    return;
+  }
   ui.setRecognizedText(trimmedText);
   ui.setBusy(false);
 
   if (trimmedText.length > 0) {
-    const result = await io.recognizeFromOcr(trimmedText);
+    let result: RecognitionResult;
+    try {
+      result = await io.recognizeFromOcr(trimmedText);
+    } catch (e) {
+      if (!vision.serviceUnavailable) throw e;
+      reportServiceFailure(ui, vision.failure);
+      return;
+    }
     if (routeAmbiguousPrinting(result, ui)) return;
     if (result.success && result.card) {
       ui.setStatus('✅ 辨識完成', 4);

@@ -292,11 +292,70 @@ try {
     assert.equal(useScanSessionStore.getState().cardCount, count + 1);
     assert.equal(useScanSessionStore.getState().cards.at(-1).id, 'hBP01-051_hEB01_SR_hBP01-051_SR_02');
   });
+
+  console.log('CR 717c3fe P2 #2: app goes to the background');
+  const appState = async (next) => { await act(async () => { globalThis.__setAppState(next); await Promise.resolve(); }); await tick(10); };
+  await test('a failed scan holding a retry photo: background clears the panel and the held photo; foreground scans afresh', async () => {
+    providerReply = 'CARD_NUMBER: hBP01-010\nCHARACTER: 天音かなた';
+    providerDown = true;
+    ocrText = '';
+    await shutter();
+    assert.ok(byTestId('scan-service-retry'), 'retry photo held');
+    assert.ok(globalThis.__appStateListenerCount() >= 1, 'ScanScreen listens to AppState');
+    await appState('background');
+    assert.ok(!byTestId('scan-service-failure'), 'panel gone');
+    assert.ok(!byTestId('scan-service-retry'), 'held photo dropped');
+    await appState('active');
+    providerDown = false;
+    const takes = globalThis.__nativeCameraTakes;
+    await shutter();
+    assert.equal(globalThis.__nativeCameraTakes, takes + 1, 'a NEW photo was taken');
+    assert.ok(byTestId('scan-match-best'), 'foreground scanner works');
+    await click(byTestId('scan-match-retake'));
+  });
+  await test('a scan still on the wire when the app goes inactive: its late result is dropped — no preview, no add, no charge', async () => {
+    useScanDiagnosticsStore.getState().clear();
+    const remaining = useScanQuotaStore.getState().getRemaining();
+    const count = useScanSessionStore.getState().cardCount;
+    providerDelayMs = 200;
+    const before = bodies.length;
+    await click(byTestId('scan-primary-action'));
+    for (let i = 0; i < 40 && bodies.length === before; i++) await tick(5);
+    assert.equal(bodies.length, before + 1, 'request in flight');
+    await appState('inactive');
+    await tick(400);
+    providerDelayMs = 0;
+    assert.ok(!byTestId('scan-match-best'), 'no stale preview');
+    assert.ok(!byTestId('scan-service-failure'));
+    assert.equal(useScanQuotaStore.getState().getRemaining(), remaining);
+    assert.equal(useScanSessionStore.getState().cardCount, count);
+    assert.equal(useScanDiagnosticsStore.getState().entries.at(-1).outcome, 'cancelled');
+    await appState('active');
+    await shutter();
+    assert.ok(byTestId('scan-match-best'), 'usable again after foreground');
+    await click(byTestId('scan-match-retake'));
+  });
+  await test('the system gallery picker backgrounding the app is part of the scan: the pick is still recognised once', async () => {
+    globalThis.__nativePickerAsset = { uri: 'file:///cache/ImagePicker/pick.jpg', base64: ORIGINAL_B64, width: 1200, height: 1680 };
+    globalThis.__onPickerOpen = async () => { globalThis.__setAppState('background'); globalThis.__setAppState('active'); };
+    const before = bodies.length;
+    await click(byTestId('scan-gallery-action'));
+    for (let i = 0; i < 40 && bodies.length === before; i++) await tick(10);
+    await tick(80);
+    globalThis.__onPickerOpen = undefined;
+    assert.equal(bodies.length, before + 1, 'gallery photo uploaded once');
+    assert.ok(byTestId('scan-match-best'), 'gallery result shown');
+    await click(byTestId('scan-match-retake'));
+  });
 } finally {
   await act(async () => root.unmount());
   host.remove();
   __setSafeAreaInsetsForTest(null);
 }
+await test('unmount removes the AppState and hardware-back listeners', () => {
+  assert.equal(globalThis.__appStateListenerCount(), 0);
+  assert.equal(globalThis.__androidBackListenerCount(), 0);
+});
 
 if ((process.exitCode ?? 0) === 0) console.log(`\n✅ scan-v39-native-render: ${passed} checks passed`);
 else console.error('\n❌ scan-v39-native-render failed');

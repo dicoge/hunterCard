@@ -23,3 +23,16 @@ globalThis.__androidBackPress = () => {
   return false;
 };
 globalThis.__androidBackListenerCount = () => backListeners.length;
+
+// AppState for rendered tests: globalThis.__setAppState('background' | 'inactive' | 'active')
+// notifies 'change' listeners like a device does.
+const appStateListeners = new Set();
+export const AppState = {
+  currentState: 'active',
+  addEventListener(event, fn) {
+    if (event === 'change') appStateListeners.add(fn);
+    return { remove() { appStateListeners.delete(fn); } };
+  },
+};
+globalThis.__setAppState = (next) => { AppState.currentState = next; for (const fn of [...appStateListeners]) fn(next); };
+globalThis.__appStateListenerCount = () => appStateListeners.size;

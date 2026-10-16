@@ -293,6 +293,44 @@ await test('web: local OCR after a service failure can still find a card (shown 
   assert.deepEqual(seen.recognized, ['hBP01-010_hBP01_U_hBP01-010_U']);
 });
 
+// CR 717c3fe P2 #1: a throwing local OCR after a service failure keeps the typed failure.
+const ocrThrows = async () => { throw new Error('ocr worker failed'); };
+await test('web: OCR throws after a 502 PROVIDER_BUSY → service failure "busy" kept, no error escapes, no second upload', async () => {
+  let image = 0;
+  const { seen, ui } = recorder();
+  await runWebCameraScan(JPEG, baseIo({
+    callRecognitionApi: async () => ({ status: 502, body: { success: false, code: 'PROVIDER_BUSY' } }),
+    recognizeFromImage: async () => { image += 1; return { success: false }; },
+    ocrText: ocrThrows,
+  }), ui);
+  assert.deepEqual(seen.failure, ['busy']);
+  assert.deepEqual(seen.scanError, []);
+  assert.equal(image, 0);
+});
+await test('web: recognizeFromOcr throws after a timeout → "timeout" kept', async () => {
+  const { seen, ui } = recorder();
+  await runWebCameraScan(JPEG, baseIo({
+    callRecognitionApi: async () => { throw Object.assign(new Error('t'), { name: 'TimeoutError' }); },
+    recognizeFromOcr: ocrThrows,
+  }), ui);
+  assert.deepEqual(seen.failure, ['timeout']);
+});
+for (const which of ['ocrText', 'recognizeFromOcr']) {
+  await test(`native: ${which} throws after a service failure → typed failure kept, no 「找不到」`, async () => {
+    const { seen, ui } = recorder();
+    await runNativeCameraScan('file:///crop.jpg', baseIo({
+      recognizeFromImage: async () => ({ success: false, serviceUnavailable: true, failure: 'network' }),
+      [which]: ocrThrows,
+    }), ui);
+    assert.deepEqual(seen.failure, ['network']);
+    assert.deepEqual(seen.searchError, []);
+  });
+}
+await test('native: an OCR throw WITHOUT a service failure still propagates (unchanged: the screen shows its scan error)', async () => {
+  const { ui } = recorder();
+  await assert.rejects(runNativeCameraScan('file:///crop.jpg', baseIo({ recognizeFromImage: async () => ({ success: false, error: '' }), ocrText: ocrThrows }), ui));
+});
+
 console.log('#4 readable summary of the user\'s actual export');
 await test('build 39 and build 38 are separate groups (newest first); received name/number and the read number\'s real owner are readable', async () => {
   const fx = JSON.parse(fs.readFileSync(new URL('./fixtures/v39-user-logs/export-20261016.json', import.meta.url), 'utf8'));

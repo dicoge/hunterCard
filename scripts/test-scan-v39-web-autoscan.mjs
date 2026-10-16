@@ -138,6 +138,20 @@ try {
     assert.equal(useScanSessionStore.getState().cardCount, 0);
     assert.equal(useScanQuotaStore.getState().getRemaining(), remaining);
   });
+  await test('CR 717c3fe P2 #1: local OCR THROWS after a service failure → typed failure kept, panel + same-photo retry, auto-scan paused: one capture, one upload past the cooldown', async () => {
+    await click(byTestId('scan-match-retake'));   // close the preview → auto-scan may run again
+    providerDown = true;
+    globalThis.__webOcrThrows = true;
+    const takes = globalThis.__webCameraTakes, uploads = bodies.length;
+    assert.ok(await waitFor(() => byTestId('scan-service-failure')), 'service panel shown although OCR threw');
+    await tick(3600);
+    assert.equal(globalThis.__webCameraTakes, takes + 1, 'exactly one capture');
+    assert.equal(bodies.length, uploads + 1, 'exactly one remote request');
+    assert.ok(byTestId('scan-service-retry'), 'same-photo retry offered');
+    assert.ok(byTestId('scan-service-failure').textContent.includes('辨識服務暫時無法使用'));
+    assert.ok(!host.textContent.includes('找不到'));
+    globalThis.__webOcrThrows = false;
+  });
 } finally {
   await act(async () => root.unmount());
   host.remove();
