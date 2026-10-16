@@ -54,10 +54,11 @@ const { useScanSessionStore } = await import('../../src/stores/scanSessionStore.
 const { useFavoritesStore } = await import('../../src/store/favoritesStore.ts');
 const { useAccountSyncStateStore } = await import('../../src/store/accountSyncStateStore.ts');
 const { useScanQuotaStore } = await import('../../src/store/scanQuotaStore.ts');
+const { useAccountSyncOutboxStore } = await import('../../src/store/accountSyncOutboxStore.ts');
 const { FEATURES } = await import('../../src/config/releaseFlags.ts');
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-for (const s of [useAuthStore, useDeckStore, useSettingsStore, useScanSessionStore, useAccountSyncStateStore, useFavoritesStore]) {
+for (const s of [useAuthStore, useDeckStore, useSettingsStore, useScanSessionStore, useAccountSyncStateStore, useFavoritesStore, useAccountSyncOutboxStore]) {
   await s.persist?.rehydrate?.();
 }
 installAccountSyncBinding();
@@ -68,6 +69,9 @@ const commands = {
   },
   async logout() {
     useAuthStore.setState({ session: null, user: null, isAuthenticated: false, isGuest: true, role: 'guest' });
+  },
+  async deleteAccount() {
+    await useAuthStore.getState().deleteUserAccount();
   },
   async own({ cardNumber, version, qty }) { useDeckStore.getState().setOwned(cardNumber, version, qty); },
   async scan({ card }) { useScanSessionStore.getState().addCard(card, { force: true }); },
@@ -110,6 +114,7 @@ const commands = {
       requests: requests.map((r) => r.method),
       pushedFields: [...new Set(requests.filter((r) => r.body?.patch).flatMap((r) => Object.keys(r.body.patch)))].sort(),
       storeMvp: !FEATURES.favorites,
+      parkedOwners: useAccountSyncOutboxStore.getState().owners(),
     };
   },
 };

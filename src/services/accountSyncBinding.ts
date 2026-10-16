@@ -34,6 +34,7 @@ import {
   clearAccountScopedStores,
   isApplyingServerState,
   reconcileAccountSync,
+  parkPendingForOwner,
 } from './accountSyncOrchestrator';
 
 const PUSH_DEBOUNCE_MS = 750;
@@ -136,7 +137,9 @@ function handleSessionChange(nextSession: string | null | undefined, prevSession
   if (!nextSession) {
     // Logout — clear account-scoped stores (incl. the 估值清單, v41) so the next
     // person on this device sees nothing of this account, and the device's data is
-    // guest data again.
+    // guest data again. Edits the server has not acknowledged yet (offline, or still in
+    // the push debounce) are parked for this account first, not silently lost.
+    parkPendingForOwner();
     clearAccountScopedStores();
     resetLastKnownRevision();
     useAccountSyncStateStore.getState().reset();

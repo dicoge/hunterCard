@@ -204,6 +204,65 @@ try {
     assert.equal((await serverSnapshot(A.session)).collection['hBP04-001|BASE'], 2, 'and pushed');
   });
 
+  // PM 2026-10-17: unacknowledged edits must not be lost silently at sign-out / switch.
+  await test('edit then sign out INSIDE the push debounce (online): the guest sees nothing; the same account signing in again gets the edit back (account D) and it reaches the server', async () => {
+    const D = await server.createSession('two-device-user-d');
+    const userD = { ...D.user };
+    const p = await device('outbox-1');
+    await act(p, 'login', { session: D.session, user: userD });
+    await p.call('own', { cardNumber: 'hBP05-001', version: 'BASE', qty: 7 });   // no settle: still in the debounce
+    let s = await act(p, 'logout');
+    assert.equal(s.collection['hBP05-001|BASE'], undefined, 'not shown to the next person');
+    assert.deepEqual(s.parkedOwners, [userD.internalId], 'parked for account D only');
+    assert.equal((await serverSnapshot(D.session)).collection['hBP05-001|BASE'], undefined, 'it had not reached the server');
+    s = await act(p, 'login', { session: D.session, user: userD });
+    assert.equal(s.collection['hBP05-001|BASE'], 7, 'restored for D');
+    assert.deepEqual(s.parkedOwners, [], 'cleared after the server acknowledged');
+    assert.equal((await serverSnapshot(D.session)).collection['hBP05-001|BASE'], 7, 'and synced');
+    await p.kill();
+  });
+
+  await test('offline edit → sign out → ANOTHER account (B) signs in: B sees none of it and B\'s account gets none of it; the owner (E) later gets it back', async () => {
+    const E = await server.createSession('two-device-user-e');
+    const userE = { ...E.user };
+    const p = await device('outbox-2');
+    await act(p, 'login', { session: E.session, user: userE });
+    await p.call('offline', { value: true });
+    await act(p, 'own', { cardNumber: 'hBP05-002', version: 'BASE', qty: 3 });
+    await act(p, 'scan', { card: KANATA });
+    await act(p, 'logout');
+    await p.call('offline', { value: false });
+    let s = await act(p, 'login', { session: B.session, user: userB });
+    assert.equal(s.collection['hBP05-002|BASE'], undefined, 'B does not see E\'s parked edit');
+    assert.equal(s.scans.length, 0);
+    assert.equal((await serverSnapshot(B.session)).collection['hBP05-002|BASE'], undefined, 'never written to B');
+    assert.deepEqual(s.parkedOwners, [userE.internalId], 'still parked for E');
+    await act(p, 'logout');
+    s = await act(p, 'login', { session: E.session, user: userE });
+    assert.equal(s.collection['hBP05-002|BASE'], 3);
+    const snapE = await serverSnapshot(E.session);
+    assert.equal(snapE.collection['hBP05-002|BASE'], 3, 'E\'s parked edit reached E\'s account');
+    assert.ok(snapE.scanSession.entries.some((e) => e.card.cardNumber === 'hBP01-010'), 'parked scan too');
+    assert.deepEqual(s.parkedOwners, []);
+    await p.kill();
+  });
+
+  await test('account deletion discards anything parked for that account (never restored)', async () => {
+    const C = await server.createSession('two-device-user-c');
+    const p = await device('outbox-3');
+    await act(p, 'login', { session: C.session, user: { ...C.user } });
+    await p.call('offline', { value: true });
+    await act(p, 'own', { cardNumber: 'hBP05-003', version: 'BASE', qty: 1 });
+    let s = await act(p, 'logout');
+    assert.deepEqual(s.parkedOwners, [C.user.internalId]);
+    await act(p, 'login', { session: C.session, user: { ...C.user } });   // still offline: nothing restored yet
+    await p.call('offline', { value: false });
+    s = await act(p, 'deleteAccount');
+    assert.deepEqual(s.parkedOwners, [], 'parked data of the deleted account is gone');
+    assert.deepEqual(s.collection, {});
+    await p.kill();
+  });
+
   await test('sign out on phone 1: the account data (incl. the scan list) leaves the device; the next guest starts empty', async () => {
     const s = await act(phone1, 'logout');
     assert.deepEqual(s.collection, {});

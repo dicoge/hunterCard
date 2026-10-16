@@ -61,6 +61,7 @@ import type { PriceAlert } from '../utils/priceAlerts';
 import { FEATURES } from '../config/releaseFlags';
 import { useScanSessionStore, scanSessionForSync } from '../stores/scanSessionStore';
 import { useAccountSyncStateStore } from '../store/accountSyncStateStore';
+import { useAccountSyncOutboxStore, type OutboxEntry } from '../store/accountSyncOutboxStore';
 import { laterClear, unionScanEntries, emptyScanSession } from '../utils/scanSessionSync';
 
 export const ACCOUNT_SYNC_ORCHESTRATOR_VERSION = 2;
@@ -598,6 +599,9 @@ export async function pushAccountSyncFromStores(
         usePriceAlertStore.getState().clearRemovals();
         useScanSessionStore.getState().clearSyncTombstones();
         useAccountSyncStateStore.getState().markSynced(lastKnownRevision, seqAtPush);
+        // Anything this owner had parked is now on the server too.
+        const owner = useAccountSyncStateStore.getState().ownerId;
+        if (owner) useAccountSyncOutboxStore.getState().discard(owner);
       }
       return confirmed;
     };
@@ -661,6 +665,30 @@ export function clearAccountScopedStores(): void {
   }
 }
 
+/**
+ * Before the device drops the current owner's data (sign-out, another account), park
+ * the edits the server has not acknowledged in that owner's outbox (v41) — they come
+ * back when the same account signs in again, and are never shown to anyone else.
+ * Nothing is parked without a server-verified owner or without pending changes.
+ */
+export function parkPendingForOwner(): boolean {
+  const st = useAccountSyncStateStore.getState();
+  if (!st.ownerId || st.dirtySeq === st.ackedSeq) return false;
+  const deck = useDeckStore.getState();
+  useAccountSyncOutboxStore.getState().save(st.ownerId, {
+    patch: snapshotFromLocalStores(),
+    tombstones: {
+      favoritesRemovedAt: { ...useFavoritesStore.getState().removals },
+      priceAlertsRemovedAt: { ...usePriceAlertStore.getState().removals },
+      deletedDeckIds: { ...deck.deletedDeckIds },
+      collectionChangedKeys: { ...deck.collectionChangedKeys },
+      scanRemovedAt: { ...useScanSessionStore.getState().removals },
+    },
+    savedAt: new Date().toISOString(),
+  });
+  return true;
+}
+
 function currentUserId(): string | null {
   const id = (useAuthStore.getState() as any).user?.internalId;
   return typeof id === 'string' && id ? id : null;
@@ -701,16 +729,70 @@ export async function reconcileAccountSync(
   const foreignOwner = userId ? (syncState.ownerId !== null && syncState.ownerId !== userId) : false;
   const legacySwitch = !userId && !!prevSession && prevSession !== session;
   if (foreignOwner || legacySwitch) {
+    // The previous owner's unacknowledged edits are parked for them, not lost.
+    parkPendingForOwner();
     clearAccountScopedStores();
     useAccountSyncStateStore.getState().reset();
   }
 
-  if (!foreignOwner && !legacySwitch && localStoresHaveData()) {
+  const guestData = !foreignOwner && !legacySwitch && localStoresHaveData();
+  const parked = userId ? useAccountSyncOutboxStore.getState().take(userId) : null;
+  if (userId && parked) {
+    return restoreParkedIntoAccount(session, userId, parked, guestData);
+  }
+  if (guestData) {
     return mergeGuestDataIntoAccount(session, userId);
   }
   const snap = await hydrateAccountSyncFromServer(session);
   if (snap && stillOn()) useAccountSyncStateStore.getState().adoptOwner(userId, snap.revision ?? 0);
   return snap ? 'hydrated' : 'skipped';
+}
+
+/**
+ * The same account signs in again on this device with edits parked from before (v41):
+ * merge them onto the server's current snapshot with their deletion markers (the same
+ * rules as a 409 merge), then any guest data made since, and push. The outbox entry is
+ * dropped only when the server acknowledges (pushAccountSyncFromStores).
+ */
+async function restoreParkedIntoAccount(
+  session: string,
+  userId: string,
+  parked: OutboxEntry,
+  withGuestData: boolean,
+): Promise<'merged' | 'skipped'> {
+  const stillOn = () => sessionStillCurrent(session) && currentUserId() === userId;
+  const done = await withLock(async () => {
+    const server = await pullAccountSnapshot(session);
+    if (!stillOn()) return false;
+    let patch = activeDomainsOnly(mergeLocalOntoServer(server, parked.patch, parked.tombstones));
+    if (withGuestData) {
+      const asSnapshot = { ...(server ?? {}), ...patch, revision: server?.revision ?? 0 } as AccountSyncSnapshot;
+      patch = mergeGuestOntoServer(asSnapshot, snapshotFromLocalStores());
+    }
+    applyMergedPatchToStores(patch);
+    // Re-arm the parked deletion markers so a 409 on the push still honours them.
+    applyingServerState = true;
+    try {
+      const t = parked.tombstones;
+      useDeckStore.setState((s) => ({
+        ...s,
+        deletedDeckIds: { ...(t.deletedDeckIds ?? {}), ...s.deletedDeckIds },
+        collectionChangedKeys: { ...(t.collectionChangedKeys ?? {}), ...s.collectionChangedKeys },
+      }));
+      useScanSessionStore.setState((s) => ({ ...s, removals: { ...(t.scanRemovedAt ?? {}), ...s.removals } }));
+    } finally {
+      applyingServerState = false;
+    }
+    const base = typeof server?.revision === 'number' ? server.revision : 0;
+    setLastKnownRevision(base);
+    const st = useAccountSyncStateStore.getState();
+    st.adoptOwner(userId, base);
+    st.markDirty();
+    return true;
+  });
+  if (!done) return 'skipped';
+  await pushAccountSyncFromStores(session);
+  return 'merged';
 }
 
 async function mergeGuestDataIntoAccount(session: string, userId: string | null): Promise<'merged' | 'skipped'> {

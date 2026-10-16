@@ -28,6 +28,7 @@ import {
   completePendingWebGoogleLogin,
   hasPendingWebGoogleRedirectReturn,
 } from '../services/authService';
+import { useAccountSyncOutboxStore } from './accountSyncOutboxStore';
 import {
   friendlyAuthErrorMessage,
   isCancelAuthError,
@@ -267,6 +268,10 @@ export const useAuthStore = create<AuthStore>()(
             error: null,
             role: 'guest',
           });
+          // The account no longer exists: any pending edits parked for it on this
+          // device (account-sync outbox, v41) are discarded, never restored. Done after
+          // the session is cleared so it also removes what that sign-out just parked.
+          try { useAccountSyncOutboxStore.getState().discard(user.internalId); } catch { /* best effort */ }
         } catch (err: any) {
           set({ isLoading: false, error: err.message || 'Failed to delete account' });
           throw err;

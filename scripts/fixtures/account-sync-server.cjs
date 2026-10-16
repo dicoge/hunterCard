@@ -201,6 +201,8 @@ process.env.AUTH_SESSION_SECRET = 'two-device-test-secret';
 
 const { issueSession } = require(path.join(outDir, 'api/_lib/session.js'));
 const nodeHandler = require(path.join(outDir, 'api/auth/[action].js')).default;
+// Vercel serves the static sibling route before the dynamic [action] one.
+const deleteHandler = require(path.join(outDir, 'api/auth/delete-account.js')).default;
 const identityStore = require(path.join(outDir, 'api/_lib/identity-store.js'));
 
 async function createSession(subject) {
@@ -223,7 +225,8 @@ function start() {
         end(b) { if (b != null) this._body = String(b); return this; },
       };
       try {
-        await nodeHandler({ method: req.method, url: req.url, headers: { ...req.headers, host: 'example.test' }, body }, nodeRes);
+        const handler = req.url.split('?')[0] === '/api/auth/delete-account' ? deleteHandler : nodeHandler;
+        await handler({ method: req.method, url: req.url, headers: { ...req.headers, host: 'example.test' }, body }, nodeRes);
       } catch (e) {
         nodeRes._status = 500; nodeRes._body = JSON.stringify({ error: 'handler_threw' });
       }
