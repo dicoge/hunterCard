@@ -51,12 +51,12 @@ export function __seedHomeSeriesCacheForTest(catalog: SeriesCatalog | null): voi
 // the shipped search vocabulary (COLOR_TO_CN in SearchResultsScreen resolves
 // both 藍色 and 青色 onto `blue`), so behavior is unchanged.
 export const HOME_COLOR_CHIPS = [
-  { label: '白', query: '白色', color: CATEGORY_COLORS.white },
-  { label: '藍', query: '藍色', color: CATEGORY_COLORS.blue },
-  { label: '綠', query: '綠色', color: CATEGORY_COLORS.green },
-  { label: '赤', query: '紅色', color: CATEGORY_COLORS.red },
-  { label: '紫', query: '紫色', color: CATEGORY_COLORS.purple },
-  { label: '黃', query: '黃色', color: CATEGORY_COLORS.yellow },
+  { label: '白', labelKey: 'home_chip_white', query: '白色', color: CATEGORY_COLORS.white },
+  { label: '藍', labelKey: 'home_chip_blue', query: '藍色', color: CATEGORY_COLORS.blue },
+  { label: '綠', labelKey: 'home_chip_green', query: '綠色', color: CATEGORY_COLORS.green },
+  { label: '赤', labelKey: 'home_chip_red', query: '紅色', color: CATEGORY_COLORS.red },
+  { label: '紫', labelKey: 'home_chip_purple', query: '紫色', color: CATEGORY_COLORS.purple },
+  { label: '黃', labelKey: 'home_chip_yellow', query: '黃色', color: CATEGORY_COLORS.yellow },
 ] as const;
 
 // Pen Quick Actions (node OJimN): four $app-surface tiles with an accent glyph.
@@ -201,7 +201,8 @@ export default function HomeScreen({ navigation }: any) {
             testID={`home-color-${chip.label}`}
           >
             <View style={[styles.colorDot, { backgroundColor: chip.color }]} />
-            <Text style={styles.colorLabel}>{chip.label}</Text>
+            {/* shown in the app language; testID + query stay language-neutral */}
+            <Text style={styles.colorLabel}>{t(chip.labelKey)}</Text>
           </TouchableOpacity>
         ))}
       </View>

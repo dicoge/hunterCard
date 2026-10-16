@@ -191,6 +191,19 @@ export const zh = {
   me_guest_name: '訪客',
   // DIC-1427: Pen App/07 我的 collection hub (frame siVsa).
   nav_me: '我的',
+  // v41 (Grok catalogue QA): the bottom tab bar + home color chips follow the
+  // language. zh values are the Pen copy the shell always showed.
+  shell_tab_home: '首頁',
+  shell_tab_search: '搜尋',
+  shell_tab_scan: '掃描',
+  shell_tab_deck: '牌組',
+  shell_tab_me: '我的',
+  home_chip_white: '白',
+  home_chip_blue: '藍',
+  home_chip_green: '綠',
+  home_chip_red: '赤',
+  home_chip_purple: '紫',
+  home_chip_yellow: '黃',
   me_account_manage: '帳號與設定',
   me_guest_hint: '登入以跨裝置同步收藏',
   me_stat_owned: '收藏張數',

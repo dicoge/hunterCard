@@ -333,6 +333,37 @@ await test('CardDetail price value carries Pen 30/700 $text-primary styling (ful
   } finally { await cleanup(); }
 });
 
+// v41 (Grok catalogue QA 2026-10-17): the bottom tab bar and the home color chips
+// stayed Chinese in 日本語. They now follow the app language; zh keeps the Pen copy,
+// testIDs and chip queries stay language-neutral.
+await test('Home bottom tabs + color chips follow the language (zh Pen copy ↔ 日本語), testIDs and queries unchanged', async () => {
+  const { useSettingsStore } = await import('../src/store/settingsStore.ts');
+  const tabText = (c, key) => c.querySelector(`[data-testid="shell-bottom-tab-${key}-label"]`)?.textContent;
+  const chipTexts = (c) => [...c.querySelectorAll('[data-testid^="home-color-"]:not([data-testid="home-color-chips"])')].map((n) => n.textContent);
+  const before = useSettingsStore.getState().preferredLanguage;
+  try {
+    useSettingsStore.setState({ preferredLanguage: 'zh' });
+    let r = await renderHome();
+    try {
+      assert.deepEqual(['home', 'search', 'deck', 'me'].map((k) => tabText(r.container, k)), ['首頁', '搜尋', '牌組', '我的'], 'zh = Pen copy');
+      assert.deepEqual(chipTexts(r.container), ['白', '藍', '綠', '赤', '紫', '黃']);
+    } finally { await r.cleanup(); }
+    useSettingsStore.setState({ preferredLanguage: 'ja' });
+    const calls = [];
+    r = await renderHome((route, params) => calls.push([route, params]));
+    try {
+      assert.deepEqual(['home', 'search', 'deck', 'me'].map((k) => tabText(r.container, k)), ['ホーム', '検索', 'デッキ', 'マイページ'], 'ja tab labels');
+      assert.deepEqual(chipTexts(r.container), ['白', '青', '緑', '赤', '紫', '黄'], 'ja chip labels');
+      const blue = r.container.querySelector('[data-testid="home-color-藍"]');
+      assert.ok(blue, 'chip testID unchanged in ja');
+      await act(async () => blue.click());
+      assert.deepEqual(calls, [['SearchResults', { query: '藍色' }]], 'chip query unchanged in ja');
+    } finally { await r.cleanup(); }
+  } finally {
+    useSettingsStore.setState({ preferredLanguage: before });
+  }
+});
+
 seedSearchCache(null, null);
 __seedHomeSeriesCacheForTest(null);
 
