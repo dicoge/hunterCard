@@ -693,6 +693,62 @@ await test('W7 push: re-scheduled push after 409 rethrow STILL drops the tombsto
   assert.deepEqual(retryFavs, [], 'W7: re-scheduled push retry patch drops the tombstoned key — the delete survived the whole cycle');
 });
 
+// ── CR 2026-10-17: three-way merge against the device's last-matched baseline ──
+const scanEntry = (id, at) => ({
+  instanceId: id, scannedAt: at, card: { id: 'c', cardNumber: 'hBP01-010', name: 'n', sellPrice: null },
+  priceVersions: [], selectedVersion: 0, versionConfident: true,
+});
+await test('CR merge: with a baseline, an untouched entity the server no longer has stays deleted (collection / deck / scan)', () => {
+  const deck = { id: 'd', name: 'x', updatedAt: '2026-10-01T00:00:00Z', oshi: [], main: [], yell: [] };
+  const baseline = { collection: { 'gone|BASE': 2, 'kept|BASE': 1 }, decks: { d: deck.updatedAt }, scans: ['s1', 's2'] };
+  const merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, collection: { 'kept|BASE': 1 }, decks: [], scanSession: { entries: [scanEntry('s2', '2026-10-02T00:00:00Z')], clearedAt: null } },
+    { collection: { 'gone|BASE': 2, 'kept|BASE': 1, 'new|BASE': 3 }, decks: [deck],
+      scanSession: { entries: [scanEntry('s1', '2026-10-01T00:00:00Z'), scanEntry('s2', '2026-10-02T00:00:00Z'), scanEntry('s3', '2026-10-03T00:00:00Z')], clearedAt: null } },
+    { collectionChangedKeys: { 'new|BASE': 't' } },
+    baseline,
+  );
+  assert.equal(merged.collection['gone|BASE'], undefined, 'deleted elsewhere, untouched here → stays deleted');
+  assert.equal(merged.collection['new|BASE'], 3, 'a local addition is kept');
+  assert.equal(merged.decks.length, 0, 'deck deleted elsewhere, not edited here → stays deleted');
+  assert.deepEqual(merged.scanSession.entries.map((e) => e.instanceId), ['s2', 's3'], 'scan removed elsewhere stays removed; a new local scan is kept');
+});
+await test('CR merge: a remote decrease wins over an untouched local value; a local edit after the baseline still wins', () => {
+  const baseline = { collection: { 'a|BASE': 5, 'b|BASE': 5 }, decks: {}, scans: null };
+  const merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, collection: { 'a|BASE': 2, 'b|BASE': 2 } },
+    { collection: { 'a|BASE': 5, 'b|BASE': 7 } },
+    { collectionChangedKeys: { 'b|BASE': 't' } },
+    baseline,
+  );
+  assert.equal(merged.collection['a|BASE'], 2);
+  assert.equal(merged.collection['b|BASE'], 7);
+});
+await test('CR merge: a deck edited here after the baseline is kept even if deleted elsewhere (no silent loss of an edit)', () => {
+  const deck = { id: 'd', name: 'edited', updatedAt: '2026-10-05T00:00:00Z', oshi: [], main: [], yell: [] };
+  const merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, decks: [] }, { decks: [deck] }, {},
+    { collection: {}, decks: { d: '2026-10-01T00:00:00Z' }, scans: [] },
+  );
+  assert.equal(merged.decks.length, 1);
+});
+await test('CR merge: without a baseline (or a server without the scan list) the old union / MAX rules are unchanged', () => {
+  const merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, collection: {} },
+    { collection: { 'a|BASE': 2 }, scanSession: { entries: [scanEntry('s1', '2026-10-01T00:00:00Z')], clearedAt: null } },
+    {},
+  );
+  assert.equal(merged.collection['a|BASE'], 2);
+  assert.equal(merged.scanSession.entries.length, 1);
+  const oldServer = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7 },
+    { scanSession: { entries: [scanEntry('s1', '2026-10-01T00:00:00Z')], clearedAt: null } },
+    {},
+    { collection: {}, decks: {}, scans: ['s1'] },
+  );
+  assert.equal(oldServer.scanSession.entries.length, 1, 'a server that does not carry the list cannot delete from it');
+});
+
 if ((process.exitCode ?? 0) === 0) {
   console.log(`\n✅ account remote-sync orchestrator: ${passed} checks passed`);
 } else {

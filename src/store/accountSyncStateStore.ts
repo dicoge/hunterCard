@@ -10,6 +10,10 @@
  *   lastRevision  the revision of the snapshot this device last saw / wrote, so a
  *                 pending push after a restart goes out against the right base.
  *   lastSyncedAt  when this device last matched the server.
+ *   baseline      what the server held the last time this device matched it
+ *                 (collection quantities, deck id → updatedAt, scan ids). A merge
+ *                 compares against it so an entity the device did not touch since
+ *                 but another device deleted stays deleted (CR 2026-10-17).
  *
  * Nothing here is account data itself; it never leaves the device.
  */
@@ -17,22 +21,31 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import platformStorage from '../stores/storage';
 
+export interface SyncBaseline {
+  collection: Record<string, number>;
+  decks: Record<string, string>;
+  /** Scan instance ids; null when the server did not carry the scan list. */
+  scans: string[] | null;
+}
+
 export interface AccountSyncState {
   ownerId: string | null;
   dirtySeq: number;
   ackedSeq: number;
   lastRevision: number;
   lastSyncedAt: string | null;
+  baseline: SyncBaseline | null;
 
   markDirty: () => void;
   /** The server holds everything up to `seq`, at `revision`. */
   markSynced: (revision: number, seq: number) => void;
   /** Local stores now hold `ownerId`'s data, matching server `revision`. */
   adoptOwner: (ownerId: string | null, revision: number) => void;
+  setBaseline: (baseline: SyncBaseline | null) => void;
   reset: () => void;
 }
 
-const EMPTY = { ownerId: null, dirtySeq: 0, ackedSeq: 0, lastRevision: 0, lastSyncedAt: null };
+const EMPTY = { ownerId: null, dirtySeq: 0, ackedSeq: 0, lastRevision: 0, lastSyncedAt: null, baseline: null };
 
 export const useAccountSyncStateStore = create<AccountSyncState>()(
   persist(
@@ -50,6 +63,7 @@ export const useAccountSyncStateStore = create<AccountSyncState>()(
         ackedSeq: s.dirtySeq,
         lastSyncedAt: new Date().toISOString(),
       })),
+      setBaseline: (baseline) => set({ baseline }),
       reset: () => set({ ...EMPTY }),
     }),
     {
@@ -62,6 +76,7 @@ export const useAccountSyncStateStore = create<AccountSyncState>()(
         ackedSeq: s.ackedSeq,
         lastRevision: s.lastRevision,
         lastSyncedAt: s.lastSyncedAt,
+        baseline: s.baseline,
       }),
     },
   ),

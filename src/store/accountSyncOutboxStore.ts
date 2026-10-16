@@ -16,6 +16,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import platformStorage from '../stores/storage';
 import type { AccountSyncPatch } from '../services/accountSyncClient';
+import type { SyncBaseline } from './accountSyncStateStore';
 
 export interface OutboxTombstones {
   favoritesRemovedAt?: Record<string, string>;
@@ -28,6 +29,8 @@ export interface OutboxTombstones {
 export interface OutboxEntry {
   patch: AccountSyncPatch;
   tombstones: OutboxTombstones;
+  /** What the server held when this device last matched it (deletion provenance). */
+  baseline?: SyncBaseline | null;
   savedAt: string;
 }
 

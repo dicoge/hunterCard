@@ -3,7 +3,9 @@
  * Node process = its own copy of every store, the REAL account-sync binding and
  * orchestrator, persisted to its own file (DEVICE_STORE) so a restart is real. Its
  * fetch goes to the local test server (SYNC_PORT); `offline` makes it fail like a
- * phone without network. Driven over IPC; never touches a real account or network.
+ * phone without network; `hold` parks the next sync GET/POST in flight until
+ * `release` (CR 2026-10-17 race regressions). Driven over IPC; never touches a real
+ * account or network.
  */
 import { register } from 'node:module';
 import { JSDOM } from 'jsdom';
@@ -34,11 +36,18 @@ let offline = false;
 let inflight = 0;
 let lastActivity = Date.now();
 const requests = [];
+const holds = [];     // { method, gate, release, held }
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (input, init = {}) => {
   const url = String(input);
   if (!url.includes('/api/auth/')) throw new Error(`device made an unexpected request: ${url}`);
-  if (url.includes('/api/auth/sync')) requests.push({ method: init.method ?? 'GET', at: Date.now(), body: init.body ? JSON.parse(init.body) : null });
+  const method = init.method ?? 'GET';
+  if (url.includes('/api/auth/sync')) {
+    const auth = init.headers?.Authorization ?? init.headers?.authorization ?? '';
+    requests.push({ method, at: Date.now(), bearer: auth.replace(/^Bearer /, ''), body: init.body ? JSON.parse(init.body) : null });
+    const hold = holds.find((h) => h.method === method && !h.held);
+    if (hold) { hold.held = true; await hold.gate; }
+  }
   if (offline) throw new TypeError('Network request failed');
   inflight += 1; lastActivity = Date.now();
   try {
@@ -56,6 +65,7 @@ const { useAccountSyncStateStore } = await import('../../src/store/accountSyncSt
 const { useScanQuotaStore } = await import('../../src/store/scanQuotaStore.ts');
 const { useAccountSyncOutboxStore } = await import('../../src/store/accountSyncOutboxStore.ts');
 const { FEATURES } = await import('../../src/config/releaseFlags.ts');
+const { reconcileAccountSync } = await import('../../src/services/accountSyncOrchestrator.ts');
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 for (const s of [useAuthStore, useDeckStore, useSettingsStore, useScanSessionStore, useAccountSyncStateStore, useFavoritesStore, useAccountSyncOutboxStore]) {
@@ -89,6 +99,32 @@ const commands = {
     useFavoritesStore.getState().addFavorite?.({ cardNumber, printing: 'BASE', addedAt: new Date().toISOString() });
   },
   async offline({ value }) { offline = value; },
+  /** The next sync request with this method waits (in flight) until `release`. */
+  async hold({ method }) {
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    holds.push({ method, gate, release, held: false });
+  },
+  async waitHeld({ method, maxMs = 5000 }) {
+    const t0 = Date.now();
+    while (Date.now() - t0 < maxMs) {
+      if (holds.some((h) => h.method === method && h.held)) return true;
+      await wait(10);
+    }
+    throw new Error(`no ${method} reached the hold`);
+  },
+  async release({ method }) {
+    const i = holds.findIndex((h) => h.method === method);
+    if (i >= 0) { holds[i].release(); holds.splice(i, 1); }
+  },
+  /** What the binding runs on foreground (unthrottled here): pull, or push if pending. */
+  async resync() {
+    const st = useAuthStore.getState();
+    void reconcileAccountSync(st.session, st.user?.internalId ?? null, null).catch(() => {});
+  },
+  async wait({ ms }) { await wait(ms); },
+  async createDeck({ name }) { return useDeckStore.getState().createDeck(name); },
+  async deleteDeck({ id }) { useDeckStore.getState().deleteDeck(id); },
   async foreground() {
     visibility = 'hidden'; dom.window.document.dispatchEvent(new dom.window.Event('visibilitychange'));
     visibility = 'visible'; dom.window.document.dispatchEvent(new dom.window.Event('visibilitychange'));
@@ -112,6 +148,7 @@ const commands = {
       quotaRemaining: useScanQuotaStore.getState().getRemaining(),
       sync: { ownerId: sync.ownerId, dirty: sync.dirtySeq !== sync.ackedSeq, lastRevision: sync.lastRevision },
       requests: requests.map((r) => r.method),
+      posts: requests.filter((r) => r.body?.patch).map((r) => ({ bearer: r.bearer, collection: r.body.patch.collection ?? null })),
       pushedFields: [...new Set(requests.filter((r) => r.body?.patch).flatMap((r) => Object.keys(r.body.patch)))].sort(),
       storeMvp: !FEATURES.favorites,
       parkedOwners: useAccountSyncOutboxStore.getState().owners(),

@@ -35,6 +35,7 @@ import {
   isApplyingServerState,
   reconcileAccountSync,
   parkPendingForOwner,
+  bumpAccountSyncEpoch,
 } from './accountSyncOrchestrator';
 
 const PUSH_DEBOUNCE_MS = 750;
@@ -133,6 +134,9 @@ function handleSessionChange(nextSession: string | null | undefined, prevSession
   // it can leak account A's captured state into account B's push queue.
   cancelQueuedPush();
   retryAttempt = 0;
+  // CR 2026-10-17: a sync call already made (queued behind the lock or waiting on
+  // the network) belongs to the previous identity — void it.
+  bumpAccountSyncEpoch();
 
   if (!nextSession) {
     // Logout — clear account-scoped stores (incl. the 估值清單, v41) so the next

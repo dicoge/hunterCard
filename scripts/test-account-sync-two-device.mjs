@@ -304,6 +304,108 @@ try {
     await p.kill();
   });
 
+  // ── CR 2026-10-17 (fefb920 review): races, each RED on fefb920, GREEN after the fix ──
+  await test('CR P1: A\'s push queued behind an in-flight pull, then the phone switches to B and B edits — nothing of B is sent under A\'s bearer; A\'s edit stays A\'s; B\'s edit reaches B', async () => {
+    const F = await server.createSession('two-device-user-f'); const userF = { ...F.user };
+    const G = await server.createSession('two-device-user-g'); const userG = { ...G.user };
+    const p = await device('cr-p1');
+    await act(p, 'login', { session: F.session, user: userF });
+    await p.call('hold', { method: 'GET' });
+    await p.call('resync');                                          // pull in flight, holds the sync lock
+    await p.call('waitHeld', { method: 'GET' });
+    await p.call('own', { cardNumber: 'hBP05-010', version: 'BASE', qty: 1 });   // A's edit
+    await p.call('wait', { ms: 1000 });                              // debounce fired: A's push queued behind the lock
+    await p.call('login', { session: G.session, user: userG });      // switch on the same phone
+    await p.call('own', { cardNumber: 'hBP05-011', version: 'BASE', qty: 42 });  // B's private edit
+    await p.call('release', { method: 'GET' });
+    await p.call('settle');
+    let s = await p.call('state');
+    const leaked = s.posts.filter((x) => x.bearer === F.session && x.collection && x.collection['hBP05-011|BASE'] !== undefined);
+    assert.equal(leaked.length, 0, `B's collection was sent under A's bearer (${leaked.length}×): ${JSON.stringify(leaked.map((x) => x.collection))}`);
+    assert.equal((await serverSnapshot(F.session)).collection['hBP05-011|BASE'], undefined, 'A\'s account never gets B\'s data');
+    assert.equal(s.collection['hBP05-010|BASE'], undefined, 'B does not see A\'s edit');
+    assert.equal(s.collection['hBP05-011|BASE'], 42, 'B\'s edit is not overwritten by B\'s own hydrate');
+    assert.equal((await serverSnapshot(G.session)).collection['hBP05-011|BASE'], 42, 'B\'s edit reaches B');
+    assert.deepEqual(s.parkedOwners, [userF.internalId], 'A\'s unsent edit parked for A');
+    await act(p, 'logout');
+    s = await act(p, 'login', { session: F.session, user: userF });
+    assert.equal(s.collection['hBP05-010|BASE'], 1);
+    assert.equal((await serverSnapshot(F.session)).collection['hBP05-010|BASE'], 1, 'A\'s edit reaches A after re-login');
+    await p.kill();
+  });
+
+  await test('CR P2: an edit made while a pull is in flight is not overwritten by the pulled snapshot (and is pushed)', async () => {
+    const H = await server.createSession('two-device-user-h'); const userH = { ...H.user };
+    const p1 = await device('cr-p2-1');
+    const p2 = await device('cr-p2-2');
+    await act(p1, 'login', { session: H.session, user: userH });
+    await act(p2, 'login', { session: H.session, user: userH });
+    await act(p1, 'own', { cardNumber: 'hBP05-012', version: 'BASE', qty: 3 });   // server: 3
+    await p2.call('hold', { method: 'GET' });
+    await p2.call('resync');
+    await p2.call('waitHeld', { method: 'GET' });
+    await p2.call('own', { cardNumber: 'hBP05-012', version: 'BASE', qty: 9 });   // user sets 9 meanwhile
+    await p2.call('release', { method: 'GET' });
+    await p2.call('settle');
+    const s = await p2.call('state');
+    assert.equal(s.collection['hBP05-012|BASE'], 9, 'the newer local edit survives the pull');
+    assert.equal(s.sync.dirty, false);
+    assert.equal((await serverSnapshot(H.session)).collection['hBP05-012|BASE'], 9, 'and reaches the server');
+    await p1.kill(); await p2.kill();
+  });
+
+  await test('CR P2: deletions made on one phone stay deleted when a STALE phone of the same account pushes (scan, collection, deck)', async () => {
+    const I = await server.createSession('two-device-user-i'); const userI = { ...I.user };
+    const p1 = await device('cr-del-1');
+    const p2 = await device('cr-del-2');
+    await act(p1, 'login', { session: I.session, user: userI });
+    await act(p2, 'login', { session: I.session, user: userI });
+    await act(p1, 'scan', { card: KANATA });
+    await act(p1, 'scan', { card: IROHA_SR });
+    await act(p1, 'own', { cardNumber: 'hBP05-020', version: 'BASE', qty: 2 });
+    const deckId = await p1.call('createDeck', { name: 'cr-deck' });
+    await p1.call('settle');
+    await p2.call('resync'); await p2.call('settle');
+    let s2 = await p2.call('state');
+    assert.equal(s2.scans.length, 2); assert.equal(s2.collection['hBP05-020|BASE'], 2); assert.ok(s2.decks.includes(deckId));
+    const removedId = (await p1.call('state')).scans[0].instanceId;
+    await act(p1, 'removeScan', { index: 0 });
+    await act(p1, 'own', { cardNumber: 'hBP05-020', version: 'BASE', qty: 0 });
+    await act(p1, 'deleteDeck', { id: deckId });
+    let snap = await serverSnapshot(I.session);
+    assert.ok(!snap.scanSession.entries.some((e) => e.instanceId === removedId));
+    // phone 2 never pulled since: its next edit goes out against an old revision → 409 → merge
+    s2 = await act(p2, 'own', { cardNumber: 'hBP05-021', version: 'BASE', qty: 1 });
+    snap = await serverSnapshot(I.session);
+    assert.ok(!snap.scanSession.entries.some((e) => e.instanceId === removedId), 'the removed scan does not come back');
+    assert.equal(snap.scanSession.entries.length, 1);
+    assert.equal(snap.collection['hBP05-020|BASE'], undefined, 'the removed collection entry does not come back');
+    assert.ok(!snap.decks.some((d) => d.id === deckId), 'the deleted deck does not come back');
+    assert.equal(snap.collection['hBP05-021|BASE'], 1, 'the stale phone\'s own edit is kept');
+    assert.ok(!s2.scans.some((c) => c.instanceId === removedId) && !s2.decks.includes(deckId) && s2.collection['hBP05-020|BASE'] === undefined, 'phone 2 shows the deletions too');
+    await p1.kill(); await p2.kill();
+  });
+
+  await test('CR P2: an edit made while a push is in flight survives that push\'s 409 merge', async () => {
+    const J = await server.createSession('two-device-user-j'); const userJ = { ...J.user };
+    const p1 = await device('cr-409-1');
+    const p2 = await device('cr-409-2');
+    await act(p1, 'login', { session: J.session, user: userJ });
+    await act(p2, 'login', { session: J.session, user: userJ });
+    await act(p1, 'own', { cardNumber: 'hBP05-030', version: 'BASE', qty: 1 });   // p2 is now behind → its push will 409
+    await p2.call('hold', { method: 'POST' });
+    await p2.call('own', { cardNumber: 'hBP05-031', version: 'BASE', qty: 1 });
+    await p2.call('waitHeld', { method: 'POST' });
+    await p2.call('own', { cardNumber: 'hBP05-032', version: 'BASE', qty: 4 });   // while the push is in flight
+    await p2.call('release', { method: 'POST' });
+    await p2.call('settle');
+    const s = await p2.call('state');
+    assert.equal(s.collection['hBP05-032|BASE'], 4, 'not overwritten by the 409 merge');
+    const snap = await serverSnapshot(J.session);
+    assert.deepEqual([snap.collection['hBP05-030|BASE'], snap.collection['hBP05-031|BASE'], snap.collection['hBP05-032|BASE']], [1, 1, 4]);
+    await p1.kill(); await p2.kill();
+  });
+
   await phone1.kill();
 } finally {
   for (const d of [...live]) await d.kill();

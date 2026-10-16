@@ -60,7 +60,7 @@ import type { Deck } from '../utils/deckRules';
 import type { PriceAlert } from '../utils/priceAlerts';
 import { FEATURES } from '../config/releaseFlags';
 import { useScanSessionStore, scanSessionForSync } from '../stores/scanSessionStore';
-import { useAccountSyncStateStore } from '../store/accountSyncStateStore';
+import { useAccountSyncStateStore, type SyncBaseline } from '../store/accountSyncStateStore';
 import { useAccountSyncOutboxStore, type OutboxEntry } from '../store/accountSyncOutboxStore';
 import { laterClear, unionScanEntries, emptyScanSession } from '../utils/scanSessionSync';
 
@@ -100,6 +100,31 @@ function withLock<T>(fn: () => Promise<T>): Promise<T> {
   const run = Promise.resolve(syncLock).then(fn);
   syncLock = run.catch(() => {});
   return run;
+}
+
+// Account epoch (CR 2026-10-17): bumped whenever whose data the local stores hold may
+// change — sign-in, sign-out, account switch, a clear. Every asynchronous sync call
+// captures it (with the session and the server-verified account id) when it is MADE,
+// and re-checks all three when it gets the lock — before it reads the stores to send —
+// and after every network wait, before it writes anything back. A call queued for
+// account A therefore can never send B's (or a guest's) data under A's bearer, nor
+// apply A's reply to B's stores, even if the session string comes back unchanged.
+let accountEpoch = 0;
+export function bumpAccountSyncEpoch(): void {
+  accountEpoch += 1;
+}
+export function getAccountSyncEpoch(): number {
+  return accountEpoch;
+}
+function guardFor(session: string | null | undefined): () => boolean {
+  const epoch = accountEpoch;
+  const uid = currentUserId();
+  return () => accountEpoch === epoch && sessionStillCurrent(session) && (uid === null || currentUserId() === uid);
+}
+/** The local stores hold the signed-in account's data (or no verified id is known yet). */
+function storesBelongToCurrentAccount(): boolean {
+  const uid = currentUserId();
+  return uid === null || useAccountSyncStateStore.getState().ownerId === uid;
 }
 
 /** Read the current auth session from the store. Test suites replace
@@ -185,6 +210,70 @@ export function localStoresHaveData(): boolean {
     || (FEATURES.watchlist && Object.keys(usePriceAlertStore.getState().alerts).length > 0);
 }
 
+type SyncTombstones = {
+  favoritesRemovedAt: Record<string, string>;
+  priceAlertsRemovedAt: Record<string, string>;
+  deletedDeckIds: Record<string, string>;
+  collectionChangedKeys: Record<string, string>;
+  scanRemovedAt: Record<string, string>;
+};
+
+function currentTombstones(): SyncTombstones {
+  const deck = useDeckStore.getState();
+  return {
+    favoritesRemovedAt: { ...useFavoritesStore.getState().removals },
+    priceAlertsRemovedAt: { ...usePriceAlertStore.getState().removals },
+    deletedDeckIds: { ...deck.deletedDeckIds },
+    collectionChangedKeys: { ...deck.collectionChangedKeys },
+    scanRemovedAt: { ...useScanSessionStore.getState().removals },
+  };
+}
+
+/** Drop only the markers a push carried; one made while it was in flight stays. */
+function clearAckedTombstones(acked: SyncTombstones): void {
+  const without = (cur: Record<string, string>, done: Record<string, string>) => {
+    const out = { ...cur };
+    for (const [k, v] of Object.entries(done)) if (out[k] === v) delete out[k];
+    return out;
+  };
+  useFavoritesStore.setState((s) => ({ ...s, removals: without(s.removals, acked.favoritesRemovedAt) }));
+  usePriceAlertStore.setState((s) => ({ ...s, removals: without(s.removals, acked.priceAlertsRemovedAt) }));
+  useDeckStore.setState((s) => ({
+    ...s,
+    deletedDeckIds: without(s.deletedDeckIds, acked.deletedDeckIds),
+    collectionChangedKeys: without(s.collectionChangedKeys, acked.collectionChangedKeys),
+  }));
+  useScanSessionStore.setState((s) => ({ ...s, removals: without(s.removals, acked.scanRemovedAt) }));
+}
+
+function clearAllSyncTombstones(): void {
+  useFavoritesStore.getState().clearRemovals();
+  useDeckStore.getState().clearSyncTombstones();
+  usePriceAlertStore.getState().clearRemovals();
+  useScanSessionStore.getState().clearSyncTombstones();
+}
+
+/** What the server held, reduced to what a later merge needs to recognise deletions. */
+export function baselineFrom(snapshot: Partial<AccountSyncSnapshot> | AccountSyncPatch | null | undefined): SyncBaseline {
+  const collection: Record<string, number> = {};
+  const rawCollection = snapshot?.collection as Record<string, number> | undefined;
+  if (rawCollection && typeof rawCollection === 'object') {
+    for (const [k, v] of Object.entries(rawCollection)) if (typeof v === 'number' && v > 0) collection[k] = Math.floor(v);
+  }
+  const decks: Record<string, string> = {};
+  if (Array.isArray(snapshot?.decks)) {
+    for (const d of snapshot!.decks as any[]) if (d?.id) decks[d.id] = String(d.updatedAt ?? '');
+  }
+  const entries = (snapshot as any)?.scanSession?.entries;
+  const scans = Array.isArray(entries) ? entries.map((e: any) => e?.instanceId).filter((id: unknown) => typeof id === 'string') : null;
+  return { collection, decks, scans };
+}
+
+/** Everything a merge or a push would send, for "did the user change anything meanwhile?". */
+function localFingerprint(): string {
+  return JSON.stringify(snapshotFromLocalStores());
+}
+
 /**
  * Apply a server snapshot to the four stores. Everything the server
  * authoritatively holds overwrites the local state; anything the server does
@@ -264,8 +353,16 @@ export interface HydrateOptions {
  */
 export async function hydrateAccountSyncFromServer(
   session: string | null | undefined,
+  opts: { adoptOwnerId?: string | null } = {},
 ): Promise<AccountSyncSnapshot | null> {
+  const still = guardFor(session);
+  // Captured when the hydrate is ASKED for, not when it gets the lock: an edit made
+  // while it waits behind another sync call (e.g. right after an account switch) is
+  // "during the pull" too.
+  const before = localFingerprint();
+  const seqBefore = useAccountSyncStateStore.getState().dirtySeq;
   return withLock(async () => {
+    if (!still()) return null;
     const snapshot = await pullAccountSnapshot(session);
     if (!snapshot) return null;
     // DIC-1380 W6 handback: an account-switch or logout that happened
@@ -273,8 +370,30 @@ export async function hydrateAccountSyncFromServer(
     // account. Applying it now would leak account A's state into account
     // B's stores. Drop the response silently — the next hydrate for the
     // new session will get the right snapshot.
-    if (!sessionStillCurrent(session)) return null;
-    applyServerSnapshotToStores(snapshot);
+    if (!still()) return null;
+    const st = useAccountSyncStateStore.getState();
+    const owner = opts.adoptOwnerId !== undefined ? opts.adoptOwnerId : currentUserId();
+    const ownerPending = st.ownerId !== null && st.ownerId === owner && st.dirtySeq !== st.ackedSeq;
+    const editedDuringPull = st.dirtySeq !== seqBefore || localFingerprint() !== before;
+    const revision = typeof snapshot.revision === 'number' ? snapshot.revision : 0;
+    if (!editedDuringPull && !ownerPending) {
+      applyServerSnapshotToStores(snapshot);
+      if (opts.adoptOwnerId !== undefined) st.adoptOwner(opts.adoptOwnerId, revision);
+      useAccountSyncStateStore.getState().setBaseline(baselineFrom(snapshot));
+      return snapshot;
+    }
+    // CR 2026-10-17: the user changed something while the pull was in flight (or
+    // this account has changes the server has not acknowledged). Overwriting would
+    // lose them silently: merge them onto the snapshot with the 409 rules instead,
+    // keep their markers, and stay dirty so they are pushed on top of `revision`.
+    const merged = mergeLocalOntoServer(snapshot, snapshotFromLocalStores(), currentTombstones(), st.baseline);
+    applyMergedPatchToStores(merged);
+    lastKnownRevision = revision;
+    if (opts.adoptOwnerId !== undefined) st.adoptOwner(opts.adoptOwnerId, revision);
+    else useAccountSyncStateStore.setState({ lastRevision: revision });
+    const after = useAccountSyncStateStore.getState();
+    after.setBaseline(baselineFrom(snapshot));
+    after.markDirty();
     return snapshot;
   });
 }
@@ -326,6 +445,7 @@ function mergeLocalOntoServer(
     collectionChangedKeys?: Record<string, string>;
     scanRemovedAt?: Record<string, string>;
   },
+  baseline?: SyncBaseline | null,
 ): AccountSyncPatch {
   const favoritesRemovedAt = tombstones?.favoritesRemovedAt || {};
   const priceAlertsRemovedAt = tombstones?.priceAlertsRemovedAt || {};
@@ -388,7 +508,11 @@ function mergeLocalOntoServer(
     }
     const serverVal = typeof serverCollection[key] === 'number' ? Math.floor(serverCollection[key]) : 0;
     const localVal = typeof localCollection[key] === 'number' ? Math.floor(localCollection[key]) : 0;
-    const chosen = Math.max(serverVal, localVal);
+    // CR 2026-10-17: untouched here since this device last matched the server →
+    // the server's value is newer information (another device's decrease or
+    // deletion); MAX would resurrect it. Without a baseline: MAX, as before.
+    const baseVal = baseline && server?.collection ? Math.floor(baseline.collection[key] ?? 0) : null;
+    const chosen = baseVal !== null && localVal === baseVal ? serverVal : Math.max(serverVal, localVal);
     if (chosen > 0) collection[key] = chosen;
   }
   merged.collection = collection;
@@ -414,7 +538,13 @@ function mergeLocalOntoServer(
     if (nextMs === prevMs && side === 'local') deckMap.set(deck.id, deck);
   };
   for (const deck of (server?.decks as any[] | undefined) ?? []) rememberDeck(deck, 'server');
-  for (const deck of (local.decks as any[] | undefined) ?? []) rememberDeck(deck, 'local');
+  // CR 2026-10-17: a deck the server no longer has, that this device had when it
+  // last matched the server and has not edited since, was deleted elsewhere.
+  const serverDeckIds = new Set(((server?.decks as any[] | undefined) ?? []).map((d) => d?.id));
+  const deletedElsewhere = (deck: any) => !!baseline && Array.isArray(server?.decks) && !serverDeckIds.has(deck?.id)
+    && baseline.decks[deck?.id] !== undefined
+    && (Date.parse(deck?.updatedAt || '') || 0) <= (Date.parse(baseline.decks[deck.id]) || 0);
+  for (const deck of (local.decks as any[] | undefined) ?? []) if (!deletedElsewhere(deck)) rememberDeck(deck, 'local');
   merged.decks = [...deckMap.values()];
 
   // priceAlerts: union by cardNumber|printing, newer updatedAt wins; drop
@@ -447,9 +577,17 @@ function mergeLocalOntoServer(
   // scanned at/before the later clear of either side.
   if (local.scanSession || server?.scanSession) {
     const clearedAt = laterClear(server?.scanSession?.clearedAt, local.scanSession?.clearedAt);
+    // CR 2026-10-17: a scan this device had when it last matched the server, that
+    // the server no longer has, was removed on another device — it must not come
+    // back through this device's copy.
+    const baseScans = baseline?.scans && server?.scanSession ? new Set(baseline.scans) : null;
+    const serverScanIds = new Set((server?.scanSession?.entries ?? []).map((e) => e.instanceId));
+    const localEntries = (local.scanSession?.entries ?? []).filter(
+      (e) => !(baseScans && baseScans.has(e.instanceId) && !serverScanIds.has(e.instanceId)),
+    );
     merged.scanSession = {
       entries: unionScanEntries(
-        [server?.scanSession?.entries ?? [], local.scanSession?.entries ?? []],
+        [server?.scanSession?.entries ?? [], localEntries],
         clearedAt,
         tombstones?.scanRemovedAt ?? {},
       ),
@@ -563,16 +701,17 @@ export async function pushAccountSyncFromStores(
   session: string | null | undefined,
   opts: PushOptions = {},
 ): Promise<AccountSyncSnapshot | null> {
+  const still = guardFor(session);
   return withLock(async () => {
-    const localPatch = snapshotFromLocalStores();
-    const favTombstones = { ...useFavoritesStore.getState().removals };
-    const alertTombstones = { ...usePriceAlertStore.getState().removals };
-    const deckTombstones = { ...useDeckStore.getState().deletedDeckIds };
-    const collectionChanges = { ...useDeckStore.getState().collectionChangedKeys };
-    const scanRemovals = { ...useScanSessionStore.getState().removals };
+    // CR 2026-10-17 (P1): validated BEFORE the stores are read. A push queued for
+    // account A behind another sync call must not read what the stores hold after
+    // a switch to B / a guest and send it under A's bearer.
+    if (!still() || !storesBelongToCurrentAccount()) return null;
+    let localPatch = snapshotFromLocalStores();
+    let tombstones = currentTombstones();
     // Everything changed up to here is in this push; a change made while it is in
     // flight keeps the device dirty.
-    const seqAtPush = useAccountSyncStateStore.getState().dirtySeq;
+    let seqAtPush = useAccountSyncStateStore.getState().dirtySeq;
 
     const attemptPush = async (
       patch: AccountSyncPatch,
@@ -586,22 +725,19 @@ export async function pushAccountSyncFromStores(
         patch,
       });
       if (confirmed) {
-        // DIC-1380 W6: only trust the response if the session bearer is
-        // still the one this push was scheduled for. An account switch
-        // during the push must not advance the NEW account's revision
-        // counter with the OLD account's server reply.
-        if (!sessionStillCurrent(session)) return null;
+        // DIC-1380 W6: only trust the response if the session bearer (and,
+        // CR 2026-10-17, the account epoch) is still the one this push was
+        // made for.
+        if (!still()) return null;
         lastKnownRevision = typeof confirmed.revision === 'number' ? confirmed.revision : baseRevision;
-        // Server has our removals + decreases — drop the tombstones so
-        // the next push does not carry them again.
-        useFavoritesStore.getState().clearRemovals();
-        useDeckStore.getState().clearSyncTombstones();
-        usePriceAlertStore.getState().clearRemovals();
-        useScanSessionStore.getState().clearSyncTombstones();
-        useAccountSyncStateStore.getState().markSynced(lastKnownRevision, seqAtPush);
+        // Server has our removals + decreases — drop exactly those markers so
+        // the next push does not carry them again (newer ones stay).
+        clearAckedTombstones(tombstones);
+        const st = useAccountSyncStateStore.getState();
+        st.markSynced(lastKnownRevision, seqAtPush);
+        st.setBaseline(baselineFrom(confirmed.collection || confirmed.decks || confirmed.scanSession ? confirmed : patch));
         // Anything this owner had parked is now on the server too.
-        const owner = useAccountSyncStateStore.getState().ownerId;
-        if (owner) useAccountSyncOutboxStore.getState().discard(owner);
+        if (st.ownerId) useAccountSyncOutboxStore.getState().discard(st.ownerId);
       }
       return confirmed;
     };
@@ -610,22 +746,23 @@ export async function pushAccountSyncFromStores(
       return await attemptPush(localPatch, lastKnownRevision, opts.idempotencyKey ?? newIdempotencyKey());
     } catch (err) {
       if (!(err instanceof AccountSyncConflictError)) throw err;
-      const serverSnapshot = err.serverSnapshot;
-      lastKnownRevision = err.serverRevision;
       // DIC-1380 W6: an account switch that landed during the first
       // push means the retry would apply account A's conflict payload
       // to account B's stores. Bail out silently.
-      if (!sessionStillCurrent(session)) return null;
-      // MERGE local on top of server (honoring tombstones), then apply
-      // the merged view back to the stores so the app + the retry both
-      // see the same merged state.
-      const merged = mergeLocalOntoServer(serverSnapshot, localPatch, {
-        favoritesRemovedAt: favTombstones,
-        priceAlertsRemovedAt: alertTombstones,
-        deletedDeckIds: deckTombstones,
-        collectionChangedKeys: collectionChanges,
-        scanRemovedAt: scanRemovals,
-      });
+      if (!still()) return null;
+      const serverSnapshot = err.serverSnapshot;
+      lastKnownRevision = err.serverRevision;
+      // CR 2026-10-17: merge what the stores hold NOW — an edit made while the
+      // first attempt was in flight is part of it, not overwritten by the merge.
+      localPatch = snapshotFromLocalStores();
+      tombstones = currentTombstones();
+      seqAtPush = useAccountSyncStateStore.getState().dirtySeq;
+      // MERGE local on top of server (honoring tombstones and, for deletions made
+      // on other devices, this device's baseline), then apply the merged view back
+      // to the stores so the app + the retry both see the same merged state.
+      const merged = mergeLocalOntoServer(
+        serverSnapshot, localPatch, tombstones, useAccountSyncStateStore.getState().baseline,
+      );
       applyMergedPatchToStores(merged);
       return await attemptPush(activeDomainsOnly(merged), lastKnownRevision, opts.idempotencyKey ?? newIdempotencyKey());
     }
@@ -641,6 +778,8 @@ export async function pushAccountSyncFromStores(
  * fresh state.
  */
 export function clearAccountScopedStores(): void {
+  // Whatever was in flight for the data being cleared is void now.
+  bumpAccountSyncEpoch();
   applyingServerState = true;
   try {
     useFavoritesStore.getState().clearAll();
@@ -674,16 +813,10 @@ export function clearAccountScopedStores(): void {
 export function parkPendingForOwner(): boolean {
   const st = useAccountSyncStateStore.getState();
   if (!st.ownerId || st.dirtySeq === st.ackedSeq) return false;
-  const deck = useDeckStore.getState();
   useAccountSyncOutboxStore.getState().save(st.ownerId, {
     patch: snapshotFromLocalStores(),
-    tombstones: {
-      favoritesRemovedAt: { ...useFavoritesStore.getState().removals },
-      priceAlertsRemovedAt: { ...usePriceAlertStore.getState().removals },
-      deletedDeckIds: { ...deck.deletedDeckIds },
-      collectionChangedKeys: { ...deck.collectionChangedKeys },
-      scanRemovedAt: { ...useScanSessionStore.getState().removals },
-    },
+    tombstones: currentTombstones(),
+    baseline: st.baseline,
     savedAt: new Date().toISOString(),
   });
   return true;
@@ -713,7 +846,6 @@ export async function reconcileAccountSync(
   prevSession: string | null = null,
 ): Promise<'pushed' | 'hydrated' | 'merged' | 'skipped'> {
   const syncState = useAccountSyncStateStore.getState();
-  const stillOn = () => sessionStillCurrent(session) && (userId === null || currentUserId() === userId);
 
   if (userId && syncState.ownerId === userId) {
     setLastKnownRevision(syncState.lastRevision);
@@ -721,8 +853,7 @@ export async function reconcileAccountSync(
       await pushAccountSyncFromStores(session);
       return 'pushed';
     }
-    const snap = await hydrateAccountSyncFromServer(session);
-    if (snap && stillOn()) useAccountSyncStateStore.getState().adoptOwner(userId, snap.revision ?? 0);
+    const snap = await hydrateAccountSyncFromServer(session, { adoptOwnerId: userId });
     return snap ? 'hydrated' : 'skipped';
   }
 
@@ -735,6 +866,10 @@ export async function reconcileAccountSync(
     useAccountSyncStateStore.getState().reset();
   }
 
+  // Deletion markers made as a guest describe nothing in this account: a guest
+  // merge is a union, and they must not delete the account's entries later.
+  if (userId && !foreignOwner && !legacySwitch && syncState.ownerId === null) clearAllSyncTombstones();
+
   const guestData = !foreignOwner && !legacySwitch && localStoresHaveData();
   const parked = userId ? useAccountSyncOutboxStore.getState().take(userId) : null;
   if (userId && parked) {
@@ -743,8 +878,7 @@ export async function reconcileAccountSync(
   if (guestData) {
     return mergeGuestDataIntoAccount(session, userId);
   }
-  const snap = await hydrateAccountSyncFromServer(session);
-  if (snap && stillOn()) useAccountSyncStateStore.getState().adoptOwner(userId, snap.revision ?? 0);
+  const snap = await hydrateAccountSyncFromServer(session, { adoptOwnerId: userId });
   return snap ? 'hydrated' : 'skipped';
 }
 
@@ -760,12 +894,16 @@ async function restoreParkedIntoAccount(
   parked: OutboxEntry,
   withGuestData: boolean,
 ): Promise<'merged' | 'skipped'> {
-  const stillOn = () => sessionStillCurrent(session) && currentUserId() === userId;
+  const guard = guardFor(session);
+  const stillOn = () => guard() && currentUserId() === userId;
+  const before = localFingerprint();
   const done = await withLock(async () => {
+    if (!stillOn()) return false;
     const server = await pullAccountSnapshot(session);
     if (!stillOn()) return false;
-    let patch = activeDomainsOnly(mergeLocalOntoServer(server, parked.patch, parked.tombstones));
-    if (withGuestData) {
+    let patch = activeDomainsOnly(mergeLocalOntoServer(server, parked.patch, parked.tombstones, parked.baseline ?? null));
+    // Edits made on this device while the pull was in flight are kept too.
+    if (withGuestData || localFingerprint() !== before) {
       const asSnapshot = { ...(server ?? {}), ...patch, revision: server?.revision ?? 0 } as AccountSyncSnapshot;
       patch = mergeGuestOntoServer(asSnapshot, snapshotFromLocalStores());
     }
@@ -787,6 +925,7 @@ async function restoreParkedIntoAccount(
     setLastKnownRevision(base);
     const st = useAccountSyncStateStore.getState();
     st.adoptOwner(userId, base);
+    st.setBaseline(baselineFrom(server));
     st.markDirty();
     return true;
   });
@@ -796,8 +935,10 @@ async function restoreParkedIntoAccount(
 }
 
 async function mergeGuestDataIntoAccount(session: string, userId: string | null): Promise<'merged' | 'skipped'> {
-  const stillOn = () => sessionStillCurrent(session) && (userId === null || currentUserId() === userId);
+  const guard = guardFor(session);
+  const stillOn = () => guard() && (userId === null || currentUserId() === userId);
   const merged = await withLock(async () => {
+    if (!stillOn()) return null;
     const server = await pullAccountSnapshot(session);
     if (!stillOn()) return null;
     const local = snapshotFromLocalStores();
@@ -808,6 +949,7 @@ async function mergeGuestDataIntoAccount(session: string, userId: string | null)
     const st = useAccountSyncStateStore.getState();
     // The stores now hold this account's data plus the guest's — not yet on the server.
     st.adoptOwner(userId, base);
+    st.setBaseline(baselineFrom(server));
     st.markDirty();
     return patch;
   });
