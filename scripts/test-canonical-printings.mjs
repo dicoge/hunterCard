@@ -216,7 +216,21 @@ console.log('\n── Regression: hBP02-003 Marine ──');
     // 45000→55000 (data/buy-prices/torecolo-prices.json) — same source, same
     // SEC rarity token, no cross-printing borrow. The invariant is the exact
     // SEC-token quote, not any particular yen value.
-    eq(signed.buyPrice, 55000, 'signed official printing row carries exact SEC-token buy price');
+    // v41 data refresh (2026-10-16): fullahead quotes the exact hBP02-003-SEC token at
+    // 40000 (torecolo's 55000 is from 2026-10-03). Checked against the committed buy
+    // sources rather than a frozen yen value: an exact SEC-token quote, never a sibling's.
+    const buyQuotes = (token) => ['fullahead', 'torecolo', 'yuyu'].flatMap((src) => {
+      const file = path.resolve(__dirname, `../data/buy-prices/${src}-prices.json`);
+      if (!fs.existsSync(file)) return [];
+      const rows = JSON.parse(fs.readFileSync(file, 'utf-8'));
+      return Object.entries(rows.prices ?? rows)
+        .filter(([k, v]) => k.toUpperCase() === token && Number.isFinite(v?.buyPrice))
+        .map(([, v]) => v.buyPrice);
+    });
+    const secQuotes = buyQuotes('HBP02-003-SEC');
+    const siblingQuotes = [...buyQuotes('HBP02-003-OUR'), ...buyQuotes('HBP02-003-OSR'), ...buyQuotes('HBP02-003')];
+    eq(secQuotes.includes(signed.buyPrice) && !siblingQuotes.includes(signed.buyPrice), true,
+      `signed official printing row carries exact SEC-token buy price (got ${signed.buyPrice}; SEC quotes ${secQuotes.join('/')}; sibling ${siblingQuotes.join('/')})`);
     // DIC-1482: this row may now carry its OWN source-proven signed listing
     // (宝鐘マリン(パラレル/サイン), imaged on the hBP02 product path). What it must
     // never retain is a listing belonging to a DIFFERENT printing — the base /

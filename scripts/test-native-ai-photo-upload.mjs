@@ -214,8 +214,14 @@ await check('ScanScreen wires the gate before every upload path (camera, gallery
   assert.ok(handleScan.includes('await requestPhotoUploadConsent()'), 'manual scan must ask first');
   const gallery = scan.slice(scan.indexOf('const pickFromGallery'), scan.indexOf('launchImageLibraryAsync'));
   assert.ok(gallery.includes('await requestPhotoUploadConsent()'), 'gallery must ask before picking');
-  const capture = scan.slice(scan.indexOf('const captureAndRecognize'), scan.indexOf('takePictureAsync'));
+  const captureStart = scan.indexOf('const captureAndRecognize');
+  const capture = scan.slice(captureStart, scan.indexOf('takePictureAsync', captureStart));
   assert.ok(capture.includes('if (!hasUploadConsent()) return;'), 'auto-scan / capture must not upload without consent');
+  // v41 native automatic capture: its silent on-device probes (and so any trigger) also
+  // wait for the accepted disclosure.
+  const probeStart = scan.indexOf('const probeAllowed = ');
+  assert.ok(probeStart > 0, 'native auto-capture probe gate not found');
+  assert.ok(scan.slice(probeStart, scan.indexOf(';', probeStart)).includes('hasUploadConsent()'), 'native auto probes must wait for consent');
   assert.ok(/takePictureAsync\(\{\s*quality: 0\.7,\s*base64: true,/.test(scan), 'native capture must request bytes');
   // Behaviour (blur / close / late result through the real navigator) is proven by
   // scripts/test-scan-cancel-lifecycle.mjs; this only pins that commitCard keeps the guard.
