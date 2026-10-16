@@ -347,6 +347,48 @@ try {
     assert.ok(byTestId('scan-match-best'), 'gallery result shown');
     await click(byTestId('scan-match-retake'));
   });
+  // CR 1419441: the picker may hand its asset back BEFORE the app is active again.
+  const pickWhileBackgrounded = async () => {
+    globalThis.__onPickerOpen = async () => { globalThis.__setAppState('background'); };
+    await click(byTestId('scan-gallery-action'));
+    await tick(150);
+    globalThis.__onPickerOpen = undefined;
+  };
+  await test('picker returns its photo while the app is still in the background → nothing sent or shown until it is active, then exactly one upload', async () => {
+    const before = bodies.length;
+    const remaining = useScanQuotaStore.getState().getRemaining();
+    const listeners = globalThis.__appStateListenerCount();
+    await pickWhileBackgrounded();
+    assert.equal(bodies.length, before, 'no provider request while backgrounded');
+    assert.ok(!byTestId('scan-match-best'), 'no preview while backgrounded');
+    assert.equal(useScanQuotaStore.getState().getRemaining(), remaining);
+    assert.equal(globalThis.__appStateListenerCount(), listeners + 1, 'waiting for foreground');
+    await appState('active');
+    for (let i = 0; i < 40 && bodies.length === before; i++) await tick(10);
+    await tick(80);
+    assert.equal(bodies.length, before + 1, 'one upload after returning');
+    assert.ok(byTestId('scan-match-best'), 'result shown in the foreground');
+    assert.equal(globalThis.__appStateListenerCount(), listeners, 'foreground waiter removed');
+    assert.equal(useScanQuotaStore.getState().getRemaining(), remaining, 'still nothing charged before add');
+    await click(byTestId('scan-match-retake'));
+  });
+  await test('cancelled (hardware back) while waiting for the foreground → the picked photo is never sent; a fresh scan still works', async () => {
+    const before = bodies.length;
+    const listeners = globalThis.__appStateListenerCount();
+    await pickWhileBackgrounded();
+    navigations.length = 0;
+    assert.equal(await back(), true);
+    assert.deepEqual(navigations, [['MainDrawer', { screen: 'Home' }]]);
+    assert.equal(globalThis.__appStateListenerCount(), listeners, 'waiter removed on cancel');
+    await appState('active');
+    await tick(200);
+    assert.equal(bodies.length, before, 'the picked photo was dropped, never uploaded');
+    assert.ok(!byTestId('scan-match-best'));
+    await shutter();
+    assert.equal(bodies.length, before + 1, 'a fresh camera scan works');
+    assert.ok(byTestId('scan-match-best'));
+    await click(byTestId('scan-match-retake'));
+  });
 } finally {
   await act(async () => root.unmount());
   host.remove();

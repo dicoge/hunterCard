@@ -150,6 +150,27 @@ function measureInWindow(ref: React.RefObject<View | null>): Promise<Rect | null
   });
 }
 
+/**
+ * Resolves true once the app is in the foreground (immediately if it already is), false
+ * if the scan job is cancelled first. The system gallery picker can hand its result back
+ * while the app is still in the background (CR 1419441): nothing may be uploaded or
+ * previewed until the user is back.
+ */
+function waitForForeground(signal: AbortSignal): Promise<boolean> {
+  if (signal.aborted) return Promise.resolve(false);
+  if (AppState.currentState === 'active' || AppState.currentState == null) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const done = (ok: boolean) => {
+      sub.remove();
+      signal.removeEventListener('abort', onAbort);
+      resolve(ok);
+    };
+    const onAbort = () => done(false);
+    const sub = AppState.addEventListener('change', (next) => { if (next === 'active') done(!signal.aborted); });
+    signal.addEventListener('abort', onAbort);
+  });
+}
+
 /** The photo of a scan whose recognition hit a service failure, held for a manual retry. */
 type RetryPayload =
   | { mode: 'native'; ocrUri: string; base64?: string | null; cropBase64?: string | null }
@@ -997,6 +1018,9 @@ export default function ScanScreen({ navigation }: any) {
       if (!job.isCurrent()) return;
 
       if (!result.canceled && result.assets[0]?.uri) {
+        // Back in the foreground first, and still the same live scan — a close, back,
+        // blur or unmount meanwhile cancelled the job and the picked photo is dropped.
+        if (!(await waitForForeground(signal)) || !job.isCurrent()) return;
         clearRetry();
         await recognizeGalleryPhoto({ mode: 'gallery', uri: result.assets[0].uri, base64: result.assets[0].base64 }, job, signal);
       }
