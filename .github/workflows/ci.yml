@@ -193,6 +193,9 @@ jobs:
       - name: Verify daily rebuild keeps cumulative buyPriceHistory per exact printing (DIC-1167 CR 2660774f)
         run: npm run test:dic1167-buy-price-history
 
+      - name: Verify official catalog sync keeps cumulative buyPriceHistory + localImage per exact printing (DIC-1511)
+        run: npm run test:dic1511-official-sync-buy-history
+
       - name: Verify scrape pipeline fail-fast + atomic commit ordering (DIC-989)
         run: npm run test:scrape-pipeline
 
