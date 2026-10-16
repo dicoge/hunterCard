@@ -1,0 +1,8 @@
+{
+  "source": "v39 user diagnostics export 2026-10-16 (sha256 b32287d37b8c27d454c2f58ffdcb938c28d44f010a317eab5bbe4241bad13147), entry uo9tkqnieclb83zz, server requestId 4866fa1a60b22ec0, backend 05502a42",
+  "note": "Only fields the log recorded as received (name/number/set/language/rarity; title provider_unknown). HP and type were not exported, so the mocked reply omits them — this is NOT the full provider reply. No photo.",
+  "received": { "CHARACTER": "風真いろは", "CARD_NUMBER": "hBP05-081", "SET": "hBP05", "LANGUAGE": "JA", "RARITY": "SR", "TITLE": "NONE" },
+  "loggedVerdict": { "status": "no_match", "reason": "number_name_conflict" },
+  "userGroundTruth": { "cardNumber": "hBP01-051", "rarityOnFooter": "SR", "by": "user correction 2026-10-16 + PM pixel check of the user's photo footer" },
+  "catalogForReceivedNumber": { "cardNumber": "hBP05-081", "name": "白銀ノエルのメイス", "officialSource": "hololive-official-cardgame.com card search, read 2026-10-16" }
+}

@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform, StatusBar } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ScanQuotaBanner from './ScanQuotaBanner';
 import { useTranslation } from '../i18n';
 import { PALETTE, SEMANTIC, LAYOUT } from '../theme/tokensV2';
@@ -20,6 +21,23 @@ export interface ScanTopBarProps {
  * action row. DIC-1409 CR fix: this row was missing from the shipped
  * route (the drawer header stood in for it).
  */
+/** Height of the bar's row below the inset (styles.row minHeight). */
+export const SCAN_TOP_BAR_HEIGHT = 56;
+/** Minimum touch target (Android 48dp); the Pen circle stays 34 inside it. */
+export const SCAN_TOP_BAR_TOUCH = 48;
+
+/**
+ * Top inset the scan chrome must clear. The Scan route is full-bleed under Android
+ * edge-to-edge (app.base.json), so y = 0 is under the status bar: v39 put the ✕ there,
+ * too high to reach (user report 2026-10-16). StatusBar.currentHeight backs up an
+ * inset the provider has not measured yet; web has neither.
+ */
+export function useScanTopInset(): number {
+  const insets = useSafeAreaInsets();
+  const statusBar = Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0;
+  return Math.max(insets.top || 0, statusBar);
+}
+
 export default function ScanTopBar({
   onClose,
   onFlash,
@@ -28,21 +46,24 @@ export default function ScanTopBar({
   testID = 'scan-top-bar',
 }: ScanTopBarProps) {
   const { t } = useTranslation();
+  const topInset = useScanTopInset();
   return (
-    <View style={styles.row} testID={testID}>
+    <View style={[styles.row, { paddingTop: topInset }]} testID={testID}>
       <TouchableOpacity
-        style={styles.roundBtn}
+        style={styles.touch}
         onPress={onClose}
         disabled={!onClose}
         accessibilityRole="button"
         accessibilityLabel={t('scan_close_a11y')}
         testID={`${testID}-close`}
       >
-        <Text style={styles.roundBtnGlyph}>✕</Text>
+        <View style={styles.roundBtn}>
+          <Text style={styles.roundBtnGlyph}>✕</Text>
+        </View>
       </TouchableOpacity>
       <ScanQuotaBanner />
       <TouchableOpacity
-        style={[styles.roundBtn, flashOn && styles.roundBtnActive, flashDisabled && styles.roundBtnDisabled]}
+        style={styles.touch}
         onPress={onFlash}
         disabled={flashDisabled || !onFlash}
         accessibilityRole="button"
@@ -50,7 +71,9 @@ export default function ScanTopBar({
         accessibilityState={{ selected: flashOn, disabled: flashDisabled }}
         testID={`${testID}-flash`}
       >
-        <Text style={styles.roundBtnGlyph}>⚡︎</Text>
+        <View style={[styles.roundBtn, flashOn && styles.roundBtnActive, flashDisabled && styles.roundBtnDisabled]}>
+          <Text style={styles.roundBtnGlyph}>⚡︎</Text>
+        </View>
       </TouchableOpacity>
     </View>
   );
@@ -61,9 +84,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    minHeight: 56,
-    paddingHorizontal: LAYOUT.safeMobile - 4,
-    gap: 8,
+    minHeight: SCAN_TOP_BAR_HEIGHT,
+    paddingHorizontal: LAYOUT.safeMobile - 11,
+    gap: 1,
+  },
+  touch: {
+    width: SCAN_TOP_BAR_TOUCH,
+    height: SCAN_TOP_BAR_TOUCH,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   roundBtn: {
     width: 34,

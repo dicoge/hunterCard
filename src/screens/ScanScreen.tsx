@@ -14,6 +14,7 @@ import {
   Modal,
   SafeAreaView,
   LayoutChangeEvent,
+  BackHandler,
 } from 'react-native';
 import { CameraView, useCameraPermissions, CameraType } from 'expo-camera';
 import WebCamera, { WebCameraHandle } from '../components/WebCamera';
@@ -24,7 +25,7 @@ import { useScanSessionStore } from '../stores/scanSessionStore';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, convertPrice } from '../constants';
 import { recognizeCard, recognizeCardFromOcr, recognizeCardFromImage, searchCards, candidateEvidence, CardInfo, RecognizedCandidate } from '../services/cardRecognition';
-import { RECOGNITION_REQUEST_TIMEOUT_MS } from '../services/recognitionOutcome';
+import { classifyHttpFailure, isRecognitionInfrastructureFailure, RECOGNITION_REQUEST_TIMEOUT_MS, type RecognitionFailureKind } from '../services/recognitionOutcome';
 import { chooseRecognitionPictureSize, validateRecognitionImages } from '../services/recognitionImagePolicy';
 import { ensurePhotoUploadConsent, hasPhotoUploadConsent } from '../services/photoUploadDisclosure';
 import { usePhotoUploadConsentStore } from '../store/photoUploadConsentStore';
@@ -45,7 +46,7 @@ import {
 } from '../services/scanRecognitionFlow';
 import { recognizeTextWeb } from '../services/webOcr';
 import ScanOverlay from '../components/ScanOverlay';
-import ScanTopBar from '../components/ScanTopBar';
+import ScanTopBar, { SCAN_TOP_BAR_HEIGHT, useScanTopInset } from '../components/ScanTopBar';
 import { PALETTE, SEMANTIC, LAYOUT } from '../theme/tokensV2';
 import ScanResultCard from '../components/ScanResultCard';
 import ScanCandidateSelector from '../components/ScanCandidateSelector';
@@ -148,6 +149,12 @@ function measureInWindow(ref: React.RefObject<View | null>): Promise<Rect | null
   });
 }
 
+/** The photo of a scan whose recognition hit a service failure, held for a manual retry. */
+type RetryPayload =
+  | { mode: 'native'; ocrUri: string; base64?: string | null; cropBase64?: string | null }
+  | { mode: 'web'; uri: string; images: string[] }
+  | { mode: 'gallery'; uri: string; base64?: string | null };
+
 export default function ScanScreen({ navigation }: any) {
   const { t } = useTranslation();
   // iOS web 不用 expo-camera 權限系統（避免 getUserMedia 手勢鏈中斷）
@@ -160,6 +167,9 @@ export default function ScanScreen({ navigation }: any) {
     ? [null, null, null] as any
     : useCameraPermissions();
   const [webCameraStarted, setWebCameraStarted] = useState(false);
+  // Everything this screen layers over the camera starts below the top bar, so the ✕
+  // stays reachable while the camera initialises and after a card was added.
+  const belowTopBar = { top: useScanTopInset() + SCAN_TOP_BAR_HEIGHT };
   // Web 相簿上傳模式：相機無法使用（權限卡住/裝置無鏡頭）時的 fallback，不掛載 WebCamera
   const [webGalleryMode, setWebGalleryMode] = useState(false);
   // Card scanning always uses the rear camera; the flip control was removed from
@@ -175,6 +185,14 @@ export default function ScanScreen({ navigation }: any) {
   // The recognition outcome on screen (best preview / identity / no match). Nothing is
   // added or charged until the user acts on it.
   const [matchSheet, setMatchSheet] = useState<ScanPresentation | null>(null);
+  // Service failure (v39 user report 2026-10-16): the service could not answer, which is
+  // never shown as a no-match. The photo already taken stays in memory for a manual
+  // retry — the same bytes this scan was holding anyway, never written anywhere, and
+  // dropped on a result, a new scan, close, blur or unmount. Retrying charges nothing:
+  // only an explicit add commits (commitCard), once.
+  const [serviceFailure, setServiceFailure] = useState<RecognitionFailureKind | null>(null);
+  const retryRef = useRef<RetryPayload | null>(null);
+  const clearRetry = () => { retryRef.current = null; setServiceFailure(null); };
   // Local diagnostic log (src/services/scanDiagnostics): one entry per scan, keyed by a
   // random correlation id; the preview / correction / add of that scan update the SAME
   // entry. Every call is best-effort and can never affect the scan or the quota.
@@ -354,13 +372,15 @@ export default function ScanScreen({ navigation }: any) {
     setSuggestions([]);
     setScanError(null);
     resetAutoScan();
+    clearRetry();
     setMatchSheet(presentation);
     diagUpdate(diagIdRef.current, {
       stagesMs: { total: Date.now() - diagStartRef.current },
       // The app's own decision, kept apart from the server verdict in `trace`.
       presentation: {
         kind: presentation.kind,
-        reason: presentation.kind === 'none' ? presentation.reason : 'none',
+        reason: presentation.kind === 'none' ? presentation.reason
+          : presentation.kind === 'identity' && presentation.numberCorrected ? 'number_name_conflict' : 'none',
         source: presentation.source ?? 'unknown',
       },
       timeline: [{ e: 'presented', t: Date.now() - diagStartRef.current }],
@@ -417,6 +437,7 @@ export default function ScanScreen({ navigation }: any) {
   // so coming back never shows a stuck spinner.
   const resetScanUi = () => {
     diagOutcome('cancelled');
+    clearRetry();
     setMatchSheet(null);
     setIsProcessingOCR(false);
     setIsScanning(false);
@@ -436,6 +457,7 @@ export default function ScanScreen({ navigation }: any) {
       ? navigation.addListener('blur', () => {
         if (!mountedRef.current) return;
         diagOutcome('cancelled');
+        clearRetry();
         setMatchSheet(null);
         setCandidateSelector({ visible: false, tier: 'mid', candidates: [] });
       })
@@ -443,6 +465,7 @@ export default function ScanScreen({ navigation }: any) {
     return () => {
       if (typeof offBlur === 'function') offBlur();
       unbind();
+      retryRef.current = null;
       mountedRef.current = false;
       lifecycle.setFocused(false);
     };
@@ -531,6 +554,9 @@ export default function ScanScreen({ navigation }: any) {
     if (!isCameraReady) return;
     if (isScanning || isProcessingOCR) return;
     if (candidateSelector.visible || resultCard.visible || matchSheet) return;
+    // A service failure waits for the user (retry the held photo, search, or back):
+    // auto-scan must not capture a new photo and upload again by itself (v39 PM review).
+    if (serviceFailure) return;
 
     let mounted = true;
     const scanArea = scanAreaViewportRef.current
@@ -563,7 +589,7 @@ export default function ScanScreen({ navigation }: any) {
         cancelAnimationFrame(autoScanRef.current);
       }
     };
-  }, [isCameraReady, autoScanActive, isScanning, isProcessingOCR, candidateSelector.visible, resultCard.visible, matchSheet]);
+  }, [isCameraReady, autoScanActive, isScanning, isProcessingOCR, candidateSelector.visible, resultCard.visible, matchSheet, serviceFailure]);
 
   const toggleFlash = () => {
     setFlash(current => !current);
@@ -708,7 +734,7 @@ export default function ScanScreen({ navigation }: any) {
         record?.(v);
         return v;
       } catch (e: any) {
-        diagUpdate(diagId, { errors: [e?.name === 'AbortError' ? 'CANCELLED' : stage === 'request' ? 'NETWORK_OR_TIMEOUT' : 'LOCAL_OCR_FAILED'] });
+        diagUpdate(diagId, { errors: [e?.name === 'AbortError' ? 'CANCELLED' : e?.name === 'TimeoutError' ? 'TIMEOUT' : stage === 'request' ? 'NETWORK_ERROR' : 'LOCAL_OCR_FAILED'] });
         throw e;
       } finally {
         diagUpdate(diagId, { stagesMs: { [stage]: Date.now() - t0 } });
@@ -717,10 +743,14 @@ export default function ScanScreen({ navigation }: any) {
     const io = buildScanFlowIoRaw(recognitionImages, scanInput);
     return {
       ...io,
-      callRecognitionApi: () => timed('request', io.callRecognitionApi, (r) => diagResult(diagId, {
-        ...r.body,
-        serviceUnavailable: r.status >= 500,
-      })),
+      callRecognitionApi: () => timed('request', io.callRecognitionApi, (r) => {
+        const failed = isRecognitionInfrastructureFailure(r.status, r.body);
+        diagResult(diagId, {
+          ...r.body,
+          serviceUnavailable: failed,
+          ...(failed ? { failure: classifyHttpFailure(r.status, r.body), httpStatus: r.status } : {}),
+        });
+      }),
       recognizeFromImage: (uri) => timed('request', () => io.recognizeFromImage(uri), (r) => diagResult(diagId, r)),
       ocrText: (uri) => timed('fallback', () => io.ocrText(uri)),
     };
@@ -735,7 +765,8 @@ export default function ScanScreen({ navigation }: any) {
       // the flow takes its local-OCR fallback instead.
       if (!validateRecognitionImages(recognitionImages).ok) throw new Error('IMAGE_REJECTED');
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), RECOGNITION_REQUEST_TIMEOUT_MS);
+      let timedOut = false;
+      const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, RECOGNITION_REQUEST_TIMEOUT_MS);
       const forwardAbort = () => controller.abort();
       scanInput?.signal?.addEventListener('abort', forwardAbort);
       try {
@@ -749,7 +780,12 @@ export default function ScanScreen({ navigation }: any) {
           }),
           signal: controller.signal,
         });
-        return { status: resp.status, body: await resp.json() };
+        // A non-JSON error page (proxy / platform) still carries a real status.
+        return { status: resp.status, body: await resp.json().catch(() => null) };
+      } catch (e: any) {
+        // Our own deadline is a timeout, not a network failure (recognitionOutcome).
+        if (timedOut && !scanInput?.signal?.aborted) throw Object.assign(new Error('recognition timeout'), { name: 'TimeoutError' });
+        throw e;
       } finally {
         clearTimeout(timeoutId);
         scanInput?.signal?.removeEventListener('abort', forwardAbort);
@@ -792,6 +828,11 @@ export default function ScanScreen({ navigation }: any) {
     showLowConfidenceCandidates: (candidates) => showPresentation(presentCandidates(candidates)),
     showPresentation,
     onRecognized: handleRecognized,
+    onServiceFailure: (kind) => {
+      setScanError(null);
+      setServiceFailure(kind);
+      diagOutcome('failed');
+    },
     // Only reached for a backend without a match verdict: preview, not commit.
     onVisionRecognized: (card) => {
       setCapturedPhotoUri(null);
@@ -832,6 +873,7 @@ export default function ScanScreen({ navigation }: any) {
       setScanProgress(1);
       setScanError(null);
       setCapturedPhotoUri(null);
+      clearRetry();
 
       // 拍攝照片
       let photo;
@@ -863,6 +905,7 @@ export default function ScanScreen({ navigation }: any) {
         const recognitionImages = await captureWebRecognitionImages(photo.uri);
         diagUpdate(diagId, { stagesMs: { prepare: Date.now() - stageT0 } });
         if (!job.isCurrent()) return;
+        retryRef.current = { mode: 'web', uri: photo.uri, images: recognitionImages };
         await runWebCameraScan(photo.uri, buildScanFlowIo(recognitionImages, { signal, diagId }), buildScanFlowUi(job));
       } else {
         setScanningStatus(t('scan_processing_image'));
@@ -875,6 +918,7 @@ export default function ScanScreen({ navigation }: any) {
           errors: images.cropSkipped ? [`CROP_${images.cropSkipped.toUpperCase()}`] : [],
         });
         if (!job.isCurrent()) return;
+        retryRef.current = { mode: 'native', ocrUri: images.cropUri || shot.uri, base64: images.base64, cropBase64: images.cropBase64 };
         await runNativeCameraScan(
           // Local OCR fallback reads the frame crop when there is one.
           images.cropUri || shot.uri,
@@ -924,134 +968,8 @@ export default function ScanScreen({ navigation }: any) {
       if (!job.isCurrent()) return;
 
       if (!result.canceled && result.assets[0]?.uri) {
-        const recognizeOptions = { base64: result.assets[0].base64, signal };
-        setIsProcessingOCR(true);
-        setIsScanning(true);
-
-        setScanError(null);
-        setCapturedPhotoUri(result.assets[0].uri);
-
-        const galleryDiagId = diagStart('gallery');
-        const galleryT0 = Date.now();
-        const galleryVisionResult = await recognizeCardFromImage(result.assets[0].uri, recognizeOptions);
-        diagUpdate(galleryDiagId, { stagesMs: { request: Date.now() - galleryT0 } });
-        diagResult(galleryDiagId, galleryVisionResult);
-        if (!job.isCurrent()) return;
-        if (galleryVisionResult.cancelled) return;
-        const galleryPresentation = presentMatch(galleryVisionResult);
-        if (galleryPresentation) {
-          setIsProcessingOCR(false);
-          setIsScanning(false);
-          if (galleryVisionResult.raw) setRecognizedText(galleryVisionResult.raw);
-          showPresentation(galleryPresentation);
-          return;
-        }
-        if (galleryVisionResult.success && galleryVisionResult.card) {
-          setIsProcessingOCR(false);
-          setIsScanning(false);
-          // Route through handleRecognized rather than committing here. This
-          // branch used to call commitCard directly, ahead of its own
-          // lowConfidence check below, so an unresolved printing was auto-added
-          // before anything could offer the picker (DIC-1325). handleRecognized
-          // is the single place that decides commit-vs-confirm, and it already
-          // clears the search/suggestion state this block used to reset by hand.
-          handleRecognized(
-            galleryVisionResult.card,
-            galleryVisionResult.confidence ?? 0.9,
-            galleryVisionResult.candidates,
-            isAmbiguousPrinting(galleryVisionResult),
-          );
-          return;
-        }
-        if (galleryVisionResult.lowConfidence || galleryVisionResult.suggestions?.length) {
-          setIsProcessingOCR(false);
-          setIsScanning(false);
-          // Route through handleRecognized so the exact-printing picker opens
-          // and commitCard stays at zero until the user picks — same decision
-          // point the success branch above uses (DIC-1325 / DIC-1339). The
-          // typed candidates carry their own compound printing ids so
-          // whichever the user picks resolves to an exact printing at commit.
-          const typedCandidates = galleryVisionResult.candidates;
-          if (typedCandidates && typedCandidates.length > 0) {
-            const first = typedCandidates[0];
-            handleRecognized(
-              first.card,
-              galleryVisionResult.confidence ?? first.confidence ?? 0,
-              typedCandidates,
-              isAmbiguousPrinting(galleryVisionResult),
-            );
-            return;
-          }
-          // The API always populates candidates alongside `lowConfidence`, so
-          // this fallback only fires for legacy shapes (local-OCR suggestions
-          // without a typed candidate list). Still no commit — surface the
-          // suggestions in the search panel for manual selection.
-          // No typed candidates (legacy local-OCR shape): an explicit no-match, the
-          // suggestions are only offered as a correction. No score/percentage shown.
-          if (galleryVisionResult.raw) setRecognizedText(galleryVisionResult.raw);
-          showPresentation({
-            kind: 'none',
-            reason: 'low_evidence',
-            suggestions: (galleryVisionResult.suggestions || []).map((card) => ({ card, confidence: 0 })),
-          });
-          return;
-        }
-
-        // When the recognition backend is unavailable the local OCR passes below are
-        // only a best-effort fallback, so their failure says nothing about the photo.
-        const noTextError = galleryVisionResult.serviceUnavailable
-          ? t('scan_service_unavailable')
-          : t('scan_no_text_guidance');
-
-        if (isWeb) {
-          // recognizeCardFromImage above already ran the card-number OCR pass; v37
-          // called it a second time here, re-uploading the same photo.
-          setIsProcessingOCR(false);
-          setIsScanning(false);
-          // Fallback 到全圖 OCR
-          const recognizedText = await recognizeTextWeb(result.assets[0].uri);
-          if (!job.isCurrent()) return;
-          const trimmedText = recognizedText.text.trim();
-          setRecognizedText(trimmedText);
-
-          if (trimmedText.length > 0) {
-            const fallbackResult = await recognizeCardFromOcr(trimmedText);
-            if (!job.isCurrent()) return;
-            if (fallbackResult.success && fallbackResult.card) {
-              handleRecognized(fallbackResult.card, fallbackResult.confidence ?? 0.85, fallbackResult.candidates, isAmbiguousPrinting(fallbackResult));
-              return;
-            }
-            setSearchError(localizedError(fallbackResult.error, 'scan_no_match'));
-            const searchResult = await searchCards(trimmedText, 10);
-            if (!job.isCurrent()) return;
-            setSearchResults(searchResult);
-          } else {
-            setScanError(noTextError);
-          }
-        } else {
-          const recognizedText = await performOcr(result.assets[0].uri);
-          if (!job.isCurrent()) return;
-          const trimmedText = recognizedText.trim();
-          setRecognizedText(trimmedText);
-
-          setIsProcessingOCR(false);
-          setIsScanning(false);
-
-          if (trimmedText.length > 0) {
-            const cardResult = await recognizeCardFromOcr(trimmedText);
-            if (!job.isCurrent()) return;
-            if (cardResult.success && cardResult.card) {
-              handleRecognized(cardResult.card, cardResult.confidence ?? 0.85, cardResult.candidates, isAmbiguousPrinting(cardResult));
-            } else {
-              setSearchError(localizedError(cardResult.error, 'scan_no_match'));
-              const searchResult = await searchCards(trimmedText, 10);
-              if (!job.isCurrent()) return;
-              setSearchResults(searchResult);
-            }
-          } else {
-            setScanError(noTextError);
-          }
-        }
+        clearRetry();
+        await recognizeGalleryPhoto({ mode: 'gallery', uri: result.assets[0].uri, base64: result.assets[0].base64 }, job, signal);
       }
     } catch (error: any) {
       if (!job.isCurrent()) return;
@@ -1059,6 +977,174 @@ export default function ScanScreen({ navigation }: any) {
       setIsProcessingOCR(false);
       setIsScanning(false);
       setScanError(t('scan_image_failed'));
+    } finally {
+      lifecycle.end(job);
+    }
+  };
+
+  // One gallery photo through recognition. Also the manual retry of a gallery photo
+  // whose recognition hit a service failure (same bytes, still in memory).
+  const recognizeGalleryPhoto = async (photo: Extract<RetryPayload, { mode: 'gallery' }>, job: ScanJob, signal: AbortSignal) => {
+    const { uri } = photo;
+    const recognizeOptions = { base64: photo.base64, signal };
+    setIsProcessingOCR(true);
+    setIsScanning(true);
+
+    setScanError(null);
+    setCapturedPhotoUri(uri);
+
+    const galleryDiagId = diagStart('gallery');
+    const galleryT0 = Date.now();
+    const galleryVisionResult = await recognizeCardFromImage(uri, recognizeOptions);
+    diagUpdate(galleryDiagId, { stagesMs: { request: Date.now() - galleryT0 } });
+    diagResult(galleryDiagId, galleryVisionResult);
+    if (!job.isCurrent()) return;
+    if (galleryVisionResult.cancelled) return;
+    if (galleryVisionResult.serviceUnavailable) retryRef.current = photo;
+    const galleryPresentation = presentMatch(galleryVisionResult);
+    if (galleryPresentation) {
+      setIsProcessingOCR(false);
+      setIsScanning(false);
+      if (galleryVisionResult.raw) setRecognizedText(galleryVisionResult.raw);
+      showPresentation(galleryPresentation);
+      return;
+    }
+    if (galleryVisionResult.success && galleryVisionResult.card) {
+      setIsProcessingOCR(false);
+      setIsScanning(false);
+      // Route through handleRecognized rather than committing here. This
+      // branch used to call commitCard directly, ahead of its own
+      // lowConfidence check below, so an unresolved printing was auto-added
+      // before anything could offer the picker (DIC-1325). handleRecognized
+      // is the single place that decides commit-vs-confirm, and it already
+      // clears the search/suggestion state this block used to reset by hand.
+      handleRecognized(
+        galleryVisionResult.card,
+        galleryVisionResult.confidence ?? 0.9,
+        galleryVisionResult.candidates,
+        isAmbiguousPrinting(galleryVisionResult),
+      );
+      return;
+    }
+    if (galleryVisionResult.lowConfidence || galleryVisionResult.suggestions?.length) {
+      setIsProcessingOCR(false);
+      setIsScanning(false);
+      // Route through handleRecognized so the exact-printing picker opens
+      // and commitCard stays at zero until the user picks — same decision
+      // point the success branch above uses (DIC-1325 / DIC-1339). The
+      // typed candidates carry their own compound printing ids so
+      // whichever the user picks resolves to an exact printing at commit.
+      const typedCandidates = galleryVisionResult.candidates;
+      if (typedCandidates && typedCandidates.length > 0) {
+        const first = typedCandidates[0];
+        handleRecognized(
+          first.card,
+          galleryVisionResult.confidence ?? first.confidence ?? 0,
+          typedCandidates,
+          isAmbiguousPrinting(galleryVisionResult),
+        );
+        return;
+      }
+      // The API always populates candidates alongside `lowConfidence`, so
+      // this fallback only fires for legacy shapes (local-OCR suggestions
+      // without a typed candidate list). Still no commit — surface the
+      // suggestions in the search panel for manual selection.
+      // No typed candidates (legacy local-OCR shape): an explicit no-match, the
+      // suggestions are only offered as a correction. No score/percentage shown.
+      if (galleryVisionResult.raw) setRecognizedText(galleryVisionResult.raw);
+      showPresentation({
+        kind: 'none',
+        reason: 'low_evidence',
+        suggestions: (galleryVisionResult.suggestions || []).map((card) => ({ card, confidence: 0 })),
+      });
+      return;
+    }
+
+    // When the recognition backend could not answer, the local OCR passes below are
+    // only a best-effort fallback: a miss says nothing about the photo, so it ends in the
+    // service-failure state with a manual retry — never 「找不到匹配的卡牌」 (v39 report).
+    const serviceFailed = !!galleryVisionResult.serviceUnavailable;
+    const failGallery = () => {
+      setServiceFailure(galleryVisionResult.failure ?? 'unavailable');
+      diagOutcome('failed');
+    };
+
+    // recognizeCardFromImage above already ran the card-number OCR pass on web; v37
+    // called it a second time here, re-uploading the same photo.
+    if (isWeb) {
+      setIsProcessingOCR(false);
+      setIsScanning(false);
+    }
+    // Fallback 到全圖 OCR
+    const trimmedText = isWeb
+      ? (await recognizeTextWeb(uri)).text.trim()
+      : (await performOcr(uri)).trim();
+    if (!job.isCurrent()) return;
+    setRecognizedText(trimmedText);
+    setIsProcessingOCR(false);
+    setIsScanning(false);
+
+    if (trimmedText.length > 0) {
+      const fallbackResult = await recognizeCardFromOcr(trimmedText);
+      if (!job.isCurrent()) return;
+      if (fallbackResult.success && fallbackResult.card) {
+        handleRecognized(fallbackResult.card, fallbackResult.confidence ?? 0.85, fallbackResult.candidates, isAmbiguousPrinting(fallbackResult));
+        return;
+      }
+      if (serviceFailed) { failGallery(); return; }
+      setSearchError(localizedError(fallbackResult.error, 'scan_no_match'));
+      const searchResult = await searchCards(trimmedText, 10);
+      if (!job.isCurrent()) return;
+      setSearchResults(searchResult);
+    } else if (serviceFailed) {
+      failGallery();
+    } else {
+      setScanError(t('scan_no_text_guidance'));
+    }
+  };
+
+  // Manual retry after a service failure: the same photo, never a new capture. One live
+  // scan job at a time, so a double tap sends one request; nothing is charged here.
+  const retryRecognition = async () => {
+    const photo = retryRef.current;
+    if (!photo || lifecycle.hasLiveJob()) return;
+    if (!canScanNow()) {
+      promptScanBlocked();
+      return;
+    }
+    if (!hasUploadConsent()) return;
+    const job = lifecycle.begin();
+    if (!job) return;
+    const { signal } = job;
+    setServiceFailure(null);
+    setScanError(null);
+    try {
+      if (photo.mode === 'gallery') {
+        await recognizeGalleryPhoto(photo, job, signal);
+        return;
+      }
+      const diagId = diagStart('camera');
+      setIsProcessingOCR(true);
+      setIsScanning(true);
+      setScanningStatus(t('scan_processing_image'));
+      if (photo.mode === 'web') {
+        await runWebCameraScan(photo.uri, buildScanFlowIo(photo.images, { signal, diagId }), buildScanFlowUi(job));
+      } else {
+        await runNativeCameraScan(
+          photo.ocrUri,
+          buildScanFlowIo(undefined, { base64: photo.base64, cropBase64: photo.cropBase64, signal, diagId }),
+          buildScanFlowUi(job),
+        );
+      }
+    } catch (error: any) {
+      if (!job.isCurrent()) return;
+      console.error(`Retry Error: ${error?.name || 'Error'}`);
+      diagOutcome('failed');
+      setIsProcessingOCR(false);
+      setIsScanning(false);
+      setScanningStatus('');
+      setScanProgress(0);
+      setScanError(t('scan_failed_retry_manual'));
     } finally {
       lifecycle.end(job);
     }
@@ -1209,8 +1295,28 @@ export default function ScanScreen({ navigation }: any) {
     // Cancel first: the drawer keeps this screen mounted, so the running scan must be
     // retired before navigating (the blur that follows is then a no-op).
     if (lifecycle.cancel()) resetScanUi();
+    clearRetry();
     navigation.navigate('MainDrawer', { screen: 'Home' });
   };
+
+  // Android hardware back (v39 user report 2026-10-16): close what is on top first —
+  // the correction list, the result preview (nothing added), the service-failure panel —
+  // and otherwise leave exactly like ✕ (cancel the running scan, drop any held photo).
+  // The drawer keeps this screen mounted, so an unfocused Scan never handles back.
+  const backRef = useRef<() => boolean>(() => false);
+  backRef.current = () => {
+    if (!lifecycle.isFocused()) return false;
+    if (candidateSelector.visible) { closeCandidateSelector(); return true; }
+    if (matchSheet) { handleSheetRetake(); return true; }
+    if (serviceFailure) { clearRetry(); return true; }
+    handleClose();
+    return true;
+  };
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => backRef.current());
+    return () => sub.remove();
+  }, []);
 
   // === Web 版：不用 expo-camera 權限，直接讓 WebCamera 處理 getUserMedia ===
   if (isWeb && !webCameraStarted) {
@@ -1293,7 +1399,7 @@ export default function ScanScreen({ navigation }: any) {
           camera is up, and on the gallery surface's own top bar below. */}
       {/* 初始化中遮罩 — 相機在下面照常 mount，讓 getUserMedia 有機會啟動 */}
       {!isCameraReady && !webGalleryMode && (
-        <View style={styles.loadingOverlay}>
+        <View style={[styles.loadingOverlay, belowTopBar]}>
           <View style={styles.loadingContainer}>
             <Text style={styles.loadingText}>{t('scan_camera_initializing')}</Text>
             {cameraError && (
@@ -1424,6 +1530,7 @@ export default function ScanScreen({ navigation }: any) {
         confidence={resultCard.confidence}
         preferredCurrency={preferredCurrency}
         preferredLanguage={preferredLanguage}
+        top={belowTopBar.top + 4}
         onDismiss={() => { setResultCard({ visible: false, card: null, confidence: 0 }); }}
       />
 
@@ -1454,7 +1561,7 @@ export default function ScanScreen({ navigation }: any) {
 
       {/* 最後掃描的卡牌確認提示 */}
       {lastScannedCard && (
-        <View style={resultStyles.toastContainer}>
+        <View style={[resultStyles.toastContainer, { top: belowTopBar.top + 4 }]}>
           <View style={resultStyles.toast}>
             <View style={resultStyles.toastContent}>
               <Text style={resultStyles.toastIcon}>✅</Text>
@@ -1560,6 +1667,36 @@ export default function ScanScreen({ navigation }: any) {
           <Text style={progressStyles.statusText}>{scanningStatus}</Text>
         </View>
       ) : null}
+
+      {/* 辨識服務無法回應（v39）：不是「找不到卡」，可用同一張照片手動重試 */}
+      {serviceFailure && !scanError && (
+        <View style={resultStyles.errorContainer} testID="scan-service-failure">
+          <Text style={resultStyles.errorText}>⚠️ {t(`scan_failure_${serviceFailure}` as TranslationKey)}</Text>
+          <View style={resultStyles.errorActions}>
+            {retryRef.current ? (
+              <TouchableOpacity
+                style={[resultStyles.retryButton, isScanning && { opacity: 0.5 }]}
+                onPress={retryRecognition}
+                disabled={isScanning}
+                accessibilityRole="button"
+                testID="scan-service-retry"
+              >
+                <Text style={resultStyles.retryText}>{t('scan_retry_recognition')}</Text>
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity
+              style={resultStyles.retryButton}
+              onPress={() => {
+                clearRetry();
+                setShowSearch(true);
+              }}
+              testID="scan-service-manual"
+            >
+              <Text style={resultStyles.retryText}>{t('scan_manual_search')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       {/* 掃描失敗提示（OCR 回傳空） */}
       {scanError && (

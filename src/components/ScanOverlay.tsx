@@ -43,7 +43,7 @@ import { COLORS } from '../constants';
 import { PALETTE } from '../theme/tokensV2';
 import { useTranslation } from '../i18n';
 import { useScanSessionStore } from '../stores/scanSessionStore';
-import ScanTopBar from './ScanTopBar';
+import ScanTopBar, { useScanTopInset } from './ScanTopBar';
 
 import { computeScanFrameSize } from '../utils/scanFrame';
 // Scan frame: a PORTRAIT card window at the real 63:88 card ratio, sized per viewport
@@ -113,7 +113,10 @@ export default function ScanOverlay({
 }: ScanOverlayProps) {
   const { t } = useTranslation();
   const viewport = useWindowDimensions();
-  const frame = computeScanFrameSize({ width: viewport.width, height: viewport.height });
+  // The frame leaves room for the status-bar inset the top bar now clears, so the bar
+  // can never sit on the frame; the native crop measures the frame itself either way.
+  const topInset = useScanTopInset();
+  const frame = computeScanFrameSize({ width: viewport.width, height: viewport.height }, { top: topInset });
   // Real session size for the Pen AQf9b count box — read straight from the
   // store so the badge can never drift from the actual session.
   const sessionCount = useScanSessionStore((s) => s.cardCount);
@@ -162,12 +165,7 @@ export default function ScanOverlay({
           by DIC-1294 on API-36 emulator. Two-node split preserves the
           full pulse UX AND fixes the crash. */}
       <View style={styles.overlay}>
-        <View style={styles.overlayTop}>
-          {/* Pen `x7iIL` Top Bar — Close / quota pill / Flash. The flash
-              control moved here from the bottom controls row per the Pen
-              composition; same real onFlash contract. */}
-          <ScanTopBar onClose={onClose} onFlash={onFlash} flashOn={flash} />
-        </View>
+        <View style={styles.overlayTop} />
         <View style={styles.scanAreaContainer}>
           <View style={styles.overlaySide} />
           <Animated.View
@@ -323,6 +321,13 @@ export default function ScanOverlay({
           </View>
         </View>
       </View>
+
+      {/* Pen `x7iIL` Top Bar — Close / quota pill / Flash, rendered LAST and above
+          everything, the loading overlay included (zIndex / elevation): nothing can
+          cover or take its touches. It sits below the status-bar inset (ScanTopBar). */}
+      <View style={styles.topBarLayer} pointerEvents="box-none" testID="scan-top-bar-layer">
+        <ScanTopBar onClose={onClose} onFlash={onFlash} flashOn={flash} />
+      </View>
     </>
   );
 }
@@ -351,6 +356,14 @@ const styles = StyleSheet.create({
   overlayTop: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
+  },
+  topBarLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 30,
+    elevation: 30,
   },
   scanAreaContainer: {
     flexDirection: 'row',

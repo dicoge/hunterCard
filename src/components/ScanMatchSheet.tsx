@@ -103,7 +103,9 @@ export default function ScanMatchSheet({
     return (
       <View style={styles.sheet} testID="scan-match-identity">
         <Text style={styles.title}>{t('scan_identity_title', { name, number: card.cardNumber })}</Text>
-        <Text style={styles.body}>{t('scan_identity_body')}</Text>
+        <Text style={styles.body} testID={presentation.numberCorrected ? 'scan-match-number-corrected' : undefined}>
+          {t(presentation.numberCorrected ? 'scan_identity_body_corrected' : 'scan_identity_body')}
+        </Text>
         <View style={styles.pill}><Text style={styles.pillText}>{t('scan_identity_price')}</Text></View>
         <TouchableOpacity style={styles.primary} onPress={onPickPrinting} testID="scan-match-pick">
           <Text style={styles.primaryText}>{t('scan_identity_pick')}</Text>

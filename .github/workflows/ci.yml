@@ -591,6 +591,15 @@ jobs:
       - name: Verify the NATIVE ScanScreen branch crops to the measured frame and OCRs the crop (CR 2026-10-15 P2_1)
         run: npm run test:scan-native-crop-render
 
+      - name: Verify v39 user logs — misread number recovered to the user-confirmed card as identity only (no price), negatives, bounded service-failure categories never shown as no-match, readable summary (2026-10-16)
+        run: npm run test:scan-v39-recovery
+
+      - name: Verify the native Scan ✕ clears the status bar / 48dp target / top layer, Android back, service-failure retry of the same photo charged once (2026-10-16)
+        run: npm run test:scan-v39-native-render
+
+      - name: Verify web auto-scan stays paused on a service failure until the user acts (2026-10-16)
+        run: npm run test:scan-v39-web-autoscan
+
       - name: Verify local scan / sign-in diagnostics — allowlist + redaction on write and export, 100/7-day retention, real clear, never affects scan or quota (2026-10-15)
         run: npm run test:scan-diagnostics
 

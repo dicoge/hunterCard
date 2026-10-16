@@ -58,7 +58,7 @@ export type PresentationSource = 'server_verdict' | 'legacy_evidence' | 'legacy_
 
 export type ScanPresentation = (
   | { kind: 'best'; card: CardInfo; evidence: string[]; alternatives: RecognizedCandidate[] }
-  | { kind: 'identity'; card: CardInfo; printings: RecognizedCandidate[] }
+  | { kind: 'identity'; card: CardInfo; printings: RecognizedCandidate[]; numberCorrected?: boolean }
   | { kind: 'none'; reason: NoneReason; suggestions: RecognizedCandidate[] }
 ) & { source?: PresentationSource };
 
@@ -144,7 +144,10 @@ function presentMatchInner(result: Pick<RecognitionResult, 'match' | 'card' | 'c
     const printings = m.alternatives.length ? m.alternatives : (result.candidates ?? []);
     const identity = result.card ?? printings[0]?.card;
     if (!identity || printings.length === 0) return { kind: 'none', reason: 'low_evidence', suggestions: [] };
-    return { kind: 'identity', card: withoutPrintingPrice(identity), printings };
+    // The server named the card from the read name + a near number because the read
+    // number belongs to another card: say so, the user confirms the card and printing.
+    const numberCorrected = m.reason === 'number_name_conflict';
+    return { kind: 'identity', card: withoutPrintingPrice(identity), printings, ...(numberCorrected ? { numberCorrected } : {}) };
   }
   return { kind: 'none', reason: (m.reason ?? 'no_evidence') as NoneReason, suggestions: m.alternatives.slice(0, 5) };
 }

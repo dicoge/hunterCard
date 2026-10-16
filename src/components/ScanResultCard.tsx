@@ -40,6 +40,8 @@ export interface ScanResultCardProps {
   preferredCurrency?: string;
   /** Preferred language (default: 'zh') */
   preferredLanguage?: string;
+  /** Distance from the top; the scan screen passes the bottom of its top bar so the ✕ stays reachable. */
+  top?: number;
 }
 
 export default function ScanResultCard({
@@ -50,6 +52,7 @@ export default function ScanResultCard({
   autoDismissMs = 5000,
   preferredCurrency = 'TWD',
   preferredLanguage = 'zh',
+  top,
 }: ScanResultCardProps) {
   const { t } = useTranslation();
   const slideAnim = useRef(new Animated.Value(0)).current;
@@ -148,6 +151,7 @@ export default function ScanResultCard({
     <Animated.View
       style={[
         styles.container,
+        top !== undefined && { top },
         {
           transform: [{
             translateY: slideAnim.interpolate({

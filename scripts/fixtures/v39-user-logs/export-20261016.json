@@ -1,0 +1,446 @@
+{
+  "format": "holohunter-diagnostics",
+  "schema": 2,
+  "exportedAt": "2026-10-16T12:18:25.995Z",
+  "note": "Local diagnostics only. ruleScore is a deterministic ranking score, not accuracy. No photos, tokens or account data.",
+  "count": 7,
+  "entries": [
+    {
+      "v": 2,
+      "id": "lwpyavo5fv7s38pb",
+      "kind": "scan",
+      "at": "2026-10-16T08:33:42.208Z",
+      "platform": "android",
+      "appVersion": "1.0.0",
+      "nativeBuild": "38",
+      "model": "gemini-2.5-flash",
+      "stagesMs": {
+        "capture": 477,
+        "prepare": 200,
+        "request": 6324,
+        "total": 7002
+      },
+      "errors": [],
+      "source": "camera",
+      "extracted": {
+        "name": "[redacted]",
+        "number": "unknown",
+        "set": "unknown",
+        "language": "unknown"
+      },
+      "match": {
+        "status": "unknown",
+        "reason": "none",
+        "ruleScore": null,
+        "evidence": []
+      },
+      "outcome": "discarded"
+    },
+    {
+      "v": 2,
+      "id": "es9tkhf0wokshbjv",
+      "kind": "scan",
+      "at": "2026-10-16T08:33:57.215Z",
+      "platform": "android",
+      "appVersion": "1.0.0",
+      "nativeBuild": "38",
+      "model": "gemini-2.5-flash",
+      "stagesMs": {
+        "capture": 380,
+        "prepare": 129,
+        "request": 3576,
+        "total": 4086
+      },
+      "errors": [],
+      "source": "camera",
+      "extracted": {
+        "name": "unknown",
+        "number": "unknown",
+        "set": "unknown",
+        "language": "unknown"
+      },
+      "match": {
+        "status": "unknown",
+        "reason": "none",
+        "ruleScore": null,
+        "evidence": []
+      },
+      "outcome": "discarded"
+    },
+    {
+      "v": 2,
+      "id": "mj0f65dbpnm5pojx",
+      "kind": "scan",
+      "at": "2026-10-16T08:34:05.518Z",
+      "platform": "android",
+      "appVersion": "1.0.0",
+      "nativeBuild": "38",
+      "model": "gemini-2.5-flash",
+      "stagesMs": {
+        "capture": 363,
+        "prepare": 145,
+        "request": 3760,
+        "total": 4269
+      },
+      "errors": [],
+      "source": "camera",
+      "extracted": {
+        "name": "[redacted]",
+        "number": "unknown",
+        "set": "unknown",
+        "language": "unknown"
+      },
+      "match": {
+        "status": "unknown",
+        "reason": "none",
+        "ruleScore": null,
+        "evidence": []
+      },
+      "outcome": "discarded"
+    },
+    {
+      "v": 2,
+      "id": "te7x0jey50jjxpo5",
+      "kind": "scan",
+      "at": "2026-10-16T08:34:22.376Z",
+      "platform": "android",
+      "appVersion": "1.0.0",
+      "nativeBuild": "38",
+      "model": "gemini-2.5-flash",
+      "stagesMs": {
+        "capture": 336,
+        "prepare": 118,
+        "request": 3949,
+        "total": 4407
+      },
+      "errors": [],
+      "source": "camera",
+      "extracted": {
+        "name": "Houshou Marine",
+        "number": "unknown",
+        "set": "unknown",
+        "language": "unknown"
+      },
+      "match": {
+        "status": "unknown",
+        "reason": "none",
+        "ruleScore": null,
+        "evidence": []
+      },
+      "outcome": "cancelled"
+    },
+    {
+      "v": 2,
+      "id": "vqoa9dxlkfvwhmuw",
+      "kind": "scan",
+      "at": "2026-10-16T12:16:32.730Z",
+      "platform": "android",
+      "appVersion": "1.0.0",
+      "nativeBuild": "39",
+      "model": "unknown",
+      "stagesMs": {
+        "capture": 469,
+        "prepare": 212,
+        "request": 13233,
+        "fallback": 322
+      },
+      "errors": [
+        "RECOGNITION_UNAVAILABLE"
+      ],
+      "source": "camera",
+      "extracted": {
+        "name": "unknown",
+        "number": "unknown",
+        "set": "unknown",
+        "language": "unknown"
+      },
+      "match": {
+        "status": "service_unavailable",
+        "reason": "none",
+        "ruleScore": null,
+        "evidence": []
+      },
+      "outcome": "pending"
+    },
+    {
+      "v": 2,
+      "id": "uo9tkqnieclb83zz",
+      "kind": "scan",
+      "at": "2026-10-16T12:17:12.676Z",
+      "platform": "android",
+      "appVersion": "1.0.0",
+      "nativeBuild": "39",
+      "model": "gemini-3.5-flash-lite",
+      "stagesMs": {
+        "capture": 381,
+        "prepare": 145,
+        "request": 10519,
+        "total": 11049
+      },
+      "errors": [
+        "NO_MATCH"
+      ],
+      "source": "camera",
+      "extracted": {
+        "name": "風真いろは",
+        "number": "hbp05-081",
+        "set": "hBP05",
+        "language": "JA"
+      },
+      "match": {
+        "status": "no_match",
+        "reason": "number_name_conflict",
+        "ruleScore": null,
+        "evidence": []
+      },
+      "outcome": "discarded",
+      "trace": {
+        "provenance": "server_trace",
+        "traceSchema": "scan-trace/1",
+        "requestId": "4866fa1a60b22ec0",
+        "backendSha": "05502a42f7c83a054bec0e7131ef4823e6fba8bd",
+        "replySchema": "ok",
+        "fields": {
+          "name": {
+            "state": "parsed",
+            "value": "風真いろは",
+            "received": "風真いろは"
+          },
+          "title": {
+            "state": "provider_unknown"
+          },
+          "number": {
+            "state": "parsed",
+            "value": "hbp05-081",
+            "received": "hBP05-081"
+          },
+          "set": {
+            "state": "parsed",
+            "value": "hBP05",
+            "received": "hBP05"
+          },
+          "language": {
+            "state": "parsed",
+            "value": "JA",
+            "received": "JA"
+          },
+          "rarity": {
+            "state": "parsed",
+            "value": "SR",
+            "received": "SR"
+          }
+        },
+        "candidateCount": 927,
+        "top": [
+          {
+            "id": "hBP01-051_hEB01_SR_hBP01-051_SR_02",
+            "score": 109,
+            "evidence": [
+              "cardNumber fuzzy-2",
+              "character exact/contains",
+              "rarity",
+              "hp",
+              "bloom/type"
+            ]
+          },
+          {
+            "id": "hBP01-051_hBP01_RR_hBP01-051_RR",
+            "score": 102.5,
+            "evidence": [
+              "cardNumber fuzzy-2",
+              "character exact/contains",
+              "hp",
+              "bloom/type"
+            ]
+          },
+          {
+            "id": "hBP01-051_hBP01_UR_hBP01-051_UR",
+            "score": 102.5,
+            "evidence": [
+              "cardNumber fuzzy-2",
+              "character exact/contains",
+              "hp",
+              "bloom/type"
+            ]
+          },
+          {
+            "id": "hBP05-081_hBP05_U_hBP05-081_U",
+            "score": 101.5,
+            "evidence": [
+              "cardNumber exact"
+            ]
+          },
+          {
+            "id": "hBP05-081_hBP05_S_hBP05-081_S",
+            "score": 101.5,
+            "evidence": [
+              "cardNumber exact"
+            ]
+          }
+        ],
+        "serverVerdict": {
+          "status": "no_match",
+          "reason": "number_name_conflict"
+        },
+        "rejection": "evidence_rejected"
+      },
+      "presentation": {
+        "kind": "none",
+        "reason": "number_name_conflict",
+        "source": "server_verdict"
+      },
+      "timeline": [
+        {
+          "e": "presented",
+          "t": 11049
+        },
+        {
+          "e": "no_match",
+          "t": 11051
+        },
+        {
+          "e": "discarded",
+          "t": 18704
+        }
+      ]
+    },
+    {
+      "v": 2,
+      "id": "6y94d2zjnus37f7n",
+      "kind": "scan",
+      "at": "2026-10-16T12:17:38.437Z",
+      "platform": "android",
+      "appVersion": "1.0.0",
+      "nativeBuild": "39",
+      "model": "gemini-3.5-flash-lite",
+      "stagesMs": {
+        "capture": 409,
+        "prepare": 119,
+        "request": 7574,
+        "total": 8107
+      },
+      "errors": [
+        "NO_MATCH"
+      ],
+      "source": "camera",
+      "extracted": {
+        "name": "宝鐘マリン",
+        "number": "hbp01-014",
+        "set": "hBP01",
+        "language": "JA"
+      },
+      "match": {
+        "status": "no_match",
+        "reason": "number_name_conflict",
+        "ruleScore": null,
+        "evidence": []
+      },
+      "outcome": "no_match",
+      "trace": {
+        "provenance": "server_trace",
+        "traceSchema": "scan-trace/1",
+        "requestId": "abcc4aea241e5f3b",
+        "backendSha": "05502a42f7c83a054bec0e7131ef4823e6fba8bd",
+        "replySchema": "ok",
+        "fields": {
+          "name": {
+            "state": "parsed",
+            "value": "宝鐘マリン",
+            "received": "宝鐘マリン"
+          },
+          "title": {
+            "state": "provider_unknown"
+          },
+          "number": {
+            "state": "parsed",
+            "value": "hbp01-014",
+            "received": "hBP01-014"
+          },
+          "set": {
+            "state": "parsed",
+            "value": "hBP01",
+            "received": "hBP01"
+          },
+          "language": {
+            "state": "parsed",
+            "value": "JA",
+            "received": "JA"
+          },
+          "rarity": {
+            "state": "parsed",
+            "value": "SR",
+            "received": "SR"
+          }
+        },
+        "candidateCount": 994,
+        "top": [
+          {
+            "id": "hEB01-014_hEB01_SR_hEB01-014_SR",
+            "score": 110.5,
+            "evidence": [
+              "cardNumber fuzzy-2",
+              "character exact/contains",
+              "rarity",
+              "hp",
+              "bloom/type"
+            ]
+          },
+          {
+            "id": "hEB01-014_hEB01_U_hEB01-014_U",
+            "score": 102.5,
+            "evidence": [
+              "cardNumber fuzzy-2",
+              "character exact/contains",
+              "hp",
+              "bloom/type"
+            ]
+          },
+          {
+            "id": "hBP01-014_hBP01_RR_hBP01-014_RR",
+            "score": 101.5,
+            "evidence": [
+              "cardNumber exact"
+            ]
+          },
+          {
+            "id": "hBP01-014_hBP01_UR_hBP01-014_UR",
+            "score": 101.5,
+            "evidence": [
+              "cardNumber exact"
+            ]
+          },
+          {
+            "id": "hBP01-054_hEB01_SR_hBP01-054_SR_02",
+            "score": 91,
+            "evidence": [
+              "cardNumber fuzzy-1",
+              "rarity",
+              "bloom/type"
+            ]
+          }
+        ],
+        "serverVerdict": {
+          "status": "no_match",
+          "reason": "number_name_conflict"
+        },
+        "rejection": "evidence_rejected"
+      },
+      "presentation": {
+        "kind": "none",
+        "reason": "number_name_conflict",
+        "source": "server_verdict"
+      },
+      "timeline": [
+        {
+          "e": "presented",
+          "t": 8107
+        },
+        {
+          "e": "no_match",
+          "t": 8109
+        }
+      ]
+    }
+  ],
+  "fixtureSource": "User diagnostics export 2026-10-16 (diagnostics.txt sha256 b32287d37b8c27d454c2f58ffdcb938c28d44f010a317eab5bbe4241bad13147 as received, markdown fences removed). Local scan diagnostics only: no photo, token, key or account data."
+}

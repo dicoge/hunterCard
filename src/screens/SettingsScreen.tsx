@@ -9,7 +9,7 @@ import { friendlyAuthErrorMessage, isCancelAuthError } from '../services/authErr
 import { showAlert } from '../utils/platformAlert';
 import { useScanDiagnosticsStore } from '../store/scanDiagnosticsStore';
 import { exportDiagnosticsText } from '../services/diagnosticsExport';
-import { MAX_ENTRIES } from '../services/scanDiagnostics';
+import { MAX_ENTRIES, buildReadableSummary, pruneEntries } from '../services/scanDiagnostics';
 import { useTranslation } from '../i18n';
 import type { AuthProvider } from '../types/auth';
 import { AppShell, buildShellTabs, SHELL_TAB_LABELS } from '../components/shell';
@@ -18,9 +18,23 @@ import { PALETTE, SEMANTIC, FONTS, GRADIENTS } from '../theme/tokensV2';
 const PROVIDER_LABEL: Record<AuthProvider, string> = { apple: 'Apple', google: 'Google' };
 const ALL_PROVIDERS: AuthProvider[] = ['google', 'apple'];
 
+/** Lines of the diagnostics summary shown on screen; the export carries all of it. */
+const SUMMARY_PREVIEW_LINES = 80;
+
 export default function SettingsScreen({ navigation }: any) {
   const { t } = useTranslation();
   const diagnosticsCount = useScanDiagnosticsStore((st) => st.entries.length);
+  // Readable Traditional Chinese summary of the same sanitised entries the export carries
+  // (v39 user request: the raw log was unreadable). Shown on demand, bounded on screen.
+  const diagnosticsEntries = useScanDiagnosticsStore((st) => st.entries);
+  const [showDiagnosticsSummary, setShowDiagnosticsSummary] = useState(false);
+  const diagnosticsSummary = useMemo(() => {
+    if (!showDiagnosticsSummary) return [];
+    const lines = buildReadableSummary(pruneEntries(diagnosticsEntries));
+    return lines.length > SUMMARY_PREVIEW_LINES
+      ? [...lines.slice(0, SUMMARY_PREVIEW_LINES), t('settings_diagnostics_summary_more')]
+      : lines;
+  }, [showDiagnosticsSummary, diagnosticsEntries, t]);
   const handleExportDiagnostics = async () => {
     try {
       await exportDiagnosticsText(useScanDiagnosticsStore.getState().exportText());
@@ -391,7 +405,24 @@ export default function SettingsScreen({ navigation }: any) {
               >
                 <Text style={styles.diagnosticsBtnText}>{t('settings_diagnostics_clear')}</Text>
               </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.diagnosticsBtn}
+                onPress={() => setShowDiagnosticsSummary((v) => !v)}
+                disabled={diagnosticsCount === 0}
+                testID="settings-diagnostics-summary-toggle"
+              >
+                <Text style={styles.diagnosticsBtnText}>
+                  {t(showDiagnosticsSummary ? 'settings_diagnostics_summary_hide' : 'settings_diagnostics_summary_show')}
+                </Text>
+              </TouchableOpacity>
             </View>
+            {showDiagnosticsSummary && diagnosticsSummary.length ? (
+              <View style={styles.diagnosticsSummary} testID="settings-diagnostics-summary">
+                {diagnosticsSummary.map((line, i) => (
+                  <Text key={i} style={styles.diagnosticsSummaryLine} selectable>{line}</Text>
+                ))}
+              </View>
+            ) : null}
           </View>
           <View style={styles.rowDivider} />
           <View style={styles.rowItem} testID="settings-row-about">
@@ -496,6 +527,8 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   diagnosticsActions: { flexDirection: 'row', gap: 10, marginBottom: 6 },
+  diagnosticsSummary: { backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 10, padding: 10, marginBottom: 8, gap: 2 },
+  diagnosticsSummaryLine: { color: SEMANTIC.onBgDim, fontSize: 11, lineHeight: 16 },
   diagnosticsBtn: {
     paddingHorizontal: 14,
     paddingVertical: 8,

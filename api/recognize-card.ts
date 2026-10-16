@@ -357,7 +357,7 @@ LANGUAGE: [JA, EN, ZH or another printed card language code, or NONE]`;
 type VisionAdapter = {
   provider: string;
   model: string;
-  request: (images: string[], timeoutMs: number, clientSignal?: AbortSignal) => Promise<Response>;
+  request: (images: string[], signal: AbortSignal) => Promise<Response>;
   extract: (data: any) => string;
 };
 
@@ -367,7 +367,7 @@ type VisionAdapter = {
 const googleAdapter = (apiKey: string): VisionAdapter => ({
   provider: 'gemini',
   model: GEMINI_MODEL,
-  request: (images, timeoutMs, clientSignal) => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
+  request: (images, signal) => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
     body: JSON.stringify({
@@ -377,7 +377,7 @@ const googleAdapter = (apiKey: string): VisionAdapter => ({
       }],
       generationConfig: VISION_GENERATION_CONFIG,
     }),
-    signal: withClientAbort(AbortSignal.timeout(timeoutMs), clientSignal),
+    signal,
   }),
   extract: (data) => {
     // A reply cut off at the token cap is not an answer: its CARD_NUMBER line may be
@@ -397,6 +397,20 @@ const googleAdapter = (apiKey: string): VisionAdapter => ({
  * commits a card, so an aborted request can never charge — the server holds no quota.
  */
 export class ClientAbortedError extends Error {}
+
+/**
+ * Why the vision provider leg failed, as far as this handler can PROVE it (v39 user
+ * report 2026-10-16: a 502 logged only "gemini API request failed", so nobody could
+ * tell a timeout from anything else). Bounded codes only — never upstream text.
+ *   PROVIDER_TIMEOUT  our own VISION_TOTAL_BUDGET_MS deadline aborted the call
+ *   PROVIDER_BUSY     the provider answered HTTP 429 or 503
+ *   PROVIDER_ERROR    anything else (other status, transport failure, bad reply)
+ */
+export type ProviderFailureCode = 'PROVIDER_TIMEOUT' | 'PROVIDER_BUSY' | 'PROVIDER_ERROR';
+export class ProviderFailureError extends Error {
+  readonly code: ProviderFailureCode;
+  constructor(message: string, code: ProviderFailureCode) { super(message); this.code = code; }
+}
 
 function withClientAbort(timeout: AbortSignal, clientSignal?: AbortSignal): AbortSignal {
   if (!clientSignal) return timeout;
@@ -449,9 +463,10 @@ async function callVision(images: string[], clientSignal?: AbortSignal): Promise
   // Upstream bodies and raw transport errors never escape this block: a failing leg is
   // reduced to provider + HTTP status before it can reach a client response or a log.
   let reply: string;
+  const deadline = AbortSignal.timeout(legBudget);
   try {
     if (clientSignal?.aborted) throw new ClientAbortedError('client aborted');
-    const res = await adapter.request(imageList, legBudget, clientSignal);
+    const res = await adapter.request(imageList, withClientAbort(deadline, clientSignal));
     if (!res.ok) throw new Error(`${adapter.provider} API error (${res.status})`);
     reply = adapter.extract(await res.json());
   } catch (e: any) {
@@ -459,10 +474,11 @@ async function callVision(images: string[], clientSignal?: AbortSignal): Promise
       console.warn(`[recognize-card] client aborted; provider ${adapter.provider} call abandoned`);
       throw new ClientAbortedError('client aborted');
     }
-    const safeError = e instanceof Error && /^\w+ API error \(\d+\)$/.test(e.message)
-      ? e
-      : new Error(`${adapter.provider} API request failed`);
-    console.error(`[recognize-card] provider ${adapter.provider} failed: ${safeError.message}`);
+    const status = e instanceof Error ? /^\w+ API error \((\d+)\)$/.exec(e.message)?.[1] : undefined;
+    const code: ProviderFailureCode = deadline.aborted ? 'PROVIDER_TIMEOUT'
+      : status === '429' || status === '503' ? 'PROVIDER_BUSY' : 'PROVIDER_ERROR';
+    const safeError = new ProviderFailureError(status ? `${adapter.provider} API error (${status})` : `${adapter.provider} API request failed`, code);
+    console.error(`[recognize-card] provider ${adapter.provider} failed: ${safeError.message} [${code}]`);
     throw safeError;
   }
   if (!reply) {
@@ -574,6 +590,7 @@ export interface MatchVerdict<C = any> {
   best: C | null;
   /** Printing resolved, so the price on `best` belongs to the card in hand. */
   printingResolved: boolean;
+  /** no_match: why. identity_only: 'number_name_conflict' when the number was corrected by name. */
   reason?: NoMatchReason;
   /** Human-checkable evidence tokens, e.g. ['cardNumber exact', 'rarity']. */
   evidence: string[];
@@ -621,7 +638,35 @@ function decideMatch<C>(
   // A number that names someone else than the character read is a misread, not a match.
   if (read.hasCharacter && numbered.every(r => comparable(r) && r.charScore < 0.55)
       && !(read.hasTitle && numbered.some(r => r.titleScore >= 0.55))) {
-    return none('number_name_conflict', numbered.slice(0, 5).map(toCandidate));
+    // v39 user logs 2026-10-16 (user-confirmed cards): 風真いろは read as hBP05-081 was
+    // hBP01-051, 宝鐘マリン read as hBP01-014 was hEB01-014 — the number was misread and the
+    // same-script exact name pointed at the right card one or two characters away. Two
+    // independent readings (exact name + near number) may name the card, never its
+    // printing: identity only, no price, the user picks the printing. A third reading must
+    // back it (rarity / HP / bloom of one of its printings), and one near number must have
+    // more of that support than every other near number with the same name — 宝鐘マリン
+    // also has hBP01-099 two characters from hBP01-014, without any of it. A tie, or no
+    // support, stays an explicit no-match.
+    const named = ranked.filter(r => r.charScore >= 0.9 && comparable(r)
+      && r.reasons.some(x => x.startsWith('cardNumber fuzzy')));
+    const support = new Map<string, number>();
+    for (const r of named) {
+      const n = String(r.entry.cardNumber || '').toLowerCase();
+      const s = r.reasons.filter(x => x === 'rarity' || x === 'hp' || x === 'bloom/type').length;
+      support.set(n, Math.max(support.get(n) ?? 0, s));
+    }
+    const top = Math.max(0, ...support.values());
+    const backed = [...support].filter(([, s]) => s === top).map(([n]) => n);
+    if (top >= 1 && backed.length === 1) {
+      const corrected = named.filter(r => String(r.entry.cardNumber || '').toLowerCase() === backed[0]);
+      const rarityRead = (r: { entry: any }) => !!read.rarity && normalizeText(r.entry.rarity).toUpperCase() === read.rarity;
+      const printings = [...corrected.filter(rarityRead), ...corrected.filter(r => !rarityRead(r))].slice(0, 8).map(toCandidate);
+      return {
+        status: 'identity_only', best: printings[0], printingResolved: false, reason: 'number_name_conflict',
+        evidence: corrected[0].reasons.filter(x => x.startsWith('cardNumber') || x.startsWith('character')), alternatives: printings,
+      };
+    }
+    return none('number_name_conflict', [...numbered, ...named].slice(0, 5).map(toCandidate));
   }
 
   const evidence = (r: { reasons: string[] }) => r.reasons.filter(x => x !== 'bloom/type');
@@ -782,7 +827,9 @@ export default async function handler(req: Request): Promise<Response> {
       return json({
         success: false,
         lowConfidence: true,
-        error: '已辨識卡牌，但無法確認版本，請選擇手上的版本',
+        error: match.reason === 'number_name_conflict'
+          ? '讀到的卡號與角色名稱不符，已依名稱與相近卡號推定卡牌，請確認手上的版本'
+          : '已辨識卡牌，但無法確認版本，請選擇手上的版本',
         card: match.best,
         candidates: match.alternatives,
         confidence: ranking.confidence,
@@ -821,6 +868,8 @@ export default async function handler(req: Request): Promise<Response> {
     }
     // Internal error text can quote request or upstream detail; log the type only.
     console.error(`[recognize-card] handler failed: ${e?.name || 'Error'}`);
-    return json({ success: false, error: '辨識服務發生錯誤，請稍後再試' }, 502);
+    // A provider failure carries its bounded category (client: recognitionOutcome).
+    const code = e instanceof ProviderFailureError ? e.code : undefined;
+    return json({ success: false, ...(code ? { code } : {}), error: '辨識服務發生錯誤，請稍後再試' }, 502);
   }
 }
