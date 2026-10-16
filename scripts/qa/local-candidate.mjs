@@ -12,7 +12,10 @@
  *   /__qa/login?subject=qa-a  signs a synthetic identity in through the real session
  *                          signer: seeds the app's persisted auth, the app then validates
  *                          it against /api/auth/me like any launch (no app-side backdoor)
- *   /__qa/logout          clears that seed
+ *   /__qa/logout          removes that seed from OUTSIDE the app (a lost auth record),
+ *                          so the app's sign-out never runs and the account's data is
+ *                          not cleared or parked. To QA sign-out use the app's own
+ *                          設定 → 登出 button; this control is only for resetting.
  *   /__qa/provider?mode=kanata|iroha-corrected|no-number|down|busy
  *   /__qa/offline?on=1|0  account sync behaves like a phone without network (the
  *                          connection is dropped, no HTTP answer); pages keep loading
