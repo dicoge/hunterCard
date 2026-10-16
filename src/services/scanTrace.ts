@@ -23,7 +23,12 @@ export const TRACE_SCHEMA = 'scan-trace/1';
 export type FieldState = 'parsed' | 'missing' | 'empty' | 'provider_unknown' | 'parse_error' | 'redacted' | 'not_provided';
 export type Provenance = 'server_trace' | 'legacy_debug' | 'none';
 export type TraceField = 'name' | 'title' | 'number' | 'set' | 'language' | 'rarity';
-export interface FieldTrace { state: FieldState; value?: string }
+/**
+ * `received`: the field as the reply line gave it, kept only when it is safe expected-field
+ * text (receivedCardText) — e.g. `hBP01-0100` or `hBP0l-O1O` — so normalisation can be
+ * diagnosed. `value`: the parsed / normalised value (number → canonical token).
+ */
+export interface FieldTrace { state: FieldState; received?: string; value?: string }
 
 const LINE_FOR: Record<TraceField, string> = {
   name: 'CHARACTER', title: 'TITLE', number: 'CARD_NUMBER', set: 'SET', language: 'LANGUAGE', rarity: 'RARITY',
@@ -60,16 +65,59 @@ export function safeCardText(field: TraceField, raw: unknown): string | null {
   }
 }
 
+/** The reply labels the scanner asks for. Only these lines are ever read. */
+export const EXPECTED_LABELS = ['CHARACTER', 'HP', 'RARITY', 'BLOOM_LEVEL', 'CARD_NUMBER', 'TITLE', 'SET', 'LANGUAGE'] as const;
+export type ExpectedLabel = typeof EXPECTED_LABELS[number];
+const MAX_LINE = 200;
+
+/**
+ * THE reader for one expected reply line, shared by the ranking (api/recognize-card
+ * parseField) and the trace, so they can never disagree (CR 2026-10-16 #3). Accepts
+ * leading/trailing horizontal whitespace around an exact label and the colon; the label
+ * must be one of EXPECTED_LABELS (exact word, case-insensitive as before; no fuzzy
+ * labels). First matching line wins.
+ * Returns null when the line is absent, else the trimmed value (bounded).
+ */
+export function readExpectedField(reply: string, label: ExpectedLabel): string | null {
+  if (typeof reply !== 'string' || !(EXPECTED_LABELS as readonly string[]).includes(label)) return null;
+  const m = reply.match(new RegExp(`^[ \\t]*${label}[ \\t]*:[ \\t]*(.*?)[ \\t]*$`, 'mi'));
+  return m ? m[1].slice(0, MAX_LINE).trim() : null;
+}
+
+/** True for NONE / UNKNOWN / N/A / - … (the model saying it could not read the field). */
+export function isUnknownWord(value: string): boolean {
+  return UNKNOWN_WORD.test(value.trim());
+}
+
+// Received (pre-normalisation) number / codes: card-number-ish characters only.
+const RECEIVED_CODE = /^[A-Za-z0-9〇｜|\-‐‑‒–—―− _.]{1,24}$/;
+
+/**
+ * The received value of an expected field, if it is safe to keep as-is for diagnosis:
+ * names / titles by the name rule; number / set / language / rarity only as short
+ * card-code characters. Keys, tokens, emails, urls, markup, base64-like runs → null.
+ */
+export function receivedCardText(field: TraceField, raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const v = raw.normalize('NFKC').replace(/\s+/g, ' ').trim();
+  if (!v || v.length > MAX_TEXT || SECRETISH.some((re) => re.test(v))) return null;
+  if (field === 'name' || field === 'title') return NAME.test(v) ? v : null;
+  return RECEIVED_CODE.test(v) ? v : null;
+}
+
 /** One field from the model reply: its line → a typed state, never the raw line. */
 export function traceReplyField(reply: string, field: TraceField): FieldTrace {
-  const m = reply.match(new RegExp(`^\\s*${LINE_FOR[field]}\\s*:(.*)$`, 'im'));
-  if (!m) return { state: 'missing' };
-  const raw = m[1].trim();
+  const raw = readExpectedField(reply, LINE_FOR[field] as ExpectedLabel);
+  if (raw === null) return { state: 'missing' };
   if (!raw) return { state: 'empty' };
-  if (UNKNOWN_WORD.test(raw)) return { state: 'provider_unknown' };
+  if (isUnknownWord(raw)) return { state: 'provider_unknown' };
+  const received = receivedCardText(field, raw) ?? undefined;
   const value = safeCardText(field, raw);
-  if (value !== null) return { state: 'parsed', value };
-  return { state: field === 'number' && raw.length <= MAX_TEXT && /^[\x20-\x7e]+$/.test(raw) && !SECRETISH.some((re) => re.test(raw)) ? 'parse_error' : 'redacted' };
+  if (value !== null) return { state: 'parsed', ...(received ? { received } : {}), value };
+  // A number that is safe text but not a whole card-number token: keep what was
+  // received, give no value (nothing downstream may treat it as a number).
+  if (field === 'number' && received) return { state: 'parse_error', received };
+  return { state: 'redacted' };
 }
 
 export interface TraceCandidate { id: string; score: number | null; evidence: string[] }
@@ -131,6 +179,19 @@ export function buildRecognitionTrace(input: {
   };
 }
 
+/** Re-validates one field (wire / storage / export): state, received, value. */
+export function sanitizeFieldTrace(f: TraceField, x: any): FieldTrace {
+  const state: FieldState = STATES.has(x?.state) ? x.state : 'not_provided';
+  const received = x?.received === undefined ? undefined : receivedCardText(f, x.received) ?? undefined;
+  const withReceived = (o: FieldTrace): FieldTrace => (received ? { ...o, received } : o);
+  if (state === 'parsed') {
+    const value = safeCardText(f, x?.value);
+    return value === null ? { state: 'redacted' } : withReceived({ state, value });
+  }
+  if (state === 'parse_error') return withReceived({ state });
+  return { state };
+}
+
 /**
  * Client side: re-validate a trace received over the wire. Anything that does not fit
  * the schema exactly is dropped or redacted; an unrecognisable trace → undefined.
@@ -141,11 +202,7 @@ export function projectTrace(raw: any): RecognitionTrace | undefined {
   const fields = {} as Record<TraceField, FieldTrace>;
   for (const f of TRACE_FIELDS) {
     const x = raw.fields?.[f];
-    const state: FieldState = STATES.has(x?.state) ? x.state : 'not_provided';
-    if (state === 'parsed') {
-      const value = safeCardText(f, x?.value);
-      fields[f] = value === null ? { state: 'redacted' } : { state, value };
-    } else fields[f] = { state };
+    fields[f] = sanitizeFieldTrace(f, x);
   }
   return {
     schema: TRACE_SCHEMA,

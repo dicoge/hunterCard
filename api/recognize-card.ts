@@ -1,6 +1,6 @@
 import { normalizeCardIdentity } from '../src/utils/cardNormalization';
 import { parseCardNumberToken } from '../src/utils/cardNumberToken';
-import { buildRecognitionTrace, safeCardText } from '../src/services/scanTrace';
+import { buildRecognitionTrace, isUnknownWord, readExpectedField, receivedCardText, safeCardText, type ExpectedLabel } from '../src/services/scanTrace';
 import {
   validateRecognitionImages,
   type RecognitionImageErrorCode,
@@ -135,10 +135,11 @@ function similarity(a: string, b: string): number {
   return Math.max(0, 1 - editDistance(x, y) / Math.max(x.length, y.length));
 }
 
-function parseField(reply: string, field: string): string {
-  const match = reply.match(new RegExp(`^${field}:\\s*(.+)$`, 'im'));
-  const value = match ? match[1].trim() : '';
-  return /^(none|unknown|n\/a|-)?$/i.test(value) ? '' : value;
+// One shared reader for the expected reply lines (src/services/scanTrace): the ranking
+// and the trace can no longer disagree about an indented / spaced line (CR 2026-10-16 #3).
+function parseField(reply: string, field: ExpectedLabel): string {
+  const value = readExpectedField(reply, field) ?? '';
+  return !value || isUnknownWord(value) ? '' : value;
 }
 
 // Store MVP fail-closed boundary (CR DIC-913 #2): when the client identifies as a
@@ -734,7 +735,8 @@ export default async function handler(req: Request): Promise<Response> {
         hp: /^\d{1,4}$/.test(extracted.hp) ? extracted.hp : '',
         rarity: safeCardText('rarity', extracted.rarity) ?? '',
         bloom: safeCardText('title', extracted.bloom) ?? '',
-        cardNumberRaw: safeCardText('number', extracted.cardNumberRaw) ?? '',
+        // As received (safe card-code text only), so normalisation stays diagnosable.
+        cardNumberRaw: receivedCardText('number', extracted.cardNumberRaw) ?? '',
         cardTitle: safeCardText('title', extracted.cardTitle) ?? '',
         setCode: safeCardText('set', extracted.setCode) ?? '',
         language: safeCardText('language', extracted.language) ?? '',

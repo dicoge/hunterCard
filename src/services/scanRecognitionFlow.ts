@@ -172,6 +172,19 @@ export async function runWebCameraScan(imageUri: string, io: ScanFlowIo, ui: Sca
     }
   }
 
+  // CR 2026-10-16 #1: a no-verdict (older backend) acceptance is judged by the
+  // candidates' evidence, never trusted as-is.
+  if (apiBody?.success && apiBody?.card && !apiBody?.match && ui.showPresentation) {
+    const evidenced = io.mapApiCandidates(apiBody.candidates)?.filter((c) => c.evidence);
+    if (evidenced?.length) {
+      ui.setBusy(false);
+      const p = presentCandidates(evidenced);
+      ui.setStatus(p.kind === 'none' ? '' : '✅ 辨識完成', p.kind === 'none' ? 0 : 4);
+      ui.showPresentation(p);
+      return;
+    }
+  }
+
   if (apiBody?.success && apiBody?.card) {
     ui.setStatus('✅ 辨識完成', 4);
     const confidence = typeof apiBody.confidence === 'number' ? apiBody.confidence : 0.9;
@@ -263,6 +276,15 @@ export async function runNativeCameraScan(imageUri: string, io: ScanFlowIo, ui: 
 
   if (vision.success && vision.card) {
     ui.setBusy(false);
+    // CR 2026-10-16 #1 (native parity): an older backend's acceptance with candidate
+    // evidence goes through the same exact-number / conflict rules.
+    const evidenced = vision.candidates?.filter((c) => c.evidence);
+    if (ui.showPresentation && evidenced?.length) {
+      const p = presentCandidates(evidenced);
+      ui.setStatus(p.kind === 'none' ? '' : '✅ 辨識完成', p.kind === 'none' ? 0 : 4);
+      ui.showPresentation(p);
+      return;
+    }
     ui.setStatus('✅ 辨識完成', 4);
     ui.onVisionRecognized(vision.card, vision.confidence ?? 0.9);
     return;

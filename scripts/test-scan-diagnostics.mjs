@@ -226,7 +226,7 @@ try {
     assert.deepEqual(last().presentation, { kind: 'best', reason: 'none', source: 'server_verdict' });
     assert.equal(last().trace.provenance, 'server_trace');
     assert.equal(last().trace.serverVerdict.status, 'matched');
-    assert.deepEqual(last().trace.fields.number, { state: 'parsed', value: 'hbp01-010' });
+    assert.deepEqual(last().trace.fields.number, { state: 'parsed', received: 'hBP01-010', value: 'hbp01-010' });
     assert.deepEqual(last().timeline.map((x) => x.e), ['presented', 'added']);
     assertClean(platformStorage.getItem('holohunter-scan-diagnostics'), 'storage after scan');
   });

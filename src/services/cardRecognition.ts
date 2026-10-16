@@ -492,6 +492,8 @@ export function diagnosticDebug(raw: any): RecognitionDebug | undefined {
       setCode: str(x.setCode),
       language: str(x.language),
       rarity: str(x.rarity),
+      // As received by the backend (older backends send it); re-validated before storage.
+      cardNumberRaw: str(x.cardNumberRaw),
     },
   };
 }
@@ -502,7 +504,7 @@ export interface RecognitionDebug {
   normalizedCardNumber: string | null;
   matchStatus?: string;
   matchReason?: string | null;
-  extracted: { characterName?: string; cardTitle?: string; setCode?: string; language?: string; rarity?: string };
+  extracted: { characterName?: string; cardTitle?: string; setCode?: string; language?: string; rarity?: string; cardNumberRaw?: string };
 }
 
 function mapMatch(raw: any): ScanMatch | undefined {

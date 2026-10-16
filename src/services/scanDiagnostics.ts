@@ -16,7 +16,7 @@
  */
 
 import {
-  TRACE_FIELDS, TRACE_SCHEMA, evidenceTokens, projectTrace, safeCardText,
+  TRACE_FIELDS, TRACE_SCHEMA, evidenceTokens, projectTrace, receivedCardText, safeCardText, sanitizeFieldTrace,
   type FieldTrace, type Provenance, type TraceField,
 } from './scanTrace';
 
@@ -124,11 +124,16 @@ export function sanitizeTrace(raw: any): DiagTrace | undefined {
   const fields = {} as Record<TraceField, FieldTrace>;
   for (const f of TRACE_FIELDS) {
     const x = raw.fields?.[f];
-    if (x?.state === 'parsed') {
-      const v = safeCardText(f, x.value);
-      fields[f] = v === null ? { state: 'redacted' } : { state: 'parsed', value: v };
-    } else fields[f] = { state: x?.state === 'redacted' ? 'redacted' : 'not_provided' };
+    // An older backend can only say parsed / parse_error / redacted; anything it did not
+    // carry is not_provided (it cannot tell missing from empty from NONE).
+    fields[f] = ['parsed', 'parse_error', 'redacted'].includes(x?.state) ? sanitizeFieldTrace(f, x) : { state: 'not_provided' };
   }
+  // CR 2026-10-16 #2: provenance (where the FIELDS came from) is independent of whether
+  // the backend sent a verdict. A 4a566fa-style response has `match` but no trace.
+  const sv = raw.serverVerdict;
+  const serverVerdict = sv && ['matched', 'identity_only', 'no_match'].includes(sv.status)
+    ? { status: sv.status, reason: REASON.has(sv.reason) && sv.reason !== 'none' ? sv.reason : null }
+    : { status: 'legacy_no_verdict', reason: null };
   return {
     provenance: raw.provenance, traceSchema: null, requestId: null, backendSha: null, replySchema: 'not_provided',
     fields, candidateCount: typeof raw.candidateCount === 'number' && Number.isFinite(raw.candidateCount) ? Math.max(0, Math.min(99, Math.floor(raw.candidateCount))) : null,
@@ -137,7 +142,7 @@ export function sanitizeTrace(raw: any): DiagTrace | undefined {
       score: typeof c?.score === 'number' && Number.isFinite(c.score) ? Math.round(c.score * 10) / 10 : null,
       evidence: evidenceTokens(c?.evidence),
     })),
-    serverVerdict: { status: 'legacy_no_verdict', reason: null },
+    serverVerdict,
     rejection: null,
   };
 }
@@ -274,11 +279,18 @@ export function diagnosticsFromResult(r: any): { extracted: Partial<DiagEntry['e
     trace = sanitizeTrace({ ...t, provenance: 'server_trace', traceSchema: t.schema, serverVerdict: t.verdict });
   } else if (r?.debug) {
     // Older backend: only what its debug block carried; absent ≠ "not read".
-    const val = (v: unknown) => (typeof v === 'string' && v ? { state: 'parsed', value: v } : { state: 'not_provided' });
+    const val = (v: unknown) => (typeof v === 'string' && v ? { state: 'parsed', received: v, value: v } : { state: 'not_provided' });
+    // The number as received (cardNumberRaw, v37 sends it) next to the normalised value:
+    // received but not normalisable → parse_error with the received text kept.
+    const rawNum = typeof x.cardNumberRaw === 'string' && x.cardNumberRaw ? x.cardNumberRaw : null;
+    const normNum = typeof debug.normalizedCardNumber === 'string' && debug.normalizedCardNumber ? debug.normalizedCardNumber : null;
+    const number = normNum ? { state: 'parsed', received: rawNum ?? undefined, value: normNum }
+      : rawNum ? { state: 'parse_error', received: rawNum } : { state: 'not_provided' };
     trace = sanitizeTrace({
       provenance: 'legacy_debug',
+      serverVerdict: r?.match ? { status: r.match.status, reason: r.match.reason } : undefined,
       fields: {
-        name: val(x.characterName), title: val(x.cardTitle), number: val(debug.normalizedCardNumber),
+        name: val(x.characterName), title: val(x.cardTitle), number,
         set: val(x.setCode), language: val(x.language), rarity: val(x.rarity),
       },
       candidateCount: Array.isArray(r?.candidates) ? r.candidates.length : null,

@@ -68,9 +68,9 @@ await test('perfect read: fields parsed, matched, requestId + allowlisted backen
   assert.match(t.requestId, /^[0-9a-f]{16}$/);
   assert.equal(t.backendSha, SHA);
   assert.equal(t.model, 'gemini-3.5-flash-lite');
-  assert.deepEqual(t.fields.number, { state: 'parsed', value: 'hbp01-010' });
-  assert.deepEqual(t.fields.name, { state: 'parsed', value: '天音かなた' });
-  assert.deepEqual(t.fields.language, { state: 'parsed', value: 'JA' });
+  assert.deepEqual(t.fields.number, { state: 'parsed', received: 'hBP01-010', value: 'hbp01-010' });
+  assert.deepEqual(t.fields.name, { state: 'parsed', received: '天音かなた', value: '天音かなた' });
+  assert.deepEqual(t.fields.language, { state: 'parsed', received: 'ja', value: 'JA' });
   assert.deepEqual(t.fields.title, { state: 'provider_unknown' });
   assert.equal(t.verdict.status, 'matched');
   assert.equal(t.rejection, null);
@@ -88,7 +88,8 @@ await test('backendSha is null unless the env value is exactly 40 lowercase hex'
 await test('field states: missing / empty / provider_unknown / parse_error are distinct', async () => {
   const t = (await serve('CHARACTER: 天音かなた\nCARD_NUMBER: hBP01-0100\nSET:\nLANGUAGE: UNKNOWN')).body.trace;
   assert.equal(t.fields.number.state, 'parse_error');
-  assert.equal(t.fields.number.value, undefined, 'a rejected number is not echoed');
+  assert.equal(t.fields.number.value, undefined, 'a rejected number has no normalised value');
+  assert.equal(t.fields.number.received, 'hBP01-0100', 'the safe received token is kept for diagnosis');
   assert.equal(t.fields.set.state, 'empty');
   assert.equal(t.fields.language.state, 'provider_unknown');
   assert.equal(t.fields.rarity.state, 'missing');
@@ -159,7 +160,7 @@ await test('v37 name-only/romaji wire → legacy_debug provenance, legacy_no_ver
   assert.equal(d.match.status, 'legacy_no_verdict');
   assert.equal(d.model, 'gemini-2.5-flash');
   assert.equal(d.trace.provenance, 'legacy_debug');
-  assert.deepEqual(d.trace.fields.name, { state: 'parsed', value: 'Houshou Marine' });
+  assert.deepEqual(d.trace.fields.name, { state: 'parsed', received: 'Houshou Marine', value: 'Houshou Marine' });
   assert.equal(d.trace.fields.number.state, 'not_provided');
   assert.equal(d.trace.fields.set.state, 'not_provided');
   assert.equal(d.trace.serverVerdict.status, 'legacy_no_verdict');

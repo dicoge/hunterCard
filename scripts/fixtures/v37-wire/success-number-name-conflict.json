@@ -1,0 +1,139 @@
+{
+ "source": "api/recognize-card.ts @ ec8447dc (v37), mocked Gemini reading; raw reply dropped",
+ "reading": {
+  "CHARACTER": "さくらみこ",
+  "RARITY": "U",
+  "CARD_NUMBER": "hBP01-010"
+ },
+ "status": 200,
+ "body": {
+  "success": true,
+  "confidence": 0.93,
+  "reason": "cardNumber exact, rarity",
+  "card": {
+   "id": "hBP01-010_hBP01_U_hBP01-010_U",
+   "cardNumber": "hBP01-010",
+   "name": "天音かなた",
+   "rarity": "U",
+   "series": "hBP01",
+   "sellPrice": 80,
+   "prices": [
+    {
+     "name": "天音かなた",
+     "sellPrice": 80,
+     "rarity": "U",
+     "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10020.jpg"
+    }
+   ],
+   "confidence": 0.93,
+   "reason": "cardNumber exact, rarity",
+   "score": 109.5,
+   "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP01/hBP01-010_U.png"
+  },
+  "candidates": [
+   {
+    "id": "hBP01-010_hBP01_U_hBP01-010_U",
+    "cardNumber": "hBP01-010",
+    "name": "天音かなた",
+    "rarity": "U",
+    "series": "hBP01",
+    "sellPrice": 80,
+    "prices": [
+     {
+      "name": "天音かなた",
+      "sellPrice": 80,
+      "rarity": "U",
+      "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10020.jpg"
+     }
+    ],
+    "confidence": 0.93,
+    "reason": "cardNumber exact, rarity",
+    "score": 109.5,
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP01/hBP01-010_U.png"
+   },
+   {
+    "id": "hBP03-030_hBP03_RR_hBP03-030_RR",
+    "cardNumber": "hBP03-030",
+    "name": "さくらみこ",
+    "rarity": "RR",
+    "series": "hBP03",
+    "sellPrice": 180,
+    "prices": [
+     {
+      "name": "さくらみこ",
+      "sellPrice": 180,
+      "rarity": "RR",
+      "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp03/10064.jpg"
+     }
+    ],
+    "confidence": 0.76,
+    "reason": "cardNumber fuzzy-2, character exact/contains",
+    "score": 89.5,
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP03/hBP03-030_RR.png"
+   },
+   {
+    "id": "hBP03-030_hBP03_UR_hBP03-030_UR",
+    "cardNumber": "hBP03-030",
+    "name": "さくらみこ",
+    "rarity": "UR",
+    "series": "hBP03",
+    "sellPrice": 4980,
+    "prices": [
+     {
+      "name": "さくらみこ(パラレル)",
+      "sellPrice": 4980,
+      "rarity": "UR",
+      "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp03/10066.jpg"
+     }
+    ],
+    "confidence": 0.76,
+    "reason": "cardNumber fuzzy-2, character exact/contains",
+    "score": 89.5,
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP03/hBP03-030_UR.png"
+   },
+   {
+    "id": "hBP03-030_hBP03_SR_hBP03-030_SR",
+    "cardNumber": "hBP03-030",
+    "name": "さくらみこ",
+    "rarity": "SR",
+    "series": "hBP03",
+    "sellPrice": 420,
+    "prices": [
+     {
+      "name": "さくらみこ(パラレル)",
+      "sellPrice": 420,
+      "rarity": "SR",
+      "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp03/10065.jpg"
+     }
+    ],
+    "confidence": 0.76,
+    "reason": "cardNumber fuzzy-2, character exact/contains",
+    "score": 89.5,
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP03/hBP03-030_SR.png"
+   },
+   {
+    "id": "hBP03-030_ent07",
+    "cardNumber": "hBP03-030",
+    "name": "さくらみこ",
+    "rarity": "02_SR",
+    "series": "ent07",
+    "sellPrice": null,
+    "prices": [],
+    "confidence": 0.75,
+    "reason": "cardNumber fuzzy-2, character exact/contains",
+    "score": 88,
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hCS01/hBP03-030_02_SR.png"
+   }
+  ],
+  "debug": {
+   "provider": "gemini",
+   "model": "gemini-2.5-flash",
+   "normalizedCardNumber": "hbp01-010",
+   "extracted": {
+    "characterName": "さくらみこ",
+    "cardNumberRaw": "hBP01-010",
+    "rarity": "U"
+   }
+  }
+ }
+}

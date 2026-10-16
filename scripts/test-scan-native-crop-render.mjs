@@ -272,7 +272,10 @@ try {
     assert.deepEqual(Object.keys(d).sort(), ['extracted', 'matchReason', 'matchStatus', 'model', 'normalizedCardNumber', 'provider']);
     assert.equal(d.normalizedCardNumber, null, 'overlong dropped');
     assert.equal(d.extracted.language, undefined, 'overlong dropped');
-    assert.ok(!('cardNumberRaw' in d.extracted) && !('rawModelOutput' in d) && !('apiKey' in d));
+    // cardNumberRaw (the received number) is kept on purpose (CR 2026-10-16 #4) and
+    // re-validated before storage; the raw reply and unknown keys are not.
+    assert.equal(d.extracted.cardNumberRaw, 'hBP11-010');
+    assert.ok(!('rawModelOutput' in d) && !('apiKey' in d));
     const { sanitizeEntry, diagnosticsFromResult } = await import('../src/services/scanDiagnostics.ts');
     const fields = diagnosticsFromResult({ success: false, debug: d, match: { status: 'hacked' } });
     const e = sanitizeEntry({ id: 'abcdefgh12345678', at: new Date().toISOString(), model: fields.model, extracted: fields.extracted, match: fields.match, errors: fields.errors });
