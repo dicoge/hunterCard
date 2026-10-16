@@ -25,6 +25,8 @@ export interface ScanMatchSheetProps {
   onPickPrinting: () => void;
   onManualSearch: () => void;
   onRetake: () => void;
+  /** No-match 「重試」: end this round and start a new capture (v41). */
+  onRetry?: () => void;
   preferredCurrency?: string;
   preferredLanguage?: string;
 }
@@ -36,6 +38,7 @@ export default function ScanMatchSheet({
   onPickPrinting,
   onManualSearch,
   onRetake,
+  onRetry,
   preferredCurrency = 'TWD',
   preferredLanguage = 'zh',
 }: ScanMatchSheetProps) {
@@ -125,11 +128,16 @@ export default function ScanMatchSheet({
     <View style={styles.sheet} testID="scan-match-none">
       <Text style={styles.title}>{t('scan_none_title')}</Text>
       <Text style={styles.body}>{t(bodyKey)}</Text>
-      <TouchableOpacity style={styles.primary} onPress={onRetake} testID="scan-match-retake">
-        <Text style={styles.primaryText}>{t('scan_match_retake')}</Text>
+      {/* v41: a short reason + 重試／取消 (same pair as the service-failure panel).
+          重試 starts a new capture; 取消 ends this round (nothing sent, nothing used). */}
+      <TouchableOpacity style={styles.primary} onPress={onRetry ?? onRetake} accessibilityRole="button" testID="scan-match-retry">
+        <Text style={styles.primaryText}>{t('scan_retry_recognition')}</Text>
       </TouchableOpacity>
-      <TouchableOpacity style={styles.secondary} onPress={onManualSearch} testID="scan-match-manual">
-        <Text style={styles.secondaryText}>{t('scan_match_manual')}</Text>
+      <TouchableOpacity style={styles.secondary} onPress={onRetake} accessibilityRole="button" testID="scan-match-cancel">
+        <Text style={styles.secondaryText}>{t('scan_service_cancel')}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity onPress={onManualSearch} testID="scan-match-manual">
+        <Text style={styles.link}>{t('scan_match_manual')}</Text>
       </TouchableOpacity>
       {presentation.suggestions.length ? (
         <TouchableOpacity onPress={onCorrect} testID="scan-match-suggestions">

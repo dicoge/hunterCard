@@ -177,7 +177,7 @@ export const ja: Record<keyof typeof zh, string> = {
   // binding (App.tsx gates it on FEATURES.favorites | .watchlist |
   // .premium, all false under STORE_MVP), so decks / settings /
   // favorites / price alerts live on-device only.
-  login_description_store: 'ログインするとアカウント機能が利用できます。ゲストも毎月 50 枚までスキャンできます（ログイン後もこの端末の上限を共有）。このバージョンではデッキと設定は端末内に保存されます。',
+  login_description_store: 'ログインすると、カード所持数・デッキ・スキャン一覧・設定が同じアカウントの他の端末と同期されます。ゲストも毎月 50 枚までスキャンできます（ログイン後もこの端末の上限を共有）。',
   login_or: 'または',
   login_guest_button: 'ゲストとして利用',
   login_guest_hint: 'ゲストはルール閲覧・検索に加え、毎月 50 枚までカードをスキャンできます',
@@ -190,6 +190,17 @@ export const ja: Record<keyof typeof zh, string> = {
   me_guest_name: 'ゲスト',
   // DIC-1427: Pen App/07 マイページ collection hub (frame siVsa).
   nav_me: 'マイページ',
+  shell_tab_home: 'ホーム',
+  shell_tab_search: '検索',
+  shell_tab_scan: 'スキャン',
+  shell_tab_deck: 'デッキ',
+  shell_tab_me: 'マイページ',
+  home_chip_white: '白',
+  home_chip_blue: '青',
+  home_chip_green: '緑',
+  home_chip_red: '赤',
+  home_chip_purple: '紫',
+  home_chip_yellow: '黄',
   me_account_manage: 'アカウントと設定',
   me_guest_hint: 'ログインしてコレクションを同期',
   me_stat_owned: '所持枚数',
@@ -270,7 +281,7 @@ export const ja: Record<keyof typeof zh, string> = {
   // ト / 端末間で同期" phrasing so the shipping-copy predicate cannot
   // confuse login-binding with data-sync. Data-storage clause states
   // the fact.
-  settings_link_hint_store: '複数のログイン方法を連携すると機種変更や身分確認の追加に便利です。このバージョンではデッキと設定は端末内に保存され、端末間では同期されません。ログイン方法は1つ以上残してください。',
+  settings_link_hint_store: '複数のログイン方法を連携すると機種変更や身分確認の追加に便利です。ログイン中はカード所持数・デッキ・スキャン一覧・設定が端末間で同期されます（スキャン上限は端末ごと）。ログイン方法は1つ以上残してください。',
   // DIC-1380 W12 CR — describe the ACTUAL per-provider deletion path.
   // Google: backend cascade delete works; App clears local session
   // and calls GoogleSignin.signOut() on Android only (local SDK cache
@@ -286,7 +297,7 @@ export const ja: Record<keyof typeof zh, string> = {
   settings_guest_sync: 'ログインしていません。ログインするとお気に入りを端末間で同期できます。',
   // DIC-1381 W10 CR — Store MVP does NOT install the account-sync
   // binding, so decks/settings do not sync. State this truthfully.
-  settings_guest_sync_store: 'ログインしていません。ゲストも毎月 50 枚までスキャンでき、ログインしても上限は増えずリセットもされません。このバージョンではデッキと設定は端末内に保存されます。',
+  settings_guest_sync_store: 'ログインしていません。ゲストも毎月 50 枚までスキャンでき、ログインしても上限は増えずリセットもされません。ログインすると、この端末のカード所持数・デッキ・スキャン一覧・設定がアカウントに統合され、端末間で同期されます。',
   settings_footer: 'hololive PCGプレイヤーのために',
 
   // Tutorial landing
@@ -531,7 +542,7 @@ export const ja: Record<keyof typeof zh, string> = {
 
   // Deck editor
   deck_loading: 'カードデータベースを読み込み中…',
-  deck_local_hint: 'この端末だけに保存されるデッキです。新規作成するか、デッキを選んで編集してください。',
+  deck_local_hint: 'デッキはこの端末に保存され、ログイン中はアカウントにも同期されます。新規作成するか、デッキを選んで編集してください。',
   deck_new_name: '新しいデッキ名',
   deck_create: '作成',
   deck_choose_card: 'カードを選択',
@@ -737,20 +748,21 @@ export const ja: Record<keyof typeof zh, string> = {
   scan_evidence_name: 'カード名が一致',
   scan_evidence_local: '端末の文字認識でカード番号を読み取り',
   scan_identity_title: '認識：{{name}}（{{number}}）',
-  scan_identity_body: 'このカード番号には複数のバージョンがあり、写真からどれか確定できないため価格は表示しません。お手元のバージョンを選ぶか、手動検索を使用してください。',
+  scan_identity_body: 'カードのバージョンを選んでください。',
   scan_identity_price: '価格：バージョン未確定',
   scan_identity_pick: 'バージョンを選ぶ',
   scan_none_title: '一致するカードが見つかりません',
-  scan_none_body_no_number: '写真からカード番号を読み取れず、カードを特定できませんでした。スキャン回数は使用していません。カード全体と番号が枠内にはっきり入るように撮り直すか、手動検索を使用してください。',
-  scan_none_body_not_in_db: '読み取ったカード番号がデータベースにありません。スキャン回数は使用していません。番号がはっきり写るように撮り直すか、手動検索を使用してください。',
-  scan_none_body_conflict: '読み取ったカード番号とキャラクターが一致せず、誤読の可能性があります。スキャン回数は使用していません。撮り直すか、手動検索を使用してください。',
-  scan_identity_body_corrected: '読み取ったカード番号は別のカードのものでした。キャラクター名と近いカード番号からこのカードと推定しています。バージョン未確定のため価格は表示しません。カードを確認してお手元のバージョンを選ぶか、手動検索を使用してください。',
-  scan_failure_network: '認識サービスに接続できません。ネットワークを確認して再試行してください。スキャン回数は使用していません。',
-  scan_failure_busy: '認識サービスが混み合っています。しばらくしてから再試行してください。スキャン回数は使用していません。',
-  scan_failure_timeout: '認識がタイムアウトしました。しばらくしてから再試行してください。スキャン回数は使用していません。',
-  scan_failure_unavailable: '認識サービスを一時的に利用できません。しばらくしてから再試行してください。スキャン回数は使用していません。',
-  scan_retry_recognition: '認識を再試行',
-  scan_none_body_low: '根拠が不十分で、カードを特定できませんでした。スキャン回数は使用していません。撮り直すか、手動検索を使用してください。',
+  scan_none_body_no_number: 'カード番号を読み取れません。',
+  scan_none_body_not_in_db: 'このカード番号はデータベースにありません。',
+  scan_none_body_conflict: 'カード番号とキャラクターが一致しません。',
+  scan_identity_body_corrected: 'カード番号とキャラクターが一致しないため、キャラクターから判定しました。確認してバージョンを選んでください。',
+  scan_failure_network: 'ネットワークに接続できません。確認して再試行してください。',
+  scan_failure_busy: '認識サービスが混み合っています。しばらくして再試行してください。',
+  scan_failure_timeout: '認識がタイムアウトしました。しばらくして再試行してください。',
+  scan_failure_unavailable: '認識サービスを一時的に利用できません。しばらくして再試行してください。',
+  scan_retry_recognition: '再試行',
+  scan_service_cancel: 'キャンセル',
+  scan_none_body_low: 'カードを特定できません。',
   scan_none_suggestions: '候補を見る（{{count}}）',
   scan_ai_disclosure_title: 'スキャンでは写真を AI 認識に送信します',
   scan_ai_disclosure_body: 'カードを認識するため、撮影またはライブラリから選んだ写真を HoloHunter のサーバーに送信し、サーバーから Google Gemini（Google の AI サービス）に送って認識します。\n\n• 写真はその回のカード認識にのみ使用し、広告やプロファイリングには使用しません。\n• 当社サーバーはそのリクエストの間だけ写真を転送し、保存しません。\n• Google に送られた写真は Google の規約とポリシーに従って処理されます。HoloHunter は Google による保存や利用について約束できません。\n• HoloHunter アカウントを削除しても、削除されるのは当社が保存するアカウントデータのみで、Google 側の処理は対象外です。\n\n同意しない場合も手動検索を利用できます。詳しくはプライバシーポリシーをご覧ください。',
@@ -759,6 +771,9 @@ export const ja: Record<keyof typeof zh, string> = {
   scan_recognizing: '認識中…',
   scan_frame_auto: 'カードをスキャン枠に合わせてください',
   scan_frame_manual: 'スキャンボタンでカードを撮影してください',
+  scan_auto_paused: '自動検出を停止しました。スキャンボタンを押してください',
+  scan_auto_needs_consent: '写真アップロードの説明に同意すると自動スキャンできます',
+  scan_auto_enable: '自動スキャンを開始',
   scan_close_a11y: 'スキャンを閉じる',
   scan_flash_on: 'フラッシュON',
   scan_flash: 'フラッシュ',

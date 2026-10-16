@@ -127,11 +127,13 @@ for (const [label, viewport] of [['mobile 390', MOBILE], ['desktop 1440', DESKTO
     } finally { await cleanup(); }
   });
 
-  await test(`${label}: Pen "coming soon" states are truthful (Google login + Pro plan)`, async () => {
+  await test(`${label}: CTA states are truthful (Google sign-in is wired, Pro plan not open)`, async () => {
     const { container, cleanup } = await renderLanding(viewport);
     try {
+      // v41: Google sign-in is real (fail-closed when unprovisioned) — no coming-soon claim.
       const googleCta = byTestId(container, 'landing-cta-google');
-      assert.ok(/即將推出/.test(googleCta.textContent), 'Google CTA carries the 即將推出 label');
+      assert.ok(/Google/.test(googleCta.textContent), 'Google CTA names Google');
+      assert.ok(!/即將推出|陸續推出/.test(googleCta.textContent), 'Google CTA makes no coming-soon claim');
       const proPlan = byTestId(container, 'landing-plan-pro');
       assert.ok(/規劃中|即將推出/.test(proPlan.textContent), 'Pro plan is marked coming-soon');
       assert.ok(/尚未開放/.test(proPlan.textContent), 'Pro plan tagline states "尚未開放"');
@@ -364,7 +366,7 @@ await test('desktop 1440: FAQ accordion expands/collapses with real state (DIC-1
     const item0 = byTestId(container, 'landing-faq-item-0');
     const item1 = byTestId(container, 'landing-faq-item-1');
     assert.ok(item0 && item1, 'FAQ accordion items mount');
-    assert.ok(/App Store \/ Google Play \/ Stripe/.test(item0.textContent), 'first FAQ answer is open by default (desktop)');
+    assert.ok(/訂閱與 App 內購目前尚未開放/.test(item0.textContent), 'first FAQ answer is open by default (desktop)');
     assert.ok(!/拍照掃描每月也可免登入使用 50 次/.test(item1.textContent), 'second FAQ answer starts collapsed on desktop');
     const toggle1 = byTestId(container, 'landing-faq-toggle-1');
     await act(async () => {
@@ -558,55 +560,43 @@ await test(
   },
 );
 
-// ── DIC-1381 W9 CR: Landing sync copy must not contradict the Store MVP
-//    binding gate. `installAccountSyncBinding()` is gated on
-//    `FEATURES.favorites || FEATURES.watchlist || FEATURES.premium`, and
-//    all three are derived from `!STORE_MVP` — so under Store MVP those
-//    fields don't sync. Any sentence on the Landing that claims
-//    favorites/decks/priceAlerts/settings sync must either omit the
-//    unconditional claim or explicitly gate it on non-Store-MVP builds.
-await test('desktop 1440: Landing has no unqualified sync claim (DIC-1381 W9 CR — derived from App.tsx binding gate)', async () => {
+// ── v41 (2026-10-17) supersedes DIC-1381 W9: the binding is installed in every
+//    profile and Store MVP syncs exactly the surfaces it shows (collection counts,
+//    decks, settings, scan list); bookmarks and price alerts are hidden and never
+//    pushed (activeDomainsOnly). The Landing may therefore say that account data
+//    syncs — but a sync claim that names a HIDDEN surface (price alerts, bookmarks)
+//    or the scan quota (per device) is false and fails, unless qualified.
+await test('desktop 1440: Landing makes no sync claim for hidden surfaces or the quota (v41 — derived from App.tsx + activeDomainsOnly)', async () => {
   const fs = await import('node:fs');
   const path = await import('node:path');
-  // Truth check: App.tsx really does gate the binding on all three flags,
-  // and all three flags are STORE_MVP-off under releaseFlags.ts. Fail
-  // closed if the wiring assumption stops holding.
   const appSrc = fs.readFileSync(path.resolve('App.tsx'), 'utf8');
+  assert.ok(/^\s*installAccountSyncBinding\(\);/m.test(appSrc), 'App.tsx installs the account-sync binding (the truth this test rides on)');
+  const orchSrc = fs.readFileSync(path.resolve('src/services/accountSyncOrchestrator.ts'), 'utf8');
   assert.ok(
-    /installAccountSyncBinding\(\)/.test(appSrc)
-      && /FEATURES\.favorites\s*\|\|\s*FEATURES\.watchlist\s*\|\|\s*FEATURES\.premium/.test(appSrc),
-    'App.tsx must gate installAccountSyncBinding() on FEATURES.favorites || .watchlist || .premium — the assumption this test rides on',
+    /if\s*\(!FEATURES\.favorites\)\s*delete out\.favorites/.test(orchSrc) && /if\s*\(!FEATURES\.watchlist\)\s*delete out\.priceAlerts/.test(orchSrc),
+    'hidden surfaces are filtered out of every push (the truth this test rides on)',
   );
   const flagsSrc = fs.readFileSync(path.resolve('src/config/releaseFlags.ts'), 'utf8');
-  for (const key of ['favorites', 'watchlist', 'premium']) {
-    assert.ok(
-      new RegExp(`${key}:\\s*!STORE_MVP`).test(flagsSrc),
-      `releaseFlags.ts must derive FEATURES.${key} from !STORE_MVP so the Store MVP build disables the sync binding`,
-    );
+  for (const key of ['favorites', 'watchlist']) {
+    assert.ok(new RegExp(`${key}:\\s*!STORE_MVP`).test(flagsSrc), `FEATURES.${key} is hidden under Store MVP`);
   }
 
   const { container, cleanup } = await renderLanding(DESKTOP);
   try {
     const text = container.textContent || '';
-    // The Landing is user-visible copy; SYNC_FIELD_WORDS covers the
-    // sync-payload fields in ordinary language on both zh and en. A
-    // sentence that combines a sync verb with several of these fields
-    // and NO Store-MVP qualifier is the exact false claim the CR named.
-    const SYNC_FIELD_WORDS = ['收藏', '牌組', '價格提醒', '到價提醒', '設定', 'favorites', 'decks', 'price alerts', 'settings'];
-    const SYNC_VERB = /(同步到|會同步|sync to|are synced|are sync|同步至|同步(?![^。]{0,20}僅))/i;
-    const QUALIFIER = /(Store MVP|feature flag|installAccountSyncBinding|Web Develop|Web Staging|不會|does not|does NOT|not currently|not sent|only sync|僅在啟用|僅限啟用|尚未|本機儲存|裝置本機|local storage|per-device|for now)/i;
-    // Split into sentence-ish spans; punctuation covers zh + en.
+    const HIDDEN_OR_DEVICE = ['價格提醒', '到價提醒', '書籤', 'price alerts', 'favorites', 'bookmarks', '掃描額度', 'scan quota'];
+    const SYNC_VERB = /(同步到|會同步|sync to|are synced|are sync|同步至|跨裝置同步|同步(?![^。]{0,20}僅))/i;
+    const QUALIFIER = /(不會|does not|does NOT|not currently|not sent|尚未|即將推出|coming soon|per-device|裝置端|依裝置)/i;
     const spans = text.split(/[。.!?]|(?<=；)\s+/g);
     const bad = [];
     for (const s of spans) {
-      if (!s || s.length < 15) continue;
-      const fields = SYNC_FIELD_WORDS.filter((w) => s.includes(w));
-      if (fields.length < 2) continue;
+      if (!s || s.length < 8) continue;
+      if (!HIDDEN_OR_DEVICE.some((w) => s.includes(w))) continue;
       if (!SYNC_VERB.test(s)) continue;
       if (QUALIFIER.test(s)) continue;
       bad.push(s.trim().slice(0, 220));
     }
-    assert.equal(bad.length, 0, `Landing sync copy contradicts Store MVP binding gate. Offending spans:\n    - ${bad.join('\n    - ')}`);
+    assert.equal(bad.length, 0, `Landing claims sync for a hidden surface or the per-device quota:\n    - ${bad.join('\n    - ')}`);
   } finally { await cleanup(); }
 });
 

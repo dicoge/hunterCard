@@ -209,7 +209,7 @@ try {
     assert.ok(!e.errors.includes('NO_MATCH'));
     assert.equal(e.outcome, 'failed');
   });
-  await test('a second tap on 重試辨識 while the retry is on the wire sends nothing: ONE request, the SAME photo, no new capture', async () => {
+  await test('a second tap on 重試 while the retry is on the wire sends nothing: ONE request, the SAME photo, no new capture', async () => {
     providerDown = false;
     providerReply = 'CARD_NUMBER: hBP01-010\nCHARACTER: 天音かなた';
     providerDelayMs = 150;
@@ -291,6 +291,149 @@ try {
     assert.equal(useScanQuotaStore.getState().getRemaining(), remaining - 1);
     assert.equal(useScanSessionStore.getState().cardCount, count + 1);
     assert.equal(useScanSessionStore.getState().cards.at(-1).id, 'hBP01-051_hEB01_SR_hBP01-051_SR_02');
+  });
+
+  console.log('v41 concise copy: short reason + 重試／取消, no quota paragraph on failure screens, charges unchanged');
+  const QUOTA_COPY = /額度|未使用|不扣/;
+  await test('service failure: one short reason line and exactly the actions 重試 / 取消 — no quota sentence', async () => {
+    providerReply = 'CARD_NUMBER: hBP01-010\nCHARACTER: 天音かなた';
+    providerDown = true;
+    ocrText = '';
+    await shutter();
+    const panel = byTestId('scan-service-failure');
+    assert.ok(panel, 'service panel shown');
+    assert.ok(panel.textContent.includes('⚠️ 辨識服務暫時無法使用，請稍後重試。'), panel.textContent);
+    assert.ok(!QUOTA_COPY.test(panel.textContent), `no quota wording: ${panel.textContent}`);
+    assert.equal(byTestId('scan-service-retry').textContent, '重試');
+    assert.equal(byTestId('scan-service-cancel').textContent, '取消');
+    assert.ok(!byTestId('scan-service-manual'), 'manual search is no longer a third action here');
+  });
+  await test('取消 drops the held photo and the panel: nothing uploaded, nothing charged; the next scan takes a NEW photo', async () => {
+    const remaining = useScanQuotaStore.getState().getRemaining();
+    const count = useScanSessionStore.getState().cardCount;
+    const uploads = bodies.length, takes = globalThis.__nativeCameraTakes;
+    await click(byTestId('scan-service-cancel'));
+    await tick(50);
+    assert.ok(!byTestId('scan-service-failure'), 'panel closed');
+    assert.ok(!byTestId('scan-service-retry'), 'held photo dropped');
+    assert.equal(bodies.length, uploads, 'cancel uploads nothing');
+    assert.equal(useScanQuotaStore.getState().getRemaining(), remaining, 'cancel charges nothing');
+    assert.equal(useScanSessionStore.getState().cardCount, count);
+    providerDown = false;
+    await shutter();
+    assert.equal(globalThis.__nativeCameraTakes, takes + 1, 'new capture after cancel');
+    assert.ok(byTestId('scan-match-best'));
+    assert.equal(useScanQuotaStore.getState().getRemaining(), remaining, 'a preview charges nothing');
+    await click(byTestId('scan-match-retake'));
+  });
+  await test('version not resolved: body is just 「請選擇卡片版本。」, the chooser stays, no price, no quota sentence', async () => {
+    providerReply = 'CARD_NUMBER: hBP01-024';
+    await shutter();
+    const sheet = byTestId('scan-match-identity');
+    assert.ok(sheet, 'identity sheet');
+    assert.ok(sheet.textContent.includes('請選擇卡片版本。'), sheet.textContent);
+    assert.ok(!sheet.textContent.includes('此卡號有多個版本'), 'old long explanation gone');
+    assert.ok(byTestId('scan-match-pick'), 'version chooser offered');
+    assert.ok(!/[¥$]\s?\d/.test(sheet.textContent), 'no price');
+    assert.ok(!QUOTA_COPY.test(sheet.textContent));
+    await click(byTestId('scan-match-manual'));
+    await tick(20);
+  });
+  await test('photo no-match: short reason, no quota sentence, nothing charged', async () => {
+    const remaining = useScanQuotaStore.getState().getRemaining();
+    providerReply = 'CHARACTER: 宝鐘マリン\nCARD_NUMBER: hBP01-014';
+    await shutter();
+    const sheet = byTestId('scan-match-none');
+    assert.ok(sheet, 'no-match sheet (the service answered)');
+    assert.ok(sheet.textContent.includes('卡號與角色不一致。'), sheet.textContent);
+    assert.ok(!QUOTA_COPY.test(sheet.textContent));
+    await click(byTestId('scan-match-cancel'));
+    assert.equal(useScanQuotaStore.getState().getRemaining(), remaining);
+  });
+  // v41 (PM requirement, Grok no-match N2): a no-match shows a short reason and the
+  // same visible 重試／取消 pair as a service failure — not only 重拍／手動搜尋.
+  const NO_MATCH = 'CARD_NUMBER: NONE\nCHARACTER: NONE\nTITLE: NONE';
+  await test('no-match: short reason + visible 重試 and 取消 (manual search still reachable)', async () => {
+    providerReply = NO_MATCH;
+    await shutter();
+    const sheet = byTestId('scan-match-none');
+    assert.ok(sheet, 'no-match sheet');
+    assert.ok(sheet.textContent.includes('讀不到卡號。'), sheet.textContent);
+    assert.equal(byTestId('scan-match-retry')?.textContent, '重試');
+    assert.equal(byTestId('scan-match-cancel')?.textContent, '取消');
+    assert.ok(byTestId('scan-match-manual'), 'manual search link kept');
+    assert.ok(!QUOTA_COPY.test(sheet.textContent));
+  });
+  await test('no-match 取消 ends the round: sheet closed, no new request or capture (no auto-retry), nothing charged or added', async () => {
+    const remaining = useScanQuotaStore.getState().getRemaining();
+    const count = useScanSessionStore.getState().cardCount;
+    const before = bodies.length;
+    const takes = globalThis.__nativeCameraTakes;
+    await click(byTestId('scan-match-cancel'));
+    await tick(1500);
+    assert.equal(byTestId('scan-match-none'), null, 'sheet closed');
+    assert.equal(bodies.length, before, 'no provider request');
+    assert.equal(globalThis.__nativeCameraTakes, takes, 'no new capture');
+    assert.equal(useScanQuotaStore.getState().getRemaining(), remaining, 'cancel uses 0');
+    assert.equal(useScanSessionStore.getState().cardCount, count);
+  });
+  await test('no-match 重試 really scans again: one new capture + one request through the normal shutter path; a match then charges only on 加入', async () => {
+    providerReply = NO_MATCH;
+    await shutter();
+    assert.ok(byTestId('scan-match-none'));
+    // A card this suite has not added yet (the list refuses a card it already holds).
+    providerReply = 'CARD_NUMBER: hSD01-003\nCHARACTER: ときのそら\nRARITY: C';
+    const remaining = useScanQuotaStore.getState().getRemaining();
+    const count = useScanSessionStore.getState().cardCount;
+    const before = bodies.length;
+    const takes = globalThis.__nativeCameraTakes;
+    await click(byTestId('scan-match-retry'));
+    await settle(before);
+    assert.equal(bodies.length, before + 1, 'exactly one new recognition request');
+    assert.equal(globalThis.__nativeCameraTakes, takes + 1, 'a NEW photo, not the failed one');
+    assert.equal(byTestId('scan-match-none'), null);
+    assert.ok(byTestId('scan-match-best'), 'the new round shows its result');
+    assert.equal(useScanQuotaStore.getState().getRemaining(), remaining, 'retry itself uses 0');
+    await click(byTestId('scan-match-add'));
+    await tick(20);
+    assert.equal(useScanQuotaStore.getState().getRemaining(), remaining - 1, 'the explicit 加入 uses exactly 1');
+    assert.equal(useScanSessionStore.getState().cardCount, count + 1);
+  });
+  await test('no-match in 日本語: 再試行／キャンセル', async () => {
+    const { useSettingsStore } = await import('../src/store/settingsStore.ts');
+    const prev = useSettingsStore.getState().preferredLanguage;
+    try {
+      await act(async () => { useSettingsStore.setState({ preferredLanguage: 'ja' }); });
+      providerReply = NO_MATCH;
+      await shutter();
+      assert.ok(byTestId('scan-match-none')?.textContent.includes('カード番号を読み取れません。'));
+      assert.equal(byTestId('scan-match-retry')?.textContent, '再試行');
+      assert.equal(byTestId('scan-match-cancel')?.textContent, 'キャンセル');
+      await click(byTestId('scan-match-cancel'));
+    } finally {
+      await act(async () => { useSettingsStore.setState({ preferredLanguage: prev }); });
+    }
+  });
+  await test('corrected identity: short note + chooser; a double tap on a version adds it once and charges once', async () => {
+    providerReply = 'CHARACTER: 宝鐘マリン\nCARD_NUMBER: hBP01-014\nRARITY: SR';
+    await shutter();
+    const note = byTestId('scan-match-number-corrected');
+    assert.ok(note, 'corrected note');
+    assert.equal(note.textContent, '卡號與角色不一致，已依角色判斷。請確認並選擇卡片版本。');
+    await click(byTestId('scan-match-pick'));
+    const first = host.querySelector('[data-testid="scan-candidate-meta"]');
+    assert.ok(first.textContent.includes('hEB01-014') && first.textContent.includes('SR'));
+    const remaining = useScanQuotaStore.getState().getRemaining();
+    const count = useScanSessionStore.getState().cardCount;
+    await act(async () => {
+      first.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+      first.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+    await tick(30);
+    assert.equal(useScanQuotaStore.getState().getRemaining(), remaining - 1, 'charged exactly once');
+    assert.equal(useScanSessionStore.getState().cardCount, count + 1, 'added exactly once');
+    assert.equal(useScanSessionStore.getState().cards.at(-1).id, 'hEB01-014_hEB01_SR_hEB01-014_SR');
   });
 
   console.log('CR 717c3fe P2 #2: app goes to the background');

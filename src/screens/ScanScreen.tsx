@@ -21,7 +21,7 @@ import { CameraView, useCameraPermissions, CameraType } from 'expo-camera';
 import WebCamera, { WebCameraHandle } from '../components/WebCamera';
 import CameraPermissionDeniedView from '../components/CameraPermissionDeniedView';
 import ScanSessionPanel from '../components/ScanSessionPanel';
-import { nativeOcrRecognize } from '../services/nativeOcr';
+import { nativeOcrProbe, nativeOcrRecognize } from '../services/nativeOcr';
 import { useScanSessionStore } from '../stores/scanSessionStore';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, convertPrice } from '../constants';
@@ -59,7 +59,9 @@ import {
   type ScanPresentation,
 } from '../services/scanPresentation';
 import { CROP_PAD, defaultScanFrameRect, planNativeCrop } from '../utils/scanFrame';
-import { prepareNativeScanImages } from '../services/nativeScanCapture';
+import { cropProbeToFrame, deleteProbeFiles, nativeAutoCaptureAvailable, prepareNativeScanImages } from '../services/nativeScanCapture';
+import { AUTO_CAPTURE_PROBE_INTERVAL_MS, createAutoCaptureMachine, type ProbeObservation } from '../services/autoCapture';
+import { findCardNumberTokens } from '../utils/cardNumberToken';
 import { useScanDiagnosticsStore } from '../store/scanDiagnosticsStore';
 import { diagnosticsFromResult, type ScanOutcome } from '../services/scanDiagnostics';
 import { analyzeFrameWithStability, resetAutoScan } from '../services/autoScanService';
@@ -297,7 +299,29 @@ export default function ScanScreen({ navigation }: any) {
   // DIC-1427 Pen Cys7V: the mode pill is a REAL toggle on web (the only
   // platform running the frame-stability loop). Native keeps no pill at all.
   const [autoScanEnabled, setAutoScanEnabled] = useState(true);
-  const autoScanActive = isWeb && autoScanEnabled;
+  // v41: native has automatic capture too (src/services/autoCapture) when this build
+  // carries the frame crop + on-device text reader; otherwise only the shutter.
+  const nativeAutoAvailable = useRef(!isWeb && nativeAutoCaptureAvailable()).current;
+  const autoScanSupported = isWeb || nativeAutoAvailable;
+  const autoScanActive = autoScanSupported && autoScanEnabled;
+  const autoMachine = useRef(createAutoCaptureMachine()).current;
+  const probeBusyRef = useRef(false);
+  // Bumped whenever a probe in flight must not count any more (background, blur,
+  // cancel, close, unmount): its late reading is dropped, never fed to the trigger.
+  const probeEpochRef = useRef(0);
+  const invalidateProbes = () => { probeEpochRef.current += 1; };
+  const [autoPaused, setAutoPaused] = useState(false);
+  // Web: after a round the frame must move (a card taken away / a new one) before the
+  // next automatic capture — a card left still in front of the camera is not re-scanned.
+  const webNeedMotionRef = useRef(false);
+  // Re-renders when the disclosure is accepted (from the auto button, the shutter or the
+  // gallery), so the hint never claims "automatic" while nothing can be captured.
+  const consentVersion = usePhotoUploadConsentStore((st) => st.acceptedVersion);
+  const autoScanNeedsConsent = autoScanActive && !hasPhotoUploadConsent(consentVersion);
+  const setAutoScan = (on: boolean) => {
+    setAutoScanEnabled(on);
+    if (on) { autoMachine.resume(); setAutoPaused(false); }
+  };
   // DIC-1427 Pen AQf9b: the 估值清單 count box asks the session panel to open.
   const [sessionOpenRequest, setSessionOpenRequest] = useState(0);
   const autoScanRef = useRef<number | null>(null);
@@ -458,6 +482,7 @@ export default function ScanScreen({ navigation }: any) {
   // Clears the busy / progress UI of a scan that was cancelled by leaving the screen,
   // so coming back never shows a stuck spinner.
   const resetScanUi = () => {
+    invalidateProbes();
     diagOutcome('cancelled');
     clearRetry();
     setMatchSheet(null);
@@ -478,6 +503,7 @@ export default function ScanScreen({ navigation }: any) {
     const offBlur = typeof navigation?.addListener === 'function'
       ? navigation.addListener('blur', () => {
         if (!mountedRef.current) return;
+        invalidateProbes();
         diagOutcome('cancelled');
         clearRetry();
         setMatchSheet(null);
@@ -503,6 +529,7 @@ export default function ScanScreen({ navigation }: any) {
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next) => {
       if (next === 'active' || pickerOpenRef.current || !mountedRef.current) return;
+      invalidateProbes();
       lifecycle.cancel();
       resetScanUi();
       setCandidateSelector({ visible: false, tier: 'mid', candidates: [] });
@@ -593,8 +620,8 @@ export default function ScanScreen({ navigation }: any) {
 
   // Auto-scan rAF loop (web only) — detects card in frame and auto-triggers OCR
   useEffect(() => {
-    // Auto-scan only works on web; native keeps manual scan
-    if (!autoScanActive) return;
+    // Web frame-stability loop; native uses the probe loop below.
+    if (!isWeb || !autoScanActive) return;
     if (!isCameraReady) return;
     if (isScanning || isProcessingOCR) return;
     if (candidateSelector.visible || resultCard.visible || matchSheet) return;
@@ -612,12 +639,14 @@ export default function ScanScreen({ navigation }: any) {
       const video = document.querySelector('video');
       if (video && video.readyState >= 2) {
         const result = analyzeFrameWithStability(video, scanArea);
+        if (!result.isStable) webNeedMotionRef.current = false;
         // Gate auto-scan through the same role/quota check as manual scan so an
         // over-quota user (guest or free) in the scanner UI can't auto-record cards.
-        if (result.isStable && result.confidence > 0.85 && canScanNow()) {
+        if (result.isStable && result.confidence > 0.85 && !webNeedMotionRef.current && canScanNow()) {
           const now = Date.now();
           if (now - lastScanTimeRef.current > SCAN_COOLDOWN_MS) {
             lastScanTimeRef.current = now;
+            webNeedMotionRef.current = true;
             captureAndRecognize();
           }
         }
@@ -634,6 +663,69 @@ export default function ScanScreen({ navigation }: any) {
       }
     };
   }, [isCameraReady, autoScanActive, isScanning, isProcessingOCR, candidateSelector.visible, resultCard.visible, matchSheet, serviceFailure]);
+
+  // Native automatic capture (v41, src/services/autoCapture): a silent low-res probe,
+  // cropped to the frame and read ON THE DEVICE; only a card number held still in the
+  // frame starts the normal scan (one recognition request). Probes never upload and
+  // never run while anything is on screen, the app is in the background, the screen
+  // is not focused, the photo disclosure is not accepted or the allowance is used up.
+  const probeCardNumbers = async (): Promise<ProbeObservation[]> => {
+    let shotUri: string | null = null;
+    let cropUri: string | null = null;
+    try {
+      const shot = await cameraRef.current?.takePictureAsync({ quality: 0.3, base64: false, shutterSound: false });
+      if (!shot?.uri) return [];
+      shotUri = shot.uri;
+      const [preview, frameRect] = await Promise.all([measureInWindow(cameraBoxRef), measureInWindow(scanFrameRef)]);
+      const plan = planNativeCrop(preview, frameRect, shot.width && shot.height ? { width: shot.width, height: shot.height } : null);
+      const crop = await cropProbeToFrame(shot, plan);
+      if (!crop) return [];
+      cropUri = crop.uri;
+      // Each readable card number with WHERE it is (normalised to the crop), so the
+      // trigger can require it inside the frame and held still (src/services/autoCapture).
+      const observations: ProbeObservation[] = [];
+      for (const block of await nativeOcrProbe(crop.uri)) {
+        const box = block.box && crop.width > 0 && crop.height > 0
+          ? { x: block.box.x / crop.width, y: block.box.y / crop.height, width: block.box.width / crop.width, height: block.box.height / crop.height }
+          : null;
+        for (const token of findCardNumberTokens(block.text)) observations.push({ token, box });
+      }
+      return observations;
+    } finally {
+      // Probe files are this probe's alone: delete them on every path (no accumulation).
+      void deleteProbeFiles([shotUri, cropUri]);
+    }
+  };
+  useEffect(() => {
+    if (isWeb || !autoScanActive || !permission?.granted) return;
+    if (!isCameraReady || isScanning || isProcessingOCR || autoPaused) return;
+    if (candidateSelector.visible || resultCard.visible || matchSheet || serviceFailure || scanError || showSearch) return;
+    let stopped = false;
+    const probeAllowed = () => mountedRef.current && lifecycle.isFocused() && !lifecycle.hasLiveJob()
+      && AppState.currentState === 'active' && canScanNow() && hasUploadConsent();
+    const tick = async () => {
+      if (stopped || probeBusyRef.current) return;
+      if (!probeAllowed()) return;
+      probeBusyRef.current = true;
+      const epoch = probeEpochRef.current;
+      try {
+        const observations = await probeCardNumbers();
+        // Everything is re-checked AFTER the awaits: the app may have gone to the
+        // background (no navigation blur), the screen may have lost focus, a scan may
+        // have started — a late reading of a probe from before that never triggers.
+        if (stopped || epoch !== probeEpochRef.current || !probeAllowed()) return;
+        const decision = autoMachine.onProbe(observations);
+        if (autoMachine.state().paused) setAutoPaused(true);
+        if (decision === 'trigger') captureAndRecognize();
+      } catch {
+        // A failed probe is just "nothing readable"; the shutter always works.
+      } finally {
+        probeBusyRef.current = false;
+      }
+    };
+    const id = setInterval(tick, AUTO_CAPTURE_PROBE_INTERVAL_MS);
+    return () => { stopped = true; invalidateProbes(); clearInterval(id); };
+  }, [autoScanActive, permission?.granted, isCameraReady, isScanning, isProcessingOCR, autoPaused, candidateSelector.visible, resultCard.visible, matchSheet, serviceFailure, scanError, showSearch]);
 
   const toggleFlash = () => {
     setFlash(current => !current);
@@ -762,6 +854,14 @@ export default function ScanScreen({ navigation }: any) {
     }),
   });
   const hasUploadConsent = () => hasPhotoUploadConsent(usePhotoUploadConsentStore.getState().acceptedVersion);
+  // First use of automatic mode: show the same disclosure the shutter shows — no
+  // picture is taken here; probing starts only once the user accepted.
+  const enableAutoScan = async () => {
+    if (await requestPhotoUploadConsent()) {
+      autoMachine.resume();
+      setAutoPaused(false);
+    }
+  };
 
 
   // 相機辨識流程本身住在 scanRecognitionFlow，這兩個 adapter 只把 I/O 與 setState 接上，
@@ -907,6 +1007,9 @@ export default function ScanScreen({ navigation }: any) {
     const job = lifecycle.begin();
     if (!job) return;
     const { signal } = job;
+    // One camera capture at a time: let a running probe finish first (bounded).
+    for (let i = 0; i < 40 && probeBusyRef.current; i++) await new Promise((r) => setTimeout(r, 50));
+    if (!job.isCurrent()) { lifecycle.end(job); return; }
     const diagId = diagStart('camera');
     let stageT0 = Date.now();
 
@@ -1218,6 +1321,11 @@ export default function ScanScreen({ navigation }: any) {
 
   const handleScan = async () => {
     if (isScanning || isProcessingOCR || lifecycle.hasLiveJob()) return;
+    // A manual round: automatic capture waits until the frame is empty again, and an
+    // idle pause ends (the user is here).
+    autoMachine.roundStarted(null);
+    setAutoPaused(false);
+    webNeedMotionRef.current = true;
     if (!canScanNow()) {
       promptScanBlocked();
       return;
@@ -1356,11 +1464,15 @@ export default function ScanScreen({ navigation }: any) {
   // Pen `x7iIL` Close — dismisses the scan flow back to Home. Nested form
   // so it resolves regardless of which navigator owns the current screen.
   const handleSheetRetake = () => { diagOutcome('discarded'); setMatchSheet(null); };
+  // No-match 重試 (v41): end the failed round the same way, then start a new capture
+  // through the normal shutter path (its live-job / quota / consent guards apply).
+  const handleNoMatchRetry = () => { handleSheetRetake(); void handleScan(); };
 
   const handleClose = () => {
     // Cancel first: the drawer keeps this screen mounted, so the running scan must be
     // retired before navigating (the blur that follows is then a no-op).
     if (lifecycle.cancel()) resetScanUi();
+    invalidateProbes();
     clearRetry();
     navigation.navigate('MainDrawer', { screen: 'Home' });
   };
@@ -1533,7 +1645,9 @@ export default function ScanScreen({ navigation }: any) {
             flash={flash}
             autoScanActive={autoScanActive}
             autoScanSupported={isWeb}
-            onToggleAutoScan={setAutoScanEnabled}
+            onToggleAutoScan={setAutoScan}
+            autoScanNeedsConsent={autoScanNeedsConsent}
+            onEnableAutoScan={enableAutoScan}
             onOpenSession={() => setSessionOpenRequest((n) => n + 1)}
             isCameraReady={isCameraReady}
             cameraError={cameraError}
@@ -1568,7 +1682,11 @@ export default function ScanScreen({ navigation }: any) {
             isScanning={isScanning}
             flash={flash}
             autoScanActive={autoScanActive}
-            autoScanSupported={false}
+            autoScanSupported={nativeAutoAvailable}
+            onToggleAutoScan={setAutoScan}
+            autoScanNeedsConsent={autoScanNeedsConsent}
+            onEnableAutoScan={enableAutoScan}
+            autoScanPaused={autoPaused}
             // Native crop (CR 2026-10-15 P2_1): the frame is measured in window coords at
             // capture; without this ref every native capture fell back to the full photo.
             scanAreaRef={scanFrameRef}
@@ -1610,6 +1728,7 @@ export default function ScanScreen({ navigation }: any) {
         onPickPrinting={handleSheetCorrect}
         onManualSearch={() => { setMatchSheet(null); setShowSearch(true); }}
         onRetake={handleSheetRetake}
+        onRetry={handleNoMatchRetry}
       />
 
       {/* 更正：使用者主動開啟的候選清單 */}
@@ -1734,7 +1853,7 @@ export default function ScanScreen({ navigation }: any) {
         </View>
       ) : null}
 
-      {/* 辨識服務無法回應（v39）：不是「找不到卡」，可用同一張照片手動重試 */}
+      {/* 辨識服務無法回應（v39）：不是「找不到卡」。簡短原因＋重試（同一張照片）／取消 */}
       {serviceFailure && !scanError && (
         <View style={resultStyles.errorContainer} testID="scan-service-failure">
           <Text style={resultStyles.errorText}>⚠️ {t(`scan_failure_${serviceFailure}` as TranslationKey)}</Text>
@@ -1750,15 +1869,14 @@ export default function ScanScreen({ navigation }: any) {
                 <Text style={resultStyles.retryText}>{t('scan_retry_recognition')}</Text>
               </TouchableOpacity>
             ) : null}
+            {/* 取消：丟掉暫存的照片、收起面板，回到可掃描狀態（不上傳、不扣次）。 */}
             <TouchableOpacity
               style={resultStyles.retryButton}
-              onPress={() => {
-                clearRetry();
-                setShowSearch(true);
-              }}
-              testID="scan-service-manual"
+              onPress={clearRetry}
+              accessibilityRole="button"
+              testID="scan-service-cancel"
             >
-              <Text style={resultStyles.retryText}>{t('scan_manual_search')}</Text>
+              <Text style={resultStyles.retryText}>{t('scan_service_cancel')}</Text>
             </TouchableOpacity>
           </View>
         </View>

@@ -19,9 +19,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { adaptDatabase } from '../src/utils/deckCardData.ts';
 import { priceAlertKey } from '../src/utils/priceAlerts.ts';
+import { assertFreshDatabase, freshPriceSnapshot, parseRestoreSince } from './lib/push-freshness.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATABASE_PATH = path.join(path.resolve(__dirname, '..'), 'data', 'database.json');
+// Overridable only so the offline regression can feed controlled data (test:push-freshness).
+const DATABASE_PATH = process.env.PUSH_DATABASE_PATH || path.join(path.resolve(__dirname, '..'), 'data', 'database.json');
 
 // Canonical production price-alert-run endpoint (DIC-1245). Overridable via env
 // for preview / staging cron; the default must never be the old vercel.app
@@ -82,34 +84,36 @@ async function fetchWatchedPrintings() {
   return [...watched.values()];
 }
 
-function buildPriceIndex() {
+// v41: a desired-price alert must judge a CURRENT price — a stale database (or one
+// from before PUSH_RESTORE_SINCE) sends nothing, and inside a current database only
+// price records whose own exact-printing time is current count
+// (scripts/lib/push-freshness.mjs, adaptCardNumber price provenance).
+function loadPriceRecords(now, notBefore) {
   const raw = JSON.parse(fs.readFileSync(DATABASE_PATH, 'utf8'));
-  const { priceRecords } = adaptDatabase(Object.values(raw.cards || {}));
-  const index = new Map();
-  for (const record of priceRecords) {
-    index.set(priceAlertKey(record.cardNumber, record.version), record);
-  }
-  return index;
+  assertFreshDatabase(raw, now, notBefore);
+  return adaptDatabase(Object.values(raw.cards || {})).priceRecords;
 }
 
 async function main() {
   if (!NOTIFY_SECRET) {
     throw new Error('PUSH_NOTIFY_SECRET not set — /api/push/price-alert-run would reject the request');
   }
+  // Freshness first: nothing is read from KV for a run that could not send anyway.
+  const now = Date.now();
+  const notBefore = parseRestoreSince(process.env.PUSH_RESTORE_SINCE);
+  const priceRecords = loadPriceRecords(now, notBefore);
   const watched = await fetchWatchedPrintings();
   if (watched.length === 0) {
     console.log('[price-alerts] No exact-version price alerts registered');
     return;
   }
 
-  const index = buildPriceIndex();
-  const prices = [];
-  for (const { cardNumber, printing } of watched) {
-    const record = index.get(priceAlertKey(cardNumber, printing));
-    // An unpriced / ambiguous printing contributes nothing rather than
-    // borrowing a sibling version's price.
-    if (!record) continue;
-    prices.push({ cardNumber, printing, price: record.price, currency: record.currency });
+  // An unpriced / ambiguous / stale printing contributes nothing rather than
+  // borrowing a sibling version's price.
+  const { prices, stale } = freshPriceSnapshot({ watched, priceRecords, now, notBefore, keyOf: priceAlertKey });
+  if (prices.length === 0) {
+    console.log(`[price-alerts] ${watched.length} watched printings, none with a current price (${stale} stale) — nothing posted`);
+    return;
   }
 
   const res = await fetch(RUN_URL, {

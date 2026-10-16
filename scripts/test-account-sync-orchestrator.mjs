@@ -693,6 +693,165 @@ await test('W7 push: re-scheduled push after 409 rethrow STILL drops the tombsto
   assert.deepEqual(retryFavs, [], 'W7: re-scheduled push retry patch drops the tombstoned key — the delete survived the whole cycle');
 });
 
+// ── CR 2026-10-17: three-way merge against the device's last-matched baseline ──
+const scanEntry = (id, at) => ({
+  instanceId: id, scannedAt: at, card: { id: 'c', cardNumber: 'hBP01-010', name: 'n', sellPrice: null },
+  priceVersions: [], selectedVersion: 0, versionConfident: true,
+});
+await test('CR merge: with a baseline, an untouched entity the server no longer has stays deleted (collection / deck / scan)', () => {
+  const deck = { id: 'd', name: 'x', updatedAt: '2026-10-01T00:00:00Z', oshi: [], main: [], yell: [] };
+  const baseline = { collection: { 'gone|BASE': 2, 'kept|BASE': 1 }, decks: { d: deck.updatedAt }, scans: ['s1', 's2'] };
+  const merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, collection: { 'kept|BASE': 1 }, decks: [], scanSession: { entries: [scanEntry('s2', '2026-10-02T00:00:00Z')], clearedAt: null } },
+    { collection: { 'gone|BASE': 2, 'kept|BASE': 1, 'new|BASE': 3 }, decks: [deck],
+      scanSession: { entries: [scanEntry('s1', '2026-10-01T00:00:00Z'), scanEntry('s2', '2026-10-02T00:00:00Z'), scanEntry('s3', '2026-10-03T00:00:00Z')], clearedAt: null } },
+    { collectionChangedKeys: { 'new|BASE': 't' } },
+    baseline,
+  );
+  assert.equal(merged.collection['gone|BASE'], undefined, 'deleted elsewhere, untouched here → stays deleted');
+  assert.equal(merged.collection['new|BASE'], 3, 'a local addition is kept');
+  assert.equal(merged.decks.length, 0, 'deck deleted elsewhere, not edited here → stays deleted');
+  assert.deepEqual(merged.scanSession.entries.map((e) => e.instanceId), ['s2', 's3'], 'scan removed elsewhere stays removed; a new local scan is kept');
+});
+await test('CR merge: a remote decrease wins over an untouched local value; a local edit after the baseline still wins', () => {
+  const baseline = { collection: { 'a|BASE': 5, 'b|BASE': 5 }, decks: {}, scans: null };
+  const merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, collection: { 'a|BASE': 2, 'b|BASE': 2 } },
+    { collection: { 'a|BASE': 5, 'b|BASE': 7 } },
+    { collectionChangedKeys: { 'b|BASE': 't' } },
+    baseline,
+  );
+  assert.equal(merged.collection['a|BASE'], 2);
+  assert.equal(merged.collection['b|BASE'], 7);
+});
+await test('CR merge: a deck edited here after the baseline is kept even if deleted elsewhere (no silent loss of an edit)', () => {
+  const deck = { id: 'd', name: 'edited', updatedAt: '2026-10-05T00:00:00Z', oshi: [], main: [], yell: [] };
+  const merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, decks: [] }, { decks: [deck] }, {},
+    { collection: {}, decks: { d: '2026-10-01T00:00:00Z' }, scans: [] },
+  );
+  assert.equal(merged.decks.length, 1);
+});
+await test('CR merge: without a baseline (or a server without the scan list) the old union / MAX rules are unchanged', () => {
+  const merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, collection: {} },
+    { collection: { 'a|BASE': 2 }, scanSession: { entries: [scanEntry('s1', '2026-10-01T00:00:00Z')], clearedAt: null } },
+    {},
+  );
+  assert.equal(merged.collection['a|BASE'], 2);
+  assert.equal(merged.scanSession.entries.length, 1);
+  const oldServer = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7 },
+    { scanSession: { entries: [scanEntry('s1', '2026-10-01T00:00:00Z')], clearedAt: null } },
+    {},
+    { collection: {}, decks: {}, scans: ['s1'] },
+  );
+  assert.equal(oldServer.scanSession.entries.length, 1, 'a server that does not carry the list cannot delete from it');
+});
+
+const SNAPSHOT_CARD_FOR_PICK = {
+  id: 'pick-card', name: 'n', cardNumber: 'hBP01-051', type: '', rarity: 'SR', series: 'hBP01', sellPrice: 120,
+  yuyuName: '', color: '', imageUrl: '', prices: [{ name: '風真いろは', sellPrice: 120 }, { name: '風真いろは(パラレル)', sellPrice: 980 }],
+};
+// ── CR 93677fb: explicit version-pick provenance in the scan-list merge ──
+const picked = (id, version, selectedAt, confident = true) => ({ ...scanEntry(id, '2026-10-01T00:00:00Z'), selectedVersion: version, versionConfident: confident, ...(selectedAt ? { selectedAt } : {}) });
+await test('CR merge (93677fb): a newer explicit pick wins over an older one on the server, and over a server copy with no pick', () => {
+  let merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, scanSession: { entries: [picked('s1', 0, '2026-10-02T00:00:00Z')], clearedAt: null } },
+    { scanSession: { entries: [picked('s1', 1, '2026-10-03T00:00:00Z')], clearedAt: null } }, {},
+  );
+  assert.equal(merged.scanSession.entries[0].selectedVersion, 1);
+  merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, scanSession: { entries: [picked('s1', 0, null)], clearedAt: null } },
+    { scanSession: { entries: [picked('s1', 1, '2026-10-03T00:00:00Z')], clearedAt: null } }, {},
+  );
+  assert.equal(merged.scanSession.entries[0].selectedVersion, 1);
+});
+await test('CR merge (93677fb): an older or absent local pick never overrides a newer server pick; ties keep the old rules (resolved beats unresolved, then the server copy)', () => {
+  let merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, scanSession: { entries: [picked('s1', 1, '2026-10-03T00:00:00Z')], clearedAt: null } },
+    { scanSession: { entries: [picked('s1', 0, '2026-10-02T00:00:00Z')], clearedAt: null } }, {},
+  );
+  assert.equal(merged.scanSession.entries[0].selectedVersion, 1, 'older local pick loses');
+  merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, scanSession: { entries: [picked('s1', 1, '2026-10-03T00:00:00Z')], clearedAt: null } },
+    { scanSession: { entries: [picked('s1', 0, null)], clearedAt: null } }, {},
+  );
+  assert.equal(merged.scanSession.entries[0].selectedVersion, 1, 'no local pick loses');
+  merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, scanSession: { entries: [picked('s1', 0, null, false)], clearedAt: null } },
+    { scanSession: { entries: [picked('s1', 1, null, true)], clearedAt: null } }, {},
+  );
+  assert.equal(merged.scanSession.entries[0].selectedVersion, 1, 'no picks: the resolved copy wins');
+  merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, scanSession: { entries: [picked('s1', 0, '2026-10-03T00:00:00Z')], clearedAt: null } },
+    { scanSession: { entries: [picked('s1', 1, '2026-10-03T00:00:00Z')], clearedAt: null } }, {},
+  );
+  assert.equal(merged.scanSession.entries[0].selectedVersion, 0, 'same pick time: the server copy stays');
+});
+await test('CR (93677fb): the picker stamps selectedAt; it travels to and from the sync form; an out-of-range pick is ignored', async () => {
+  const { useScanSessionStore: store, toSyncEntry, fromSyncEntry } = await import('../src/stores/scanSessionStore.ts');
+  store.setState({ cards: [] });
+  store.getState().addCard({ ...SNAPSHOT_CARD_FOR_PICK }, { force: true });
+  const id = store.getState().cards[0].instanceId;
+  store.getState().setCardVersion(id, 5);                      // out of range: nothing changes
+  assert.equal(store.getState().cards[0].selectedAt, undefined);
+  store.getState().setCardVersion(id, 1);
+  const card = store.getState().cards[0];
+  assert.equal(card.selectedVersion, 1);
+  assert.ok(Number.isFinite(Date.parse(card.selectedAt)), 'explicit pick is timestamped');
+  const entry = toSyncEntry(card, false);
+  assert.equal(entry.selectedAt, card.selectedAt);
+  assert.equal(fromSyncEntry(entry).selectedAt, card.selectedAt);
+  assert.equal(toSyncEntry({ ...card, selectedVersion: 9 }, false).selectedAt, undefined, 'no provenance for an out-of-range index');
+  store.setState({ cards: [] });
+});
+
+// ── CR b16d7ab: the server's canonical (capped) pick time is adopted on ACK ──
+await test('CR ACK (b16d7ab): an unchanged pick adopts the server\'s capped selectedAt; dirty state unchanged', async () => {
+  const { useScanSessionStore: store } = await import('../src/stores/scanSessionStore.ts');
+  const { useAccountSyncStateStore: meta } = await import('../src/store/accountSyncStateStore.ts');
+  store.setState({ cards: [], removals: {}, clearedAt: null });
+  store.getState().addCard({ ...SNAPSHOT_CARD_FOR_PICK }, { force: true });
+  const id = store.getState().cards[0].instanceId;
+  store.getState().setCardVersion(id, 0);
+  store.setState({ cards: store.getState().cards.map((c) => ({ ...c, selectedAt: '2099-01-01T00:00:00.000Z' })) });
+  const capped = '2026-10-17T00:00:00.000Z';
+  responseQueue = [async () => {
+    const sent = fetchCalls[0].body.patch.scanSession.entries;
+    assert.equal(sent[0].selectedAt, '2099-01-01T00:00:00.000Z', 'the future time is what was sent');
+    return new Response(JSON.stringify({ ok: true, snapshot: { ...SNAPSHOT_V7, revision: 8, scanSession: { entries: sent.map((e) => ({ ...e, selectedAt: capped })), clearedAt: null } } }), { status: 200 });
+  }];
+  const seqBefore = meta.getState().dirtySeq;
+  await pushAccountSyncFromStores(SESSION);
+  assert.equal(store.getState().cards[0].selectedAt, capped, 'local adopts the canonical time');
+  assert.equal(store.getState().cards[0].selectedVersion, 0);
+  assert.equal(meta.getState().dirtySeq, seqBefore, 'no new local change recorded by the normalisation');
+  store.setState({ cards: [] });
+});
+await test('CR ACK (b16d7ab): a pick changed while the request was in flight is NOT overwritten by the ACK', async () => {
+  const { useScanSessionStore: store } = await import('../src/stores/scanSessionStore.ts');
+  store.setState({ cards: [], removals: {}, clearedAt: null });
+  store.getState().addCard({ ...SNAPSHOT_CARD_FOR_PICK }, { force: true });
+  const id = store.getState().cards[0].instanceId;
+  store.getState().setCardVersion(id, 0);
+  let release;
+  responseQueue = [() => new Promise((r) => { release = r; })];
+  const pending = pushAccountSyncFromStores(SESSION);
+  while (!release) await new Promise((r) => setTimeout(r, 0));
+  const sent = fetchCalls[0].body.patch.scanSession.entries;
+  store.getState().setCardVersion(id, 1);                        // user changes the pick meanwhile
+  useDeckStore.setState((st) => ({ ...st, collection: { ...st.collection, 'hBP09-001|BASE': 4 } }));   // and something unrelated
+  const newPick = store.getState().cards[0];
+  release(new Response(JSON.stringify({ ok: true, snapshot: { ...SNAPSHOT_V7, revision: 8, scanSession: { entries: sent.map((e) => ({ ...e, selectedAt: '2000-01-01T00:00:00.000Z' })), clearedAt: null } } }), { status: 200 }));
+  await pending;
+  const after = store.getState().cards[0];
+  assert.equal(after.selectedVersion, 1);
+  assert.equal(after.selectedAt, newPick.selectedAt, 'the pending pick keeps its own time');
+  assert.equal(useDeckStore.getState().collection['hBP09-001|BASE'], 4, 'unrelated edit untouched');
+  store.setState({ cards: [] });
+});
+
 if ((process.exitCode ?? 0) === 0) {
   console.log(`\n✅ account remote-sync orchestrator: ${passed} checks passed`);
 } else {

@@ -59,9 +59,18 @@ assert.ok(hEB01WithSellPayload.every((c) => (
 const unprovenHEB01Cards = hEB01Cards.filter((c) => c.sellPrice == null);
 assert.ok(unprovenHEB01Cards.every((c) => Array.isArray(c.prices) && c.prices.length === 0), 'unproven hEB01 printings must keep unknown sell prices null/empty');
 
+// The expected value is the committed FullAhead source price of that exact version
+// (cardNumber-rarity), not a literal from one dated snapshot — the 2026-10-16 refresh
+// moved hBP02-017 UR from 1500 to 1600 and the card must follow the source.
+const fullahead = JSON.parse(fs.readFileSync(path.join(repo, 'data/buy-prices/fullahead-prices.json'), 'utf8'));
+const sourceBuy = (key) => {
+  const v = fullahead[key]?.buyPrice;
+  assert.ok(Number.isFinite(v) && v > 0, `fixture source ${key} must carry a buy price`);
+  return v;
+};
 const exactBuyExamples = new Map([
-  ['hBP01-051_hEB01_UR_hBP01-051_UR_02', 250],
-  ['hBP02-017_hEB01_UR_hBP02-017_UR_02', 1500],
+  ['hBP01-051_hEB01_UR_hBP01-051_UR_02', sourceBuy('hBP01-051-UR')],
+  ['hBP02-017_hEB01_UR_hBP02-017_UR_02', sourceBuy('hBP02-017-UR')],
 ]);
 for (const [id, expected] of exactBuyExamples) {
   assert.strictEqual(db.cards[id]?.buyPrice, expected, `${id} must keep current proven exact-version buyPrice`);

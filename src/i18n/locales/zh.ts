@@ -178,7 +178,7 @@ export const zh = {
   // .watchlist | .premium, all false under STORE_MVP), so favorites /
   // decks / price alerts / settings live on-device only. Do not promise
   // cross-device sync here.
-  login_description_store: '登入後可使用帳號功能；訪客也能每月掃描 50 張卡牌（與登入後共用此裝置額度）。此版本的牌組與設定為裝置本機儲存。',
+  login_description_store: '登入後，卡牌持有數量、牌組、掃描清單與設定會同步到同一帳號的其他裝置；訪客也能每月掃描 50 張卡牌（與登入後共用此裝置額度）。',
   login_or: '或',
   login_guest_button: '以訪客身份進入',
   login_guest_hint: '訪客可瀏覽規則、查詢卡片，並每月掃描 50 張卡牌',
@@ -191,6 +191,19 @@ export const zh = {
   me_guest_name: '訪客',
   // DIC-1427: Pen App/07 我的 collection hub (frame siVsa).
   nav_me: '我的',
+  // v41 (Grok catalogue QA): the bottom tab bar + home color chips follow the
+  // language. zh values are the Pen copy the shell always showed.
+  shell_tab_home: '首頁',
+  shell_tab_search: '搜尋',
+  shell_tab_scan: '掃描',
+  shell_tab_deck: '牌組',
+  shell_tab_me: '我的',
+  home_chip_white: '白',
+  home_chip_blue: '藍',
+  home_chip_green: '綠',
+  home_chip_red: '赤',
+  home_chip_purple: '紫',
+  home_chip_yellow: '黃',
   me_account_manage: '帳號與設定',
   me_guest_hint: '登入以跨裝置同步收藏',
   me_stat_owned: '收藏張數',
@@ -272,7 +285,7 @@ export const zh = {
   // Multi-provider login binding is described without "同一個帳號 /
   // 帳號同步" phrasing so the shipping-copy predicate does not confuse
   // login-binding with data-sync. Data-storage clause states the fact.
-  settings_link_hint_store: '綁定多種登入方式方便未來更換裝置或補充驗證。牌組與設定在此版本為裝置本機儲存，不會跨裝置同步。至少需保留一種登入方式，無法解除最後一個。',
+  settings_link_hint_store: '綁定多種登入方式方便未來更換裝置或補充驗證。登入後，卡牌持有數量、牌組、掃描清單與設定會跨裝置同步（掃描額度仍按裝置計算）。至少需保留一種登入方式，無法解除最後一個。',
   // DIC-1380 W12 CR — describe the ACTUAL per-provider deletion path.
   // Google-linked: backend cascade delete works; App clears local
   // session + calls GoogleSignin.signOut() on Android (best-effort
@@ -289,7 +302,7 @@ export const zh = {
   settings_guest_sync: '尚未登入。登入後可跨裝置同步收藏。',
   // DIC-1381 W10 CR — Store MVP does NOT install the account-sync
   // binding, so decks/settings do not sync. State this truthfully.
-  settings_guest_sync_store: '尚未登入。訪客每月可掃描 50 張卡牌，登入不會增加或重置額度。此版本的牌組與設定為裝置本機儲存。',
+  settings_guest_sync_store: '尚未登入。訪客每月可掃描 50 張卡牌，登入不會增加或重置額度。登入後，此裝置的卡牌持有數量、牌組、掃描清單與設定會併入帳號並跨裝置同步。',
   settings_footer: '專為 hololive PCG 玩家打造',
 
   // Tutorial landing
@@ -534,7 +547,7 @@ export const zh = {
 
   // Deck editor
   deck_loading: '載入卡片資料庫…',
-  deck_local_hint: '本地牌組（僅存於此裝置）。建立或選擇一個牌組開始編輯。',
+  deck_local_hint: '牌組存在這台裝置；登入帳號時也會同步到帳號。建立或選擇一個牌組開始編輯。',
   deck_new_name: '新牌組名稱',
   deck_create: '建立',
   deck_choose_card: '選擇卡片',
@@ -740,20 +753,21 @@ export const zh = {
   scan_evidence_name: '卡名相符',
   scan_evidence_local: '本機文字辨識讀到卡號',
   scan_identity_title: '已辨識：{{name}}（{{number}}）',
-  scan_identity_body: '此卡號有多個版本，照片無法確認是哪一版，因此不顯示價格。請選擇手上的版本，或改用手動搜尋。',
+  scan_identity_body: '請選擇卡片版本。',
   scan_identity_price: '價格：版本未確定',
   scan_identity_pick: '選擇版本',
   scan_none_title: '找不到相符的卡牌',
-  scan_none_body_no_number: '照片中讀不到卡號，無法確定是哪一張卡。未使用掃描額度。請讓整張卡牌與卡號清楚入框後重拍，或改用手動搜尋。',
-  scan_none_body_not_in_db: '讀到的卡號在資料庫中找不到。未使用掃描額度。請確認卡號清楚入框後重拍，或改用手動搜尋。',
-  scan_none_body_conflict: '讀到的卡號與卡面角色不一致，可能讀錯了。未使用掃描額度。請重拍或改用手動搜尋。',
-  scan_identity_body_corrected: '讀到的卡號屬於另一張卡，依卡面角色名稱與相近卡號推定為這張卡。尚未確認版本，因此不顯示價格。請確認卡牌並選擇手上的版本，或改用手動搜尋。',
-  scan_failure_network: '無法連線到辨識服務，請確認網路連線後重試。未使用掃描額度。',
-  scan_failure_busy: '辨識服務忙碌中，請稍後重試。未使用掃描額度。',
-  scan_failure_timeout: '辨識逾時，請稍後重試。未使用掃描額度。',
-  scan_failure_unavailable: '辨識服務暫時無法使用，請稍後重試。未使用掃描額度。',
-  scan_retry_recognition: '重試辨識',
-  scan_none_body_low: '證據不足，無法確定是哪一張卡。未使用掃描額度。請重拍或改用手動搜尋。',
+  scan_none_body_no_number: '讀不到卡號。',
+  scan_none_body_not_in_db: '資料庫沒有這個卡號。',
+  scan_none_body_conflict: '卡號與角色不一致。',
+  scan_identity_body_corrected: '卡號與角色不一致，已依角色判斷。請確認並選擇卡片版本。',
+  scan_failure_network: '網路連線失敗，請檢查網路後重試。',
+  scan_failure_busy: '辨識服務忙碌中，請稍後重試。',
+  scan_failure_timeout: '辨識逾時，請稍後重試。',
+  scan_failure_unavailable: '辨識服務暫時無法使用，請稍後重試。',
+  scan_retry_recognition: '重試',
+  scan_service_cancel: '取消',
+  scan_none_body_low: '無法確定是哪張卡。',
   scan_none_suggestions: '查看可能的卡（{{count}}）',
   scan_ai_disclosure_title: '掃描會上傳照片給 AI 辨識',
   scan_ai_disclosure_body: '為了辨識卡牌，你拍攝或從相簿選取的照片會上傳到 HoloHunter 的伺服器，再由伺服器傳送給 Google Gemini（Google 的 AI 服務）辨識。\n\n• 照片只用於該次卡牌辨識，不用於廣告或建立個人檔案。\n• 我們的伺服器只在該次請求中轉送照片，不會保存。\n• Google 收到照片後依 Google 的條款與政策處理；HoloHunter 無法代 Google 承諾其保存或使用方式。\n• 刪除 HoloHunter 帳號只會刪除我們保存的帳號資料，不涵蓋 Google 端的處理。\n\n不同意也可以改用手動搜尋。詳見隱私權政策。',
@@ -762,6 +776,9 @@ export const zh = {
   scan_recognizing: '識別中…',
   scan_frame_auto: '將卡牌置於掃描框內',
   scan_frame_manual: '點擊掃描按鈕拍攝卡牌',
+  scan_auto_paused: '自動偵測已暫停，請按掃描按鈕',
+  scan_auto_needs_consent: '同意照片上傳說明後才能自動掃描',
+  scan_auto_enable: '開始自動掃描',
   scan_close_a11y: '關閉掃描',
   scan_flash_on: '閃光燈開',
   scan_flash: '閃光燈',

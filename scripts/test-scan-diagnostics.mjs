@@ -247,7 +247,7 @@ try {
     assert.equal(last().presentation.source, 'server_verdict');
     assert.equal(last().extracted.number, 'unknown');
     assert.equal(last().extracted.name, 'unknown');
-    await click(byTestId('scan-match-retake'));
+    await click(byTestId('scan-match-cancel'));
   });
   await test('a throwing diagnostics store cannot break a scan or the quota', async () => {
     const st = useScanDiagnosticsStore.getState();

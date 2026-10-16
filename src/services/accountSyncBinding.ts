@@ -24,15 +24,28 @@ import { useDeckStore } from '../store/deckStore';
 import { usePriceAlertStore } from '../stores/priceAlertStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useFavoritesStore } from '../store/favoritesStore';
+import { useScanSessionStore } from '../stores/scanSessionStore';
+import { useAccountSyncStateStore, isAccountSyncDirty } from '../store/accountSyncStateStore';
+import { FEATURES } from '../config/releaseFlags';
+import { AppState } from 'react-native';
 import {
-  hydrateAccountSyncFromServer,
   pushAccountSyncFromStores,
   resetLastKnownRevision,
   clearAccountScopedStores,
   isApplyingServerState,
+  reconcileAccountSync,
+  parkPendingForOwner,
+  bumpAccountSyncEpoch,
 } from './accountSyncOrchestrator';
 
 const PUSH_DEBOUNCE_MS = 750;
+/** v41: a failed push is retried on its own (and on foreground / next change). */
+const RETRY_DELAYS_MS = [5_000, 30_000, 120_000, 300_000];
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let retryAttempt = 0;
+/** Pull at most this often when the app comes back to the foreground. */
+const FOREGROUND_RESYNC_MIN_MS = 15_000;
+let lastForegroundSync = 0;
 
 let installed = false;
 let pendingPush: ReturnType<typeof setTimeout> | null = null;
@@ -49,6 +62,39 @@ function cancelQueuedPush(): void {
     pendingPush = null;
   }
   queuedPushSession = null;
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
+}
+
+function currentUserId(): string | null {
+  const id = (useAuthStore.getState() as any).user?.internalId;
+  return typeof id === 'string' && id ? id : null;
+}
+
+/** May this device push now? Only once its local data is known to be this account's. */
+function pushAllowed(): boolean {
+  const uid = currentUserId();
+  if (!uid) return true; // pre-v41 callers (session only): unchanged behaviour
+  return useAccountSyncStateStore.getState().ownerId === uid;
+}
+
+function scheduleRetry(): void {
+  if (retryTimer || !isAccountSyncDirty()) return;
+  const delay = RETRY_DELAYS_MS[Math.min(retryAttempt, RETRY_DELAYS_MS.length - 1)];
+  retryAttempt += 1;
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    if (isAccountSyncDirty()) schedulePush();
+  }, delay);
+}
+
+/** A local user change (not a server apply): remember it, push when allowed. */
+function onLocalChange(): void {
+  if (isApplyingServerState()) return;
+  useAccountSyncStateStore.getState().markDirty();
+  schedulePush();
 }
 
 function schedulePush(): void {
@@ -59,6 +105,7 @@ function schedulePush(): void {
   if (isApplyingServerState()) return;
   const session = useAuthStore.getState().session;
   if (!session) return;
+  if (!pushAllowed()) return;
   if (pendingPush) clearTimeout(pendingPush);
   queuedPushSession = session;
   pendingPush = setTimeout(() => {
@@ -71,9 +118,14 @@ function schedulePush(): void {
     // captured session bearer against the CURRENT stores. Cancel if the
     // session bearer has changed since scheduling.
     if (!currentSession || currentSession !== capturedSession) return;
-    pushAccountSyncFromStores(currentSession).catch((err) => {
-      console.warn('[accountSync] push failed:', err?.message || err);
-    });
+    if (!pushAllowed()) return;
+    pushAccountSyncFromStores(currentSession)
+      .then(() => { retryAttempt = 0; })
+      .catch((err) => {
+        console.warn('[accountSync] push failed:', err?.message || err);
+        // Offline / server error: the change stays pending (persisted) and is retried.
+        scheduleRetry();
+      });
   }, PUSH_DEBOUNCE_MS);
 }
 
@@ -81,27 +133,33 @@ function handleSessionChange(nextSession: string | null | undefined, prevSession
   // Any queued push targeted the PREVIOUS session's stores. Kill it before
   // it can leak account A's captured state into account B's push queue.
   cancelQueuedPush();
+  retryAttempt = 0;
+  // CR 2026-10-17: a sync call already made (queued behind the lock or waiting on
+  // the network) belongs to the previous identity — void it.
+  bumpAccountSyncEpoch();
 
   if (!nextSession) {
-    // Logout — clear account-scoped stores so the next login starts from a
-    // clean slate and cannot re-hydrate against a stale local copy.
+    // Logout — clear account-scoped stores (incl. the 估值清單, v41) so the next
+    // person on this device sees nothing of this account, and the device's data is
+    // guest data again. Edits the server has not acknowledged yet (offline, or still in
+    // the push debounce) are parked for this account first, not silently lost.
+    parkPendingForOwner();
     clearAccountScopedStores();
     resetLastKnownRevision();
+    useAccountSyncStateStore.getState().reset();
     return;
   }
 
-  // Session identifier changed (login OR account switch). Both cases must
-  // wipe account A's data before hydrating account B — merging a foreign
-  // local snapshot on top of the new server snapshot is exactly the leak
-  // the W5 handback flagged. `resetLastKnownRevision` is folded into
-  // `clearAccountScopedStores`, so no extra call is needed here.
-  if (prevSession && prevSession !== nextSession) {
-    clearAccountScopedStores();
-  }
-
-  hydrateAccountSyncFromServer(nextSession).catch((err) => {
-    console.warn('[accountSync] hydrate failed:', err?.message || err);
-  });
+  // Login, boot, token change or account switch. Who owns the local data is decided
+  // by the server-verified account id when it is known (v41): the same person with
+  // a new token keeps (and pushes) their pending changes, a different account's data
+  // is cleared first, guest data is merged. See reconcileAccountSync.
+  reconcileAccountSync(nextSession, currentUserId(), prevSession ?? null)
+    .then(() => { if (isAccountSyncDirty()) schedulePush(); })
+    .catch((err) => {
+      console.warn('[accountSync] reconcile failed:', err?.message || err);
+      scheduleRetry();
+    });
 }
 
 export function installAccountSyncBinding(): void {
@@ -109,35 +167,60 @@ export function installAccountSyncBinding(): void {
   installed = true;
 
   const initialSession = useAuthStore.getState().session;
-  if (initialSession) {
-    hydrateAccountSyncFromServer(initialSession).catch((err) => {
-      console.warn('[accountSync] hydrate failed:', err?.message || err);
-    });
-  }
+  if (initialSession) handleSessionChange(initialSession, null);
 
   subscriptions.push(useAuthStore.subscribe((state, prev) => {
-    if (state.session === prev.session) return;
-    handleSessionChange(state.session, prev.session);
+    const uid = (state as any).user?.internalId ?? null;
+    const prevUid = (prev as any).user?.internalId ?? null;
+    if (state.session === prev.session && uid === prevUid) return;
+    // The server-verified id arriving for the SAME session (boot: /auth/me answered)
+    // is not a new session: reconcile ownership without treating it as a switch.
+    handleSessionChange(state.session, state.session === prev.session ? null : prev.session);
   }));
   subscriptions.push(useDeckStore.subscribe((state, prev) => {
     if (state.decks === prev.decks && state.collection === prev.collection) return;
-    schedulePush();
-  }));
-  subscriptions.push(usePriceAlertStore.subscribe((state, prev) => {
-    if (state.alerts === prev.alerts) return;
-    schedulePush();
+    onLocalChange();
   }));
   subscriptions.push(useSettingsStore.subscribe((state, prev) => {
     if (
       state.preferredCurrency === prev.preferredCurrency
       && state.preferredLanguage === prev.preferredLanguage
     ) return;
-    schedulePush();
+    onLocalChange();
   }));
-  subscriptions.push(useFavoritesStore.subscribe((state, prev) => {
-    if (state.favorites === prev.favorites) return;
-    schedulePush();
+  // 估值清單 (v41): visible in every profile.
+  subscriptions.push(useScanSessionStore.subscribe((state, prev) => {
+    if (state.cards === prev.cards && state.clearedAt === prev.clearedAt) return;
+    onLocalChange();
   }));
+  // Hidden under Store MVP: their changes never trigger a push there.
+  if (FEATURES.watchlist) {
+    subscriptions.push(usePriceAlertStore.subscribe((state, prev) => {
+      if (state.alerts === prev.alerts) return;
+      onLocalChange();
+    }));
+  }
+  if (FEATURES.favorites) {
+    subscriptions.push(useFavoritesStore.subscribe((state, prev) => {
+      if (state.favorites === prev.favorites) return;
+      onLocalChange();
+    }));
+  }
+  // Back in the foreground: send anything still pending, otherwise pull what the
+  // account's other devices changed meanwhile (throttled).
+  const appStateSub = AppState.addEventListener?.('change', (next) => {
+    if (next !== 'active') return;
+    const session = useAuthStore.getState().session;
+    if (!session) return;
+    if (isAccountSyncDirty()) { schedulePush(); return; }
+    const now = Date.now();
+    if (now - lastForegroundSync < FOREGROUND_RESYNC_MIN_MS) return;
+    lastForegroundSync = now;
+    reconcileAccountSync(session, currentUserId(), null).catch((err) => {
+      console.warn('[accountSync] foreground sync failed:', err?.message || err);
+    });
+  });
+  if (appStateSub) subscriptions.push(() => appStateSub.remove());
 }
 
 // Test seams — exposed so scripts/test-account-sync-binding.mjs can reset
@@ -148,6 +231,8 @@ export function __resetAccountSyncBindingForTesting(): void {
     try { off?.(); } catch { /* ignore */ }
   }
   installed = false;
+  lastForegroundSync = 0;
+  retryAttempt = 0;
   cancelQueuedPush();
   resetLastKnownRevision();
 }

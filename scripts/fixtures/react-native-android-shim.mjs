@@ -36,3 +36,14 @@ export const AppState = {
 };
 globalThis.__setAppState = (next) => { AppState.currentState = next; for (const fn of [...appStateListeners]) fn(next); };
 globalThis.__appStateListenerCount = () => appStateListeners.size;
+
+// Alert for rendered tests: records every alert; when globalThis.__alertPress names a
+// button text, that button is pressed (like a user tapping it), else nothing happens.
+export const Alert = {
+  alert(title, message, buttons) {
+    (globalThis.__alerts ||= []).push({ title, message, buttons: (buttons || []).map((b) => b.text) });
+    const want = globalThis.__alertPress;
+    const b = want ? (buttons || []).find((x) => x.text === want) : null;
+    if (b?.onPress) setTimeout(() => b.onPress(), 0);
+  },
+};

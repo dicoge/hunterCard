@@ -444,38 +444,23 @@ for (const key of [
   }
 }
 
-// ── DIC-1381 W10 / W11 CR — Store MVP user-facing copy MUST NOT
-//    promise sync. App.tsx gates installAccountSyncBinding() on
-//    FEATURES.favorites | .watchlist | .premium, all of which resolve
-//    to !STORE_MVP, so no sync request is issued on the shipping
-//    build. Any clause that promises cross-device sync / account-
-//    binding of decks / settings / favorites / alerts on a `_store`
-//    variant is a false claim.
-//
-//    Truth-source binding: fail closed if App.tsx or releaseFlags stop
-//    agreeing with this assumption — the copy would need to change
-//    too.
+// ── v41 (2026-10-17, user scope change) — supersedes DIC-1381 W10/W11's
+//    "Store MVP copy must not promise sync". The user asked for the same
+//    Google account to see the same core data on every phone, so the
+//    binding is now installed in EVERY profile and Store MVP syncs exactly the
+//    surfaces it shows (collection counts, decks, settings, scan list). The
+//    truth-source binding is kept, pointed at the new truth:
+//      • App.tsx installs the binding exactly once, unconditionally
+//      • hidden surfaces never push: activeDomainsOnly drops favorites when
+//        !FEATURES.favorites and priceAlerts when !FEATURES.watchlist, and the
+//        binding subscribes to those stores only behind the same flags
+//      • the copy may now say "syncs" but must NOT keep the stale claim that
+//        decks / settings stay on the device (that is the false claim now),
+//        and must not name the hidden surfaces (checked above).
 const appSrcForSync = read('App.tsx');
 const flagsSrcForSync = read('src/config/releaseFlags.ts');
-check(
-  'code sanity: App.tsx gates installAccountSyncBinding on FEATURES.favorites | .watchlist | .premium',
-  /installAccountSyncBinding\(\)/.test(appSrcForSync)
-    && /FEATURES\.favorites\s*\|\|\s*FEATURES\.watchlist\s*\|\|\s*FEATURES\.premium/.test(appSrcForSync),
-);
-for (const flag of ['favorites', 'watchlist', 'premium']) {
-  check(
-    `code sanity: releaseFlags derives FEATURES.${flag} from !STORE_MVP (Store MVP disables it)`,
-    new RegExp(`${flag}:\\s*!STORE_MVP`).test(flagsSrcForSync),
-  );
-}
-
-// DIC-1381 W11 CR — MUTATION SENSITIVE: reject any additional binding
-// call outside the FEATURES-gate. Counts every `installAccountSyncBinding(`
-// invocation (excluding declaration/import lines) in App.tsx and asserts
-// there is exactly one; then verifies THAT one line is inside a block
-// that starts with the three-flag guard. An extra unconditional call
-// added anywhere else in App.tsx fails this check even when the guarded
-// call is left in place.
+const orchestratorSrcForSync = read('src/services/accountSyncOrchestrator.ts');
+const bindingSrcForSync = read('src/services/accountSyncBinding.ts');
 const bindingCallLines = appSrcForSync
   .split('\n')
   .map((line, idx) => ({ line, idx: idx + 1 }))
@@ -483,52 +468,52 @@ const bindingCallLines = appSrcForSync
   .filter(({ line }) => !/^\s*(import|export)\s/.test(line))
   .filter(({ line }) => !/^\s*(\/\/|\*|\/\*)/.test(line));
 check(
-  'code sanity: App.tsx calls installAccountSyncBinding() exactly ONCE (no additional unguarded call)',
+  'code sanity: App.tsx calls installAccountSyncBinding() exactly ONCE',
   bindingCallLines.length === 1,
-  `got ${bindingCallLines.length} call sites: ${bindingCallLines.map(({ idx, line }) => `L${idx}: ${line.trim()}`).join(' | ')}`,
+  `got ${bindingCallLines.length} call sites`,
 );
 if (bindingCallLines.length === 1) {
-  // Walk backwards from the call line to prove the enclosing `if` is
-  // the three-flag guard. Reject a truthful-looking prefix like
-  // `if (true) { installAccountSyncBinding(); }` or a plain
-  // top-level call.
   const linesArr = appSrcForSync.split('\n');
   const callLineIdx = bindingCallLines[0].idx - 1;
   let guardLineIdx = -1;
   for (let i = callLineIdx - 1; i >= 0; i -= 1) {
     if (/^\s*if\s*\(/.test(linesArr[i])) { guardLineIdx = i; break; }
-    if (/^\s*\}\s*$/.test(linesArr[i])) { break; } // walked out of a block first
+    if (/^\s*\}\s*$/.test(linesArr[i]) || /useEffect\(/.test(linesArr[i])) break;
   }
   check(
-    'code sanity: the single installAccountSyncBinding() call sits inside an `if (FEATURES.favorites || FEATURES.watchlist || FEATURES.premium)` guard',
-    guardLineIdx >= 0 && /FEATURES\.favorites\s*\|\|\s*FEATURES\.watchlist\s*\|\|\s*FEATURES\.premium/.test(linesArr[guardLineIdx]),
-    guardLineIdx >= 0 ? `enclosing if at L${guardLineIdx + 1}: ${linesArr[guardLineIdx].trim()}` : 'no enclosing if(...) found',
+    'code sanity (v41): the installAccountSyncBinding() call is NOT behind a feature-flag guard (Store MVP syncs its visible data)',
+    guardLineIdx < 0,
+    guardLineIdx >= 0 ? `enclosing if at L${guardLineIdx + 1}: ${linesArr[guardLineIdx].trim()}` : '',
   );
 }
+for (const flag of ['favorites', 'watchlist']) {
+  check(
+    `code sanity: releaseFlags derives FEATURES.${flag} from !STORE_MVP (hidden in Store MVP)`,
+    new RegExp(`${flag}:\\s*!STORE_MVP`).test(flagsSrcForSync),
+  );
+}
+check(
+  'code sanity (v41): activeDomainsOnly drops favorites unless FEATURES.favorites and priceAlerts unless FEATURES.watchlist',
+  /if\s*\(!FEATURES\.favorites\)\s*delete out\.favorites/.test(orchestratorSrcForSync)
+    && /if\s*\(!FEATURES\.watchlist\)\s*delete out\.priceAlerts/.test(orchestratorSrcForSync)
+    && /snapshotFromLocalStores\(\)[\s\S]{0,400}return activeDomainsOnly\(/.test(orchestratorSrcForSync),
+);
+check(
+  'code sanity (v41): the binding subscribes to price alerts / favorites only behind FEATURES.watchlist / FEATURES.favorites',
+  /if\s*\(FEATURES\.watchlist\)\s*\{\s*subscriptions\.push\(usePriceAlertStore\.subscribe/.test(bindingSrcForSync)
+    && /if\s*\(FEATURES\.favorites\)\s*\{\s*subscriptions\.push\(useFavoritesStore\.subscribe/.test(bindingSrcForSync),
+);
 
-// DIC-1381 W11 CR — MUTATION SENSITIVE sync-copy predicate.
-// Splits each _store locale variant into clause-sized spans (Chinese
-// and Japanese sentence terminators + semicolons + full-width
-// counterparts). Each clause is evaluated independently: a clause that
-// carries a sync verb MUST also carry an on-device qualifier IN THE
-// SAME CLAUSE — a qualifier elsewhere in the string does not rescue
-// it. Catches both mutants Mac-Codex named:
-//   zh mutant: 此版本的牌組可跨裝置同步；設定為裝置本機儲存。
-//   ja mutant: このバージョンではデッキを端末間で同期できます。設定は端末内に保存されます。
-const SYNC_VERB_ZH = /(同步|跨裝置|同一個帳號|帳號同步)/;
-const SYNC_VERB_JA = /(同期|端末間|端末間で|同じアカウント|アカウント同期)/;
-const ONDEVICE_QUALIFIER_ZH = /(本機儲存|裝置本機|裝置內|不會同步|不進行同步|裝置端|不會跨裝置|不同步|本機保存|裝置本地)/;
-const ONDEVICE_QUALIFIER_JA = /(端末内|端末に保存|端末のみ|同期しません|同期されません|オフライン|ローカルに保存|端末に保存されます|同期しない)/;
-
+// The stale on-device claim for decks / settings is what is false now.
+const STALE_LOCAL_ZH = /(牌組|設定)[^。；]*(本機儲存|裝置本機|不會跨裝置|不會同步|不同步)/;
+const STALE_LOCAL_JA = /(デッキ|設定)[^。]*(端末内に保存|端末に保存|同期されません|同期しません)/;
 function splitClausesZh(s) {
-  return s.split(/[。！？；;.!?]|,\s|，/).map((c) => c.trim()).filter(Boolean);
+  return s.split(/[。！？；;.!?]/).map((c) => c.trim()).filter(Boolean);
 }
 function splitClausesJa(s) {
-  return s.split(/[。！？；;.!?]|,\s|、/).map((c) => c.trim()).filter(Boolean);
+  return s.split(/[。！？；;.!?]/).map((c) => c.trim()).filter(Boolean);
 }
-function badSyncClauses(text, verbRe, qualifierRe, splitFn) {
-  return splitFn(text).filter((c) => verbRe.test(c) && !qualifierRe.test(c));
-}
+const staleClauses = (text, re, splitFn) => splitFn(text).filter((c) => re.test(c));
 
 const STORE_MVP_ONLY_KEYS = [
   'login_description_store',
@@ -538,39 +523,22 @@ const STORE_MVP_ONLY_KEYS = [
 for (const key of STORE_MVP_ONLY_KEYS) {
   const zhText = extractStoreKey(zh, key) || '';
   const jaText = extractStoreKey(ja, key) || '';
-  const zhBad = badSyncClauses(zhText, SYNC_VERB_ZH, ONDEVICE_QUALIFIER_ZH, splitClausesZh);
-  const jaBad = badSyncClauses(jaText, SYNC_VERB_JA, ONDEVICE_QUALIFIER_JA, splitClausesJa);
-  check(
-    `zh ${key} has NO clause promising sync without an in-clause on-device qualifier (DIC-1381 W11 CR)`,
-    zhBad.length === 0,
-    zhBad.length ? `offending clauses: ${JSON.stringify(zhBad)} in "${zhText}"` : '',
-  );
-  check(
-    `ja ${key} has NO clause promising sync without an in-clause on-device qualifier (DIC-1381 W11 CR)`,
-    jaBad.length === 0,
-    jaBad.length ? `offending clauses: ${JSON.stringify(jaBad)} in "${jaText}"` : '',
-  );
+  const zhBad = staleClauses(zhText, STALE_LOCAL_ZH, splitClausesZh);
+  const jaBad = staleClauses(jaText, STALE_LOCAL_JA, splitClausesJa);
+  check(`zh ${key} no longer claims decks / settings stay on the device (v41 sync)`, zhBad.length === 0,
+    zhBad.length ? `stale clauses: ${JSON.stringify(zhBad)}` : '');
+  check(`ja ${key} no longer claims decks / settings stay on the device (v41 sync)`, jaBad.length === 0,
+    jaBad.length ? `stale clauses: ${JSON.stringify(jaBad)}` : '');
+  check(`zh ${key} keeps the scan quota per device (never claims it syncs)`,
+    !/額度[^。；]*同步/.test(zhText));
 }
 
-// DIC-1381 W11 CR — mutation probes. Inject the exact mutants Mac-Codex
-// demonstrated against the predicate and prove the predicate REJECTS
-// them. If a future refactor of `badSyncClauses` accidentally weakens
-// it back to "qualifier anywhere in the string", this probe fails.
+// Mutation probe: the exact pre-v41 copy must be flagged as stale now.
 {
-  const zhMutant = '此版本的牌組可跨裝置同步；設定為裝置本機儲存。';
-  const jaMutant = 'このバージョンではデッキを端末間で同期できます。設定は端末内に保存されます。';
-  const zhBad = badSyncClauses(zhMutant, SYNC_VERB_ZH, ONDEVICE_QUALIFIER_ZH, splitClausesZh);
-  const jaBad = badSyncClauses(jaMutant, SYNC_VERB_JA, ONDEVICE_QUALIFIER_JA, splitClausesJa);
-  check(
-    'mutation probe: zh sync-in-one-clause + qualifier-in-another mutant IS rejected by the predicate',
-    zhBad.length > 0,
-    `predicate must flag "${zhMutant}" but produced no offending clauses`,
-  );
-  check(
-    'mutation probe: ja sync-in-one-clause + qualifier-in-another mutant IS rejected by the predicate',
-    jaBad.length > 0,
-    `predicate must flag "${jaMutant}" but produced no offending clauses`,
-  );
+  const zhOld = '尚未登入。訪客每月可掃描 50 張卡牌，登入不會增加或重置額度。此版本的牌組與設定為裝置本機儲存。';
+  const jaOld = 'ログインしていません。このバージョンではデッキと設定は端末内に保存されます。';
+  check('mutation probe: the pre-v41 zh on-device claim IS flagged', staleClauses(zhOld, STALE_LOCAL_ZH, splitClausesZh).length > 0);
+  check('mutation probe: the pre-v41 ja on-device claim IS flagged', staleClauses(jaOld, STALE_LOCAL_JA, splitClausesJa).length > 0);
 }
 
 // ── DIC-1381 W10 / W11 CR — settings_delete_note must NOT tell the

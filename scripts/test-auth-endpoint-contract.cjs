@@ -81,6 +81,7 @@ for (const rel of [
   'api/_lib/apple-exchange-store.ts',
   'api/_lib/node-adapter.ts',
   'api/auth/[action].ts',
+  'src/utils/scanSessionSync.ts',   // imported by account-sync-store (v41)
 ]) {
   compileTs(rel);
 }

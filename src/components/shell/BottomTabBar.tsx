@@ -11,6 +11,16 @@ import {
   SHADOWS,
 } from '../../theme/tokensV2';
 import { HouseGlyph, SearchGlyph, LayersGlyph, UserGlyph, ScanLineGlyph } from './icons';
+import { useTranslation, type TranslationKey } from '../../i18n';
+
+// v41: the tab labels follow the app language (zh values = the Pen copy).
+const TAB_LABEL_KEYS: Record<BottomTabKey, TranslationKey> = {
+  home: 'shell_tab_home',
+  search: 'shell_tab_search',
+  scan: 'shell_tab_scan',
+  deck: 'shell_tab_deck',
+  me: 'shell_tab_me',
+};
 
 export type BottomTabKey = 'home' | 'search' | 'scan' | 'deck' | 'me';
 
@@ -47,7 +57,8 @@ export function BottomTabBar({
   scanFabTint = 'pink-purple',
   testID = 'shell-bottom-tab-bar',
 }: BottomTabBarProps) {
-  const byKey = new Map(items.map((item) => [item.key, item]));
+  const { t } = useTranslation();
+  const byKey = new Map(items.map((item) => [item.key, { ...item, label: t(TAB_LABEL_KEYS[item.key]) }]));
   const ordered = DEFAULT_ORDER.map((key) => byKey.get(key)).filter(Boolean) as BottomTabItem[];
   const scanItem = ordered.find((it) => it.key === 'scan');
   const laterals = ordered.filter((it) => it.key !== 'scan');

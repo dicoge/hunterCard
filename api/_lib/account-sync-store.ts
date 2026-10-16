@@ -9,6 +9,18 @@
 import { kv } from '@vercel/kv';
 import type { PriceAlert } from '../../src/utils/priceAlerts';
 import type { CurrencyCode, LanguageCode } from '../../src/store/settingsStore';
+import {
+  INSTANCE_ID,
+  MAX_SCAN_PRICE_VERSIONS,
+  MAX_SCAN_SESSION_ENTRIES,
+  MAX_SCAN_TEXT,
+  MAX_SCAN_URL,
+  emptyScanSession,
+  type SyncScanCard,
+  type SyncScanEntry,
+  type SyncScanPriceVersion,
+  type SyncScanSession,
+} from '../../src/utils/scanSessionSync';
 import type { Deck, DeckCard, DeckOrigin, DeckSlot, DeckZone } from '../../src/utils/deckRules';
 
 // Defense-in-depth upper bound on a stored alert price. Kept in sync with the
@@ -53,6 +65,8 @@ export interface AccountSyncSnapshot {
   collection: AccountCollection;
   priceAlerts: PriceAlert[];
   settings: AccountSettings;
+  /** 估值清單 (v41, additive): older snapshots read as empty. */
+  scanSession: SyncScanSession;
 }
 
 export interface AccountSyncPatch {
@@ -61,6 +75,7 @@ export interface AccountSyncPatch {
   collection?: AccountCollection;
   priceAlerts?: PriceAlert[];
   settings?: Partial<AccountSettings>;
+  scanSession?: SyncScanSession;
 }
 
 export interface SaveAccountSyncInput {
@@ -136,6 +151,7 @@ function defaultSnapshot(): AccountSyncSnapshot {
     collection: {},
     priceAlerts: [],
     settings: { preferredCurrency: 'TWD', preferredLanguage: 'zh' },
+    scanSession: emptyScanSession(),
   };
 }
 
@@ -427,6 +443,115 @@ function cleanSettings(value: unknown): Partial<AccountSettings> {
   return settings;
 }
 
+function boundedText(value: unknown, field: string, max: number, required: boolean): string | undefined {
+  if (value === undefined || value === null || value === '') {
+    if (required) throw new AccountSyncError('invalid_request', `${field} is required`, 400);
+    return undefined;
+  }
+  if (typeof value !== 'string') throw new AccountSyncError('invalid_request', `${field} must be a string`, 400);
+  if (value.length > max) throw new AccountSyncError('invalid_request', `${field} is too long`, 400);
+  return value;
+}
+
+function cleanPrice(value: unknown, field: string): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > SERVER_MAX_ALERT_PRICE) {
+    throw new AccountSyncError('invalid_request', `${field} must be a non-negative price or null`, 400);
+  }
+  return value;
+}
+
+function cleanScanCard(value: unknown, ctx: string): SyncScanCard {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new AccountSyncError('invalid_request', `${ctx} must be an object`, 400);
+  }
+  const v = value as Record<string, unknown>;
+  const card: SyncScanCard = {
+    id: boundedText(v.id, `${ctx}.id`, MAX_SCAN_TEXT, true)!,
+    cardNumber: boundedText(v.cardNumber, `${ctx}.cardNumber`, MAX_SCAN_TEXT, true)!,
+    name: boundedText(v.name, `${ctx}.name`, MAX_SCAN_TEXT, true)!,
+    sellPrice: cleanPrice(v.sellPrice, `${ctx}.sellPrice`),
+  };
+  const nameZh = boundedText(v.nameZh, `${ctx}.nameZh`, MAX_SCAN_TEXT, false);
+  const rarity = boundedText(v.rarity, `${ctx}.rarity`, MAX_SCAN_TEXT, false);
+  const series = boundedText(v.series, `${ctx}.series`, MAX_SCAN_TEXT, false);
+  const imageUrl = boundedText(v.imageUrl, `${ctx}.imageUrl`, MAX_SCAN_URL, false);
+  if (imageUrl !== undefined && !/^https:\/\//.test(imageUrl)) {
+    throw new AccountSyncError('invalid_request', `${ctx}.imageUrl must be an https URL`, 400);
+  }
+  if (nameZh !== undefined) card.nameZh = nameZh;
+  if (rarity !== undefined) card.rarity = rarity;
+  if (series !== undefined) card.series = series;
+  if (imageUrl !== undefined) card.imageUrl = imageUrl;
+  return card;
+}
+
+function cleanScanVersion(value: unknown, ctx: string): SyncScanPriceVersion {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new AccountSyncError('invalid_request', `${ctx} must be an object`, 400);
+  }
+  const v = value as Record<string, unknown>;
+  return {
+    name: boundedText(v.name, `${ctx}.name`, MAX_SCAN_TEXT, false) ?? '',
+    printing: boundedText(v.printing, `${ctx}.printing`, MAX_SCAN_TEXT, false) ?? '',
+    sellPrice: cleanPrice(v.sellPrice, `${ctx}.sellPrice`),
+    buyPrice: cleanPrice(v.buyPrice, `${ctx}.buyPrice`),
+  };
+}
+
+function capToNow(iso: string): string {
+  const now = Date.now();
+  return Date.parse(iso) > now ? new Date(now).toISOString() : iso;
+}
+
+function cleanScanEntry(value: unknown, ctx: string): SyncScanEntry {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new AccountSyncError('invalid_request', `${ctx} must be an object`, 400);
+  }
+  const v = value as Record<string, unknown>;
+  const instanceId = boundedText(v.instanceId, `${ctx}.instanceId`, 64, true)!;
+  if (!INSTANCE_ID.test(instanceId)) throw new AccountSyncError('invalid_request', `${ctx}.instanceId format is invalid`, 400);
+  if (!Array.isArray(v.priceVersions)) throw new AccountSyncError('invalid_request', `${ctx}.priceVersions must be an array`, 400);
+  if (v.priceVersions.length > MAX_SCAN_PRICE_VERSIONS) {
+    throw new AccountSyncError('payload_too_large', `${ctx}.priceVersions has too many entries`, 413);
+  }
+  const priceVersions = v.priceVersions.map((pv, i) => cleanScanVersion(pv, `${ctx}.priceVersions[${i}]`));
+  const selectedVersion = cleanIntegerInRange(v.selectedVersion, `${ctx}.selectedVersion`, 0, MAX_SCAN_PRICE_VERSIONS);
+  if (typeof v.versionConfident !== 'boolean') {
+    throw new AccountSyncError('invalid_request', `${ctx}.versionConfident must be a boolean`, 400);
+  }
+  return {
+    instanceId,
+    scannedAt: cleanIso(v.scannedAt, `${ctx}.scannedAt`),
+    card: cleanScanCard(v.card, `${ctx}.card`),
+    priceVersions,
+    selectedVersion,
+    versionConfident: v.versionConfident,
+    // Optional (v41 CR): when the version was last picked by hand — merge provenance.
+    // Absent from older clients; validated and kept when sent. A time ahead of the
+    // server's clock is capped to now, so a device clock running fast cannot pin its
+    // pick above every later one.
+    ...(v.selectedAt === undefined || v.selectedAt === null ? {} : { selectedAt: capToNow(cleanIso(v.selectedAt, `${ctx}.selectedAt`)) }),
+  };
+}
+
+function cleanScanSession(value: unknown): SyncScanSession {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new AccountSyncError('invalid_request', 'scanSession must be an object', 400);
+  }
+  const v = value as Record<string, unknown>;
+  if (!Array.isArray(v.entries)) throw new AccountSyncError('invalid_request', 'scanSession.entries must be an array', 400);
+  if (v.entries.length > MAX_SCAN_SESSION_ENTRIES) {
+    throw new AccountSyncError('payload_too_large', 'too many scan session entries', 413);
+  }
+  const entries = v.entries.map((e, i) => cleanScanEntry(e, `scanSession.entries[${i}]`));
+  if (new Set(entries.map((e) => e.instanceId)).size !== entries.length) {
+    throw new AccountSyncError('invalid_request', 'scanSession.entries instanceId must be unique', 400);
+  }
+  const clearedAt = v.clearedAt === null || v.clearedAt === undefined ? null : cleanIso(v.clearedAt, 'scanSession.clearedAt');
+  return { entries, clearedAt };
+}
+
 export function parseAccountSyncPatch(value: unknown): AccountSyncPatch {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new AccountSyncError('invalid_request', 'patch must be an object', 400);
@@ -439,6 +564,7 @@ export function parseAccountSyncPatch(value: unknown): AccountSyncPatch {
   if (v.collection !== undefined) patch.collection = cleanCollection(v.collection);
   if (v.priceAlerts !== undefined) patch.priceAlerts = cleanPriceAlerts(v.priceAlerts);
   if (v.settings !== undefined) patch.settings = cleanSettings(v.settings);
+  if (v.scanSession !== undefined) patch.scanSession = cleanScanSession(v.scanSession);
   return patch;
 }
 
@@ -480,6 +606,9 @@ function normalizeSnapshot(raw: Partial<AccountSyncSnapshot> | null | undefined)
     decks: Array.isArray(raw.decks) ? raw.decks : [],
     collection: raw.collection && typeof raw.collection === 'object' && !Array.isArray(raw.collection) ? raw.collection : {},
     priceAlerts: Array.isArray(raw.priceAlerts) ? raw.priceAlerts : [],
+    scanSession: raw.scanSession && typeof raw.scanSession === 'object' && Array.isArray(raw.scanSession.entries)
+      ? { entries: raw.scanSession.entries, clearedAt: raw.scanSession.clearedAt ?? null }
+      : emptyScanSession(),
   };
 }
 
@@ -495,6 +624,7 @@ function applyPatch(current: AccountSyncSnapshot, patch: AccountSyncPatch, devic
     collection: patch.collection ?? current.collection,
     priceAlerts: patch.priceAlerts ?? current.priceAlerts,
     settings: patch.settings ? { ...current.settings, ...patch.settings } : current.settings,
+    scanSession: patch.scanSession ?? current.scanSession,
   };
 }
 

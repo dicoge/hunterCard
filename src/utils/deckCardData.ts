@@ -8,7 +8,7 @@ import type { DeckCard, PriceRecord } from './deckRules';
 import { loadDatabaseJson } from './staticData';
 import { eligibleZone } from './deckRules';
 import {
-  BASE_PRINTING, buildSourcePrintings, type SourceListing, type SourcePrinting,
+  BASE_PRINTING, buildSourcePrintings, printingFromLabel, type SourceListing, type SourcePrinting,
 } from './printingIdentity';
 import { buildFacetIndex, type CardFacets } from './cardCatalog';
 
@@ -115,7 +115,25 @@ export function adaptCardNumber(rows: RawCard[]): AdaptedCards {
   const resolvedPrintings = hasUnlistedBase && !hasListedBase
     ? [UNLISTED, ...printings]
     : printings;
-  const timestamp = rep.timestamp || '';
+  // Price time provenance (v41): a record's timestamp is the OLDEST timestamp of the
+  // rows that actually list THAT printing at THAT price — never the representative's
+  // or a sibling printing's date (an August parallel price must not look current
+  // because the base row was scraped today). Unknown provenance stays '' (not current).
+  const priceTimestamp = (printing: string, price: number): string => {
+    let oldest: string | null = null;
+    let found = false;
+    for (const row of rows) {
+      const lists = (row.prices ?? []).some((l) => l
+        && printingFromLabel((l.name ?? '').trim()) === printing
+        && typeof l.sellPrice === 'number' && l.sellPrice === price);
+      if (!lists) continue;
+      found = true;
+      const t = typeof row.timestamp === 'string' ? row.timestamp : '';
+      if (!t || !Number.isFinite(Date.parse(t))) return '';
+      if (oldest === null || Date.parse(t) < Date.parse(oldest)) oldest = t;
+    }
+    return found && oldest ? oldest : '';
+  };
 
   const cards: DeckCard[] = [];
   const priceRecords: PriceRecord[] = [];
@@ -128,7 +146,7 @@ export function adaptCardNumber(rows: RawCard[]): AdaptedCards {
         price: printing.sellPrice,
         currency: PRICE_CURRENCY,
         source: PRICE_SOURCE,
-        timestamp,
+        timestamp: priceTimestamp(printing.printing, printing.sellPrice),
       });
     }
   }

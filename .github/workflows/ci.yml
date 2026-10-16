@@ -193,6 +193,9 @@ jobs:
       - name: Verify daily rebuild keeps cumulative buyPriceHistory per exact printing (DIC-1167 CR 2660774f)
         run: npm run test:dic1167-buy-price-history
 
+      - name: Verify official catalog sync keeps cumulative buyPriceHistory + localImage per exact printing (DIC-1511)
+        run: npm run test:dic1511-official-sync-buy-history
+
       - name: Verify scrape pipeline fail-fast + atomic commit ordering (DIC-989)
         run: npm run test:scrape-pipeline
 
@@ -418,6 +421,9 @@ jobs:
       - name: Verify push notification backend (DIC-390)
         run: npm run test:push-backend
 
+      - name: Verify push restoration gate — stale / pre-restoration trend or price data never sends (v41)
+        run: npm run test:push-freshness
+
       - name: Verify account remote-sync backend (DIC-1156)
         run: npm run test:account-sync-backend
 
@@ -430,6 +436,9 @@ jobs:
       - name: Verify account remote-sync store binding (DIC-1380 W4)
         run: npm run test:account-sync-binding
 
+      - name: Verify same-account sync across two simulated phones on the real sync handler — Store MVP, guest merge, deletions, offline restart, 409 merge, logout / account-switch isolation (v41)
+        run: npm run test:account-sync-two-device
+
       - name: Verify shared card name resolver (DIC-1380 naming consistency)
         run: npm run test:card-display-name
 
@@ -441,6 +450,9 @@ jobs:
 
       - name: Verify LandingScreen renders the accepted Pen landing at 390 and 1440 (DIC-1380 W5b)
         run: npm run test:landing-pen-render
+
+      - name: Verify Landing feature statements match the production build (account sync, photo upload, Google sign-in; v41)
+        run: npm run test:landing-copy-truth
 
       - name: Verify favorites store is wired into real product UI (DIC-1380 W6)
         run: npm run test:favorites-ui-wiring
@@ -599,6 +611,12 @@ jobs:
 
       - name: Verify web auto-scan stays paused on a service failure until the user acts (2026-10-16)
         run: npm run test:scan-v39-web-autoscan
+
+      - name: Verify native automatic capture trigger rules — one stable card number in the frame, no repeat, re-arm on removal, idle pause (v41)
+        run: npm run test:auto-capture
+
+      - name: Verify native automatic capture on the real ScanScreen — on-device probes only, one request per round, no repeat / no auto-retry / no background probing, charge only on add (v41)
+        run: npm run test:scan-native-auto-capture
 
       - name: Verify local scan / sign-in diagnostics — allowlist + redaction on write and export, 100/7-day retention, real clear, never affects scan or quota (2026-10-15)
         run: npm run test:scan-diagnostics

@@ -14,14 +14,12 @@ export default function App() {
     if (FEATURES.pushAlerts) {
       initPushNotifications();
     }
-    // Account remote-sync (DIC-1380 W4): subscribe the auth store to hydrate
-    // deck / collection / priceAlerts / settings from the server on session
-    // adoption, and the local stores to push changes back through the
-    // orchestrator. The binding no-ops under Store MVP so hidden surfaces do
-    // not fire any account-sync request.
-    if (FEATURES.favorites || FEATURES.watchlist || FEATURES.premium) {
-      installAccountSyncBinding();
-    }
+    // Account remote-sync (DIC-1380 W4; v41 2026-10-17): the same signed-in Google
+    // account sees the same collection, decks, settings and 估值清單 on every phone.
+    // Installed in every profile — Store MVP shows Collection, decks, settings and the
+    // scan list too. Hidden surfaces (bookmarks, price alerts) never push there:
+    // accountSyncOrchestrator.activeDomainsOnly + the binding's FEATURES gates.
+    installAccountSyncBinding();
     // NOTE (DIC-976 CR blocker 2): the web-Google redirect RETURN leg is no
     // longer kicked off here. Boot is now owned exclusively by the auth store's
     // onRehydrateStorage, which serializes the redirect-completion and
