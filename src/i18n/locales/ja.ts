@@ -542,7 +542,7 @@ export const ja: Record<keyof typeof zh, string> = {
 
   // Deck editor
   deck_loading: 'カードデータベースを読み込み中…',
-  deck_local_hint: 'この端末だけに保存されるデッキです。新規作成するか、デッキを選んで編集してください。',
+  deck_local_hint: 'デッキはこの端末に保存され、ログイン中はアカウントにも同期されます。新規作成するか、デッキを選んで編集してください。',
   deck_new_name: '新しいデッキ名',
   deck_create: '作成',
   deck_choose_card: 'カードを選択',

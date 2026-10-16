@@ -547,7 +547,7 @@ export const zh = {
 
   // Deck editor
   deck_loading: '載入卡片資料庫…',
-  deck_local_hint: '本地牌組（僅存於此裝置）。建立或選擇一個牌組開始編輯。',
+  deck_local_hint: '牌組存在這台裝置；登入帳號時也會同步到帳號。建立或選擇一個牌組開始編輯。',
   deck_new_name: '新牌組名稱',
   deck_create: '建立',
   deck_choose_card: '選擇卡片',

@@ -204,34 +204,37 @@ const FREE_FEATURES = [
 
 const COMING_SOON_FEATURES = [
   '免費會員的全部功能',
-  '訂閱與 App 內購（即將推出）',
+  '訂閱與 App 內購（尚未開放）',
   '上線時會在此揭露方案內容與計費地區',
 ];
 
 const HOW_IT_WORKS = [
-  { step: '01', tint: T.accent, title: '先逛或先登入', body: '訪客就能查卡、讀規則、跑模擬戰，每月也能掃描 50 張卡。登入後開放收藏；跨裝置同步為即將推出。' },
+  { step: '01', tint: T.accent, title: '先逛或先登入', body: '訪客就能查卡、讀規則、跑模擬戰，每月也能掃描 50 張卡。使用 Google 帳號登入後，收藏、牌組與估值清單會同步到你的帳號。' },
   { step: '02', tint: T.accent3, title: '掃描或搜尋建卡表', body: '對著卡片拍照就辨識卡號與版本，也可以直接搜卡名或卡號。連續掃完一盒會給你整份估值清單與總計。' },
   { step: '03', tint: T.accent2, title: '組牌並盯價', body: '在編輯器組牌、看缺卡預估總額，再對想補的卡指定版本與價格區間，價格進區間時推播通知你。' },
 ] as const;
 
-// Reviewed truthful FAQ copy (unchanged from the accepted DIC-1380 W6
-// pass) presented in the Pen accordion composition.
+// Truthful FAQ copy presented in the Pen accordion composition. v41: matches
+// what the build does now and public/privacy.html — signed-in account sync of
+// collection / decks / 估值清單 / settings, recognition photos uploaded after
+// the disclosure on mobile AND web, the automatic scan's local probe never
+// uploaded; photos / diagnostics / scan allowance never synced.
 const FAQ = [
   {
     q: '需要付費才能使用嗎？',
-    a: 'HoloHunter 目前所有查詢、收藏、組牌、賽事月報與規則教學都是免費。每月 50 次卡片辨識掃描免費提供，訪客與免費會員共用同一裝置的額度（裝置本機計數，清除資料或重裝會重置）。訂閱與 App 內購尚未開放；未來付費方案上線時會透過 App Store / Google Play / Stripe 的既有金流處理，金額透過 Store API 動態載入。',
+    a: 'HoloHunter 目前所有查詢、收藏、組牌、賽事月報與規則教學都是免費。每月 50 次卡片辨識掃描免費提供，訪客與免費會員共用同一裝置的額度（裝置本機計數，清除資料或重裝會重置）。訂閱與 App 內購目前尚未開放。',
   },
   {
     q: '沒有帳號可以先試用嗎？',
-    a: '可以。以訪客身份直接進入即可使用卡表檢索、規則教學、模擬對局與牌組編輯器，拍照掃描每月也可免登入使用 50 次（與登入後共用同一裝置額度）。收藏、牌組與到價提醒目前在 Store MVP 版本上為本機儲存，不會發出 /api/auth/sync 請求；未來啟用同步功能的建構會在登入後把上述資料同步到雲端。',
+    a: '可以。以訪客身份直接進入即可使用卡表檢索、收藏、牌組編輯器、規則教學與模擬對局，拍照掃描每月也可免登入使用 50 次（與登入後共用同一裝置額度）。訪客的資料只存在這台裝置；使用 Google 帳號登入後，收藏數量、牌組、估值清單與語言／幣別設定會同步到你的帳號，換一支手機登入同一個帳號也看得到。照片、診斷紀錄與每月掃描額度不會同步。',
   },
   {
     q: '卡牌影像會被上傳到伺服器嗎？',
-    a: '手機 App：文字辨識在本機完成，卡牌影像不會離開您的裝置。網頁版：影像會傳送到伺服器端點，交由 Google Gemini 即時辨識，辨識後不作長期儲存。詳見隱私權政策。',
+    a: '會，在您同意之後。第一次掃描（或第一次開啟自動掃描）前，App 會說明並請您同意；同意後，用於辨識的照片會經 HTTPS 傳到我們的伺服器，再交給 Google Gemini 辨識，手機 App 與網頁版相同。我們的伺服器不保存照片。手機 App 的自動掃描在判斷卡片是否放好時，只在裝置上讀取卡號，偵測用的暫存照片不會上傳，每次偵測後就刪除。照片不會同步到帳號。詳見隱私權政策。',
   },
   {
     q: 'iOS / Android / 網頁版功能一致嗎？',
-    a: '介面與資料一致；掃描辨識的實作因平台不同（手機用裝置端 OCR、網頁用 AI 視覺辨識）。跨裝置同步僅在啟用 /api/auth/sync binding 的建構（Web Develop／Staging 或未來 feature flag 打開）上運作；Store MVP 上架版本目前為裝置本機儲存。',
+    a: '介面與資料一致。辨識在手機 App 與網頁版都一樣：您同意後，照片交給伺服器上的 AI 辨識；辨識服務暫時無法使用時，改用裝置上的文字辨識作為備援。使用同一個 Google 帳號登入後，收藏數量、牌組、估值清單與設定會在各裝置之間同步。',
   },
 ];
 
@@ -469,9 +472,9 @@ export default function LandingScreen({ navigation }: any = {}) {
   }, [continueAsGuest]);
 
   // Google login rides the same fail-closed OAuth-provisioning flow as
-  // the rest of the app: tapping the "coming soon" CTA still calls
-  // `loginWithGoogle()` — provisioned providers work, unprovisioned ones
-  // surface the auth store's friendly error.
+  // the rest of the app: the CTA calls `loginWithGoogle()` — a provisioned
+  // build signs in, an unprovisioned one surfaces the auth store's friendly
+  // error (no "coming soon" claim either way).
   const handleGoogle = useCallback(async () => {
     try { await loginWithGoogle(); } catch {}
   }, [loginWithGoogle]);
@@ -481,10 +484,10 @@ export default function LandingScreen({ navigation }: any = {}) {
     : 'hOCG · 非官方查詢工具 · 支援中日文';
 
   const noteText = isDesktop
-    ? '訪客可查卡、看規則並每月掃描 50 張 · 本機收藏需登入（Google 登入即將推出；跨裝置同步僅限啟用同步的建構）'
-    : '訪客可查卡、看規則並每月掃描 50 張 · 本機收藏需登入（Google／Apple 登入即將推出；跨裝置同步僅限啟用同步的建構）';
+    ? '訪客可查卡、看規則並每月掃描 50 張 · 資料先存在這台裝置；使用 Google 帳號登入後可跨裝置同步收藏與牌組'
+    : '訪客可查卡、看規則並每月掃描 50 張 · 登入 Google 帳號後可跨裝置同步收藏與牌組';
 
-  const googleCtaLabel = isDesktop ? '使用 Google 帳號開始（即將推出）' : '⧖  使用 Google 帳號（即將推出）';
+  const googleCtaLabel = isDesktop ? '使用 Google 帳號開始' : '使用 Google 帳號登入';
 
   return (
     <SafeAreaView style={styles.container} testID="landing-screen">
@@ -984,7 +987,7 @@ export default function LandingScreen({ navigation }: any = {}) {
               先從查一張卡開始
             </Text>
             <Text style={[styles.sectionSubhead, styles.textCenter, styles.finalCtaSub]}>
-              免費使用。目前僅開放訪客進入；Google／Apple 登入與跨裝置同步正在陸續推出。
+              免費使用。可以先以訪客身份進入；使用 Google 帳號登入後，收藏與牌組會跨裝置同步。
             </Text>
             <View style={[styles.ctaRow, styles.finalCtaRow, isDesktop && styles.ctaRowDesktop]}>
               <TouchableOpacity
@@ -1007,7 +1010,7 @@ export default function LandingScreen({ navigation }: any = {}) {
                 accessibilityRole="button"
                 testID="landing-final-cta-google"
               >
-                <Text style={styles.ctaGoogleText}>使用 Google 帳號（即將推出）{isDesktop ? '  →' : ''}</Text>
+                <Text style={styles.ctaGoogleText}>使用 Google 帳號登入{isDesktop ? '  →' : ''}</Text>
               </TouchableOpacity>
             </View>
             <Text style={styles.finalCtaNote}>非官方工具 · 卡牌圖像與名稱版權屬於原公司</Text>

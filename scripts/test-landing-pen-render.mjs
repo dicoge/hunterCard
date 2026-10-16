@@ -127,11 +127,13 @@ for (const [label, viewport] of [['mobile 390', MOBILE], ['desktop 1440', DESKTO
     } finally { await cleanup(); }
   });
 
-  await test(`${label}: Pen "coming soon" states are truthful (Google login + Pro plan)`, async () => {
+  await test(`${label}: CTA states are truthful (Google sign-in is wired, Pro plan not open)`, async () => {
     const { container, cleanup } = await renderLanding(viewport);
     try {
+      // v41: Google sign-in is real (fail-closed when unprovisioned) — no coming-soon claim.
       const googleCta = byTestId(container, 'landing-cta-google');
-      assert.ok(/即將推出/.test(googleCta.textContent), 'Google CTA carries the 即將推出 label');
+      assert.ok(/Google/.test(googleCta.textContent), 'Google CTA names Google');
+      assert.ok(!/即將推出|陸續推出/.test(googleCta.textContent), 'Google CTA makes no coming-soon claim');
       const proPlan = byTestId(container, 'landing-plan-pro');
       assert.ok(/規劃中|即將推出/.test(proPlan.textContent), 'Pro plan is marked coming-soon');
       assert.ok(/尚未開放/.test(proPlan.textContent), 'Pro plan tagline states "尚未開放"');
@@ -364,7 +366,7 @@ await test('desktop 1440: FAQ accordion expands/collapses with real state (DIC-1
     const item0 = byTestId(container, 'landing-faq-item-0');
     const item1 = byTestId(container, 'landing-faq-item-1');
     assert.ok(item0 && item1, 'FAQ accordion items mount');
-    assert.ok(/App Store \/ Google Play \/ Stripe/.test(item0.textContent), 'first FAQ answer is open by default (desktop)');
+    assert.ok(/訂閱與 App 內購目前尚未開放/.test(item0.textContent), 'first FAQ answer is open by default (desktop)');
     assert.ok(!/拍照掃描每月也可免登入使用 50 次/.test(item1.textContent), 'second FAQ answer starts collapsed on desktop');
     const toggle1 = byTestId(container, 'landing-faq-toggle-1');
     await act(async () => {

@@ -451,6 +451,9 @@ jobs:
       - name: Verify LandingScreen renders the accepted Pen landing at 390 and 1440 (DIC-1380 W5b)
         run: npm run test:landing-pen-render
 
+      - name: Verify Landing feature statements match the production build (account sync, photo upload, Google sign-in; v41)
+        run: npm run test:landing-copy-truth
+
       - name: Verify favorites store is wired into real product UI (DIC-1380 W6)
         run: npm run test:favorites-ui-wiring
 

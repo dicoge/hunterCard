@@ -44,6 +44,7 @@
     "test:deck-editor-name-resolver": "node --import ./scripts/register-web-render.mjs scripts/test-deck-editor-name-resolver.mjs",
     "test:deck-editor-pen-mobile-layout": "node --import ./scripts/register-web-render.mjs scripts/test-deck-editor-pen-mobile-layout.mjs",
     "test:scheduled-refresh-workflows": "node scripts/test-scheduled-refresh-workflows.mjs",
+    "test:landing-copy-truth": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-web-render.mjs scripts/test-landing-copy-truth.mjs",
     "test:landing-pen-render": "node --import ./scripts/register-web-render.mjs scripts/test-landing-pen-render.mjs",
     "test:favorites-ui-wiring": "node --import ./scripts/register-web-render.mjs scripts/test-favorites-ui-wiring.mjs",
     "test:tournament-discovery-acquisition": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-tournament-discovery-acquisition.mjs",
