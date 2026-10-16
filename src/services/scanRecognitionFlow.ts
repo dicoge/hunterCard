@@ -9,7 +9,7 @@
 
 import type { CardInfo, RecognitionResult, RecognizedCandidate } from './cardRecognition';
 import { isRecognitionInfrastructureFailure, RECOGNITION_UNAVAILABLE_MESSAGE } from './recognitionOutcome';
-import { matchFromWire, presentCandidates, presentMatch, type ScanPresentation } from './scanPresentation';
+import { legacyReceivedNumber, matchFromWire, presentCandidates, presentMatch, verifyLegacyNumberEvidence, type ScanPresentation } from './scanPresentation';
 
 /** 本地 OCR 也讀不到字時的一般引導；服務本身掛掉時不得使用。 */
 export const NO_TEXT_GUIDANCE = '無法自動辨識卡牌文字。請使用手動搜尋或從下方搜尋結果中選擇。';
@@ -139,6 +139,12 @@ function routeAmbiguousPrinting(result: RecognitionResult, ui: ScanFlowUi): bool
   return true;
 }
 
+/** Candidates of a web-flow response; a no-verdict response's exact claims are verified. */
+function bodyCandidates(io: ScanFlowIo, body: any): RecognizedCandidate[] | undefined {
+  const mapped = io.mapApiCandidates(body?.candidates);
+  return body?.match ? mapped : verifyLegacyNumberEvidence(mapped, legacyReceivedNumber(body));
+}
+
 export async function runWebCameraScan(imageUri: string, io: ScanFlowIo, ui: ScanFlowUi): Promise<void> {
   ui.setStatus('🤖 AI 辨識中…', 3);
 
@@ -172,10 +178,23 @@ export async function runWebCameraScan(imageUri: string, io: ScanFlowIo, ui: Sca
     }
   }
 
+  // CR 2026-10-16 #1: a no-verdict (older backend) acceptance is judged by the
+  // candidates' evidence, never trusted as-is.
+  if (apiBody?.success && apiBody?.card && !apiBody?.match && ui.showPresentation) {
+    const evidenced = bodyCandidates(io, apiBody)?.filter((c) => c.evidence);
+    if (evidenced?.length) {
+      ui.setBusy(false);
+      const p = presentCandidates(evidenced);
+      ui.setStatus(p.kind === 'none' ? '' : '✅ 辨識完成', p.kind === 'none' ? 0 : 4);
+      ui.showPresentation(p);
+      return;
+    }
+  }
+
   if (apiBody?.success && apiBody?.card) {
     ui.setStatus('✅ 辨識完成', 4);
     const confidence = typeof apiBody.confidence === 'number' ? apiBody.confidence : 0.9;
-    ui.onRecognized(io.mapApiCard(apiBody.card), confidence, io.mapApiCandidates(apiBody.candidates));
+    ui.onRecognized(io.mapApiCard(apiBody.card), confidence, bodyCandidates(io, apiBody));
     ui.setBusy(false);
     return;
   }
@@ -185,7 +204,7 @@ export async function runWebCameraScan(imageUri: string, io: ScanFlowIo, ui: Sca
     ui.setStatus('', 0);
     ui.setBusy(false);
     if (apiBody.raw) ui.setRecognizedText(apiBody.raw);
-    const weakCandidates = io.mapApiCandidates(apiBody.candidates);
+    const weakCandidates = bodyCandidates(io, apiBody);
     if (weakCandidates && weakCandidates.length > 0) {
       ui.showLowConfidenceCandidates(weakCandidates.slice(0, 5));
     } else {
@@ -263,6 +282,15 @@ export async function runNativeCameraScan(imageUri: string, io: ScanFlowIo, ui: 
 
   if (vision.success && vision.card) {
     ui.setBusy(false);
+    // CR 2026-10-16 #1 (native parity): an older backend's acceptance with candidate
+    // evidence goes through the same exact-number / conflict rules.
+    const evidenced = vision.candidates?.filter((c) => c.evidence);
+    if (ui.showPresentation && evidenced?.length) {
+      const p = presentCandidates(evidenced);
+      ui.setStatus(p.kind === 'none' ? '' : '✅ 辨識完成', p.kind === 'none' ? 0 : 4);
+      ui.showPresentation(p);
+      return;
+    }
     ui.setStatus('✅ 辨識完成', 4);
     ui.onVisionRecognized(vision.card, vision.confidence ?? 0.9);
     return;

@@ -1,0 +1,48 @@
+{
+ "source": "v37 (ec8447dc) lowConfidence wire shape for a reading with no card number and a romaji name — the shape behind the 4 user scans (normalizedCardNumber null). Candidate list is same-name filler; values are catalog data.",
+ "status": 200,
+ "body": {
+  "success": false,
+  "lowConfidence": true,
+  "error": "辨識信心不足，請從候選卡中選擇",
+  "confidence": 0.05,
+  "reason": "rarity",
+  "debug": {
+   "provider": "gemini",
+   "model": "gemini-2.5-flash",
+   "extracted": {
+    "characterName": "Houshou Marine",
+    "hp": "",
+    "rarity": "SR",
+    "bloom": "",
+    "cardNumberRaw": "",
+    "cardTitle": ""
+   },
+   "normalizedCardNumber": null
+  },
+  "candidates": [
+   {
+    "id": "hBP02-016_hBP06_SR_hBP02-016_SR",
+    "cardNumber": "hBP02-016",
+    "name": "白銀ノエル",
+    "rarity": "SR",
+    "series": "hBP06",
+    "sellPrice": 1980,
+    "confidence": 0.08,
+    "reason": "rarity",
+    "score": 9.5
+   },
+   {
+    "id": "hBP02-017_hBP02_SR_hBP02-017_SR",
+    "cardNumber": "hBP02-017",
+    "name": "白銀ノエル",
+    "rarity": "SR",
+    "series": "hBP02",
+    "sellPrice": 320,
+    "confidence": 0.08,
+    "reason": "rarity",
+    "score": 9.5
+   }
+  ]
+ }
+}

@@ -25,7 +25,8 @@ import {
 } from './recognitionImagePolicy';
 import { SCAN_RUNTIME } from './scanRuntime';
 import { findCardNumberTokens } from '../utils/cardNumberToken';
-import { matchFromWire } from './scanPresentation';
+import { matchFromWire, legacyReceivedNumber, verifyLegacyNumberEvidence } from './scanPresentation';
+import { projectTrace, type RecognitionTrace } from './scanTrace';
 
 // ── 類型定義 ──
 
@@ -68,6 +69,20 @@ export interface CardInfo {
 export interface RecognizedCandidate {
   card: CardInfo;
   confidence: number; // 0-1
+  /**
+   * The backend ranker's evidence tokens for THIS candidate ('cardNumber exact',
+   * 'character exact/contains', 'rarity' …), when the backend sent them. Lets the client
+   * apply the explicit-verdict rules to a response from a backend that predates `match`.
+   */
+  evidence?: string[];
+}
+
+/** Ranker evidence tokens from a wire candidate's `reason` ("a, b, c"); allowlisted. */
+const EVIDENCE_TOKENS = new Set(['cardNumber exact', 'cardNumber fuzzy-1', 'cardNumber fuzzy-2', 'character exact/contains', 'character fuzzy', 'title exact/contains', 'title fuzzy', 'rarity', 'hp', 'bloom/type']);
+export function candidateEvidence(reason: unknown): string[] | undefined {
+  if (typeof reason !== 'string' || !reason) return undefined;
+  const tokens = reason.split(',').map((t) => t.trim()).filter((t) => EVIDENCE_TOKENS.has(t));
+  return tokens.length ? tokens : undefined;
 }
 
 export interface RecognitionResult {
@@ -90,6 +105,8 @@ export interface RecognitionResult {
   timedOut?: boolean;
   /** The photo was refused locally by recognitionImagePolicy and was NOT uploaded. */
   imageRejected?: RecognitionImageErrorCode;
+  /** Typed server trace (v39+ backend), re-validated by projectTrace; undefined from older backends. */
+  trace?: RecognitionTrace;
   /**
    * The server's explicit verdict (scan best-match fix 2026-10-15). `matched` = one
    * printing proven by the photo; `identity_only` = card known, printing (and price)
@@ -422,6 +439,7 @@ function mapApiCandidates(raw: any): RecognizedCandidate[] | undefined {
     .map(c => ({
       card: mapApiCard(c),
       confidence: typeof c.confidence === 'number' ? c.confidence : 0,
+      evidence: candidateEvidence(c.reason),
     }));
 }
 
@@ -473,6 +491,9 @@ export function diagnosticDebug(raw: any): RecognitionDebug | undefined {
       cardTitle: str(x.cardTitle),
       setCode: str(x.setCode),
       language: str(x.language),
+      rarity: str(x.rarity),
+      // As received by the backend (older backends send it); re-validated before storage.
+      cardNumberRaw: str(x.cardNumberRaw),
     },
   };
 }
@@ -483,7 +504,7 @@ export interface RecognitionDebug {
   normalizedCardNumber: string | null;
   matchStatus?: string;
   matchReason?: string | null;
-  extracted: { characterName?: string; cardTitle?: string; setCode?: string; language?: string };
+  extracted: { characterName?: string; cardTitle?: string; setCode?: string; language?: string; rarity?: string; cardNumberRaw?: string };
 }
 
 function mapMatch(raw: any): ScanMatch | undefined {
@@ -545,7 +566,7 @@ async function recognizeViaApi(imageUri: string, options: RecognizeImageOptions 
       // Keep the backend's diagnostic metadata (model, what was read) for the local log —
       // a failed scan is exactly what needs comparing (CR c9793eb P2). Projected, never
       // the raw body.
-      return { success: false, error: '', match: mapMatch(errorBody?.match), debug: diagnosticDebug(errorBody?.debug) };
+      return { success: false, error: '', match: mapMatch(errorBody?.match), debug: diagnosticDebug(errorBody?.debug), trace: projectTrace(errorBody?.trace) };
     }
 
     const data = await apiResponse.json();
@@ -563,11 +584,12 @@ async function recognizeViaApi(imageUri: string, options: RecognizeImageOptions 
         success: false,
         error: data.error || '',
         suggestions: Array.isArray(data.candidates) ? data.candidates.map(mapApiCard) : undefined,
-        candidates: mapApiCandidates(data.candidates),
+        candidates: data.match ? mapApiCandidates(data.candidates) : verifyLegacyNumberEvidence(mapApiCandidates(data.candidates), legacyReceivedNumber(data)),
         confidence: data.confidence,
         reason: data.reason,
         raw: data.raw,
         debug: diagnosticDebug(data.debug),
+        trace: projectTrace(data.trace),
         lowConfidence: !!data.lowConfidence,
         match: mapMatch(data.match),
         // identity_only: the card the backend identified (no printing → its price is
@@ -583,9 +605,10 @@ async function recognizeViaApi(imageUri: string, options: RecognizeImageOptions 
         success: true,
         card: cardInfo,
         confidence: typeof data.confidence === 'number' ? data.confidence : undefined,
-        candidates: mapApiCandidates(data.candidates),
+        candidates: data.match ? mapApiCandidates(data.candidates) : verifyLegacyNumberEvidence(mapApiCandidates(data.candidates), legacyReceivedNumber(data)),
         match: mapMatch(data.match),
         debug: diagnosticDebug(data.debug),
+        trace: projectTrace(data.trace),
       };
     }
 

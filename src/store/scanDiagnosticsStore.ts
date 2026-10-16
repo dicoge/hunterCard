@@ -46,6 +46,7 @@ function merge(entry: DiagEntry, patch: Partial<DiagEntry>): any {
     ...patch,
     stagesMs: { ...entry.stagesMs, ...(patch.stagesMs ?? {}) },
     errors: [...entry.errors, ...(patch.errors ?? [])],
+    timeline: [...(entry.timeline ?? []), ...(patch.timeline ?? [])],
     extracted: patch.extracted ? { ...entry.extracted, ...patch.extracted } : entry.extracted,
     match: patch.match ? { ...entry.match, ...patch.match } : entry.match,
   };

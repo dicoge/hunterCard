@@ -15,7 +15,13 @@
  *   • `ruleScore` is the deterministic ranking score, NOT an accuracy or probability.
  */
 
-export const DIAGNOSTICS_SCHEMA = 1;
+import {
+  TRACE_FIELDS, TRACE_SCHEMA, evidenceTokens, projectTrace, receivedCardText, safeCardText, sanitizeFieldTrace,
+  type FieldTrace, type Provenance, type TraceField,
+} from './scanTrace';
+
+/** 2 (2026-10-16): typed trace, presentation, timeline. v1 entries are still read. */
+export const DIAGNOSTICS_SCHEMA = 2;
 export const MAX_ENTRIES = 100;
 export const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 export const UNKNOWN = 'unknown';
@@ -43,7 +49,28 @@ export interface DiagEntry {
   outcome?: ScanOutcome;
   correctedTo?: string;
   auth?: { stage: string; code: string };
+  /** What the server read and decided, field by field, with where it came from. */
+  trace?: DiagTrace;
+  /** What the app showed, and by which rule — separate from the server verdict. */
+  presentation?: { kind: 'best' | 'identity' | 'none'; reason: string; source: string };
+  /** Bounded event sequence of this scan (ms since start). */
+  timeline?: Array<{ e: TimelineEvent; t: number }>;
 }
+
+export type TimelineEvent = 'presented' | 'added' | 'corrected' | 'discarded' | 'cancelled' | 'failed' | 'no_match';
+export interface DiagTrace {
+  provenance: Provenance;
+  traceSchema: string | null;
+  requestId: string | null;
+  backendSha: string | null;
+  replySchema: 'ok' | 'schema_mismatch' | 'not_provided';
+  fields: Record<TraceField, FieldTrace>;
+  candidateCount: number | null;
+  top: Array<{ id: string; score: number | null; evidence: string[] }>;
+  serverVerdict: { status: string; reason: string | null };
+  rejection: string | null;
+}
+export const MAX_TIMELINE = 12;
 
 const ERROR_CODE = /^[A-Z][A-Z0-9_]{1,47}$/;
 const ID = /^[a-z0-9]{8,32}$/;
@@ -53,11 +80,9 @@ const CARD_NUMBER = /^h[a-z]{1,2}(\d{2})?-\d{3}$/;
 const CATALOG_ID = /^h[a-z]{1,2}\d{0,2}-\d{3}(_[a-z0-9-]{1,16}){0,8}$/i;
 const SET_CODE = /^[a-z]{1,4}\d{0,3}$/i;
 const LANGUAGE = /^[a-z]{2,3}$/i;
-// A card / character name: letters of the scripts cards are printed in, spaces and
-// the name punctuation used in the catalog. Digits, @, /, : and the like (what emails,
-// phone numbers, urls or tokens need) are not allowed.
-const NAME = /^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-zÀ-ɏ ・ー'’.&!?-]{1,40}$/u;
-const STATUS = new Set(['matched', 'identity_only', 'no_match', 'service_unavailable', 'not_uploaded', 'local_ocr', 'unknown']);
+// legacy_no_verdict: an older backend answered without a `match` verdict (v1 logs
+// showed this as `unknown`).
+const STATUS = new Set(['matched', 'identity_only', 'no_match', 'service_unavailable', 'not_uploaded', 'local_ocr', 'legacy_no_verdict', 'unknown']);
 const REASON = new Set(['no_evidence', 'no_card_number', 'number_not_in_database', 'number_name_conflict', 'low_evidence', 'none']);
 const EVIDENCE = new Set(['cardNumber exact', 'character exact/contains', 'character fuzzy', 'title exact/contains', 'title fuzzy', 'rarity', 'hp', 'bloom/type', 'local OCR cardNumber']);
 const OUTCOMES = new Set<ScanOutcome>(['pending', 'added', 'corrected', 'discarded', 'cancelled', 'failed', 'no_match']);
@@ -69,6 +94,57 @@ function pick(value: unknown, pattern: RegExp, missing = UNKNOWN): string {
   if (value === UNKNOWN || value === REDACTED) return value;
   const s = String(value).trim();
   return pattern.test(s) ? s : REDACTED;
+}
+
+/** Card names keep their real punctuation / digits (safeCardText), unsafe → redacted. */
+function safeName(value: unknown): string {
+  if (value === null || value === undefined || value === '' || value === 'NONE' || value === 'none') return UNKNOWN;
+  if (value === UNKNOWN || value === REDACTED) return value;
+  return safeCardText('name', value) ?? REDACTED;
+}
+
+const PRESENT_KIND = new Set(['best', 'identity', 'none']);
+const PRESENT_REASON = new Set(['no_evidence', 'no_card_number', 'number_not_in_database', 'number_name_conflict', 'low_evidence', 'none']);
+const PRESENT_SOURCE = new Set(['server_verdict', 'legacy_evidence', 'legacy_no_evidence', 'local_ocr']);
+const TIMELINE_EVENTS = new Set<TimelineEvent>(['presented', 'added', 'corrected', 'discarded', 'cancelled', 'failed', 'no_match']);
+const PROVENANCE = new Set<Provenance>(['server_trace', 'legacy_debug', 'none']);
+
+/** Re-validates a stored / incoming trace (both provenances) field by field. */
+export function sanitizeTrace(raw: any): DiagTrace | undefined {
+  if (!raw || typeof raw !== 'object' || !PROVENANCE.has(raw.provenance)) return undefined;
+  if (raw.provenance === 'server_trace') {
+    const t = projectTrace({ ...raw, schema: raw.traceSchema, verdict: raw.serverVerdict });
+    if (!t) return undefined;
+    return {
+      provenance: 'server_trace', traceSchema: t.schema, requestId: t.requestId, backendSha: t.backendSha,
+      replySchema: t.replySchema, fields: t.fields, candidateCount: t.candidateCount, top: t.top,
+      serverVerdict: t.verdict, rejection: t.rejection,
+    };
+  }
+  const fields = {} as Record<TraceField, FieldTrace>;
+  for (const f of TRACE_FIELDS) {
+    const x = raw.fields?.[f];
+    // An older backend can only say parsed / parse_error / redacted; anything it did not
+    // carry is not_provided (it cannot tell missing from empty from NONE).
+    fields[f] = ['parsed', 'parse_error', 'redacted'].includes(x?.state) ? sanitizeFieldTrace(f, x) : { state: 'not_provided' };
+  }
+  // CR 2026-10-16 #2: provenance (where the FIELDS came from) is independent of whether
+  // the backend sent a verdict. A 4a566fa-style response has `match` but no trace.
+  const sv = raw.serverVerdict;
+  const serverVerdict = sv && ['matched', 'identity_only', 'no_match'].includes(sv.status)
+    ? { status: sv.status, reason: REASON.has(sv.reason) && sv.reason !== 'none' ? sv.reason : null }
+    : { status: 'legacy_no_verdict', reason: null };
+  return {
+    provenance: raw.provenance, traceSchema: null, requestId: null, backendSha: null, replySchema: 'not_provided',
+    fields, candidateCount: typeof raw.candidateCount === 'number' && Number.isFinite(raw.candidateCount) ? Math.max(0, Math.min(99, Math.floor(raw.candidateCount))) : null,
+    top: (Array.isArray(raw.top) ? raw.top : []).slice(0, 5).map((c: any) => ({
+      id: typeof c?.id === 'string' && CATALOG_ID.test(c.id) ? c.id : REDACTED,
+      score: typeof c?.score === 'number' && Number.isFinite(c.score) ? Math.round(c.score * 10) / 10 : null,
+      evidence: evidenceTokens(c?.evidence),
+    })),
+    serverVerdict,
+    rejection: null,
+  };
 }
 
 function ms(value: unknown): number | undefined {
@@ -107,7 +183,7 @@ export function sanitizeEntry(raw: any): DiagEntry | null {
     entry.source = raw.source === 'gallery' ? 'gallery' : 'camera';
     const x = raw.extracted ?? {};
     entry.extracted = {
-      name: pick(x.name, NAME),
+      name: safeName(x.name),
       number: pick(typeof x.number === 'string' && x.number !== REDACTED ? x.number.toLowerCase() : x.number, CARD_NUMBER),
       set: pick(x.set, SET_CODE),
       language: pick(typeof x.language === 'string' && x.language !== UNKNOWN && x.language !== REDACTED ? x.language.toUpperCase() : x.language, LANGUAGE),
@@ -120,6 +196,23 @@ export function sanitizeEntry(raw: any): DiagEntry | null {
       evidence: Array.isArray(m.evidence) ? m.evidence.filter((e: unknown) => typeof e === 'string' && EVIDENCE.has(e)).slice(0, 8) : [],
     };
     entry.outcome = OUTCOMES.has(raw.outcome) ? raw.outcome : 'pending';
+    const trace = sanitizeTrace(raw.trace);
+    if (trace) entry.trace = trace;
+    const p = raw.presentation;
+    if (p && PRESENT_KIND.has(p.kind)) {
+      entry.presentation = {
+        kind: p.kind,
+        reason: PRESENT_REASON.has(p.reason) ? p.reason : 'none',
+        source: PRESENT_SOURCE.has(p.source) ? p.source : UNKNOWN,
+      };
+    }
+    if (Array.isArray(raw.timeline)) {
+      const tl = raw.timeline
+        .filter((x: any) => x && TIMELINE_EVENTS.has(x.e) && ms(x.t) !== undefined)
+        .map((x: any) => ({ e: x.e as TimelineEvent, t: ms(x.t)! }))
+        .slice(-MAX_TIMELINE);
+      if (tl.length) entry.timeline = tl;
+    }
     if (raw.correctedTo !== undefined) {
       const c = String(raw.correctedTo);
       entry.correctedTo = CATALOG_ID.test(c) ? c : REDACTED;
@@ -167,7 +260,7 @@ export function newDiagnosticId(random: () => number = Math.random): string {
  * The fields a recognition result carries that are worth keeping, mapped from the
  * backend's sanitised debug / match (never the raw model output).
  */
-export function diagnosticsFromResult(r: any): { extracted: Partial<DiagEntry['extracted']>; match: Partial<NonNullable<DiagEntry['match']>>; errors: string[]; model?: string } {
+export function diagnosticsFromResult(r: any): { extracted: Partial<DiagEntry['extracted']>; match: Partial<NonNullable<DiagEntry['match']>>; errors: string[]; model?: string; trace?: DiagTrace } {
   const debug = r?.debug ?? {};
   const x = debug.extracted ?? {};
   const errors: string[] = [];
@@ -177,10 +270,36 @@ export function diagnosticsFromResult(r: any): { extracted: Partial<DiagEntry['e
   if (typeof r?.imageRejected === 'string') errors.push(r.imageRejected);
   if (typeof r?.code === 'string') errors.push(r.code);
   if (r?.match?.status === 'no_match') errors.push('NO_MATCH');
+  const legacy = !r?.match && !r?.trace && r?.debug;
   const status = r?.match?.status
-    ?? (r?.serviceUnavailable ? 'service_unavailable' : r?.imageRejected ? 'not_uploaded' : undefined);
+    ?? (r?.serviceUnavailable ? 'service_unavailable' : r?.imageRejected ? 'not_uploaded' : legacy ? 'legacy_no_verdict' : undefined);
+  const t = r?.trace;
+  let trace: DiagTrace | undefined;
+  if (t && t.schema === TRACE_SCHEMA) {
+    trace = sanitizeTrace({ ...t, provenance: 'server_trace', traceSchema: t.schema, serverVerdict: t.verdict });
+  } else if (r?.debug) {
+    // Older backend: only what its debug block carried; absent ≠ "not read".
+    const val = (v: unknown) => (typeof v === 'string' && v ? { state: 'parsed', received: v, value: v } : { state: 'not_provided' });
+    // The number as received (cardNumberRaw, v37 sends it) next to the normalised value:
+    // received but not normalisable → parse_error with the received text kept.
+    const rawNum = typeof x.cardNumberRaw === 'string' && x.cardNumberRaw ? x.cardNumberRaw : null;
+    const normNum = typeof debug.normalizedCardNumber === 'string' && debug.normalizedCardNumber ? debug.normalizedCardNumber : null;
+    const number = normNum ? { state: 'parsed', received: rawNum ?? undefined, value: normNum }
+      : rawNum ? { state: 'parse_error', received: rawNum } : { state: 'not_provided' };
+    trace = sanitizeTrace({
+      provenance: 'legacy_debug',
+      serverVerdict: r?.match ? { status: r.match.status, reason: r.match.reason } : undefined,
+      fields: {
+        name: val(x.characterName), title: val(x.cardTitle), number,
+        set: val(x.setCode), language: val(x.language), rarity: val(x.rarity),
+      },
+      candidateCount: Array.isArray(r?.candidates) ? r.candidates.length : null,
+      top: (r?.candidates ?? []).slice(0, 5).map((c: any) => ({ id: c?.card?.id, score: null, evidence: c?.evidence ?? [] })),
+    });
+  }
   return {
-    model: debug.model,
+    model: debug.model ?? t?.model,
+    trace,
     extracted: {
       name: x.characterName || x.cardTitle || undefined,
       number: debug.normalizedCardNumber || undefined,

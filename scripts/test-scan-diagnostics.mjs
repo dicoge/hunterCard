@@ -222,6 +222,12 @@ try {
     assert.equal(last().outcome, 'added');
     assert.equal(last().correctedTo, 'hBP01-010_hBP01_U_hBP01-010_U');
     assert.equal(useScanQuotaStore.getState().scanCount, 1, 'logging does not touch quota');
+    // v2 (2026-10-16): app decision logged apart from the server verdict, plus timeline.
+    assert.deepEqual(last().presentation, { kind: 'best', reason: 'none', source: 'server_verdict' });
+    assert.equal(last().trace.provenance, 'server_trace');
+    assert.equal(last().trace.serverVerdict.status, 'matched');
+    assert.deepEqual(last().trace.fields.number, { state: 'parsed', received: 'hBP01-010', value: 'hbp01-010' });
+    assert.deepEqual(last().timeline.map((x) => x.e), ['presented', 'added']);
     assertClean(platformStorage.getItem('holohunter-scan-diagnostics'), 'storage after scan');
   });
   await test('correction → "corrected" with the public catalog id chosen', async () => {
@@ -235,6 +241,10 @@ try {
   await test('no match → "no_match"; values not read stay "unknown"', async () => {
     await scan(reply({}));
     assert.equal(last().outcome, 'no_match');
+    assert.equal(last().trace.rejection, 'no_candidate');
+    assert.equal(last().trace.fields.number.state, 'provider_unknown');
+    assert.equal(last().presentation.kind, 'none');
+    assert.equal(last().presentation.source, 'server_verdict');
     assert.equal(last().extracted.number, 'unknown');
     assert.equal(last().extracted.name, 'unknown');
     await click(byTestId('scan-match-retake'));

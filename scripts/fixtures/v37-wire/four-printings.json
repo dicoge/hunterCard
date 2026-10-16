@@ -1,0 +1,105 @@
+{
+ "source": "api/recognize-card.ts @ ec8447dc (v37 production), mocked Gemini reading",
+ "reading": {
+  "CHARACTER": "NONE",
+  "RARITY": "NONE",
+  "CARD_NUMBER": "hBP07-023"
+ },
+ "status": 200,
+ "body": {
+  "success": false,
+  "lowConfidence": true,
+  "error": "辨識信心不足，請從候選卡中選擇",
+  "confidence": 0.44,
+  "reason": "cardNumber exact",
+  "candidates": [
+   {
+    "id": "hBP07-023_hBP07_C_hBP07-023_C",
+    "cardNumber": "hBP07-023",
+    "name": "大神ミオ",
+    "rarity": "C",
+    "series": "hBP07",
+    "sellPrice": 30,
+    "prices": [
+     {
+      "name": "大神ミオ",
+      "sellPrice": 30,
+      "rarity": "C",
+      "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10049.jpg"
+     }
+    ],
+    "confidence": 0.86,
+    "reason": "cardNumber exact",
+    "score": 101.5,
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP07/hBP07-023_C.png"
+   },
+   {
+    "id": "hBP07-023_ent07",
+    "cardNumber": "hBP07-023",
+    "name": "大神ミオ",
+    "rarity": "C",
+    "series": "ent07",
+    "sellPrice": null,
+    "prices": [],
+    "confidence": 0.85,
+    "reason": "cardNumber exact",
+    "score": 100,
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP07/hBP07-023_C.png"
+   },
+   {
+    "id": "hBP07-023_hPR_P_hBP07-023_P",
+    "cardNumber": "hBP07-023",
+    "name": "大神ミオ",
+    "rarity": "P",
+    "series": "hPR",
+    "sellPrice": null,
+    "prices": [],
+    "confidence": 0.84,
+    "reason": "cardNumber exact",
+    "score": 99,
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBP07-023_P.png"
+   },
+   {
+    "id": "hBP07-023_hPR_P_hBP07-023_P_02",
+    "cardNumber": "hBP07-023",
+    "name": "大神ミオ",
+    "rarity": "P",
+    "series": "hPR",
+    "sellPrice": null,
+    "prices": [],
+    "confidence": 0.84,
+    "reason": "cardNumber exact",
+    "score": 99,
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBP07-023_P_02.png"
+   },
+   {
+    "id": "hBP07-063_hBP07_C_hBP07-063_C",
+    "cardNumber": "hBP07-063",
+    "name": "AZKi",
+    "rarity": "C",
+    "series": "hBP07",
+    "sellPrice": 80,
+    "prices": [
+     {
+      "name": "AZKi",
+      "sellPrice": 80,
+      "rarity": "C",
+      "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10129.jpg"
+     }
+    ],
+    "confidence": 0.67,
+    "reason": "cardNumber fuzzy-1",
+    "score": 79.5,
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP07/hBP07-063_C.png"
+   }
+  ],
+  "debug": {
+   "provider": "gemini",
+   "model": "gemini-2.5-flash",
+   "extracted": {
+    "cardNumberRaw": "hBP07-023"
+   }
+  }
+ },
+ "note": "debug restored 2026-10-16 with ONLY the safe expected field extracted.cardNumberRaw (= what v37 parseField returns for the mocked reading); no raw reply"
+}

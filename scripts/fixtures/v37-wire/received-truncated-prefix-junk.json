@@ -1,0 +1,121 @@
+{
+ "source": "api/recognize-card.ts @ ec8447dc (v37), mocked Gemini reading; raw reply dropped, debug limited to safe expected fields",
+ "reading": {
+  "CHARACTER": "天音かなた",
+  "RARITY": "OUR",
+  "CARD_NUMBER": "xhBP01-001"
+ },
+ "status": 200,
+ "body": {
+  "success": false,
+  "lowConfidence": true,
+  "error": "辨識信心不足，請從候選卡中選擇",
+  "confidence": 0.79,
+  "reason": "cardNumber exact, character exact/contains, rarity",
+  "candidates": [
+   {
+    "id": "hBP01-001_hBP01_OUR_hBP01-001_OUR",
+    "cardNumber": "hBP01-001",
+    "name": "天音かなた",
+    "rarity": "OUR",
+    "series": "hBP01",
+    "sellPrice": 19800,
+    "prices": [
+     {
+      "name": "天音かなた(パラレル)",
+      "sellPrice": 19800,
+      "rarity": "OUR",
+      "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10002.jpg"
+     }
+    ],
+    "confidence": 0.99,
+    "reason": "cardNumber exact, character exact/contains, rarity",
+    "score": 135.5,
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP01/hBP01-001_OUR.png"
+   },
+   {
+    "id": "hBP01-001_hBP01_OSR_hBP01-001_OSR",
+    "cardNumber": "hBP01-001",
+    "name": "天音かなた",
+    "rarity": "OSR",
+    "series": "hBP01",
+    "sellPrice": 680,
+    "prices": [
+     {
+      "name": "天音かなた",
+      "sellPrice": 680,
+      "rarity": "OSR",
+      "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10001.jpg"
+     }
+    ],
+    "confidence": 0.99,
+    "reason": "cardNumber exact, character exact/contains",
+    "score": 127.5,
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP01/hBP01-001_OSR.png"
+   },
+   {
+    "id": "hBP01-009_hBP01_C_hBP01-009_C",
+    "cardNumber": "hBP01-009",
+    "name": "天音かなた",
+    "rarity": "C",
+    "series": "hBP01",
+    "sellPrice": 80,
+    "prices": [
+     {
+      "name": "天音かなた",
+      "sellPrice": 80,
+      "rarity": "C",
+      "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10019.jpg"
+     }
+    ],
+    "confidence": 0.89,
+    "reason": "cardNumber fuzzy-1, character exact/contains",
+    "score": 105.5,
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD08/hBP01-009_C.png"
+   },
+   {
+    "id": "hBP01-011_hBP01_C_hBP01-011_C",
+    "cardNumber": "hBP01-011",
+    "name": "天音かなた",
+    "rarity": "C",
+    "series": "hBP01",
+    "sellPrice": 80,
+    "prices": [
+     {
+      "name": "天音かなた",
+      "sellPrice": 80,
+      "rarity": "C",
+      "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10021.jpg"
+     }
+    ],
+    "confidence": 0.89,
+    "reason": "cardNumber fuzzy-1, character exact/contains",
+    "score": 105.5,
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP01/hBP01-011_C.png"
+   },
+   {
+    "id": "hBP01-009_hSD08_C_hBP01-009_C",
+    "cardNumber": "hBP01-009",
+    "name": "天音かなた",
+    "rarity": "C",
+    "series": "hSD08",
+    "sellPrice": null,
+    "prices": [],
+    "confidence": 0.88,
+    "reason": "cardNumber fuzzy-1, character exact/contains",
+    "score": 104,
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD08/hBP01-009_C.png"
+   }
+  ],
+  "debug": {
+   "provider": "gemini",
+   "model": "gemini-2.5-flash",
+   "normalizedCardNumber": "hbp01-001",
+   "extracted": {
+    "characterName": "天音かなた",
+    "cardNumberRaw": "xhBP01-001",
+    "rarity": "OUR"
+   }
+  }
+ }
+}
