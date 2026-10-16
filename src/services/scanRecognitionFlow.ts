@@ -8,7 +8,7 @@
  */
 
 import type { CardInfo, RecognitionResult, RecognizedCandidate } from './cardRecognition';
-import { isRecognitionInfrastructureFailure, RECOGNITION_UNAVAILABLE_MESSAGE } from './recognitionOutcome';
+import { classifyHttpFailure, isRecognitionInfrastructureFailure, RECOGNITION_UNAVAILABLE_MESSAGE, type RecognitionFailureKind } from './recognitionOutcome';
 import { legacyReceivedNumber, matchFromWire, presentCandidates, presentMatch, verifyLegacyNumberEvidence, type ScanPresentation } from './scanPresentation';
 
 /** 本地 OCR 也讀不到字時的一般引導；服務本身掛掉時不得使用。 */
@@ -51,6 +51,17 @@ export interface ScanFlowUi {
    * commit / picker callbacks, so nothing is committed without a user action.
    */
   showPresentation?(presentation: ScanPresentation): void;
+  /**
+   * The recognition service could not answer and local OCR found nothing either. Never
+   * a "no match": the screen offers a manual retry of the same photo (v39 user report).
+   */
+  onServiceFailure?(kind: RecognitionFailureKind): void;
+}
+
+/** Without an onServiceFailure handler: the generic service message, never a no-match. */
+function reportServiceFailure(ui: ScanFlowUi, kind: RecognitionFailureKind | undefined): void {
+  if (ui.onServiceFailure) ui.onServiceFailure(kind ?? 'unavailable');
+  else ui.setScanError(RECOGNITION_UNAVAILABLE_MESSAGE);
 }
 
 /**
@@ -151,6 +162,7 @@ export async function runWebCameraScan(imageUri: string, io: ScanFlowIo, ui: Sca
   let apiBody: any = null;
   let apiNetworkError = false;
   let backendFailed = false;
+  let failure: RecognitionFailureKind | undefined;
   try {
     const response = await io.callRecognitionApi();
     apiBody = response.body;
@@ -158,9 +170,12 @@ export async function runWebCameraScan(imageUri: string, io: ScanFlowIo, ui: Sca
     // 不是「這張照片不好」。status 必須留到這裡判斷，先前把它丟掉，才會讓後端故障叫使用者
     // 去調光線（DIC-1013）。只有 404 才是排序器真的比對不到這張圖。
     backendFailed = isRecognitionInfrastructureFailure(response.status, apiBody);
+    if (backendFailed) failure = classifyHttpFailure(response.status, apiBody);
   } catch (e: any) {
     apiNetworkError = true;
-    console.warn('[scanFlow] recognition API unreachable:', e?.message);
+    // TimeoutError: our own deadline (ScanScreen io). Any other rejection: no response.
+    failure = e?.name === 'TimeoutError' ? 'timeout' : 'network';
+    console.warn('[scanFlow] recognition API unreachable:', e?.name || 'Error');
   }
 
   if (apiBody?.match && !backendFailed && ui.showPresentation) {
@@ -222,41 +237,40 @@ export async function runWebCameraScan(imageUri: string, io: ScanFlowIo, ui: Sca
   }
 
   // 後端不可用（掛掉或未佈署）→ 本地 OCR 仍要跑，它是這時唯一還能辨識的路。
-  await runWebLocalFallback(imageUri, io, ui, backendFailed);
+  await runWebLocalFallback(imageUri, io, ui, failure);
 }
 
 async function runWebLocalFallback(
   imageUri: string,
   io: ScanFlowIo,
   ui: ScanFlowUi,
-  backendFailed: boolean,
+  failure: RecognitionFailureKind | undefined,
 ): Promise<void> {
-  const result = await io.recognizeFromImage(imageUri);
-  ui.setBusy(false);
-
-  if (routeAmbiguousPrinting(result, ui)) return;
-
-  if (result.success && result.card) {
-    ui.onRecognized(result.card, result.confidence ?? 0.85, result.candidates);
-    return;
-  }
-
-  const trimmedText = (await io.ocrText(imageUri)).trim();
-  ui.setRecognizedText(trimmedText);
-
-  if (trimmedText.length > 0) {
-    const fallbackResult = await io.recognizeFromOcr(trimmedText);
-    if (routeAmbiguousPrinting(fallbackResult, ui)) return;
-    if (fallbackResult.success && fallbackResult.card) {
-      ui.onRecognized(fallbackResult.card, fallbackResult.confidence ?? 0.85, fallbackResult.candidates);
-      return;
+  // Local only (v39 PM review): this used to call io.recognizeFromImage, i.e. upload the
+  // same photo to the service a SECOND time inside one scan (and one manual retry).
+  // After a known service failure only on-device text recognition runs.
+  // CR 717c3fe P2 #1: a throwing OCR worker (Tesseract load / run) is "OCR found
+  // nothing" here — it must not escape and lose the typed service failure, or the
+  // screen drops the retry panel and web auto-scan resumes uploading.
+  try {
+    const trimmedText = (await io.ocrText(imageUri)).trim();
+    ui.setRecognizedText(trimmedText);
+    if (trimmedText.length > 0) {
+      const fallbackResult = await io.recognizeFromOcr(trimmedText);
+      if (routeAmbiguousPrinting(fallbackResult, ui)) { ui.setBusy(false); return; }
+      if (fallbackResult.success && fallbackResult.card) {
+        ui.setBusy(false);
+        ui.onRecognized(fallbackResult.card, fallbackResult.confidence ?? 0.85, fallbackResult.candidates);
+        return;
+      }
     }
-    ui.setSearchError(fallbackResult.error || '找不到匹配的卡牌');
-    ui.setSearchResults(await io.searchCards(trimmedText, 10));
-    return;
+  } catch (e: any) {
+    console.warn('[scanFlow] local OCR failed after a service failure:', e?.name || 'Error');
   }
-
-  ui.setScanError(backendFailed || result.serviceUnavailable ? RECOGNITION_UNAVAILABLE_MESSAGE : NO_TEXT_GUIDANCE);
+  ui.setBusy(false);
+  // Only reached after the service failed: local OCR found no card, and that is not a
+  // verdict about the photo — no 「找不到匹配的卡牌」, no search list in its place.
+  reportServiceFailure(ui, failure);
 }
 
 export async function runNativeCameraScan(imageUri: string, io: ScanFlowIo, ui: ScanFlowUi): Promise<void> {
@@ -315,26 +329,47 @@ export async function runNativeCameraScan(imageUri: string, io: ScanFlowIo, ui: 
   // 後端不可用、逾時、或照片未通過上傳前檢查時，這段本地 OCR（expo-ocr-kit）仍照跑；
   // 它失敗只代表本地讀不到字，不代表照片有問題。Tesseract 不會在 native 執行。
   ui.setStatus('🔍 OCR 辨識中…');
-  const trimmedText = (await io.ocrText(imageUri)).trim();
+  let trimmedText: string;
+  try {
+    trimmedText = (await io.ocrText(imageUri)).trim();
+  } catch (e) {
+    // CR 717c3fe P2 #1 (native parity): after a service failure a throwing local OCR
+    // keeps the typed failure and the retry of the same photo.
+    if (!vision.serviceUnavailable) throw e;
+    ui.setBusy(false);
+    reportServiceFailure(ui, vision.failure);
+    return;
+  }
   ui.setRecognizedText(trimmedText);
   ui.setBusy(false);
 
   if (trimmedText.length > 0) {
-    const result = await io.recognizeFromOcr(trimmedText);
+    let result: RecognitionResult;
+    try {
+      result = await io.recognizeFromOcr(trimmedText);
+    } catch (e) {
+      if (!vision.serviceUnavailable) throw e;
+      reportServiceFailure(ui, vision.failure);
+      return;
+    }
     if (routeAmbiguousPrinting(result, ui)) return;
     if (result.success && result.card) {
       ui.setStatus('✅ 辨識完成', 4);
       ui.onRecognized(result.card, result.confidence ?? 0.85, result.candidates);
       return;
     }
-    ui.setSearchError(result.error || '找不到匹配的卡牌');
-    ui.setSearchResults(await io.searchCards(trimmedText, 10));
-    return;
+    // v39 user report (12:16:32, 503 → 「找不到匹配的卡牌」): when the service never looked
+    // at the photo, a local OCR miss is not a no-match.
+    if (!vision.serviceUnavailable) {
+      ui.setSearchError(result.error || '找不到匹配的卡牌');
+      ui.setSearchResults(await io.searchCards(trimmedText, 10));
+      return;
+    }
   }
 
-  ui.setScanError(
-    vision.serviceUnavailable ? RECOGNITION_UNAVAILABLE_MESSAGE
-      : vision.imageRejected ? PHOTO_NOT_UPLOADED_GUIDANCE
-        : NO_TEXT_GUIDANCE,
-  );
+  if (vision.serviceUnavailable) {
+    reportServiceFailure(ui, vision.failure);
+    return;
+  }
+  ui.setScanError(vision.imageRejected ? PHOTO_NOT_UPLOADED_GUIDANCE : NO_TEXT_GUIDANCE);
 }

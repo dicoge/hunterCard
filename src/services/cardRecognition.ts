@@ -13,9 +13,11 @@ import { stripDisabledCardFields } from '../utils/cardReleaseFilter';
 import { releaseCardFlags, STORE_MVP } from '../config/releaseFlags';
 import { PRODUCTION_ORIGIN } from '../config/apiOrigin';
 import {
+  classifyHttpFailure,
   isRecognitionInfrastructureFailure,
   RECOGNITION_REQUEST_TIMEOUT_MS,
   RECOGNITION_UNAVAILABLE_MESSAGE,
+  type RecognitionFailureKind,
 } from './recognitionOutcome';
 import {
   buildRecognitionDataUrl,
@@ -103,6 +105,10 @@ export interface RecognitionResult {
   cancelled?: boolean;
   /** The recognition request ran past RECOGNITION_REQUEST_TIMEOUT_MS and was aborted. */
   timedOut?: boolean;
+  /** With serviceUnavailable: what is provable about why (recognitionOutcome). */
+  failure?: RecognitionFailureKind;
+  /** HTTP status of a failed recognition response (diagnostics only). */
+  httpStatus?: number;
   /** The photo was refused locally by recognitionImagePolicy and was NOT uploaded. */
   imageRejected?: RecognitionImageErrorCode;
   /** Typed server trace (v39+ backend), re-validated by projectTrace; undefined from older backends. */
@@ -536,6 +542,7 @@ async function recognizeViaApi(imageUri: string, options: RecognizeImageOptions 
   const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, RECOGNITION_REQUEST_TIMEOUT_MS);
   const forwardAbort = () => controller.abort();
   options.signal?.addEventListener('abort', forwardAbort);
+  let gotResponse = false;
 
   try {
 
@@ -553,13 +560,17 @@ async function recognizeViaApi(imageUri: string, options: RecognizeImageOptions 
       body: JSON.stringify({ image: payload.images[0], images: payload.images, storeMvp: STORE_MVP }),
       signal: controller.signal,
     });
+    gotResponse = true;
 
     if (!apiResponse.ok) {
       console.warn(`[cardRecognition] API returned ${apiResponse.status}`);
       const errorBody = await apiResponse.json().catch(() => null);
       // 5xx 一律算後端故障（未佈署 503、vision 上游或資料庫 502）；404 才是真的比對不到。
       if (isRecognitionInfrastructureFailure(apiResponse.status, errorBody)) {
-        return { success: false, serviceUnavailable: true, error: RECOGNITION_UNAVAILABLE_MESSAGE };
+        return {
+          success: false, serviceUnavailable: true, error: RECOGNITION_UNAVAILABLE_MESSAGE,
+          failure: classifyHttpFailure(apiResponse.status, errorBody), httpStatus: apiResponse.status,
+        };
       }
       // 404 = the backend looked at this photo and has no valid answer. Its verdict
       // (and any evidence-backed alternatives) is what the UI explains.
@@ -639,11 +650,13 @@ async function recognizeViaApi(imageUri: string, options: RecognizeImageOptions 
     if (options.signal?.aborted) return { success: false, cancelled: true, error: '' };
     if (timedOut) {
       console.warn('[cardRecognition] API call timed out');
-      return { success: false, timedOut: true, serviceUnavailable: true, error: RECOGNITION_UNAVAILABLE_MESSAGE };
+      return { success: false, timedOut: true, serviceUnavailable: true, error: RECOGNITION_UNAVAILABLE_MESSAGE, failure: 'timeout' };
     }
     // Name only: a transport error never carries the request body, but keep it that way.
     console.warn(`[cardRecognition] API call failed: ${e?.name || 'Error'}`);
-    return { success: false, serviceUnavailable: true, error: RECOGNITION_UNAVAILABLE_MESSAGE };
+    // No HTTP response at all → provably a connection failure. A response whose body
+    // could not be read is not a network error: cause unknown.
+    return { success: false, serviceUnavailable: true, error: RECOGNITION_UNAVAILABLE_MESSAGE, failure: gotResponse ? 'unavailable' : 'network' };
   } finally {
     clearTimeout(timeoutId);
     options.signal?.removeEventListener('abort', forwardAbort);
@@ -660,7 +673,7 @@ export async function recognizeCardFromImage(
 ): Promise<RecognitionResult> {
   // Step 0: Try server-side Gemini Vision API first
   let serviceUnavailable = false;
-  let apiFailure: Pick<RecognitionResult, 'timedOut' | 'imageRejected'> = {};
+  let apiFailure: Pick<RecognitionResult, 'timedOut' | 'imageRejected' | 'failure' | 'httpStatus'> = {};
   try {
     const apiResult = await recognizeViaApi(imageUri, options);
     if (apiResult.cancelled) return apiResult;
@@ -675,7 +688,7 @@ export async function recognizeCardFromImage(
       return apiResult;
     }
     serviceUnavailable = !!apiResult.serviceUnavailable;
-    apiFailure = { timedOut: apiResult.timedOut, imageRejected: apiResult.imageRejected };
+    apiFailure = { timedOut: apiResult.timedOut, imageRejected: apiResult.imageRejected, failure: apiResult.failure, httpStatus: apiResult.httpStatus };
   } catch (e: any) {
     console.warn(`[cardRecognition] API recognition failed, falling back to local: ${e?.name || 'Error'}`);
   }
@@ -703,7 +716,7 @@ export async function recognizeCardFromImage(
     // A down backend must not masquerade as a badly-lit photo — the local OCR pass
     // above is a best-effort fallback, not evidence about the user's image.
     return serviceUnavailable
-      ? { success: false, serviceUnavailable: true, error: RECOGNITION_UNAVAILABLE_MESSAGE }
+      ? { success: false, serviceUnavailable: true, error: RECOGNITION_UNAVAILABLE_MESSAGE, ...apiFailure }
       : { success: false, error: '無法從卡牌識別到卡號，請調整角度或光線後重試' };
   }
 
@@ -731,6 +744,8 @@ export async function recognizeCardFromImage(
     return { ...ambiguousPrintingResult(fuzzy), confidence: 0.72 };
   }
 
+  // The service never looked at the photo: a local miss is not a "no match" verdict.
+  if (serviceUnavailable) return { success: false, serviceUnavailable: true, error: RECOGNITION_UNAVAILABLE_MESSAGE, ...apiFailure };
   return { success: false, error: `找到卡號 ${cardId} 但資料庫無匹配，請確認卡牌版本` };
 }
 

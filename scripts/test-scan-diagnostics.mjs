@@ -291,6 +291,43 @@ await test('export downloads the re-sanitised JSON; clear asks, then really empt
   await act(async () => r.unmount()); h.remove();
 });
 
+await test('Settings shows the readable Chinese summary on demand: v39 before v38, received fields, bounded, nothing private', async () => {
+  // The user's real v39/v38 export (scripts/fixtures/v39-user-logs), re-dated to stay
+  // inside the 7-day retention whenever this runs.
+  const fx = JSON.parse(fs.readFileSync(new URL('./fixtures/v39-user-logs/export-20261016.json', import.meta.url), 'utf8'));
+  const shift = Date.now() - Date.parse(fx.exportedAt) - 60_000;
+  const redate = (e) => ({ ...e, at: new Date(Date.parse(e.at) + shift).toISOString() });
+  useScanDiagnosticsStore.setState({ entries: fx.entries.map(redate) });
+  const { default: SettingsScreen } = await import('../src/screens/SettingsScreen.tsx');
+  const h = document.createElement('div'); document.body.appendChild(h);
+  const r = createRoot(h);
+  await act(async () => r.render(React.createElement(NavigationContainer, null, React.createElement(SettingsScreen, { navigation: { navigate() {}, goBack() {}, openDrawer() {}, addListener: () => () => {} } }))));
+  await tick(30);
+  assert.equal(byTestId('settings-diagnostics-summary'), null, 'hidden until asked');
+  await click(byTestId('settings-diagnostics-summary-toggle')); await tick(20);
+  const view = byTestId('settings-diagnostics-summary');
+  assert.ok(view, 'summary visible');
+  const text = view.textContent;
+  const g39 = text.indexOf('App build 39'), g38 = text.indexOf('App build 38');
+  assert.ok(g39 >= 0 && g38 > g39, 'v39 group first, v38 separate');
+  assert.ok(text.slice(g39, g38).includes('風真いろは／卡號 hBP05-081'));
+  assert.ok(text.includes('可重試：是'));
+  assert.ok(text.includes('排序分數不是準確率'));
+  assert.ok(!/\d+\s*%/.test(text), 'no percentage');
+  assertClean(text, 'on-screen summary');
+  // Bounded on screen: a full log shows the first lines and points to the export.
+  const many = Array.from({ length: 40 }, (_, i) => ({ ...redate(fx.entries[5]), id: `abcdefgh${String(i).padStart(8, '0')}` }));
+  await act(async () => { useScanDiagnosticsStore.setState({ entries: many }); });
+  await tick(20);
+  const lines = byTestId('settings-diagnostics-summary').children.length;
+  assert.ok(lines <= 81, `${lines} lines on screen`);
+  assert.ok(byTestId('settings-diagnostics-summary').textContent.includes('完整內容請按「匯出」'));
+  await click(byTestId('settings-diagnostics-summary-toggle')); await tick(20);
+  assert.equal(byTestId('settings-diagnostics-summary'), null, 'collapses again');
+  await act(async () => r.unmount()); h.remove();
+  useScanDiagnosticsStore.getState().clear();
+});
+
 // ============================ 5. real auth store failure ============================
 console.log('\nSign-in failure is recorded through the real auth store');
 await test('loginWithGoogle failure (no web client id configured) → auth entry: stage + code only', async () => {

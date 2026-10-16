@@ -238,7 +238,8 @@ delete process.env.GEMINI_API_KEY;
   await runWebCameraScan(PHOTO, deps, ui);
 
   check('web camera: a 503 from the real handler still runs the local OCR fallback', () => {
-    assert.equal(spy.visionCalls, 1, 'local vision fallback must run');
+    // v39: the fallback after a service failure is local only — no second upload.
+    assert.equal(spy.visionCalls, 0, 'no second remote recognition after a service failure');
     assert.equal(spy.ocrCalls, 1, 'local OCR must not be skipped');
   });
   check('web camera: an unavailable backend never blames the photo', () => {
@@ -266,7 +267,7 @@ delete process.env.GEMINI_API_KEY;
   check('web camera: the OCR fallback can still recognise while the backend is down', () => {
     assert.deepEqual(calls.recognized, [CARD]);
     assert.deepEqual(calls.scanError, []);
-    assert.equal(spy.visionCalls, 1);
+    assert.equal(spy.visionCalls, 0, 'found by local OCR alone, no second upload');
   });
 }
 
@@ -355,7 +356,7 @@ geminiStatus = 500;
 
   await runWebCameraScan(PHOTO, deps, ui);
   check('web camera: a real upstream 502 still runs the local OCR fallback', () => {
-    assert.equal(spy.visionCalls, 1);
+    assert.equal(spy.visionCalls, 0, 'no second remote recognition after a service failure');
     assert.equal(spy.ocrCalls, 1, 'an infrastructure outage must not skip OCR');
   });
   check('web camera: a real upstream 502 never blames the photo', () => {

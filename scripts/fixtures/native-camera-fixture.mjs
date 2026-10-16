@@ -6,7 +6,7 @@ import { View } from 'react-native-web';
 
 export const CameraView = React.forwardRef(function CameraView(props, ref) {
   React.useImperativeHandle(ref, () => ({
-    takePictureAsync: async () => ({ ...globalThis.__nativeCameraPhoto }),
+    takePictureAsync: async () => { globalThis.__nativeCameraTakes = (globalThis.__nativeCameraTakes ?? 0) + 1; return { ...globalThis.__nativeCameraPhoto }; },
     getAvailablePictureSizesAsync: async () => ['1440x1920', '3024x4032'],
   }));
   React.useEffect(() => { props.onCameraReady?.(); }, []);

@@ -16,7 +16,7 @@
  */
 
 import {
-  TRACE_FIELDS, TRACE_SCHEMA, evidenceTokens, projectTrace, receivedCardText, safeCardText, sanitizeFieldTrace,
+  TRACE_FIELDS, TRACE_SCHEMA, evidenceTokens, projectTrace, receivedCardText, safeCardText, sanitizeFieldTrace, withName,
   type FieldTrace, type Provenance, type TraceField,
 } from './scanTrace';
 
@@ -66,7 +66,7 @@ export interface DiagTrace {
   replySchema: 'ok' | 'schema_mismatch' | 'not_provided';
   fields: Record<TraceField, FieldTrace>;
   candidateCount: number | null;
-  top: Array<{ id: string; score: number | null; evidence: string[] }>;
+  top: Array<{ id: string; score: number | null; evidence: string[]; name?: string }>;
   serverVerdict: { status: string; reason: string | null };
   rejection: string | null;
 }
@@ -84,7 +84,7 @@ const LANGUAGE = /^[a-z]{2,3}$/i;
 // showed this as `unknown`).
 const STATUS = new Set(['matched', 'identity_only', 'no_match', 'service_unavailable', 'not_uploaded', 'local_ocr', 'legacy_no_verdict', 'unknown']);
 const REASON = new Set(['no_evidence', 'no_card_number', 'number_not_in_database', 'number_name_conflict', 'low_evidence', 'none']);
-const EVIDENCE = new Set(['cardNumber exact', 'character exact/contains', 'character fuzzy', 'title exact/contains', 'title fuzzy', 'rarity', 'hp', 'bloom/type', 'local OCR cardNumber']);
+const EVIDENCE = new Set(['cardNumber exact', 'cardNumber fuzzy-1', 'cardNumber fuzzy-2', 'character exact/contains', 'character fuzzy', 'title exact/contains', 'title fuzzy', 'rarity', 'hp', 'bloom/type', 'local OCR cardNumber']);
 const OUTCOMES = new Set<ScanOutcome>(['pending', 'added', 'corrected', 'discarded', 'cancelled', 'failed', 'no_match']);
 const AUTH_STAGE = /^[a-z][a-z_]{1,31}$/;
 
@@ -137,11 +137,11 @@ export function sanitizeTrace(raw: any): DiagTrace | undefined {
   return {
     provenance: raw.provenance, traceSchema: null, requestId: null, backendSha: null, replySchema: 'not_provided',
     fields, candidateCount: typeof raw.candidateCount === 'number' && Number.isFinite(raw.candidateCount) ? Math.max(0, Math.min(99, Math.floor(raw.candidateCount))) : null,
-    top: (Array.isArray(raw.top) ? raw.top : []).slice(0, 5).map((c: any) => ({
+    top: (Array.isArray(raw.top) ? raw.top : []).slice(0, 5).map((c: any) => withName({
       id: typeof c?.id === 'string' && CATALOG_ID.test(c.id) ? c.id : REDACTED,
       score: typeof c?.score === 'number' && Number.isFinite(c.score) ? Math.round(c.score * 10) / 10 : null,
       evidence: evidenceTokens(c?.evidence),
-    })),
+    }, c?.name)),
     serverVerdict,
     rejection: null,
   };
@@ -245,8 +245,113 @@ export function buildExport(entries: unknown, now = Date.now()): string {
     exportedAt: new Date(now).toISOString(),
     note: 'Local diagnostics only. ruleScore is a deterministic ranking score, not accuracy. No photos, tokens or account data.',
     count: clean.length,
+    // Human summary first (v39 user report: the raw log was unreadable); the full
+    // technical entries follow unchanged.
+    summary: buildReadableSummary(clean),
     entries: clean,
   }, null, 2);
+}
+
+const ERROR_TEXT: Record<string, string> = {
+  RECOGNITION_UNAVAILABLE: '辨識服務沒有回應結果',
+  NETWORK_ERROR: '網路連線失敗（沒有收到伺服器回應）',
+  SERVICE_BUSY: '辨識服務忙碌',
+  TIMEOUT: '辨識逾時',
+  PROVIDER_TIMEOUT: '辨識服務逾時',
+  PROVIDER_BUSY: '辨識服務忙碌',
+  PROVIDER_ERROR: '辨識服務錯誤（原因未知）',
+  NO_MATCH: '沒有相符的卡',
+  CANCELLED: '已取消',
+  SCAN_FAILED: '拍攝或處理失敗',
+};
+const REASON_TEXT: Record<string, string> = {
+  no_evidence: '照片上沒有可用的卡號或名稱',
+  no_card_number: '沒有讀到卡號',
+  number_not_in_database: '讀到的卡號不在資料庫',
+  number_name_conflict: '讀到的卡號與角色名稱不符',
+  low_evidence: '證據不足',
+};
+const VERDICT_TEXT: Record<string, string> = {
+  matched: '已確定版本',
+  identity_only: '已辨識卡牌，版本未定（不顯示價格）',
+  no_match: '沒有相符的卡',
+  service_unavailable: '辨識服務沒有回應結果',
+  not_uploaded: '照片未送出',
+  legacy_no_verdict: '舊版伺服器（沒有判定欄位）',
+};
+const PRESENT_TEXT: Record<string, string> = { best: '最佳結果預覽', identity: '卡牌已辨識・請選版本', none: '找不到相符卡牌' };
+const OUTCOME_TEXT: Record<string, string> = {
+  pending: '未完成', added: '已加入', corrected: '已改選其他卡並加入', discarded: '已捨棄（重拍）',
+  cancelled: '已離開／取消', failed: '失敗', no_match: '停在「找不到」畫面',
+};
+const EVIDENCE_TEXT: Record<string, string> = {
+  'cardNumber exact': '卡號相同', 'cardNumber fuzzy-1': '卡號差 1 字', 'cardNumber fuzzy-2': '卡號差 2 字',
+  'character exact/contains': '角色名稱相符', 'character fuzzy': '角色名稱相近', 'title exact/contains': '標題相符',
+  'title fuzzy': '標題相近', rarity: '稀有度相符', hp: 'HP 相符', 'bloom/type': '類型相符',
+};
+const SERVICE_ERRORS = new Set(['RECOGNITION_UNAVAILABLE', 'NETWORK_ERROR', 'SERVICE_BUSY', 'TIMEOUT', 'PROVIDER_TIMEOUT', 'PROVIDER_BUSY', 'PROVIDER_ERROR']);
+
+/** `hBP05-081_hBP05_U_hBP05-081_U` → `hBP05-081 U`. */
+function printingLabel(id: string): string {
+  const [num, , rarity] = id.split('_');
+  return rarity ? `${num} ${rarity}` : num;
+}
+
+/**
+ * Readable Traditional Chinese summary of already-sanitised entries, grouped by app build
+ * (newest first) so old and new versions are never mixed. Only fields the entry already
+ * holds — nothing new is collected. ruleScore is never presented as accuracy.
+ */
+export function buildReadableSummary(entries: DiagEntry[]): string[] {
+  const out: string[] = ['說明：以下是本機掃描紀錄的摘要；完整技術欄位在 entries。排序分數不是準確率。不含照片、帳號或金鑰。'];
+  const builds = [...new Set(entries.map((e) => e.nativeBuild))]
+    .sort((a, b) => (Number(b) || -1) - (Number(a) || -1));
+  builds.forEach((build, i) => {
+    const group = entries.filter((e) => e.nativeBuild === build);
+    out.push(`=== App build ${build}${i === 0 && builds.length > 1 ? '（較新版本）' : builds.length > 1 ? '（較舊版本）' : ''}：${group.length} 筆 ===`);
+    group.forEach((e, n) => out.push(...summarizeEntry(e, n + 1)));
+  });
+  return out;
+}
+
+function summarizeEntry(e: DiagEntry, n: number): string[] {
+  const when = `${e.at.slice(0, 10)} ${e.at.slice(11, 19)} UTC`;
+  if (e.kind === 'auth') {
+    return [`#${n} ${when}｜登入｜階段 ${e.auth?.stage ?? UNKNOWN}｜代碼 ${e.auth?.code ?? UNKNOWN}`];
+  }
+  const lines = [`#${n} ${when}｜${e.source === 'gallery' ? '相簿' : '相機'}｜${e.platform}｜模型 ${e.model}`];
+  const f = e.trace?.fields;
+  const shown = (x: FieldTrace | undefined, fallback?: string) => {
+    const v = x?.received ?? x?.value ?? (fallback && fallback !== UNKNOWN ? fallback : undefined);
+    return v === undefined ? '（沒讀到）' : v === REDACTED || x?.state === 'redacted' ? '（已遮蔽）' : v;
+  };
+  const read = e.extracted;
+  lines.push(`  讀到：名稱 ${shown(f?.name, read?.name)}／卡號 ${shown(f?.number, read?.number)}／系列 ${shown(f?.set, read?.set)}／稀有度 ${shown(f?.rarity)}`);
+  const top = e.trace?.top ?? [];
+  const exact = top.filter((c) => c.evidence.includes('cardNumber exact'));
+  if (exact.length) {
+    const names = [...new Set(exact.map((c) => c.name ?? '（名稱未記錄）'))].join('、');
+    lines.push(`  這個卡號在資料庫是：${names}（${exact.map((c) => printingLabel(c.id).split(' ')[1] ?? '').filter(Boolean).join('、')}）`);
+  }
+  if (top.length) {
+    lines.push(`  候選前 ${Math.min(3, top.length)} 名：${top.slice(0, 3).map((c) => `${printingLabel(c.id)}${c.name ? ` ${c.name}` : ''}（${c.evidence.map((x) => EVIDENCE_TEXT[x] ?? x).join('・') || '無證據'}）`).join('；')}`);
+  }
+  const verdict = e.trace?.serverVerdict ?? (e.match ? { status: e.match.status, reason: e.match.reason } : null);
+  if (verdict && verdict.status !== UNKNOWN) {
+    const why = verdict.reason && verdict.reason !== 'none' ? `，原因：${REASON_TEXT[verdict.reason] ?? verdict.reason}` : '';
+    lines.push(`  伺服器判定：${VERDICT_TEXT[verdict.status] ?? verdict.status}${why}`);
+  }
+  if (e.presentation) {
+    const why = e.presentation.reason !== 'none' ? `（${REASON_TEXT[e.presentation.reason] ?? e.presentation.reason}）` : '';
+    lines.push(`  App 顯示：${PRESENT_TEXT[e.presentation.kind]}${why}`);
+  }
+  const errs = e.errors.map((x) => (x.startsWith('HTTP_') ? `HTTP ${x.slice(5)}` : ERROR_TEXT[x] ?? x));
+  if (errs.length) lines.push(`  錯誤：${[...new Set(errs)].join('、')}`);
+  const serviceFailed = e.errors.some((x) => SERVICE_ERRORS.has(x));
+  lines.push(`  結果：${OUTCOME_TEXT[e.outcome ?? 'pending'] ?? e.outcome}｜${serviceFailed
+    ? '可重試：是（服務沒有回應，與照片無關）'
+    : e.match?.status === 'no_match' ? '建議：重拍（卡號清楚、避免反光）或手動搜尋' : '可重試：不需要'}`);
+  return lines;
 }
 
 /** Correlation id: random, per scan, not derived from any device or account id. */
@@ -267,6 +372,11 @@ export function diagnosticsFromResult(r: any): { extracted: Partial<DiagEntry['e
   if (r?.cancelled) errors.push('CANCELLED');
   if (r?.timedOut) errors.push('TIMEOUT');
   if (r?.serviceUnavailable) errors.push('RECOGNITION_UNAVAILABLE');
+  // What is provable about a service failure (recognitionOutcome); 'unavailable' = unknown.
+  if (r?.failure === 'network') errors.push('NETWORK_ERROR');
+  if (r?.failure === 'busy') errors.push('SERVICE_BUSY');
+  if (r?.failure === 'timeout' && !r?.timedOut) errors.push('TIMEOUT');
+  if (Number.isInteger(r?.httpStatus) && r.httpStatus >= 400 && r.httpStatus <= 599) errors.push(`HTTP_${r.httpStatus}`);
   if (typeof r?.imageRejected === 'string') errors.push(r.imageRejected);
   if (typeof r?.code === 'string') errors.push(r.code);
   if (r?.match?.status === 'no_match') errors.push('NO_MATCH');
@@ -294,7 +404,7 @@ export function diagnosticsFromResult(r: any): { extracted: Partial<DiagEntry['e
         set: val(x.setCode), language: val(x.language), rarity: val(x.rarity),
       },
       candidateCount: Array.isArray(r?.candidates) ? r.candidates.length : null,
-      top: (r?.candidates ?? []).slice(0, 5).map((c: any) => ({ id: c?.card?.id, score: null, evidence: c?.evidence ?? [] })),
+      top: (r?.candidates ?? []).slice(0, 5).map((c: any) => ({ id: c?.card?.id, score: null, evidence: c?.evidence ?? [], name: c?.card?.name })),
     });
   }
   return {

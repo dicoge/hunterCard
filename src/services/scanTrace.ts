@@ -120,7 +120,9 @@ export function traceReplyField(reply: string, field: TraceField): FieldTrace {
   return { state: 'redacted' };
 }
 
-export interface TraceCandidate { id: string; score: number | null; evidence: string[] }
+/** name: the catalog card name (public catalog text, safe-text checked) — so a log can say
+ *  which card a read number actually belongs to. */
+export interface TraceCandidate { id: string; score: number | null; evidence: string[]; name?: string }
 export interface RecognitionTrace {
   schema: typeof TRACE_SCHEMA;
   requestId: string | null;
@@ -144,6 +146,12 @@ const REASONS = new Set(['no_evidence', 'no_card_number', 'number_not_in_databas
 const REJECTIONS = new Set(['no_candidate', 'evidence_rejected', 'printing_unresolved']);
 const STATES = new Set<FieldState>(['parsed', 'missing', 'empty', 'provider_unknown', 'parse_error', 'redacted', 'not_provided']);
 
+/** Attaches a catalog name only when it passes the card-name safe-text rule. */
+export function withName(c: TraceCandidate, name: unknown): TraceCandidate {
+  const safe = typeof name === 'string' ? safeCardText('name', name) : null;
+  return safe ? { ...c, name: safe } : c;
+}
+
 export function evidenceTokens(raw: unknown): string[] {
   const list = Array.isArray(raw) ? raw : typeof raw === 'string' ? raw.split(',') : [];
   return [...new Set(list.map((t) => String(t).trim()).filter((t) => EVIDENCE.has(t)))].slice(0, 8);
@@ -152,7 +160,7 @@ export function evidenceTokens(raw: unknown): string[] {
 /** Server side: build the trace from the reply lines, the ranking and the verdict. */
 export function buildRecognitionTrace(input: {
   reply: string; requestId: string | null; backendSha: unknown; model: string;
-  candidates: Array<{ id?: unknown; score?: unknown; reason?: unknown }>; candidateCount: number;
+  candidates: Array<{ id?: unknown; score?: unknown; reason?: unknown; name?: unknown }>; candidateCount: number;
   verdict: { status: string; reason?: string | null };
 }): RecognitionTrace {
   const fields = {} as Record<TraceField, FieldTrace>;
@@ -167,11 +175,11 @@ export function buildRecognitionTrace(input: {
     replySchema: anyLine ? 'ok' : 'schema_mismatch',
     fields,
     candidateCount: Math.max(0, Math.min(9999, Math.floor(input.candidateCount))),
-    top: input.candidates.slice(0, MAX_TOP).map((c) => ({
+    top: input.candidates.slice(0, MAX_TOP).map((c) => withName({
       id: typeof c.id === 'string' && CATALOG_ID.test(c.id) ? c.id : '[redacted]',
       score: typeof c.score === 'number' && Number.isFinite(c.score) ? Math.round(c.score * 10) / 10 : null,
       evidence: evidenceTokens(c.reason),
-    })),
+    }, c.name)),
     verdict: { status, reason: input.verdict.reason ?? null },
     rejection: status === 'matched' ? null
       : status === 'identity_only' ? 'printing_unresolved'
@@ -212,11 +220,11 @@ export function projectTrace(raw: any): RecognitionTrace | undefined {
     replySchema: raw.replySchema === 'schema_mismatch' ? 'schema_mismatch' : 'ok',
     fields,
     candidateCount: typeof raw.candidateCount === 'number' && Number.isFinite(raw.candidateCount) ? Math.max(0, Math.min(9999, Math.floor(raw.candidateCount))) : 0,
-    top: (Array.isArray(raw.top) ? raw.top : []).slice(0, MAX_TOP).map((c: any) => ({
+    top: (Array.isArray(raw.top) ? raw.top : []).slice(0, MAX_TOP).map((c: any) => withName({
       id: typeof c?.id === 'string' && CATALOG_ID.test(c.id) ? c.id : '[redacted]',
       score: typeof c?.score === 'number' && Number.isFinite(c.score) ? Math.round(c.score * 10) / 10 : null,
       evidence: evidenceTokens(c?.evidence),
-    })),
+    }, c?.name)),
     verdict: { status: raw.verdict.status, reason: REASONS.has(raw.verdict.reason) ? raw.verdict.reason : null },
     rejection: REJECTIONS.has(raw.rejection) ? raw.rejection : null,
   };

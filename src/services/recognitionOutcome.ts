@@ -39,5 +39,36 @@ export function isRecognitionUnavailable(status: number, body?: any): boolean {
  * match THIS image, and asking for a better shot is the correct advice there.
  */
 export function isRecognitionInfrastructureFailure(status: number, body?: any): boolean {
-  return status >= 500 || isRecognitionUnavailable(status, body);
+  return status >= 500 || status === 429 || isRecognitionUnavailable(status, body);
 }
+
+/**
+ * Why the recognition service could not answer (v39 user report 2026-10-16: a 503
+ * ended as 「找不到匹配的卡牌」). Only what is provable is named:
+ *   network      the request never got an HTTP response (fetch rejected, not by us)
+ *   timeout      our RECOGNITION_REQUEST_TIMEOUT_MS deadline aborted it
+ *   timeout      …or the server's own provider deadline (code PROVIDER_TIMEOUT)
+ *   busy         HTTP 429, a 503 that is not our own RECOGNITION_UNAVAILABLE answer, or
+ *                the provider answered 429 / 503 (code PROVIDER_BUSY)
+ *   unavailable  anything else (our 503 code, 500, 502, …) — cause unknown, no guess
+ * None of these is a verdict about the photo: never shown as "no match".
+ */
+export type RecognitionFailureKind = 'network' | 'timeout' | 'busy' | 'unavailable';
+
+export function classifyHttpFailure(status: number, body?: any): RecognitionFailureKind {
+  // The handler's bounded provider category (api/recognize-card ProviderFailureError).
+  // A generic 502 from an older server has none and stays 'unavailable'.
+  if (body?.code === 'PROVIDER_TIMEOUT') return 'timeout';
+  if (body?.code === 'PROVIDER_BUSY') return 'busy';
+  if (status === 429) return 'busy';
+  if (status === 503 && body?.code !== RECOGNITION_UNAVAILABLE_CODE) return 'busy';
+  return 'unavailable';
+}
+
+/** Diagnostic error code per kind (scanDiagnostics ERROR_CODE pattern). */
+export const RECOGNITION_FAILURE_CODES: Record<RecognitionFailureKind, string> = {
+  network: 'NETWORK_ERROR',
+  timeout: 'TIMEOUT',
+  busy: 'SERVICE_BUSY',
+  unavailable: 'RECOGNITION_UNAVAILABLE',
+};
