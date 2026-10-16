@@ -297,21 +297,24 @@ geminiReply = 'CARD_NUMBER: hZZ99-999\nCHARACTER: 不存在\nRARITY: C';
       return { status: res.status, body: await res.json() };
     },
   });
-  // The ranker always emits a top-5, so a card it cannot place surfaces as
-  // 200 + lowConfidence rather than the handler's 404 arm.
+  // Scan best-match fix (2026-10-15): a number that is not in the catalog is an
+  // explicit no-match — 404 with no filler candidates — never a top-5 of guesses.
   const unmatched = await post({ image: PIXEL });
   const unmatchedBody = await unmatched.json();
-  check('the real handler hands back a candidate list for a card it cannot place', () => {
-    assert.equal(unmatched.status, 200);
+  check('the real handler answers an unplaceable card with an explicit no-match, not filler', () => {
+    assert.equal(unmatched.status, 404);
     assert.equal(unmatchedBody.success, false);
-    assert.ok(unmatchedBody.candidates.length > 0);
+    assert.deepEqual(unmatchedBody.candidates, []);
+    assert.equal(unmatchedBody.match.status, 'no_match');
+    assert.equal(unmatchedBody.match.reason, 'number_not_in_database');
     assert.equal(isRecognitionInfrastructureFailure(unmatched.status, unmatchedBody), false);
   });
 
   await runWebCameraScan(PHOTO, deps, ui);
-  check('web camera: an unplaced card opens the candidate picker, not an outage notice', () => {
-    assert.equal(calls.candidates.length, 1);
-    assert.deepEqual(calls.scanError, []);
+  check('web camera: an unplaced card gets photo guidance, not an outage notice or a picker', () => {
+    assert.equal(calls.candidates.length, 0);
+    assert.equal(calls.scanError.length, 1);
+    assert.ok(!calls.scanError[0].includes('暫時無法使用'), calls.scanError[0]);
     assert.equal(spy.ocrCalls, 0, 'the backend answered about this photo; OCR must not re-run');
   });
 }

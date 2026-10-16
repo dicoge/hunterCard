@@ -9,6 +9,7 @@
 
 import type { CardInfo, RecognitionResult, RecognizedCandidate } from './cardRecognition';
 import { isRecognitionInfrastructureFailure, RECOGNITION_UNAVAILABLE_MESSAGE } from './recognitionOutcome';
+import { matchFromWire, presentCandidates, presentMatch, type ScanPresentation } from './scanPresentation';
 
 /** 本地 OCR 也讀不到字時的一般引導；服務本身掛掉時不得使用。 */
 export const NO_TEXT_GUIDANCE = '無法自動辨識卡牌文字。請使用手動搜尋或從下方搜尋結果中選擇。';
@@ -44,6 +45,12 @@ export interface ScanFlowUi {
   showLowConfidenceCandidates(candidates: RecognizedCandidate[]): void;
   onRecognized(card: CardInfo, confidence: number, candidates?: RecognizedCandidate[]): void;
   onVisionRecognized(card: CardInfo, confidence: number): void;
+  /**
+   * Show a recognition outcome (best preview / identity / explicit no-match). When
+   * present, the flow uses it for every backend verdict instead of the legacy
+   * commit / picker callbacks, so nothing is committed without a user action.
+   */
+  showPresentation?(presentation: ScanPresentation): void;
 }
 
 /**
@@ -150,6 +157,21 @@ export async function runWebCameraScan(imageUri: string, io: ScanFlowIo, ui: Sca
     console.warn('[scanFlow] recognition API unreachable:', e?.message);
   }
 
+  if (apiBody?.match && !backendFailed && ui.showPresentation) {
+    const presentation = presentMatch({
+      match: matchFromWire(apiBody.match, io.mapApiCandidates),
+      card: apiBody.card ? io.mapApiCard(apiBody.card) : undefined,
+      candidates: io.mapApiCandidates(apiBody.candidates),
+    });
+    if (presentation) {
+      ui.setBusy(false);
+      ui.setStatus(presentation.kind === 'none' ? '' : '✅ 辨識完成', presentation.kind === 'none' ? 0 : 4);
+      if (apiBody.raw) ui.setRecognizedText(apiBody.raw);
+      ui.showPresentation(presentation);
+      return;
+    }
+  }
+
   if (apiBody?.success && apiBody?.card) {
     ui.setStatus('✅ 辨識完成', 4);
     const confidence = typeof apiBody.confidence === 'number' ? apiBody.confidence : 0.9;
@@ -228,6 +250,15 @@ export async function runNativeCameraScan(imageUri: string, io: ScanFlowIo, ui: 
     ui.setStatus('', 0);
     return;
   }
+  const presentation = ui.showPresentation ? presentMatch(vision) : null;
+  if (presentation) {
+    ui.setBusy(false);
+    ui.setStatus(presentation.kind === 'none' ? '' : '✅ 辨識完成', presentation.kind === 'none' ? 0 : 4);
+    if (vision.raw) ui.setRecognizedText(vision.raw);
+    ui.showPresentation!(presentation);
+    return;
+  }
+
   if (routeAmbiguousPrinting(vision, ui)) return;
 
   if (vision.success && vision.card) {
@@ -239,12 +270,17 @@ export async function runNativeCameraScan(imageUri: string, io: ScanFlowIo, ui: 
 
   if (vision.lowConfidence || vision.suggestions?.length) {
     ui.setBusy(false);
+    if (vision.raw) ui.setRecognizedText(vision.raw);
+    if (ui.showPresentation && vision.candidates?.length) {
+      ui.showPresentation(presentCandidates(vision.candidates));
+      return;
+    }
     const candidateCards = vision.suggestions || [];
     ui.setSearchResults(candidateCards);
     ui.setSuggestions(candidateCards);
-    ui.setSearchError(vision.error || '辨識信心不足，請從候選卡中選擇');
-    ui.setCandidateReason(`信心 ${Math.round((vision.confidence || 0) * 100)}%：${vision.reason || '需要人工確認'}`);
-    if (vision.raw) ui.setRecognizedText(vision.raw);
+    ui.setSearchError(vision.error || '無法確定是哪一張卡，請從下方選擇或手動搜尋');
+    // The ranker's score is not a calibrated probability: no percentage is shown.
+    ui.setCandidateReason(vision.reason ? `依據：${vision.reason}` : '需要人工確認');
     return;
   }
 

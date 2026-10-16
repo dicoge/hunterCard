@@ -7,6 +7,9 @@ import { useAuthStore } from '../store/authStore';
 import { APPLE_LOGIN_ENABLED } from '../services/authService';
 import { friendlyAuthErrorMessage, isCancelAuthError } from '../services/authErrorMessages';
 import { showAlert } from '../utils/platformAlert';
+import { useScanDiagnosticsStore } from '../store/scanDiagnosticsStore';
+import { exportDiagnosticsText } from '../services/diagnosticsExport';
+import { MAX_ENTRIES } from '../services/scanDiagnostics';
 import { useTranslation } from '../i18n';
 import type { AuthProvider } from '../types/auth';
 import { AppShell, buildShellTabs, SHELL_TAB_LABELS } from '../components/shell';
@@ -17,6 +20,20 @@ const ALL_PROVIDERS: AuthProvider[] = ['google', 'apple'];
 
 export default function SettingsScreen({ navigation }: any) {
   const { t } = useTranslation();
+  const diagnosticsCount = useScanDiagnosticsStore((st) => st.entries.length);
+  const handleExportDiagnostics = async () => {
+    try {
+      await exportDiagnosticsText(useScanDiagnosticsStore.getState().exportText());
+    } catch {
+      showAlert(t('settings_diagnostics_title'), t('settings_diagnostics_export_failed'));
+    }
+  };
+  const handleClearDiagnostics = () => {
+    showAlert(t('settings_diagnostics_clear'), t('settings_diagnostics_clear_confirm'), [
+      { text: t('common_cancel'), style: 'cancel' },
+      { text: t('settings_diagnostics_clear'), style: 'destructive', onPress: () => useScanDiagnosticsStore.getState().clear() },
+    ]);
+  };
   const { preferredCurrency, preferredLanguage, setCurrency, setLanguage } = useSettingsStore();
   const user = useAuthStore((s) => s.user);
   const signOut = useAuthStore((s) => s.logout);
@@ -348,6 +365,35 @@ export default function SettingsScreen({ navigation }: any) {
               <View style={styles.rowDivider} />
             </>
           )}
+          {/* Local scan / sign-in diagnostics (2026-10-15): device-only, user exports. */}
+          <View testID="settings-row-diagnostics">
+            <View style={styles.rowItem}>
+              <Text style={styles.rowLabel}>{t('settings_diagnostics_title')}</Text>
+              <Text style={styles.rowValue} testID="settings-diagnostics-count">
+                {t('settings_diagnostics_count', { count: diagnosticsCount })}
+              </Text>
+            </View>
+            <Text style={styles.diagnosticsNote}>{t('settings_diagnostics_note', { max: MAX_ENTRIES })}</Text>
+            <View style={styles.diagnosticsActions}>
+              <TouchableOpacity
+                style={styles.diagnosticsBtn}
+                onPress={handleExportDiagnostics}
+                disabled={diagnosticsCount === 0}
+                testID="settings-diagnostics-export"
+              >
+                <Text style={styles.diagnosticsBtnText}>{t('settings_diagnostics_export')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.diagnosticsBtn}
+                onPress={handleClearDiagnostics}
+                disabled={diagnosticsCount === 0}
+                testID="settings-diagnostics-clear"
+              >
+                <Text style={styles.diagnosticsBtnText}>{t('settings_diagnostics_clear')}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          <View style={styles.rowDivider} />
           <View style={styles.rowItem} testID="settings-row-about">
             <Text style={styles.rowLabel}>{t('settings_row_about')}</Text>
             <Text style={styles.rowValue}>{t('settings_app_version', { version: APP_VERSION })}</Text>
@@ -443,6 +489,20 @@ const styles = StyleSheet.create({
   rowExpand: {
     paddingBottom: 10,
   },
+  diagnosticsNote: {
+    color: SEMANTIC.onBgDim,
+    fontSize: 11,
+    lineHeight: 16,
+    marginBottom: 8,
+  },
+  diagnosticsActions: { flexDirection: 'row', gap: 10, marginBottom: 6 },
+  diagnosticsBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  diagnosticsBtnText: { color: SEMANTIC.onBg, fontSize: 13, fontWeight: '600' },
   rowDivider: {
     height: 1,
     backgroundColor: 'rgba(255,255,255,0.06)',

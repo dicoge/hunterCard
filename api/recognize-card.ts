@@ -1,4 +1,5 @@
 import { normalizeCardIdentity } from '../src/utils/cardNormalization';
+import { parseCardNumberToken } from '../src/utils/cardNumberToken';
 import {
   validateRecognitionImages,
   type RecognitionImageErrorCode,
@@ -26,8 +27,26 @@ import {
 
 export const config = { runtime: 'edge' };
 
-const GEMINI_MODEL = 'gemini-2.5-flash';
-const VISION_MAX_TOKENS = 180;
+/**
+ * Owner choice 2026-10-15: speed first. Official model card (read 2026-10-15,
+ * ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite): model code
+ * `gemini-3.5-flash-lite`, Stable, inputs text + image. No fallback to another model —
+ * a failure is a failure (503/502 → the app's local OCR), never a silent switch.
+ */
+export const GEMINI_MODEL = 'gemini-3.5-flash-lite';
+/**
+ * Gemini 3 models think by default; 3.5 Flash-Lite defaults to MINIMAL (thinking guide,
+ * 2026-10-15). The REST GenerationConfig documents thinkingConfig.thinkingLevel
+ * (ai.google.dev/api/generate-content), so MINIMAL is pinned explicitly — the documented
+ * default, now immune to a server-side default change. The answer is ~6 short lines;
+ * the cap leaves room for minimal thinking so the answer is not cut off (180 was sized
+ * for a non-thinking 2.5 call). Temperature is left at the Gemini 3 default (1.0): the
+ * Gemini 3 guide strongly recommends against lowering it (looping / degraded output).
+ */
+export const VISION_GENERATION_CONFIG = Object.freeze({
+  maxOutputTokens: 1024,
+  thinkingConfig: Object.freeze({ thinkingLevel: 'MINIMAL' }),
+});
 
 // The scanner abandons the request after RECOGNITION_REQUEST_TIMEOUT_MS (15s, see
 // src/services/recognitionOutcome). The vision call shares ONE budget sized below
@@ -40,7 +59,6 @@ const VISION_MIN_LEG_MS = 1500;
 // host allowlist; the value must stay in lock-step with PRODUCTION_ORIGIN in
 // src/config/apiOrigin.ts and is enforced by scripts/test-native-bundle-origin.
 const DATABASE_URL = 'https://holohunter.dicoge.com/data/database.json';
-const AUTO_ACCEPT_CONFIDENCE = 0.82;
 
 // A card number occupies roughly 3% of a card's height, so a frame shorter than this
 // cannot physically carry a legible one. Asked anyway, the model does not answer NONE —
@@ -75,30 +93,14 @@ async function getDatabase(): Promise<Record<string, any> | null> {
   return dbFetchPromise;
 }
 
-const prefixMap: Record<string, string> = {
-  np: 'hbp', bp: 'hbp', sd: 'hsd', pr: 'hpr',
-  sp: 'hsp', ocg: 'hocg', pc: 'hpc', cs: 'hcs',
-  co: 'hco', wf: 'hwf', ys: 'hys', ent: 'hent', bd: 'hbd',
-};
 
+/**
+ * The model's CARD_NUMBER answer as a canonical catalog number, or null. The whole
+ * answer must be one card number (src/utils/cardNumberToken): `hBP01-0100` is not
+ * hBP01-010, and a reply with extra text is not a number (CR 2026-10-15 P2_2).
+ */
 export function normalizeCardNumber(raw: string | null | undefined): string | null {
-  if (!raw) return null;
-  let cleaned = raw.trim().replace(/^['"`\s]+|['"`\s]+$/g, '').replace(/\.$/, '').toLowerCase();
-  if (!cleaned || cleaned === 'none' || cleaned === 'unknown') return null;
-  cleaned = cleaned
-    .normalize('NFKC')
-    .replace(/[oO〇]/g, '0')
-    .replace(/[lI｜]/g, '1')
-    .replace(/[－‐‑‒–—―−_\s]+/g, '-');
-  const m = cleaned.match(/(h?[a-z]{2,3}\d{0,2}-?\d{1,3})/i);
-  if (!m) return null;
-  let r = m[1].replace(/-+/g, '-');
-  if (!r.includes('-')) r = r.replace(/(\d)(\d{2,3})$/, '$1-$2');
-  if (!r.startsWith('h')) {
-    const p = r.slice(0, 2), rest = r.slice(2);
-    r = (prefixMap[p] || 'h' + p) + rest;
-  }
-  return r;
+  return parseCardNumberToken(raw);
 }
 
 function normalizeText(v: any): string {
@@ -332,7 +334,7 @@ You may receive two images: (1) full card/context and (2) a cropped scan area. U
 
 Critical reading order:
 1. CARD_NUMBER: tiny text near the bottom edge/bottom-right. Examples: hBP01-001, hBP08-024, hSD13-014, hBD24-007. Preserve prefix and digits exactly.
-2. CHARACTER: main character/holomem name, usually top area.
+2. CHARACTER: main character/holomem name, usually top area. Transcribe it exactly as printed on the card (normally Japanese); never translate or romanize it.
 3. HP: number in top-right if present.
 4. RARITY: C, U, R, RR, S, SR, SEC, OUR, P, etc. near card number.
 5. BLOOM_LEVEL / card type: Spot, Debut, 1st, 2nd, Buzz, Oshi, Support, Event, etc.
@@ -346,7 +348,9 @@ HP: [number only or NONE]
 RARITY: [rarity or NONE]
 BLOOM_LEVEL: [level/type or NONE]
 CARD_NUMBER: [exact card number or NONE]
-TITLE: [title or NONE]`;
+TITLE: [title or NONE]
+SET: [set / product code printed next to the card number, e.g. hBP01, or NONE]
+LANGUAGE: [JA, EN, ZH or another printed card language code, or NONE]`;
 
 type VisionAdapter = {
   provider: string;
@@ -369,12 +373,18 @@ const googleAdapter = (apiKey: string): VisionAdapter => ({
         role: 'user',
         parts: [{ text: visionPrompt }, ...images.map(dataUriToGeminiPart)],
       }],
-      generationConfig: { temperature: 0, maxOutputTokens: VISION_MAX_TOKENS },
+      generationConfig: VISION_GENERATION_CONFIG,
     }),
     signal: withClientAbort(AbortSignal.timeout(timeoutMs), clientSignal),
   }),
-  extract: (data) => (data?.candidates?.[0]?.content?.parts || [])
-    .map((part: any) => part.text || '').join('\n').trim(),
+  extract: (data) => {
+    // A reply cut off at the token cap is not an answer: its CARD_NUMBER line may be
+    // missing or partial. Fail like an upstream error instead of ranking half a reply.
+    if (data?.candidates?.[0]?.finishReason === 'MAX_TOKENS') throw new Error('gemini API error (413)');
+    return (data?.candidates?.[0]?.content?.parts || [])
+      .filter((part: any) => part?.thought !== true)
+      .map((part: any) => part.text || '').join('\n').trim();
+  },
 });
 
 /**
@@ -488,11 +498,20 @@ export function rankCandidates(cards: Record<string, any>, extracted: any, store
     if (hp && entryHp && entryHp === hp) { score += 8; reasons.push('hp'); }
     if (bloom && entryBloom && (entryBloom.includes(bloom) || bloom.includes(entryBloom))) { score += 5; reasons.push('bloom/type'); }
 
+    // Only photo evidence makes a candidate: a card number, or a character / title
+    // reading. Rarity / HP / type alone match hundreds of cards and are tie-breakers,
+    // never grounds for a candidate (scan best-match fix 2026-10-15).
+    const photoEvidence = reasons.some(r => r.startsWith('cardNumber') || r.startsWith('character') || r.startsWith('title'));
+    if (!photoEvidence) return { entry, score: 0, reasons, charScore, titleScore };
+
+    // Series self-consistency is a tie-break between equally evidenced printings
+    // only. It used to be added unconditionally, which let a scan that extracted
+    // nothing still rank every original-print card as a "candidate".
     const prefix = entryNumber.split('-')[0];
     if (String(entry.series || '').toLowerCase() === prefix) score += 1.5;
     else if (String(entry.series || '').toLowerCase() === 'hpr') score -= 1;
 
-    return { entry, score, reasons };
+    return { entry, score, reasons, charScore, titleScore };
   }).filter(c => c.score > 0).sort((a, b) => b.score - a.score);
 
   const topScore = ranked[0]?.score || 0;
@@ -505,12 +524,103 @@ export function rankCandidates(cards: Record<string, any>, extracted: any, store
     score: Math.round(item.score * 10) / 10,
   }));
 
+  const toCandidate = (item: typeof ranked[number]) => ({
+    ...fmt(item.entry, storeMvp),
+    confidence: Math.round(Math.max(0.05, Math.min(0.99, item.score / 118)) * 100) / 100,
+    reason: item.reasons.join(', '),
+    score: Math.round(item.score * 10) / 10,
+  });
+
   return {
     normalizedCardNumber: normalizedNumber,
     confidence: Math.round(confidence * 100) / 100,
     reason: ranked[0]?.reasons.join(', ') || 'no candidate',
     candidates,
+    match: decideMatch(ranked, {
+      normalizedNumber, rarity, hasCharacter: !!character, hasTitle: !!title,
+      characterScript: character ? scriptOf(String(extracted.characterName || '')) : null,
+    }, toCandidate),
   };
+}
+
+type Script = 'japanese' | 'latin' | 'other';
+/** Kana/kanji anywhere → japanese; only ASCII letters/digits/punctuation → latin. */
+function scriptOf(text: string): Script {
+  if (/[\u3040-\u30ff\u3400-\u9fff\uff66-\uff9f]/.test(text)) return 'japanese';
+  if (/^[\x20-\x7e\u00c0-\u024f]+$/.test(text.trim())) return 'latin';
+  return 'other';
+}
+
+export type MatchStatus = 'matched' | 'identity_only' | 'no_match';
+export type NoMatchReason = 'no_evidence' | 'no_card_number' | 'number_not_in_database' | 'number_name_conflict';
+
+export interface MatchVerdict<C = any> {
+  status: MatchStatus;
+  /** matched: the one printing. identity_only: the card (no printing → no price). */
+  best: C | null;
+  /** Printing resolved, so the price on `best` belongs to the card in hand. */
+  printingResolved: boolean;
+  reason?: NoMatchReason;
+  /** Human-checkable evidence tokens, e.g. ['cardNumber exact', 'rarity']. */
+  evidence: string[];
+  /** Secondary correction options; each carries its own printing id and price. */
+  alternatives: C[];
+}
+
+/**
+ * Highest score is not an answer. A best match needs the card number read off the
+ * photo and found in the catalog, not contradicted by the character reading, and —
+ * to carry a price — one printing singled out (unique, or by the rarity read).
+ * Everything else is an explicit outcome the client can explain.
+ */
+function decideMatch<C>(
+  ranked: { entry: any; score: number; reasons: string[]; charScore: number; titleScore: number }[],
+  read: { normalizedNumber: string | null; rarity: string; hasCharacter: boolean; hasTitle: boolean; characterScript: Script | null },
+  toCandidate: (item: any) => C,
+): MatchVerdict<C> {
+  const none = (reason: NoMatchReason, alternatives: C[] = []): MatchVerdict<C> =>
+    ({ status: 'no_match', best: null, printingResolved: false, reason, evidence: [], alternatives });
+  if (ranked.length === 0) return none(read.normalizedNumber ? 'number_not_in_database' : 'no_evidence');
+
+  // A character reading can only contradict (or corroborate) a catalog name written in
+  // the same script: Gemini may answer in romaji ("Amane Kanata") for a name the
+  // catalog stores in Japanese, and edit distance across scripts says nothing.
+  const comparable = (r: { entry: any }) => read.characterScript !== null
+    && read.characterScript === scriptOf(String(r.entry.name || ''));
+
+  const nameEvidenced = ranked.filter(r => r.charScore >= 0.55 || r.titleScore >= 0.55).slice(0, 5).map(toCandidate);
+  if (!read.normalizedNumber) return none('no_card_number', nameEvidenced);
+
+  const numbered = ranked.filter(r => r.reasons.includes('cardNumber exact'));
+  if (numbered.length === 0) {
+    // Fail closed on any number the catalog does not hold. A one-character-off number
+    // with the same character is NOT promoted to a match: one holomem has many cards per
+    // set, so a valid-but-uncovered card (or a new set) would be fabricated into a
+    // sibling. Known OCR confusions (O/0, l/I/1, dash variants) are already folded in
+    // normalizeCardNumber; near-number cards with name evidence stay correction options.
+    const near = ranked.filter(r => r.reasons.some(x => x.startsWith('cardNumber fuzzy')) && r.charScore >= 0.55);
+    const suggestions = [...near, ...ranked.filter(r => !near.includes(r) && (r.charScore >= 0.55 || r.titleScore >= 0.55))]
+      .slice(0, 5).map(toCandidate);
+    return none('number_not_in_database', suggestions);
+  }
+
+  // A number that names someone else than the character read is a misread, not a match.
+  if (read.hasCharacter && numbered.every(r => comparable(r) && r.charScore < 0.55)
+      && !(read.hasTitle && numbered.some(r => r.titleScore >= 0.55))) {
+    return none('number_name_conflict', numbered.slice(0, 5).map(toCandidate));
+  }
+
+  const evidence = (r: { reasons: string[] }) => r.reasons.filter(x => x !== 'bloom/type');
+  if (numbered.length === 1) {
+    return { status: 'matched', best: toCandidate(numbered[0]), printingResolved: true, evidence: evidence(numbered[0]), alternatives: [] };
+  }
+  const byRarity = read.rarity ? numbered.filter(r => normalizeText(r.entry.rarity).toUpperCase() === read.rarity) : [];
+  if (byRarity.length === 1) {
+    const others = numbered.filter(r => r !== byRarity[0]).slice(0, 4).map(toCandidate);
+    return { status: 'matched', best: toCandidate(byRarity[0]), printingResolved: true, evidence: evidence(byRarity[0]), alternatives: others };
+  }
+  const printings = numbered.slice(0, 8).map(toCandidate);
+  return { status: 'identity_only', best: printings[0], printingResolved: false, evidence: evidence(numbered[0]), alternatives: printings };
 }
 
 
@@ -594,46 +704,66 @@ export default async function handler(req: Request): Promise<Response> {
       bloom: parseField(reply, 'BLOOM_LEVEL'),
       cardNumberRaw: parseField(reply, 'CARD_NUMBER'),
       cardTitle: parseField(reply, 'TITLE'),
+      // Diagnostics only (local scan log); not used for ranking.
+      setCode: parseField(reply, 'SET'),
+      language: parseField(reply, 'LANGUAGE'),
     };
     const ranking = rankCandidates(cards, extracted, storeMvp);
+    const { match } = ranking;
+    // Sanitised diagnostics only: what was read and why, never the image.
     const debug = {
       provider,
       model,
-      rawModelOutput: reply,
       extracted,
       normalizedCardNumber: ranking.normalizedCardNumber,
-      candidates: ranking.candidates,
-      confidence: ranking.confidence,
       reason: ranking.reason,
+      matchStatus: match.status,
+      matchReason: match.reason ?? null,
+    };
+    const matchWire = {
+      status: match.status,
+      printingResolved: match.printingResolved,
+      reason: match.reason ?? null,
+      evidence: match.evidence,
+      alternatives: match.alternatives,
+      // Deterministic rule score of the best card (diagnostics only — not a probability).
+      ruleScore: typeof (match.best as any)?.score === 'number' ? (match.best as any).score : null,
     };
 
-    if (ranking.candidates.length === 0) {
-      return json({ success: false, error: '無法辨識此卡牌', raw: reply, debug, candidates: [] }, 404);
+    // No valid match is an explicit failure — never a list of filler candidates.
+    // `candidates: []` keeps released clients (which open a picker on any list) honest;
+    // evidence-backed suggestions travel in match.alternatives for the new UI.
+    if (match.status === 'no_match') {
+      return json({ success: false, error: '無法辨識此卡牌', raw: reply, debug, candidates: [], match: matchWire }, 404);
     }
 
-    const best = ranking.candidates[0];
-    if (ranking.confidence < AUTO_ACCEPT_CONFIDENCE) {
+    // Card known, printing not: no price may be shown for it. Released clients see
+    // the legacy low-confidence picker shape; new clients show the identity first.
+    if (match.status === 'identity_only') {
       return json({
         success: false,
         lowConfidence: true,
-        error: '辨識信心不足，請從候選卡中選擇',
+        error: '已辨識卡牌，但無法確認版本，請選擇手上的版本',
         raw: reply,
-        candidates: ranking.candidates,
+        card: match.best,
+        candidates: match.alternatives,
         confidence: ranking.confidence,
         reason: ranking.reason,
         debug,
+        match: matchWire,
       }, 200);
     }
 
     return json({
       success: true,
-      card: best,
-      matchMethod: ranking.reason,
+      card: match.best,
+      matchMethod: match.evidence.join(', '),
       confidence: ranking.confidence,
-      candidates: ranking.candidates,
+      candidates: [match.best, ...match.alternatives],
       reason: ranking.reason,
       raw: reply,
       debug,
+      match: matchWire,
     });
   } catch (e: any) {
     if (e instanceof ClientAbortedError) {
@@ -650,6 +780,8 @@ export default async function handler(req: Request): Promise<Response> {
         error: '辨識服務暫時無法使用，請稍後再試或改用手動搜尋',
       }, 503);
     }
-    return json({ success: false, error: `Error: ${e.message}` }, 502);
+    // Internal error text can quote request or upstream detail; log the type only.
+    console.error(`[recognize-card] handler failed: ${e?.name || 'Error'}`);
+    return json({ success: false, error: '辨識服務發生錯誤，請稍後再試' }, 502);
   }
 }

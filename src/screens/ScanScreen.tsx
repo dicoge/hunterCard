@@ -49,6 +49,17 @@ import ScanTopBar from '../components/ScanTopBar';
 import { PALETTE, SEMANTIC, LAYOUT } from '../theme/tokensV2';
 import ScanResultCard from '../components/ScanResultCard';
 import ScanCandidateSelector from '../components/ScanCandidateSelector';
+import ScanMatchSheet from '../components/ScanMatchSheet';
+import {
+  presentCandidates,
+  presentLegacyDecision,
+  presentMatch,
+  type ScanPresentation,
+} from '../services/scanPresentation';
+import { CROP_PAD, defaultScanFrameRect, planNativeCrop } from '../utils/scanFrame';
+import { prepareNativeScanImages } from '../services/nativeScanCapture';
+import { useScanDiagnosticsStore } from '../store/scanDiagnosticsStore';
+import { diagnosticsFromResult, type ScanOutcome } from '../services/scanDiagnostics';
 import { analyzeFrameWithStability, resetAutoScan } from '../services/autoScanService';
 import { useSettingsStore } from '../store/settingsStore';
 import { mapViewportRectToSource, Rect } from '../utils/scanGeometry';
@@ -73,7 +84,6 @@ const CONFIDENCE_AUTO_ADD = 0.85;
 const CONFIDENCE_MIN_CANDIDATE = 0.55;
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const SCAN_AREA_SIZE = SCREEN_WIDTH * 0.75;
 
 /**
  * DIC-1409 CR fix — the EXACT native pre-camera surface ScanScreen ships
@@ -123,6 +133,21 @@ export function ScanNativePermissionGate({
   );
 }
 
+/** Window-space rect of a mounted native view (null when it cannot be measured). */
+function measureInWindow(ref: React.RefObject<View | null>): Promise<Rect | null> {
+  return new Promise((resolve) => {
+    const node: any = ref.current;
+    if (!node || typeof node.measureInWindow !== 'function') { resolve(null); return; }
+    try {
+      node.measureInWindow((x: number, y: number, width: number, height: number) => {
+        resolve(width > 0 && height > 0 ? { x, y, width, height } : null);
+      });
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
 export default function ScanScreen({ navigation }: any) {
   const { t } = useTranslation();
   // iOS web 不用 expo-camera 權限系統（避免 getUserMedia 手勢鏈中斷）
@@ -143,6 +168,40 @@ export default function ScanScreen({ navigation }: any) {
   const cameraRef = useRef<CameraView>(null);
   const webCameraRef = useRef<WebCameraHandle>(null);
   const scanAreaViewportRef = useRef<Rect | null>(null);
+  // Native crop: the camera preview box and the scan frame, both measured in window
+  // coordinates at capture time (planNativeCrop maps the frame through cover-fit).
+  const cameraBoxRef = useRef<View>(null);
+  const scanFrameRef = useRef<View>(null);
+  // The recognition outcome on screen (best preview / identity / no match). Nothing is
+  // added or charged until the user acts on it.
+  const [matchSheet, setMatchSheet] = useState<ScanPresentation | null>(null);
+  // Local diagnostic log (src/services/scanDiagnostics): one entry per scan, keyed by a
+  // random correlation id; the preview / correction / add of that scan update the SAME
+  // entry. Every call is best-effort and can never affect the scan or the quota.
+  const diagIdRef = useRef<string | null>(null);
+  const diagStartRef = useRef(0);
+  const diagStart = (source: 'camera' | 'gallery') => {
+    diagStartRef.current = Date.now();
+    try {
+      diagIdRef.current = useScanDiagnosticsStore.getState().start('scan', { source });
+    } catch {
+      diagIdRef.current = null;
+    }
+    return diagIdRef.current;
+  };
+  const diagUpdate = (id: string | null, patch: Record<string, any>) => {
+    try { useScanDiagnosticsStore.getState().update(id, patch); } catch { /* best-effort */ }
+  };
+  const diagResult = (id: string | null, r: any) => {
+    const d = diagnosticsFromResult(r);
+    diagUpdate(id, { model: d.model, extracted: d.extracted as any, match: d.match as any, errors: d.errors });
+  };
+  const diagOutcome = (outcome: ScanOutcome, extra: Record<string, any> = {}) => {
+    const id = diagIdRef.current;
+    if (!id) return;
+    diagUpdate(id, { outcome, ...extra });
+    if (outcome !== 'no_match') diagIdRef.current = null;
+  };
   // 在手勢鏈中取得的 stream，避免 iOS Safari 阻擋 getUserMedia
   const webStreamRef = useRef<MediaStream | null>(null);
   // Scan jobs (src/services/scanLifecycle): leaving the screen — blur, close, unmount —
@@ -282,18 +341,41 @@ export default function ScanScreen({ navigation }: any) {
       minCandidate: CONFIDENCE_MIN_CANDIDATE,
     });
 
-    if (decision.action === 'commit') {
-      if (commitCard(decision.card)) {
-        setResultCard({ visible: true, card: decision.card, confidence: decision.confidence });
-      }
-      return;
-    }
+    // Scan best-match fix (2026-10-15): a decision is SHOWN, never committed or forced
+    // into a picker. Commit (and the quota charge) only happens from the sheet's 加入
+    // or from picking a correction — one explicit action, one charge.
+    setMatchSheet(presentLegacyDecision(decision));
+  };
 
-    setCandidateSelector({
-      visible: true,
-      tier: decision.action === 'ambiguous-picker' ? 'mid' : decision.tier,
-      candidates: decision.candidates,
-    });
+  // Shows the result sheet for any recognition outcome.
+  const showPresentation = (presentation: ScanPresentation) => {
+    setSearchResults([]);
+    setSearchError(null);
+    setSuggestions([]);
+    setScanError(null);
+    resetAutoScan();
+    setMatchSheet(presentation);
+    diagUpdate(diagIdRef.current, { stagesMs: { total: Date.now() - diagStartRef.current } });
+    if (presentation.kind === 'none') diagOutcome('no_match');
+  };
+
+  const openCorrection = (candidates: RecognizedCandidate[]) => {
+    setMatchSheet(null);
+    if (candidates.length === 0) { setShowSearch(true); return; }
+    setCandidateSelector({ visible: true, tier: 'mid', candidates: candidates.slice(0, 8) });
+  };
+
+  const handleSheetAdd = (card: CardInfo) => {
+    setMatchSheet(null);
+    if (commitCard(card)) {
+      diagOutcome('added', { correctedTo: card.id });
+      setResultCard({ visible: true, card, confidence: 1 });
+    }
+  };
+  const handleSheetCorrect = () => {
+    if (!matchSheet) return;
+    openCorrection(matchSheet.kind === 'best' ? matchSheet.alternatives
+      : matchSheet.kind === 'identity' ? matchSheet.printings : matchSheet.suggestions);
   };
 
   // Map a raw API card payload to CardInfo via the single shared mapper so the
@@ -316,6 +398,7 @@ export default function ScanScreen({ navigation }: any) {
   const handleConfirmCandidate = (card: CardInfo) => {
     closeCandidateSelector();
     if (commitCard(card)) {
+      diagOutcome('corrected', { correctedTo: card.id });
       setResultCard({ visible: true, card, confidence: 1 });
     }
   };
@@ -323,6 +406,8 @@ export default function ScanScreen({ navigation }: any) {
   // Clears the busy / progress UI of a scan that was cancelled by leaving the screen,
   // so coming back never shows a stuck spinner.
   const resetScanUi = () => {
+    diagOutcome('cancelled');
+    setMatchSheet(null);
     setIsProcessingOCR(false);
     setIsScanning(false);
     setScanningStatus('');
@@ -335,7 +420,18 @@ export default function ScanScreen({ navigation }: any) {
     const unbind = bindScanLifecycleToNavigation(navigation, lifecycle, () => {
       if (mountedRef.current) resetScanUi();
     });
+    // A result preview / correction list belongs to the visit that produced it: leaving
+    // the screen discards it, so nothing can be added later from a stale preview.
+    const offBlur = typeof navigation?.addListener === 'function'
+      ? navigation.addListener('blur', () => {
+        if (!mountedRef.current) return;
+        diagOutcome('cancelled');
+        setMatchSheet(null);
+        setCandidateSelector({ visible: false, tier: 'mid', candidates: [] });
+      })
+      : undefined;
     return () => {
+      if (typeof offBlur === 'function') offBlur();
       unbind();
       mountedRef.current = false;
       lifecycle.setFocused(false);
@@ -424,15 +520,11 @@ export default function ScanScreen({ navigation }: any) {
     if (!autoScanActive) return;
     if (!isCameraReady) return;
     if (isScanning || isProcessingOCR) return;
-    if (candidateSelector.visible || resultCard.visible) return;
+    if (candidateSelector.visible || resultCard.visible || matchSheet) return;
 
     let mounted = true;
-    const scanArea = {
-      x: Math.round((SCREEN_WIDTH - SCAN_AREA_SIZE) / 2),
-      y: Math.round(SCREEN_HEIGHT * 0.15),
-      width: Math.round(SCAN_AREA_SIZE),
-      height: Math.round(SCAN_AREA_SIZE * 0.63),
-    };
+    const scanArea = scanAreaViewportRef.current
+      ?? defaultScanFrameRect({ width: SCREEN_WIDTH, height: SCREEN_HEIGHT });
 
     const loop = () => {
       if (!mounted) return;
@@ -461,7 +553,7 @@ export default function ScanScreen({ navigation }: any) {
         cancelAnimationFrame(autoScanRef.current);
       }
     };
-  }, [isCameraReady, autoScanActive, isScanning, isProcessingOCR, candidateSelector.visible, resultCard.visible]);
+  }, [isCameraReady, autoScanActive, isScanning, isProcessingOCR, candidateSelector.visible, resultCard.visible, matchSheet]);
 
   const toggleFlash = () => {
     setFlash(current => !current);
@@ -532,17 +624,21 @@ export default function ScanScreen({ navigation }: any) {
 
     const fullImage = makeDataUrl(0, 0, video.videoWidth, video.videoHeight, 2048);
     const videoRect = video.getBoundingClientRect();
+    // Same frame geometry as the overlay; the measured rect wins once onLayout ran.
+    const fallbackFrame = defaultScanFrameRect({
+      width: videoRect.width || SCREEN_WIDTH,
+      height: videoRect.height || SCREEN_HEIGHT,
+    });
     const overlayRect = scanAreaViewportRef.current || {
-      x: videoRect.left + (videoRect.width - SCAN_AREA_SIZE) / 2,
-      y: videoRect.top + SCREEN_HEIGHT * 0.15,
-      width: SCAN_AREA_SIZE,
-      height: SCAN_AREA_SIZE * 0.63,
+      ...fallbackFrame,
+      x: videoRect.left + fallbackFrame.x,
+      y: videoRect.top + fallbackFrame.y,
     };
     const crop = mapViewportRectToSource(
       { x: videoRect.left, y: videoRect.top, width: videoRect.width || SCREEN_WIDTH, height: videoRect.height || SCREEN_HEIGHT },
       { width: video.videoWidth, height: video.videoHeight },
       overlayRect,
-      { padXRatio: 0.14, padYRatio: 0.28 },
+      CROP_PAD,
     );
     const cropImage = makeDataUrl(crop.x, crop.y, crop.width, crop.height, 1536);
     return [fullImage, cropImage];
@@ -592,7 +688,37 @@ export default function ScanScreen({ navigation }: any) {
   // 所以 Node 回歸能執行到與相機完全相同的分支。
   const buildScanFlowIo = (
     recognitionImages?: string[],
-    scanInput?: { base64?: string | null; signal?: AbortSignal },
+    scanInput?: { base64?: string | null; cropBase64?: string | null; signal?: AbortSignal; diagId?: string | null },
+  ): ScanFlowIo => {
+    const diagId = scanInput?.diagId ?? null;
+    const timed = async <T,>(stage: 'request' | 'fallback', run: () => Promise<T>, record?: (v: T) => void): Promise<T> => {
+      const t0 = Date.now();
+      try {
+        const v = await run();
+        record?.(v);
+        return v;
+      } catch (e: any) {
+        diagUpdate(diagId, { errors: [e?.name === 'AbortError' ? 'CANCELLED' : stage === 'request' ? 'NETWORK_OR_TIMEOUT' : 'LOCAL_OCR_FAILED'] });
+        throw e;
+      } finally {
+        diagUpdate(diagId, { stagesMs: { [stage]: Date.now() - t0 } });
+      }
+    };
+    const io = buildScanFlowIoRaw(recognitionImages, scanInput);
+    return {
+      ...io,
+      callRecognitionApi: () => timed('request', io.callRecognitionApi, (r) => diagResult(diagId, {
+        ...r.body,
+        serviceUnavailable: r.status >= 500,
+      })),
+      recognizeFromImage: (uri) => timed('request', () => io.recognizeFromImage(uri), (r) => diagResult(diagId, r)),
+      ocrText: (uri) => timed('fallback', () => io.ocrText(uri)),
+    };
+  };
+
+  const buildScanFlowIoRaw = (
+    recognitionImages?: string[],
+    scanInput?: { base64?: string | null; cropBase64?: string | null; signal?: AbortSignal },
   ): ScanFlowIo => ({
     callRecognitionApi: async () => {
       // Same rules the handler enforces; a frame that would be refused is not sent and
@@ -621,6 +747,7 @@ export default function ScanScreen({ navigation }: any) {
     },
     recognizeFromImage: (uri) => recognizeCardFromImage(uri, {
       base64: scanInput?.base64,
+      cropBase64: scanInput?.cropBase64,
       signal: scanInput?.signal,
     }),
     ocrText: (uri) => performOcr(uri),
@@ -641,25 +768,24 @@ export default function ScanScreen({ navigation }: any) {
       setIsProcessingOCR(busy);
       setIsScanning(busy);
     },
-    setScanError,
+    setScanError: (message: string) => {
+      setScanError(message);
+      diagOutcome('failed');
+    },
     setSearchError,
     setSearchResults,
     setSuggestions,
     setRecognizedText,
     setCandidateReason,
-    showLowConfidenceCandidates: (candidates) => {
-      resetAutoScan();
-      setCandidateSelector({ visible: true, tier: 'low', candidates });
-    },
+    // No forced picker: same-number candidates show the identity, anything else an
+    // explicit no-match with the candidates behind a secondary action.
+    showLowConfidenceCandidates: (candidates) => showPresentation(presentCandidates(candidates)),
+    showPresentation,
     onRecognized: handleRecognized,
-    onVisionRecognized: (card, confidence) => {
-      if (!commitCard(card)) return;
-      setResultCard({ visible: true, card, confidence });
-      setSearchResults([]);
-      setSearchError(null);
-      setSuggestions([]);
+    // Only reached for a backend without a match verdict: preview, not commit.
+    onVisionRecognized: (card) => {
       setCapturedPhotoUri(null);
-      resetAutoScan();
+      showPresentation({ kind: 'best', card, evidence: [], alternatives: [] });
     },
   });
 
@@ -686,6 +812,8 @@ export default function ScanScreen({ navigation }: any) {
     const job = lifecycle.begin();
     if (!job) return;
     const { signal } = job;
+    const diagId = diagStart('camera');
+    let stageT0 = Date.now();
 
     try {
       setIsProcessingOCR(true);
@@ -716,23 +844,39 @@ export default function ScanScreen({ navigation }: any) {
 
       // 儲存照片 uri 用於預覽
       setCapturedPhotoUri(photo.uri);
+      diagUpdate(diagId, { stagesMs: { capture: Date.now() - stageT0 } });
+      stageT0 = Date.now();
 
       if (isWeb) {
         setScanningStatus(t('scan_processing_image'));
         setScanProgress(2);
         const recognitionImages = await captureWebRecognitionImages(photo.uri);
+        diagUpdate(diagId, { stagesMs: { prepare: Date.now() - stageT0 } });
         if (!job.isCurrent()) return;
-        await runWebCameraScan(photo.uri, buildScanFlowIo(recognitionImages, { signal }), buildScanFlowUi(job));
+        await runWebCameraScan(photo.uri, buildScanFlowIo(recognitionImages, { signal, diagId }), buildScanFlowUi(job));
       } else {
+        setScanningStatus(t('scan_processing_image'));
+        const shot = photo as { uri: string; width?: number; height?: number; base64?: string };
+        const [preview, frameRect] = await Promise.all([measureInWindow(cameraBoxRef), measureInWindow(scanFrameRef)]);
+        const plan = planNativeCrop(preview, frameRect, shot.width && shot.height ? { width: shot.width, height: shot.height } : null);
+        const images = await prepareNativeScanImages(shot, plan);
+        diagUpdate(diagId, {
+          stagesMs: { prepare: Date.now() - stageT0 },
+          errors: images.cropSkipped ? [`CROP_${images.cropSkipped.toUpperCase()}`] : [],
+        });
+        if (!job.isCurrent()) return;
         await runNativeCameraScan(
-          photo.uri,
-          buildScanFlowIo(undefined, { base64: (photo as { base64?: string }).base64, signal }),
+          // Local OCR fallback reads the frame crop when there is one.
+          images.cropUri || shot.uri,
+          buildScanFlowIo(undefined, { base64: images.base64, cropBase64: images.cropBase64, signal, diagId }),
           buildScanFlowUi(job),
         );
       }
     } catch (error) {
       if (!job.isCurrent()) return;
       console.error(`OCR Error: ${(error as any)?.name || 'Error'}`);
+      diagUpdate(diagId, { errors: ['SCAN_FAILED'] });
+      diagOutcome('failed');
       setIsProcessingOCR(false);
       setIsScanning(false);
       setScanningStatus('');
@@ -777,9 +921,21 @@ export default function ScanScreen({ navigation }: any) {
         setScanError(null);
         setCapturedPhotoUri(result.assets[0].uri);
 
+        const galleryDiagId = diagStart('gallery');
+        const galleryT0 = Date.now();
         const galleryVisionResult = await recognizeCardFromImage(result.assets[0].uri, recognizeOptions);
+        diagUpdate(galleryDiagId, { stagesMs: { request: Date.now() - galleryT0 } });
+        diagResult(galleryDiagId, galleryVisionResult);
         if (!job.isCurrent()) return;
         if (galleryVisionResult.cancelled) return;
+        const galleryPresentation = presentMatch(galleryVisionResult);
+        if (galleryPresentation) {
+          setIsProcessingOCR(false);
+          setIsScanning(false);
+          if (galleryVisionResult.raw) setRecognizedText(galleryVisionResult.raw);
+          showPresentation(galleryPresentation);
+          return;
+        }
         if (galleryVisionResult.success && galleryVisionResult.card) {
           setIsProcessingOCR(false);
           setIsScanning(false);
@@ -820,15 +976,14 @@ export default function ScanScreen({ navigation }: any) {
           // this fallback only fires for legacy shapes (local-OCR suggestions
           // without a typed candidate list). Still no commit — surface the
           // suggestions in the search panel for manual selection.
-          const candidateCards = galleryVisionResult.suggestions || [];
-          setSearchResults(candidateCards);
-          setSuggestions(candidateCards);
-          setSearchError(localizedError(galleryVisionResult.error, 'scan_confidence_low'));
-          setCandidateReason(t('scan_confidence_reason', {
-            percent: Math.round((galleryVisionResult.confidence || 0) * 100),
-            reason: preferredLanguage === 'ja' ? t('scan_manual_review') : (galleryVisionResult.reason || t('scan_manual_review')),
-          }));
+          // No typed candidates (legacy local-OCR shape): an explicit no-match, the
+          // suggestions are only offered as a correction. No score/percentage shown.
           if (galleryVisionResult.raw) setRecognizedText(galleryVisionResult.raw);
+          showPresentation({
+            kind: 'none',
+            reason: 'low_evidence',
+            suggestions: (galleryVisionResult.suggestions || []).map((card) => ({ card, confidence: 0 })),
+          });
           return;
         }
 
@@ -839,36 +994,29 @@ export default function ScanScreen({ navigation }: any) {
           : t('scan_no_text_guidance');
 
         if (isWeb) {
-          // Web: 卡號優先 OCR
-          const cardResult = await recognizeCardFromImage(result.assets[0].uri, recognizeOptions);
-          if (!job.isCurrent()) return;
-
+          // recognizeCardFromImage above already ran the card-number OCR pass; v37
+          // called it a second time here, re-uploading the same photo.
           setIsProcessingOCR(false);
           setIsScanning(false);
+          // Fallback 到全圖 OCR
+          const recognizedText = await recognizeTextWeb(result.assets[0].uri);
+          if (!job.isCurrent()) return;
+          const trimmedText = recognizedText.text.trim();
+          setRecognizedText(trimmedText);
 
-          if (cardResult.success && cardResult.card) {
-            handleRecognized(cardResult.card, cardResult.confidence ?? 0.85, cardResult.candidates, isAmbiguousPrinting(cardResult));
-          } else {
-            // Fallback 到全圖 OCR
-            const recognizedText = await recognizeTextWeb(result.assets[0].uri);
+          if (trimmedText.length > 0) {
+            const fallbackResult = await recognizeCardFromOcr(trimmedText);
             if (!job.isCurrent()) return;
-            const trimmedText = recognizedText.text.trim();
-            setRecognizedText(trimmedText);
-
-            if (trimmedText.length > 0) {
-              const fallbackResult = await recognizeCardFromOcr(trimmedText);
-              if (!job.isCurrent()) return;
-              if (fallbackResult.success && fallbackResult.card) {
-                handleRecognized(fallbackResult.card, fallbackResult.confidence ?? 0.85, fallbackResult.candidates, isAmbiguousPrinting(fallbackResult));
-                return;
-              }
-              setSearchError(localizedError(fallbackResult.error, 'scan_no_match'));
-              const searchResult = await searchCards(trimmedText, 10);
-              if (!job.isCurrent()) return;
-              setSearchResults(searchResult);
-            } else {
-              setScanError(noTextError);
+            if (fallbackResult.success && fallbackResult.card) {
+              handleRecognized(fallbackResult.card, fallbackResult.confidence ?? 0.85, fallbackResult.candidates, isAmbiguousPrinting(fallbackResult));
+              return;
             }
+            setSearchError(localizedError(fallbackResult.error, 'scan_no_match'));
+            const searchResult = await searchCards(trimmedText, 10);
+            if (!job.isCurrent()) return;
+            setSearchResults(searchResult);
+          } else {
+            setScanError(noTextError);
           }
         } else {
           const recognizedText = await performOcr(result.assets[0].uri);
@@ -1045,6 +1193,8 @@ export default function ScanScreen({ navigation }: any) {
 
   // Pen `x7iIL` Close — dismisses the scan flow back to Home. Nested form
   // so it resolves regardless of which navigator owns the current screen.
+  const handleSheetRetake = () => { diagOutcome('discarded'); setMatchSheet(null); };
+
   const handleClose = () => {
     // Cancel first: the drawer keeps this screen mounted, so the running scan must be
     // retired before navigating (the blur that follows is then a no-op).
@@ -1210,6 +1360,7 @@ export default function ScanScreen({ navigation }: any) {
             onGallery={pickFromGallery}
             onClose={handleClose}
             onScanAreaLayout={handleScanAreaLayout}
+            scanAreaRef={scanFrameRef}
             onRetry={() => {
               setCameraError(null);
               if (webCameraRef.current) webCameraRef.current.retry();
@@ -1218,6 +1369,7 @@ export default function ScanScreen({ navigation }: any) {
           />
         </WebCamera>
       ) : (
+        <View ref={cameraBoxRef} style={styles.camera} collapsable={false} testID="scan-camera-box">
         <CameraView
           ref={cameraRef}
           style={styles.camera}
@@ -1235,6 +1387,9 @@ export default function ScanScreen({ navigation }: any) {
             flash={flash}
             autoScanActive={autoScanActive}
             autoScanSupported={false}
+            // Native crop (CR 2026-10-15 P2_1): the frame is measured in window coords at
+            // capture; without this ref every native capture fell back to the full photo.
+            scanAreaRef={scanFrameRef}
             onOpenSession={() => setSessionOpenRequest((n) => n + 1)}
             isCameraReady={isCameraReady}
             cameraError={cameraError}
@@ -1249,6 +1404,7 @@ export default function ScanScreen({ navigation }: any) {
             }}
           />
         </CameraView>
+        </View>
       )}
       
       {/* Floating result card */}
@@ -1261,7 +1417,19 @@ export default function ScanScreen({ navigation }: any) {
         onDismiss={() => { setResultCard({ visible: false, card: null, confidence: 0 }); }}
       />
 
-      {/* 中/低信心候選確認選擇器 */}
+      {/* 掃描結果（Pen B/C/D）：預設顯示最佳結果預覽，更正為次要動作 */}
+      <ScanMatchSheet
+        presentation={matchSheet}
+        preferredCurrency={preferredCurrency}
+        preferredLanguage={preferredLanguage}
+        onAdd={handleSheetAdd}
+        onCorrect={handleSheetCorrect}
+        onPickPrinting={handleSheetCorrect}
+        onManualSearch={() => { setMatchSheet(null); setShowSearch(true); }}
+        onRetake={handleSheetRetake}
+      />
+
+      {/* 更正：使用者主動開啟的候選清單 */}
       <ScanCandidateSelector
         visible={candidateSelector.visible}
         tier={candidateSelector.tier}
@@ -1597,15 +1765,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
   },
-  scanArea: {
-    width: SCAN_AREA_SIZE,
-    height: SCAN_AREA_SIZE * 0.63, // 卡片比例
-    position: 'relative',
-    borderWidth: 2,
-    borderColor: COLORS.primary,
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
+
   scanLine: {
     position: 'absolute',
     left: 10,

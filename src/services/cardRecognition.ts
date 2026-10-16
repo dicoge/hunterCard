@@ -20,9 +20,12 @@ import {
 import {
   buildRecognitionDataUrl,
   validateRecognitionDataUrl,
+  validateRecognitionImages,
   type RecognitionImageErrorCode,
 } from './recognitionImagePolicy';
 import { SCAN_RUNTIME } from './scanRuntime';
+import { findCardNumberTokens } from '../utils/cardNumberToken';
+import { matchFromWire } from './scanPresentation';
 
 // ── 類型定義 ──
 
@@ -87,6 +90,23 @@ export interface RecognitionResult {
   timedOut?: boolean;
   /** The photo was refused locally by recognitionImagePolicy and was NOT uploaded. */
   imageRejected?: RecognitionImageErrorCode;
+  /**
+   * The server's explicit verdict (scan best-match fix 2026-10-15). `matched` = one
+   * printing proven by the photo; `identity_only` = card known, printing (and price)
+   * not; `no_match` = no valid answer, with optional evidence-backed alternatives.
+   */
+  match?: ScanMatch;
+}
+
+export interface ScanMatch {
+  status: 'matched' | 'identity_only' | 'no_match';
+  printingResolved: boolean;
+  reason?: 'no_evidence' | 'no_card_number' | 'number_not_in_database' | 'number_name_conflict' | null;
+  /** Evidence tokens such as 'cardNumber exact', 'rarity' — never a probability. */
+  evidence: string[];
+  alternatives: RecognizedCandidate[];
+  /** Deterministic ranking score of the best card — diagnostics only, never shown as %. */
+  ruleScore?: number | null;
 }
 
 /** How a photo reaches recognizeCardFromImage. */
@@ -96,6 +116,8 @@ export interface RecognizeImageOptions {
    * with `base64: true`). The uri alone is a device-local path and is never uploaded.
    */
   base64?: string | null;
+  /** Native only: the scan-frame crop's raw base64 (nativeScanCapture). Sent second. */
+  cropBase64?: string | null;
   /** Aborts the upload; the result then comes back `cancelled`. */
   signal?: AbortSignal;
 }
@@ -232,19 +254,10 @@ export function resolvePrintingByCardNumber(
 
   let matches = allCards.filter(c => flatten(c.cardNumber) === q);
 
-  if (matches.length === 0 && fuzzy) {
-    // Same tolerance the previous fuzzy pass used, but applied to cardNumber —
-    // the printing suffix must never be what makes a query "match".
-    matches = allCards.filter(c => {
-      const n = flatten(c.cardNumber);
-      return n === q || n.includes(q) || q.includes(n);
-    });
-    // A fuzzy pass that spans several DIFFERENT card numbers is not evidence of
-    // any one card; treat it as no match rather than guessing.
-    if (new Set(matches.map(c => flatten(c.cardNumber))).size > 1) {
-      return { status: 'none' };
-    }
-  }
+  // `fuzzy` used to accept substring overlaps (q.includes(n) / n.includes(q)), which
+  // turned a truncated or extended number into a different real card (CR 2026-10-15
+  // P2_2). Numbers are now whole-token parsed upstream, so only exact equality counts.
+  void fuzzy;
 
   if (matches.length === 0) return { status: 'none' };
   if (matches.length === 1) return { status: 'unique', card: matches[0] };
@@ -361,56 +374,10 @@ function keywordsMatch(cardKeywords: string[], searchKeywords: string[]): number
  * 從雜亂的 OCR 文字中提取可能的卡號（如 hBP04-001, hSD01-003 等）
  */
 function extractCardIds(text: string): string[] {
-  const normalized = normalizeText(text);
-  // 卡號模式：hBP01-001, hSD02-003, hPR-002, hSP-001 等
-  const patterns = [
-    /h[a-z]{2}\d{0,2}-\d{1,3}/gi,
-    /[a-z]{2}\d{2}-\d{3}/gi,
-    /NP\d{2}[-‾\s]?\d{3}/gi,
-    /BP\d{2}[-‾\s]?\d{3}/gi,
-    /SD\d{2}[-‾\s]?\d{3}/gi,
-    /PR[-‾\s]?\d{3}/gi,
-    /hOCG[-‾\s]?\d{3}/gi,
-    /\d{3}[-‾/]\d{3}/gi,
-  ];
-  // 卡號前綴別名對照表：實體卡上的編號 → 資料庫的系列 prefix
-  const prefixAliases: Record<string, string> = {
-    np: 'hbp',
-    bp: 'hbp',
-    sd: 'hsd',
-    pr: 'hpr',
-    sp: 'hsp',
-    ocg: 'hocg',
-    pc: 'hpc',
-    cs: 'hcs',
-    co: 'hco',
-    wf: 'hwf',
-    ys: 'hys',
-    ent: 'hent',
-  };
-  const ids = new Set<string>();
-  for (const pattern of patterns) {
-    const matches = normalized.match(pattern);
-    if (matches) {
-      for (const m of matches) {
-        // 正規化：移除空白、特殊符號、轉小寫
-        let clean = m.replace(/[‾\s]/g, '-').toLowerCase().replace(/-$/, '');
-        // 如果格式是 'abc12-345'，檢查是否需要 prefix 別名
-        const prefixMatch = clean.match(/^([a-z]{2})(\d+.*)$/);
-        if (prefixMatch) {
-          const prefix = prefixMatch[1];
-          const rest = prefixMatch[2];
-          if (prefixAliases[prefix]) {
-            clean = prefixAliases[prefix] + rest;
-          }
-        }
-        // 確保以 'h' 開頭（某些別名已包含 h, 但 NP/BP 等沒有）
-        if (!clean.startsWith('h')) clean = 'h' + clean;
-        ids.add(clean);
-      }
-    }
-  }
-  return Array.from(ids);
+  // Whole-token parse only (src/utils/cardNumberToken): extra digits / letters fail
+  // closed instead of being trimmed into a different, real card number.
+  // Raw text: the tokenizer applies the O/l → 0/1 confusions to digit groups only.
+  return findCardNumberTokens(text);
 }
 
 /**
@@ -468,14 +435,59 @@ function mapApiCandidates(raw: any): RecognizedCandidate[] | undefined {
 async function recognitionPayload(
   imageUri: string,
   options: RecognizeImageOptions,
-): Promise<{ ok: true; dataUrl: string } | { ok: false; code: RecognitionImageErrorCode }> {
+): Promise<{ ok: true; images: string[] } | { ok: false; code: RecognitionImageErrorCode }> {
   if (SCAN_RUNTIME === 'native') {
     const built = buildRecognitionDataUrl(options.base64);
-    return built.ok ? { ok: true, dataUrl: built.dataUrl } : built;
+    const crop = options.cropBase64 ? buildRecognitionDataUrl(options.cropBase64) : null;
+    // [context photo, frame crop] like the web scanner; if the pair would exceed the
+    // request cap the crop (the card itself) goes alone; without a crop, the photo.
+    if (built.ok && crop?.ok && validateRecognitionImages([built.dataUrl, crop.dataUrl]).ok) {
+      return { ok: true, images: [built.dataUrl, crop.dataUrl] };
+    }
+    if (crop?.ok) return { ok: true, images: [crop.dataUrl] };
+    return built.ok ? { ok: true, images: [built.dataUrl] } : built;
   }
   const processed = await preprocessCardImage(imageUri);
   const check = validateRecognitionDataUrl(processed);
-  return check.ok ? { ok: true, dataUrl: processed } : check;
+  return check.ok ? { ok: true, images: [processed] } : check;
+}
+
+/**
+ * The subset of the backend's (already sanitised) debug block the app keeps: model id,
+ * normalised number, and the fields read off the card. Everything else — and any value
+ * that is not a short string — is dropped; src/services/scanDiagnostics re-validates
+ * each field again before anything is stored or exported.
+ */
+export function diagnosticDebug(raw: any): RecognitionDebug | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const str = (v: unknown) => (typeof v === 'string' && v.length <= 80 ? v : undefined);
+  const x = raw.extracted && typeof raw.extracted === 'object' ? raw.extracted : {};
+  return {
+    provider: str(raw.provider),
+    model: str(raw.model),
+    normalizedCardNumber: str(raw.normalizedCardNumber) ?? null,
+    matchStatus: str(raw.matchStatus),
+    matchReason: str(raw.matchReason) ?? null,
+    extracted: {
+      characterName: str(x.characterName),
+      cardTitle: str(x.cardTitle),
+      setCode: str(x.setCode),
+      language: str(x.language),
+    },
+  };
+}
+
+export interface RecognitionDebug {
+  provider?: string;
+  model?: string;
+  normalizedCardNumber: string | null;
+  matchStatus?: string;
+  matchReason?: string | null;
+  extracted: { characterName?: string; cardTitle?: string; setCode?: string; language?: string };
+}
+
+function mapMatch(raw: any): ScanMatch | undefined {
+  return matchFromWire(raw, mapApiCandidates);
 }
 
 /**
@@ -517,7 +529,7 @@ async function recognizeViaApi(imageUri: string, options: RecognizeImageOptions 
     const apiResponse = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: payload.dataUrl, storeMvp: STORE_MVP }),
+      body: JSON.stringify({ image: payload.images[0], images: payload.images, storeMvp: STORE_MVP }),
       signal: controller.signal,
     });
 
@@ -528,7 +540,12 @@ async function recognizeViaApi(imageUri: string, options: RecognizeImageOptions 
       if (isRecognitionInfrastructureFailure(apiResponse.status, errorBody)) {
         return { success: false, serviceUnavailable: true, error: RECOGNITION_UNAVAILABLE_MESSAGE };
       }
-      return { success: false, error: '' };
+      // 404 = the backend looked at this photo and has no valid answer. Its verdict
+      // (and any evidence-backed alternatives) is what the UI explains.
+      // Keep the backend's diagnostic metadata (model, what was read) for the local log —
+      // a failed scan is exactly what needs comparing (CR c9793eb P2). Projected, never
+      // the raw body.
+      return { success: false, error: '', match: mapMatch(errorBody?.match), debug: diagnosticDebug(errorBody?.debug) };
     }
 
     const data = await apiResponse.json();
@@ -550,8 +567,12 @@ async function recognizeViaApi(imageUri: string, options: RecognizeImageOptions 
         confidence: data.confidence,
         reason: data.reason,
         raw: data.raw,
-        debug: data.debug,
+        debug: diagnosticDebug(data.debug),
         lowConfidence: !!data.lowConfidence,
+        match: mapMatch(data.match),
+        // identity_only: the card the backend identified (no printing → its price is
+        // withheld by the UI until the user picks a printing).
+        card: data.match?.status === 'identity_only' && data.card ? mapApiCard(data.card) : undefined,
       };
     }
 
@@ -563,6 +584,8 @@ async function recognizeViaApi(imageUri: string, options: RecognizeImageOptions 
         card: cardInfo,
         confidence: typeof data.confidence === 'number' ? data.confidence : undefined,
         candidates: mapApiCandidates(data.candidates),
+        match: mapMatch(data.match),
+        debug: diagnosticDebug(data.debug),
       };
     }
 
@@ -618,6 +641,10 @@ export async function recognizeCardFromImage(
   try {
     const apiResult = await recognizeViaApi(imageUri, options);
     if (apiResult.cancelled) return apiResult;
+    // An explicit backend verdict is final for this photo: local OCR is a fallback for
+    // an AI path that could not answer, never a second opinion that could replace a
+    // no-match with a weaker guess.
+    if (apiResult.match) return apiResult;
     if (apiResult.success && apiResult.card) {
       return apiResult;
     }

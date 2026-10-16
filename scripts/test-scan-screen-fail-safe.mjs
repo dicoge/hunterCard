@@ -1079,45 +1079,26 @@ await test('AST parser accepts a valid nested pulse-wrapper fixture (positive co
   assert.equal(wrapper.descendantHasCorner, true);
 });
 
-await test('ScanOverlay: pulse wrapper has real layout dimensions (not collapsed to zero)', () => {
+await test('ScanOverlay: pulse wrapper has real layout dimensions (not collapsed to zero)', async () => {
   // The wrapper carrying `transform: [{ scale: pulseAnim }]` becomes the
   // scanArea's flex row child, so it needs an explicit layout box or the
   // whole scan-frame collapses to 0×0. `styles.scanAreaPulse` must define
   // width AND height — a mutation that reverts scanAreaPulse to
   // `StyleSheet.absoluteFillObject` (or removes the sizing) would leave
   // the scan-frame invisible on native.
-  const scanAreaPulseIdx = scanOverlaySource.indexOf('scanAreaPulse:');
-  assert.notEqual(scanAreaPulseIdx, -1, 'scanAreaPulse style must exist');
-  const block = scanOverlaySource.slice(scanAreaPulseIdx, scanAreaPulseIdx + 400);
-  assert.match(
-    block,
-    /width\s*:\s*SCAN_AREA_SIZE\b/,
-    'scanAreaPulse must set width: SCAN_AREA_SIZE so the pulse wrapper owns the scan frame layout',
-  );
-  // DIC-1409 Phase 4: the scan frame follows Pen `App / 04 掃描卡牌`
-  // (node Aj73G — portrait 250×350 card window), so the wrapper's height is
-  // the shared SCAN_AREA_HEIGHT constant. The invariant this test protects
-  // is unchanged: the pulse wrapper must own the SAME explicit layout box as
-  // the border-styled scanArea beneath it — assert both blocks use the same
-  // width/height pair rather than pinning a historical aspect number.
-  assert.match(
-    block,
-    /height\s*:\s*SCAN_AREA_HEIGHT\b/,
-    'scanAreaPulse must set height: SCAN_AREA_HEIGHT to own the scan-frame layout box',
-  );
-  const scanAreaIdx = scanOverlaySource.indexOf('scanArea: {');
-  assert.notEqual(scanAreaIdx, -1, 'scanArea style must exist');
-  const scanAreaBlock = scanOverlaySource.slice(scanAreaIdx, scanAreaIdx + 400);
-  assert.match(
-    scanAreaBlock,
-    /width\s*:\s*SCAN_AREA_SIZE\b/,
-    'scanArea must share width: SCAN_AREA_SIZE with the pulse wrapper',
-  );
-  assert.match(
-    scanAreaBlock,
-    /height\s*:\s*SCAN_AREA_HEIGHT\b/,
-    'scanArea must share height: SCAN_AREA_HEIGHT with the pulse wrapper',
-  );
+  // Since the scan best-match fix (2026-10-15) the box is computed per viewport
+  // (computeScanFrameSize) and passed as the SAME `frame` object to both nodes, so the
+  // pulse wrapper and the border-styled scanArea cannot disagree on size.
+  const pulseStyle = scanOverlaySource.match(/styles\.scanAreaPulse,\s*\n\s*frame,/);
+  assert.ok(pulseStyle, 'scanAreaPulse wrapper must carry the computed frame size');
+  const areaStyle = scanOverlaySource.match(/styles\.scanArea,\s*\n\s*frame,/);
+  assert.ok(areaStyle, 'scanArea must carry the same computed frame size');
+  assert.match(scanOverlaySource, /const frame = computeScanFrameSize\(/);
+  const { computeScanFrameSize } = await import('../src/utils/scanFrame.ts');
+  for (const vp of [{ width: 390, height: 844 }, { width: 320, height: 568 }, { width: 1440, height: 900 }]) {
+    const f = computeScanFrameSize(vp);
+    assert.ok(f.width > 0 && f.height > f.width, `non-collapsed portrait frame at ${vp.width}x${vp.height}`);
+  }
 });
 
 await test('ScanOverlay: renders end-to-end through jsdom + react-native-web with real animation values (no throw)', async () => {

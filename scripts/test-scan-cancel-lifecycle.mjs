@@ -251,6 +251,12 @@ try {
     const call = await pressShutter();
     call.release();
     await tick(80);
+    // Since the scan best-match fix (2026-10-15) a result is previewed first and only
+    // the user's 加入 commits and charges (test:scan-best-match covers the sheet).
+    assert.equal(sessionCount(), 0, 'previewed, not yet added');
+    assert.equal(quotaUsed(), 0);
+    await click(byTestId(host, 'scan-match-add'));
+    await tick(20);
     assert.equal(sessionCount(), 1);
     assert.equal(quotaUsed(), 1);
     assert.equal(useScanSessionStore.getState().cards[0].id, CARD.id);

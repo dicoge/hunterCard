@@ -73,12 +73,12 @@ console.log('── DIC-1409 Phase 4 · App 04–07 shell parity ──');
 
 const overlaySource = readFileSync(new URL('../src/components/ScanOverlay.tsx', import.meta.url), 'utf8');
 
-await test('ScanOverlay scan frame is the Pen portrait card window (node Aj73G, 1.4 aspect)', () => {
-  assert.match(
-    overlaySource,
-    /SCAN_AREA_HEIGHT\s*=\s*SCAN_AREA_SIZE\s*\*\s*1\.4\b/,
-    'portrait aspect constant from Pen 250×350',
-  );
+await test('ScanOverlay scan frame is a portrait card window at the real 63:88 ratio (Pen scan v38 USowC)', async () => {
+  // Since 2026-10-15 the frame is sized per viewport by computeScanFrameSize
+  // (docs/pen-scan/holohunter-scan-best-match.pen); behaviour pinned in test:scan-best-match.
+  assert.match(overlaySource, /computeScanFrameSize\(/, 'overlay sizes the frame from the shared geometry');
+  const { CARD_ASPECT } = await import('../src/utils/scanFrame.ts');
+  assert.ok(Math.abs(CARD_ASPECT - 88 / 63) < 1e-9, 'card ratio 63 × 88 mm');
   assert.match(overlaySource, /borderRadius:\s*16/, 'Pen r16 frame corner');
   assert.match(overlaySource, /width:\s*32,\s*\n\s*height:\s*32,\s*\n\s*borderColor:\s*'#FFFFFF'/, 'Pen 32px white corner brackets');
 });

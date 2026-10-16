@@ -383,6 +383,8 @@ check('found a single-printing control with a price', !!uniqueRow);
     'handleConfirmCandidate',
     'handleSelectSuggestion',
     'onVisionRecognized',
+    // Scan best-match fix (2026-10-15): the user tapped 加入 on the result preview.
+    'handleSheetAdd',
   ]);
   const rogue = owners.filter((o) => !ALLOWED.has(o));
   check(

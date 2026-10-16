@@ -217,7 +217,12 @@ function toAuthError(data: any, status: number, provider?: AuthProvider): AuthEr
     : data?.reason
       ? `操作未完成（${data.reason}）。`
       : `操作未完成（HTTP ${status}）。`;
-  return new AuthError(message, status, code);
+  const err = new AuthError(message, status, code);
+  // Fixed-vocabulary server reason (e.g. bad_audience) — diagnostics only, safe to keep.
+  if (typeof data?.reason === 'string' && /^[a-z_]{2,40}$/.test(data.reason)) {
+    (err as AuthError & { reason?: string }).reason = data.reason;
+  }
+  return err;
 }
 
 async function apiPost(path: string, body: unknown, session?: string): Promise<Response> {

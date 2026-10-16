@@ -85,6 +85,8 @@ function stubNetworkWithOpenRouterDenylist({
   google = 200,
   googleReply = REPLY,
   googleDelay = 0,
+  googleFinish = null,
+  googleThought = false,
 } = {}) {
   const calls = [];
   globalThis.fetch = async (url, init = {}) => {
@@ -108,6 +110,8 @@ function stubNetworkWithOpenRouterDenylist({
       if (googleDelay) await sleep(googleDelay);
       if (google === 'network') throw new Error(`connect ECONNREFUSED ${href}`);
       if (google !== 200) return new Response(UPSTREAM_BODY, { status: google });
+      if (google === 200 && googleFinish) return Response.json({ candidates: [{ finishReason: googleFinish, content: { parts: [{ text: googleReply }] } }] });
+      if (googleThought) return Response.json({ candidates: [{ content: { parts: [{ thought: true, text: 'CARD_NUMBER: hBP99-999' }, { text: googleReply }] } }] });
       return Response.json({ candidates: [{ content: { parts: [{ text: googleReply }] } }] });
     }
     throw new Error(`unexpected fetch: ${href}`);
@@ -201,7 +205,7 @@ const check = (label, fn) => { fn(); results.push(label); };
   check('Google direct still recognises when both env vars are present', () => {
     assert.equal(res.status, 200);
     assert.equal(body.debug.provider, 'gemini');
-    assert.equal(body.debug.model, 'gemini-2.5-flash');
+    assert.equal(body.debug.model, 'gemini-3.5-flash-lite');
     assert.equal(body.candidates[0].cardNumber, 'hBP04-005');
   });
   const [google] = calls;
@@ -217,6 +221,34 @@ const check = (label, fn) => { fn(); results.push(label); };
     assert.equal(inline.length, 2);
     assert.deepEqual(inline.map(p => p.inline_data.mime_type), ['image/jpeg', 'image/png']);
     assert.deepEqual(inline.map(p => p.inline_data.data), [FULL_FRAME_B64, CROP_B64]);
+  });
+}
+
+// ── 2b. Model request contract (owner choice 2026-10-15: gemini-3.5-flash-lite) ──
+{
+  const { GEMINI_MODEL, VISION_GENERATION_CONFIG } = await import('../api/recognize-card.ts');
+  const { res, calls } = await scan({ google: GOOGLE_KEY }, {});
+  const [g] = calls;
+  check('request targets exactly models/gemini-3.5-flash-lite:generateContent on the Google Developer API', () => {
+    assert.equal(GEMINI_MODEL, 'gemini-3.5-flash-lite');
+    assert.equal(g.href, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent');
+    assert.equal(res.status, 200);
+  });
+  check('generationConfig is the documented contract: thinkingLevel MINIMAL, no temperature override, no legacy thinkingBudget', () => {
+    assert.deepEqual(g.body.generationConfig, { maxOutputTokens: 1024, thinkingConfig: { thinkingLevel: 'MINIMAL' } });
+    assert.deepEqual(JSON.parse(JSON.stringify(VISION_GENERATION_CONFIG)), g.body.generationConfig);
+    assert.equal('temperature' in g.body.generationConfig, false);
+    assert.equal('thinkingBudget' in g.body.generationConfig.thinkingConfig, false);
+  });
+  const cut = await scan({ google: GOOGLE_KEY }, { googleFinish: 'MAX_TOKENS' });
+  check('a reply cut off at the token cap is an upstream failure (502), never ranked, no second model tried', () => {
+    assert.equal(cut.res.status, 502);
+    assert.deepEqual(cut.calls.map(c => c.provider), ['gemini']);
+    assert.ok(!JSON.stringify(cut.body).includes('hBP04-005'));
+  });
+  const thought = await scan({ google: GOOGLE_KEY }, { googleThought: true });
+  check('thought parts (if any are returned) are never read as the answer', () => {
+    assert.equal(thought.body.debug.normalizedCardNumber, 'hbp04-005');
   });
 }
 
