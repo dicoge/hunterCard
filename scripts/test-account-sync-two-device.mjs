@@ -406,6 +406,32 @@ try {
     await p1.kill(); await p2.kill();
   });
 
+  await test('CR P2: a deletion made while a push is in flight is not forgotten when that push is acknowledged — a later 409 still honours it', async () => {
+    const K = await server.createSession('two-device-user-k'); const userK = { ...K.user };
+    const p1 = await device('cr-ack-1');
+    const p2 = await device('cr-ack-2');
+    await act(p1, 'login', { session: K.session, user: userK });
+    await act(p2, 'login', { session: K.session, user: userK });
+    await act(p1, 'own', { cardNumber: 'hBP05-040', version: 'BASE', qty: 2 });
+    await p2.call('resync'); await p2.call('settle');
+    await p2.call('hold', { method: 'POST' });
+    await p2.call('hold', { method: 'POST' });
+    await p2.call('own', { cardNumber: 'hBP05-041', version: 'BASE', qty: 1 });   // push 1 (carries hBP05-040 = 2)
+    await p2.call('waitHeld', { method: 'POST' });
+    await p2.call('own', { cardNumber: 'hBP05-040', version: 'BASE', qty: 0 });   // deleted while push 1 is in flight
+    await p2.call('release', { method: 'POST' });                                // push 1 acknowledged
+    await p2.call('waitHeld', { method: 'POST' });                               // push 2 (the deletion) in flight
+    await act(p1, 'own', { cardNumber: 'hBP05-042', version: 'BASE', qty: 1 });  // the other phone moves the server on
+    await p2.call('release', { method: 'POST' });                                // push 2 → 409 → merge
+    await p2.call('settle');
+    const snap = await serverSnapshot(K.session);
+    assert.equal(snap.collection['hBP05-040|BASE'], undefined, 'the deletion survives');
+    assert.equal(snap.collection['hBP05-041|BASE'], 1);
+    assert.equal(snap.collection['hBP05-042|BASE'], 1, 'the other phone\'s edit is kept');
+    assert.equal((await p2.call('state')).collection['hBP05-040|BASE'], undefined);
+    await p1.kill(); await p2.kill();
+  });
+
   await phone1.kill();
 } finally {
   for (const d of [...live]) await d.kill();
