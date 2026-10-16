@@ -19,7 +19,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { adaptDatabase } from '../src/utils/deckCardData.ts';
 import { priceAlertKey } from '../src/utils/priceAlerts.ts';
-import { assertFreshDatabase, freshPriceSnapshot, oldestPricedRowTimestamps, parseRestoreSince } from './lib/push-freshness.mjs';
+import { assertFreshDatabase, freshPriceSnapshot, parseRestoreSince } from './lib/push-freshness.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Overridable only so the offline regression can feed controlled data (test:push-freshness).
@@ -86,12 +86,12 @@ async function fetchWatchedPrintings() {
 
 // v41: a desired-price alert must judge a CURRENT price — a stale database (or one
 // from before PUSH_RESTORE_SINCE) sends nothing, and inside a current database only
-// price records that are themselves current count (scripts/lib/push-freshness.mjs).
+// price records whose own exact-printing time is current count
+// (scripts/lib/push-freshness.mjs, adaptCardNumber price provenance).
 function loadPriceRecords(now, notBefore) {
   const raw = JSON.parse(fs.readFileSync(DATABASE_PATH, 'utf8'));
   assertFreshDatabase(raw, now, notBefore);
-  const rows = Object.values(raw.cards || {});
-  return { priceRecords: adaptDatabase(rows).priceRecords, oldestPricedRowByNumber: oldestPricedRowTimestamps(rows) };
+  return adaptDatabase(Object.values(raw.cards || {})).priceRecords;
 }
 
 async function main() {
@@ -101,7 +101,7 @@ async function main() {
   // Freshness first: nothing is read from KV for a run that could not send anyway.
   const now = Date.now();
   const notBefore = parseRestoreSince(process.env.PUSH_RESTORE_SINCE);
-  const { priceRecords, oldestPricedRowByNumber } = loadPriceRecords(now, notBefore);
+  const priceRecords = loadPriceRecords(now, notBefore);
   const watched = await fetchWatchedPrintings();
   if (watched.length === 0) {
     console.log('[price-alerts] No exact-version price alerts registered');
@@ -110,7 +110,7 @@ async function main() {
 
   // An unpriced / ambiguous / stale printing contributes nothing rather than
   // borrowing a sibling version's price.
-  const { prices, stale } = freshPriceSnapshot({ watched, priceRecords, now, notBefore, keyOf: priceAlertKey, oldestPricedRowByNumber });
+  const { prices, stale } = freshPriceSnapshot({ watched, priceRecords, now, notBefore, keyOf: priceAlertKey });
   if (prices.length === 0) {
     console.log(`[price-alerts] ${watched.length} watched printings, none with a current price (${stale} stale) — nothing posted`);
     return;

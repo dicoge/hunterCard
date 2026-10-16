@@ -16,7 +16,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import {
   isFresh, parseRestoreSince, assertFreshDatabase, selectTrendAlerts, MAX_FEED_AGE_MS,
-  freshPriceSnapshot, oldestPricedRowTimestamps,
+  freshPriceSnapshot,
 } from './lib/push-freshness.mjs';
 const { adaptDatabase } = await import('../src/utils/deckCardData.ts');
 const { priceAlertKey } = await import('../src/utils/priceAlerts.ts');
@@ -83,51 +83,56 @@ await test('restoration start: a trend computed before it is not sent', () => {
   assert.equal(r.stale, 1);
 });
 
-// ── per-price freshness (PM finding 2026-10-16: global lastUpdated today, yet 72 priced
-//    rows still dated 2026-08-25) — real catalog rows, controlled timestamps ──────────
+// ── per-price freshness + exact price-time provenance (PM findings 2026-10-16: 72 rows
+//    still from 2026-08-25; adaptCardNumber stamped every printing with the
+//    representative row's date, e.g. hBP01-048 PARALLEL ¥980 from August looked current) ─
 {
-  const DB = JSON.parse(fs.readFileSync(new URL('../public/data/database.json', import.meta.url), 'utf8')).cards;
-  const at = (id, ts) => ({ ...DB[id], timestamp: ts });
-  // hBD24-008: two priced rows (an ent07 reprint row + the hPR row); hBD24-014: one row.
+  const OLD = ago(24 * 52), NEW = ago(1);
   const rows = [
-    at('hBD24-008_ent07', ago(24 * 52)),            // preserved from August
-    at('hBD24-008_hPR_P_hBD24-008_P', ago(1)),      // scraped today
-    at('hBD24-014_hPR_P_hBD24-014_P', ago(1)),      // scraped today
+    { id: 'hBP01-048_hPR_P', cardNumber: 'hBP01-048', name: '風真いろは', type: 'Holomen', rarity: 'P', series: 'hPR', timestamp: OLD,
+      prices: [{ name: '風真いろは(パラレル)', sellPrice: 980, rarity: 'P' }] },
+    { id: 'hBP01-048_hBP01_C', cardNumber: 'hBP01-048', name: '風真いろは', type: 'Holomen', rarity: 'C', series: 'hBP01', timestamp: NEW,
+      prices: [{ name: '風真いろは', sellPrice: 30, rarity: 'C' }] },
+    { id: 'hBP01-049_hBP01_C', cardNumber: 'hBP01-049', name: '風真いろは', type: 'Holomen', rarity: 'C', series: 'hBP01',
+      prices: [{ name: '風真いろは', sellPrice: 40, rarity: 'C' }] },   // no timestamp at all
   ];
-  const db = { lastUpdated: ago(1), cards: rows };
   const { priceRecords } = adaptDatabase(rows);
-  const oldest = oldestPricedRowTimestamps(rows);
-  const versionsOf = (n) => priceRecords.filter((r) => r.cardNumber === n).map((r) => r.version);
+  const rec = (n, price) => priceRecords.find((r) => r.cardNumber === n && r.price === price);
 
-  await test('global database current, watched exact printing\'s price from a stale row → ZERO prices posted', () => {
-    assertFreshDatabase(db, NOW);   // the old database-level check alone would let it through
-    const watched = versionsOf('hBD24-008').map((printing) => ({ cardNumber: 'hBD24-008', printing }));
-    assert.ok(watched.length >= 1, `printings of hBD24-008: ${watched.map((w) => w.printing)}`);
-    const r = freshPriceSnapshot({ watched, priceRecords, now: NOW, keyOf: priceAlertKey, oldestPricedRowByNumber: oldest });
-    assert.deepEqual(r.prices, [], 'no notification from a number with a stale priced row');
-    assert.equal(r.stale, watched.length);
+  await test('adapter provenance: old parallel keeps its OLD time, fresh base its own fresh time (different prices)', () => {
+    assert.ok(rec('hBP01-048', 980) && rec('hBP01-048', 30), `records: ${JSON.stringify(priceRecords)}`);
+    assert.equal(rec('hBP01-048', 980).timestamp, OLD, 'the August parallel is not restamped with the base row date');
+    assert.equal(rec('hBP01-048', 30).timestamp, NEW);
+    assert.notEqual(rec('hBP01-048', 980).version, rec('hBP01-048', 30).version);
   });
-  await test('a stale exact printing never takes a fresh sibling printing\'s price (exact key only)', () => {
-    const r = freshPriceSnapshot({ watched: [{ cardNumber: 'hBD24-008', printing: 'NO_SUCH_PRINTING' }], priceRecords, now: NOW, keyOf: priceAlertKey, oldestPricedRowByNumber: oldest });
+  await test('adapter provenance: a price whose row has no timestamp stays unknown (\'\'), never restamped current', () => {
+    assert.equal(rec('hBP01-049', 40).timestamp, '');
+  });
+  const watched = [
+    { cardNumber: 'hBP01-048', printing: rec('hBP01-048', 980).version },
+    { cardNumber: 'hBP01-048', printing: rec('hBP01-048', 30).version },
+    { cardNumber: 'hBP01-049', printing: rec('hBP01-049', 40).version },
+  ];
+  await test('database current overall: only the fresh base is posted, with ITS price; the old parallel and the unknown-time price are not', () => {
+    assertFreshDatabase({ lastUpdated: NEW }, NOW);
+    const r = freshPriceSnapshot({ watched, priceRecords, now: NOW, keyOf: priceAlertKey });
+    assert.deepEqual(r.prices.map((p) => [p.printing, p.price]), [[rec('hBP01-048', 30).version, 30]]);
+    assert.equal(r.stale, 2);
+  });
+  await test('a watched printing without its own record never takes a sibling printing\'s price', () => {
+    const r = freshPriceSnapshot({ watched: [{ cardNumber: 'hBP01-048', printing: 'NO_SUCH_PRINTING' }], priceRecords, now: NOW, keyOf: priceAlertKey });
     assert.deepEqual(r.prices, []);
     assert.equal(r.unpriced, 1);
   });
-  await test('positive control: an exact printing whose rows are all current is posted with its own price', () => {
-    const [printing] = versionsOf('hBD24-014');
-    const r = freshPriceSnapshot({ watched: [{ cardNumber: 'hBD24-014', printing }], priceRecords, now: NOW, keyOf: priceAlertKey, oldestPricedRowByNumber: oldest });
-    assert.equal(r.prices.length, 1);
-    assert.equal(r.prices[0].price, priceRecords.find((x) => x.cardNumber === 'hBD24-014' && x.version === printing).price);
-  });
-  await test('restoration start after the price time → not posted', () => {
-    const [printing] = versionsOf('hBD24-014');
-    const r = freshPriceSnapshot({ watched: [{ cardNumber: 'hBD24-014', printing }], priceRecords, now: NOW, notBefore: NOW - 600_000, keyOf: priceAlertKey, oldestPricedRowByNumber: oldest });
+  await test('restoration start after the fresh base time → nothing posted', () => {
+    const r = freshPriceSnapshot({ watched, priceRecords, now: NOW, notBefore: NOW - 600_000, keyOf: priceAlertKey });
     assert.deepEqual(r.prices, []);
   });
   await test('trend message: a preserved (stale) price is not shown as 現價', () => {
     const r = selectTrendAlerts({
       watchlist: { t: ['x-1', 'x-2'] },
-      findCard: (n) => (n === 'x-1' ? { name: 'A', sellPrice: 500, timestamp: ago(24 * 52) } : { name: 'B', sellPrice: 700, timestamp: ago(1) }),
-      findTrend: () => ({ score: 0.9, dataPoints: 5, lastUpdated: ago(1) }),
+      findCard: (n) => (n === 'x-1' ? { name: 'A', sellPrice: 500, timestamp: OLD } : { name: 'B', sellPrice: 700, timestamp: NEW }),
+      findTrend: () => ({ score: 0.9, dataPoints: 5, lastUpdated: NEW }),
       now: NOW,
     });
     assert.match(r.alerts[0].body, /價格未定/);

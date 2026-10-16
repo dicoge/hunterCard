@@ -99,7 +99,7 @@ export function selectTrendAlerts({ watchlist, findCard, findTrend, now, notBefo
  * record contributes nothing, and no other printing of the same card number can stand
  * in for it (exact key only — no sibling price).
  */
-export function freshPriceSnapshot({ watched, priceRecords, now, notBefore = null, keyOf, oldestPricedRowByNumber = null }) {
+export function freshPriceSnapshot({ watched, priceRecords, now, notBefore = null, keyOf }) {
   const index = new Map();
   for (const record of priceRecords) index.set(keyOf(record.cardNumber, record.version), record);
   const prices = [];
@@ -108,27 +108,11 @@ export function freshPriceSnapshot({ watched, priceRecords, now, notBefore = nul
   for (const { cardNumber, printing } of watched) {
     const record = index.get(keyOf(cardNumber, printing));
     if (!record) { unpriced += 1; continue; }
+    // record.timestamp is the exact printing's own price time (adaptCardNumber, v41:
+    // oldest contributing row; '' when unknown → not current).
     if (!isFresh(record.timestamp, now, { notBefore })) { stale += 1; continue; }
-    // A card number's listings are merged from all its rows (reprints), so the record's
-    // timestamp is only the representative row's: require every priced row of that
-    // number to be current (fail closed — a stale reprint row could be the source).
-    const oldest = oldestPricedRowByNumber?.get(cardNumber);
-    if (oldestPricedRowByNumber && !isFresh(oldest, now, { notBefore })) { stale += 1; continue; }
     prices.push({ cardNumber, printing, price: record.price, currency: record.currency });
   }
   return { prices, stale, unpriced };
 }
 
-/** cardNumber → the OLDEST timestamp among its rows that carry listings ('' if any is missing). */
-export function oldestPricedRowTimestamps(rawCards) {
-  const out = new Map();
-  for (const c of rawCards) {
-    if (!c?.cardNumber || !Array.isArray(c.prices) || c.prices.length === 0) continue;
-    const t = typeof c.timestamp === 'string' ? c.timestamp : '';
-    const prev = out.get(c.cardNumber);
-    if (prev === undefined) out.set(c.cardNumber, t);
-    else if (!t || !prev) out.set(c.cardNumber, '');
-    else if (Date.parse(t) < Date.parse(prev)) out.set(c.cardNumber, t);
-  }
-  return out;
-}
