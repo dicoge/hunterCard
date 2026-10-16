@@ -239,7 +239,7 @@ try {
     await shutter();
     assert.ok(byTestId('scan-match-none'), 'explicit no-match shown');
     assertNoMatchEntry(useScanDiagnosticsStore.getState().entries.at(-1), 'camera');
-    await click(byTestId('scan-match-retake'));
+    await click(byTestId('scan-match-cancel'));
   });
 
   await test('native gallery no-match records the same fields on its own entry', async () => {

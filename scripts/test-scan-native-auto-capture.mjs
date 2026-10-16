@@ -128,12 +128,13 @@ const handler = (await import('../api/recognize-card.ts')).default;
 process.env.GEMINI_API_KEY = 'test-key-never-sent';
 let providerDown = false;
 const bodies = [];
+let providerText = 'CARD_NUMBER: hBP01-010\nCHARACTER: 天音かなた';
 globalThis.fetch = async (url, init = {}) => {
   const href = String(url);
   if (href === 'https://holohunter.dicoge.com/data/database.json') return Response.json(DB);
   if (href.includes('generativelanguage.googleapis.com')) {
     if (providerDown) return new Response('down', { status: 500 });
-    return Response.json({ candidates: [{ content: { parts: [{ text: 'CARD_NUMBER: hBP01-010\nCHARACTER: 天音かなた' }] } }] });
+    return Response.json({ candidates: [{ content: { parts: [{ text: providerText }] } }] });
   }
   if (href.includes('/api/recognize-card')) {
     bodies.push(JSON.parse(init.body));
@@ -309,6 +310,29 @@ try {
     assert.equal(bodies.length, n, 'no automatic retry');
     await click(byTestId('scan-service-cancel'));
     providerDown = false;
+  });
+
+  // v41: an automatic round that ends in no-match shows 重試／取消; 取消 ends it and the
+  // same card still lying in the frame is NOT sent again (no automatic retry loop).
+  await test('auto round → no-match → 取消: no automatic re-request while the same card stays; nothing charged', async () => {
+    frameText = '';
+    await probes(4);                                  // re-armed, empty frame
+    providerText = 'CARD_NUMBER: NONE\nCHARACTER: NONE\nTITLE: NONE';
+    const remaining = useScanQuotaStore.getState().getRemaining();
+    const n = bodies.length;
+    frameText = 'hBP03-030';
+    for (let i = 0; i < 50 && !byTestId('scan-match-none'); i++) await tick(100);
+    assert.ok(byTestId('scan-match-none'), 'no-match sheet after one automatic request');
+    assert.equal(bodies.length, n + 1);
+    assert.ok(byTestId('scan-match-retry') && byTestId('scan-match-cancel'), '重試／取消 visible');
+    await click(byTestId('scan-match-cancel'));
+    await probes(5);                                  // the card is still there
+    assert.equal(byTestId('scan-match-none'), null);
+    assert.equal(bodies.length, n + 1, 'no automatic retry after 取消');
+    assert.equal(useScanQuotaStore.getState().getRemaining(), remaining, 'no-match + cancel use 0');
+    providerText = 'CARD_NUMBER: hBP01-010\nCHARACTER: 天音かなた';
+    frameText = '';
+    await probes(4);
   });
 
   await test('a probe whose on-device reader throws still deletes its files', async () => {

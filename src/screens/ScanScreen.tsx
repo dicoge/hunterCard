@@ -1464,6 +1464,9 @@ export default function ScanScreen({ navigation }: any) {
   // Pen `x7iIL` Close — dismisses the scan flow back to Home. Nested form
   // so it resolves regardless of which navigator owns the current screen.
   const handleSheetRetake = () => { diagOutcome('discarded'); setMatchSheet(null); };
+  // No-match 重試 (v41): end the failed round the same way, then start a new capture
+  // through the normal shutter path (its live-job / quota / consent guards apply).
+  const handleNoMatchRetry = () => { handleSheetRetake(); void handleScan(); };
 
   const handleClose = () => {
     // Cancel first: the drawer keeps this screen mounted, so the running scan must be
@@ -1725,6 +1728,7 @@ export default function ScanScreen({ navigation }: any) {
         onPickPrinting={handleSheetCorrect}
         onManualSearch={() => { setMatchSheet(null); setShowSearch(true); }}
         onRetake={handleSheetRetake}
+        onRetry={handleNoMatchRetry}
       />
 
       {/* 更正：使用者主動開啟的候選清單 */}

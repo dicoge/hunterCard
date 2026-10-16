@@ -444,7 +444,7 @@ try {
     assert.equal(host.querySelector('[data-testid="scan-candidate-meta"]'), null);
     assert.deepEqual(session(), []);
     assert.equal(used(), 0);
-    await click(byTestId(host, 'scan-match-retake'));
+    await click(byTestId(host, 'scan-match-cancel'));
   });
 
   await test('blank photo reading → explicit failure, no filler candidates', async () => {
@@ -452,7 +452,7 @@ try {
     await scan(reply({}));
     assert.ok(byTestId(host, 'scan-match-none'));
     assert.equal(byTestId(host, 'scan-match-suggestions'), null);
-    await click(byTestId(host, 'scan-match-retake'));
+    await click(byTestId(host, 'scan-match-cancel'));
   });
 
   await test('identity without printing: no price shown; 選擇版本 → pick → charged once', async () => {
