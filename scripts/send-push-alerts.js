@@ -8,8 +8,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_DIR = path.resolve(__dirname, '..');
 const DATA_DIR = path.join(PROJECT_DIR, 'data');
-const DATABASE_PATH = path.join(DATA_DIR, 'database.json');
-const TRENDS_DIR = path.join(DATA_DIR, 'trends');
+// Overridable only so the offline regression can feed controlled data (test:push-freshness).
+const DATABASE_PATH = process.env.PUSH_DATABASE_PATH || path.join(DATA_DIR, 'database.json');
+const TRENDS_DIR = process.env.PUSH_TRENDS_DIR || path.join(DATA_DIR, 'trends');
 // Canonical production notify endpoint (DIC-1245). Overridable via env for
 // preview / staging cron; the default must never be the old vercel.app alias,
 // which no longer hosts /api/push/notify.

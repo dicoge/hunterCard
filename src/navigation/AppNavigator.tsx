@@ -1,5 +1,6 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
+import { formatDocumentTitle } from './documentTitle';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createDrawerNavigator, DrawerContentScrollView, DrawerItemList, DrawerContentComponentProps } from '@react-navigation/drawer';
 import { Text, View, StyleSheet, ActivityIndicator } from 'react-native';
@@ -350,7 +351,7 @@ export default function AppNavigator() {
   // — the Landing's 登入 entries push `AuthLogin` (LoginScreen) inside the
   // same unauthenticated stack, so the auth gate itself is unchanged.
   return (
-    <NavigationContainer>
+    <NavigationContainer documentTitle={{ formatter: (options) => formatDocumentTitle(options) }}>
       <AuthStack.Navigator screenOptions={{ headerShown: false }}>
         {isAuthenticated || isGuest ? (
           <AuthStack.Screen name="Main" component={StackNavigator} />

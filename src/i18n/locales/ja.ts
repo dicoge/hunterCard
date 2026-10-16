@@ -761,6 +761,8 @@ export const ja: Record<keyof typeof zh, string> = {
   scan_frame_auto: 'カードをスキャン枠に合わせてください',
   scan_frame_manual: 'スキャンボタンでカードを撮影してください',
   scan_auto_paused: '自動検出を停止しました。スキャンボタンを押してください',
+  scan_auto_needs_consent: '写真アップロードの説明に同意すると自動スキャンできます',
+  scan_auto_enable: '自動スキャンを開始',
   scan_close_a11y: 'スキャンを閉じる',
   scan_flash_on: 'フラッシュON',
   scan_flash: 'フラッシュ',

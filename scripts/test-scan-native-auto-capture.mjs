@@ -65,9 +65,14 @@ const jpeg = (tag) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buff
 const FULL_B64 = jpeg('context'), CROP_B64 = jpeg('crop');
 // What the on-device reader "sees" inside the frame on each call (probe or fallback).
 let frameText = '';
+let ocrThrows = false;
 const ocrCalls = [];
 const manipulations = [];
+const deleted = [];
+let cropSeq = 0;
+globalThis.__nativeCameraUniqueUris = true;
 globalThis.require = (name) => {
+  if (name === 'expo-file-system/legacy') return { deleteAsync: async (uri) => { deleted.push(uri); } };
   if (name === 'expo-image-manipulator') {
     return {
       SaveFormat: { JPEG: 'jpeg' },
@@ -81,7 +86,8 @@ globalThis.require = (name) => {
               return { async saveAsync(o) {
                 manipulations.push({ uri, ops, base64: !!o?.base64 });
                 const isCrop = ops.some((x) => x[0] === 'crop');
-                return { base64: o?.base64 ? (isCrop ? CROP_B64 : FULL_B64) : undefined, uri: isCrop ? 'file:///cache/ImageManipulator/frame.jpg' : 'file:///cache/ImageManipulator/full.jpg' };
+                const n = ++cropSeq;
+                return { base64: o?.base64 ? (isCrop ? CROP_B64 : FULL_B64) : undefined, uri: isCrop ? `file:///cache/ImageManipulator/frame-${n}.jpg` : `file:///cache/ImageManipulator/full-${n}.jpg` };
               } };
             },
           };
@@ -90,7 +96,7 @@ globalThis.require = (name) => {
       },
     };
   }
-  if (name === 'expo-ocr-kit') return { recognizeText: async (uri) => { ocrCalls.push(uri); return { text: frameText }; } };
+  if (name === 'expo-ocr-kit') return { recognizeText: async (uri) => { ocrCalls.push(uri); if (ocrThrows) throw new Error('reader crashed'); return { text: frameText }; } };
   throw new Error(`unexpected require ${name}`);
 };
 globalThis.__nativeCameraPhoto = { uri: 'file:///cache/Camera/shot.jpg', width: 3024, height: 4032, base64: jpeg('original') };
@@ -155,17 +161,36 @@ try {
   await test('native shows the Auto / Manual pill (capability present on this build) and starts in automatic mode', () => {
     assert.ok(byTestId('scan-mode-pill'), 'mode pill rendered on native');
     assert.equal(byTestId('scan-mode-auto').getAttribute('aria-selected'), 'true');
-    assert.ok(host.textContent.includes('將卡牌置於掃描框內'));
   });
 
-  await test('before the photo disclosure is accepted, automatic capture takes no picture at all', async () => {
+  await test('first use, disclosure not accepted: the hint says so (not "automatic"), an enable button is shown, and no picture is taken', async () => {
     frameText = 'hBP01-010';
     await probes(3);
     assert.equal(takes(), 0);
     assert.equal(bodies.length, 0);
+    assert.ok(byTestId('scan-hint').textContent.includes('同意照片上傳說明後才能自動掃描'), byTestId('scan-hint').textContent);
+    assert.ok(byTestId('scan-auto-enable'), 'enable-auto button');
   });
 
-  usePhotoUploadConsentStore.setState({ acceptedVersion: PHOTO_UPLOAD_DISCLOSURE_VERSION });
+  await test('declining the disclosure from the enable button keeps everything off (no picture, button still there)', async () => {
+    globalThis.__alertPress = '不同意';
+    await click(byTestId('scan-auto-enable'));
+    await probes(2);
+    assert.equal(globalThis.__alerts.at(-1).buttons.includes('同意並上傳'), true, 'the real disclosure was shown');
+    assert.equal(takes(), 0);
+    assert.ok(byTestId('scan-auto-enable'));
+  });
+
+  await test('accepting it from the enable button starts automatic capture — no shutter press needed', async () => {
+    frameText = '';
+    globalThis.__alertPress = '同意並上傳';
+    await click(byTestId('scan-auto-enable'));
+    await tick(50);
+    assert.equal(usePhotoUploadConsentStore.getState().acceptedVersion, PHOTO_UPLOAD_DISCLOSURE_VERSION);
+    assert.ok(!byTestId('scan-auto-enable'), 'button gone');
+    assert.ok(byTestId('scan-hint').textContent.includes('將卡牌置於掃描框內'));
+    globalThis.__alertPress = undefined;
+  });
 
   await test('no card number readable in the frame → probes only, never an upload (no blind timer capture)', async () => {
     frameText = '';
@@ -174,7 +199,7 @@ try {
     assert.equal(bodies.length, 0, 'nothing uploaded');
     const probeCalls = globalThis.__nativeCameraCalls;
     assert.ok(probeCalls.every((o) => o.shutterSound === false && o.base64 === false), 'probes are silent and carry no image bytes');
-    assert.ok(ocrCalls.every((u) => u === 'file:///cache/ImageManipulator/frame.jpg'), 'the reader reads the FRAME crop only');
+    assert.ok(ocrCalls.length > 0 && ocrCalls.every((u) => /\/ImageManipulator\/frame-\d+\.jpg$/.test(u)), 'the reader reads the FRAME crop only');
     assert.ok(manipulations.every((m) => m.base64 === false), 'probe crops are never encoded for upload');
   });
 
@@ -200,15 +225,41 @@ try {
     assert.equal(bodies.length, 1, 'no second request for the card that was just scanned');
   });
 
-  await test('removing the card re-arms; the next card held still is scanned once', async () => {
+  await test('OCR noise while the same card stays (one empty read, one misread number) does not scan it again', async () => {
     frameText = '';
+    await probes(1);
+    frameText = 'hBP01-010';
     await probes(2);
+    frameText = 'hBP01-016';
+    await probes(1);
+    frameText = 'hBP01-010';
+    await probes(2);
+    assert.equal(bodies.length, 1);
+  });
+
+  await test('removing the card (≈4 s without its number) re-arms; the next card held still is scanned once', async () => {
+    frameText = '';
+    await probes(4);
     frameText = 'hBP01-010';
     for (let i = 0; i < 50 && bodies.length === 1; i++) await tick(100);
     await tick(600);
     assert.equal(bodies.length, 2);
     await click(byTestId('scan-match-add'));
     await tick(50);
+  });
+
+  await test('every probe photo and probe crop is deleted (no accumulation); the real scan photo is not', async () => {
+    await tick(300);
+    const calls = globalThis.__nativeCameraCalls;
+    const probeShots = calls.filter((c) => c.shutterSound === false).map((c) => c.uri);
+    const realShots = calls.filter((c) => c.base64 === true).map((c) => c.uri);
+    const probeCrops = manipulations.filter((m) => m.base64 === false).length;
+    assert.ok(probeShots.length >= 6, `${probeShots.length} probes`);
+    for (const uri of probeShots) assert.ok(deleted.includes(uri), `probe photo ${uri} deleted`);
+    const deletedCrops = deleted.filter((u) => /frame-\d+\.jpg$/.test(u));
+    assert.equal(deletedCrops.length, probeCrops, 'every probe crop deleted');
+    assert.equal(new Set(deleted).size, deleted.length, 'each file deleted once');
+    for (const uri of realShots) assert.ok(!deleted.includes(uri), `real scan photo ${uri} kept for its own lifecycle`);
   });
 
   await test('the explicit add charges exactly once; automatic rounds charged nothing on their own', () => {
@@ -230,6 +281,15 @@ try {
     assert.equal(bodies.length, n, 'no automatic retry');
     await click(byTestId('scan-service-cancel'));
     providerDown = false;
+  });
+
+  await test('a probe whose on-device reader throws still deletes its files', async () => {
+    const before = deleted.length;
+    ocrThrows = true;
+    await probes(2);
+    ocrThrows = false;
+    const last = globalThis.__nativeCameraCalls.filter((c) => c.shutterSound === false).at(-1).uri;
+    assert.ok(deleted.length > before && deleted.includes(last), 'files of the failing probe deleted');
   });
 
   await test('in the background nothing is probed; back in the foreground probing resumes', async () => {

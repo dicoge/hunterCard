@@ -38,21 +38,38 @@ test('the same card left in the frame after its round is never triggered again',
   run(m, [['hbp01-010'], ['hbp01-010']]);
   assert.deepEqual(run(m, Array(10).fill(['hbp01-010'])), Array(10).fill('none'));
 });
-test('removing the card re-arms; the next card held still triggers once', () => {
+test('removing the card (3 probes without it) re-arms; the next card held still triggers once', () => {
   const m = createAutoCaptureMachine();
   run(m, [['hbp01-010'], ['hbp01-010']]);
-  assert.deepEqual(run(m, [[], ['hbp05-081'], ['hbp05-081'], ['hbp05-081']]), ['none', 'none', 'trigger', 'none']);
+  assert.deepEqual(run(m, [[], [], [], ['hbp05-081'], ['hbp05-081'], ['hbp05-081']]), ['none', 'none', 'none', 'none', 'trigger', 'none']);
 });
-test('swapping straight to another card re-arms on that probe', () => {
+test('swapping straight to another card: re-armed once the old number is gone for 3 probes, then held still', () => {
   const m = createAutoCaptureMachine();
   run(m, [['hbp01-010'], ['hbp01-010']]);
-  assert.deepEqual(run(m, [['heb01-014'], ['heb01-014']]), ['none', 'trigger']);
+  assert.deepEqual(run(m, [['heb01-014'], ['heb01-014'], ['heb01-014'], ['heb01-014']]), ['none', 'none', 'none', 'trigger']);
+});
+test('OCR noise while the SAME card stays: old → one empty read → old never re-arms (no second request)', () => {
+  const m = createAutoCaptureMachine();
+  run(m, [['hbp01-010'], ['hbp01-010']]);
+  assert.deepEqual(run(m, [[], ['hbp01-010'], ['hbp01-010'], [], ['hbp01-010'], ['hbp01-010']]), Array(6).fill('none'));
+  assert.equal(m.state().armed, false);
+});
+test('OCR noise while the SAME card stays: old → one misread token → old never re-arms', () => {
+  const m = createAutoCaptureMachine();
+  run(m, [['hbp01-010'], ['hbp01-010']]);
+  assert.deepEqual(run(m, [['hbp01-016'], ['hbp01-010'], ['hbp01-016'], ['hbp01-016'], ['hbp01-010'], ['hbp01-010']]), Array(6).fill('none'));
+  assert.equal(m.state().armed, false);
+});
+test('absentToRearm can never be configured below 2', () => {
+  const m = createAutoCaptureMachine({ absentToRearm: 1 });
+  run(m, [['hbp01-010'], ['hbp01-010']]);
+  assert.deepEqual(run(m, [[], ['hbp01-010']]), ['none', 'none']);
 });
 test('after a manual (shutter) round it waits for an empty frame — the card that was shot is not re-scanned', () => {
   const m = createAutoCaptureMachine();
   m.roundStarted(null);
   assert.deepEqual(run(m, [['hbp01-010'], ['hbp01-010'], ['hbp01-010']]), ['none', 'none', 'none']);
-  assert.deepEqual(run(m, [[], ['hbp01-010'], ['hbp01-010']]), ['none', 'none', 'trigger']);
+  assert.deepEqual(run(m, [[], [], [], ['hbp01-010'], ['hbp01-010']]), ['none', 'none', 'none', 'none', 'trigger']);
 });
 test('idle for maxIdleProbes pauses (battery); while paused nothing triggers; resume re-enables', () => {
   const m = createAutoCaptureMachine({ maxIdleProbes: 5 });

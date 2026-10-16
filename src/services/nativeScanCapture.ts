@@ -164,3 +164,34 @@ export function nativeAutoCaptureAvailable(requireImpl: RequireImpl = AUTO_REQUI
     return false;
   }
 }
+
+const FS_REQUIRE: RequireImpl = () => {
+  // expo-file-system ships with the `expo` package (SDK 54) and is autolinked; static
+  // literal for Metro, lazily so a missing module only means "nothing deleted".
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return require('expo-file-system/legacy');
+};
+
+/**
+ * Delete the temporary files of ONE automatic-capture probe (its silent photo and its
+ * frame crop) so continuous probing never accumulates photos on the device. Only the
+ * probe's own file:// URIs are passed in — never the photo of a real scan, a retry or
+ * a result. Best effort, idempotent, never throws.
+ */
+export async function deleteProbeFiles(
+  uris: Array<string | null | undefined>,
+  requireImpl: RequireImpl = FS_REQUIRE,
+): Promise<number> {
+  const unique = [...new Set(uris.filter((u): u is string => typeof u === 'string' && u.startsWith('file://')))];
+  if (unique.length === 0) return 0;
+  type Fs = { deleteAsync?: (uri: string, o?: { idempotent?: boolean }) => Promise<void> };
+  let mod: Fs | null = null;
+  try { mod = requireImpl('expo-file-system/legacy') as Fs; } catch { return 0; }
+  const del = mod?.deleteAsync;
+  if (typeof del !== 'function') return 0;
+  let deleted = 0;
+  for (const uri of unique) {
+    try { await del.call(mod, uri, { idempotent: true }); deleted += 1; } catch { /* best effort */ }
+  }
+  return deleted;
+}

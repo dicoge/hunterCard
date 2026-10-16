@@ -89,6 +89,10 @@ export interface ScanOverlayProps {
   onToggleAutoScan?: (next: boolean) => void;
   /** Native automatic capture stopped after a long idle stretch (src/services/autoCapture). */
   autoScanPaused?: boolean;
+  /** Automatic mode is on but the photo-upload disclosure is not accepted yet: nothing is
+   *  captured until the user enables it here (no shutter needed). */
+  autoScanNeedsConsent?: boolean;
+  onEnableAutoScan?: () => void;
   /** DIC-1427 Pen AQf9b: the 估值清單 count box opens the session list. */
   onOpenSession?: () => void;
 }
@@ -111,6 +115,8 @@ export default function ScanOverlay({
   onClose,
   autoScanSupported = false,
   autoScanPaused = false,
+  autoScanNeedsConsent = false,
+  onEnableAutoScan,
   onToggleAutoScan,
   onOpenSession,
 }: ScanOverlayProps) {
@@ -229,9 +235,21 @@ export default function ScanOverlay({
           <View style={styles.overlaySide} />
         </View>
         <View style={styles.overlayBottom}>
-          <Text style={styles.hintText}>
-            {autoScanActive ? t(autoScanPaused ? 'scan_auto_paused' : 'scan_frame_auto') : t('scan_frame_manual')}
+          <Text style={styles.hintText} testID="scan-hint">
+            {autoScanActive
+              ? t(autoScanNeedsConsent ? 'scan_auto_needs_consent' : autoScanPaused ? 'scan_auto_paused' : 'scan_frame_auto')
+              : t('scan_frame_manual')}
           </Text>
+          {autoScanActive && autoScanNeedsConsent && onEnableAutoScan ? (
+            <TouchableOpacity
+              style={styles.autoEnableBtn}
+              onPress={onEnableAutoScan}
+              accessibilityRole="button"
+              testID="scan-auto-enable"
+            >
+              <Text style={styles.autoEnableText}>{t('scan_auto_enable')}</Text>
+            </TouchableOpacity>
+          ) : null}
           {/* Pen Tips row (node Cc84X): three pill chips */}
           <View style={styles.tipsRow} testID="scan-tips-row">
             <View style={styles.tipChip}><Text style={styles.tipChipText}>{t('scan_tip_number')}</Text></View>
@@ -463,6 +481,14 @@ const styles = StyleSheet.create({
     paddingTop: 30,
     alignItems: 'center',
   },
+  autoEnableBtn: {
+    marginBottom: 10,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: COLORS.primary,
+  },
+  autoEnableText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
   // Pen Hint title (node RrYjs): 14/600 white.
   hintText: {
     color: '#FFFFFF',

@@ -79,7 +79,9 @@ export function selectTrendAlerts({ watchlist, findCard, findTrend, now, notBefo
     if (!trend || score <= TREND_THRESHOLD || dataPoints < MIN_DATA_POINTS) { notEligible += 1; continue; }
     if (!isFresh(trend.lastUpdated, now, { notBefore })) { stale += 1; continue; }
     const displayName = card?.nameZh || card?.name || trend.nameZh || trend.name || cardNumber;
-    const price = card?.sellPrice ?? card?.buyPrice;
+    // A price preserved from an older scrape is not "現價": shown only when the card's
+    // own price timestamp is current, otherwise 價格未定.
+    const price = isFresh(card?.timestamp, now, { notBefore }) ? (card?.sellPrice ?? card?.buyPrice) : undefined;
     alerts.push({
       cardNumber,
       title: `入手時機！${displayName} ▲+${Math.round(score * 100)}%`,
@@ -87,4 +89,46 @@ export function selectTrendAlerts({ watchlist, findCard, findTrend, now, notBefo
     });
   }
   return { alerts, stale, notEligible };
+}
+
+/**
+ * The desired-price snapshot to post (v41 per-price freshness). A database updated
+ * today can still carry individual prices preserved from weeks ago (on 2026-10-16:
+ * 72 priced rows dated 2026-08-25). Only a watched exact printing whose OWN price
+ * record is current (and not from before the restoration start) is posted; a stale
+ * record contributes nothing, and no other printing of the same card number can stand
+ * in for it (exact key only — no sibling price).
+ */
+export function freshPriceSnapshot({ watched, priceRecords, now, notBefore = null, keyOf, oldestPricedRowByNumber = null }) {
+  const index = new Map();
+  for (const record of priceRecords) index.set(keyOf(record.cardNumber, record.version), record);
+  const prices = [];
+  let stale = 0;
+  let unpriced = 0;
+  for (const { cardNumber, printing } of watched) {
+    const record = index.get(keyOf(cardNumber, printing));
+    if (!record) { unpriced += 1; continue; }
+    if (!isFresh(record.timestamp, now, { notBefore })) { stale += 1; continue; }
+    // A card number's listings are merged from all its rows (reprints), so the record's
+    // timestamp is only the representative row's: require every priced row of that
+    // number to be current (fail closed — a stale reprint row could be the source).
+    const oldest = oldestPricedRowByNumber?.get(cardNumber);
+    if (oldestPricedRowByNumber && !isFresh(oldest, now, { notBefore })) { stale += 1; continue; }
+    prices.push({ cardNumber, printing, price: record.price, currency: record.currency });
+  }
+  return { prices, stale, unpriced };
+}
+
+/** cardNumber → the OLDEST timestamp among its rows that carry listings ('' if any is missing). */
+export function oldestPricedRowTimestamps(rawCards) {
+  const out = new Map();
+  for (const c of rawCards) {
+    if (!c?.cardNumber || !Array.isArray(c.prices) || c.prices.length === 0) continue;
+    const t = typeof c.timestamp === 'string' ? c.timestamp : '';
+    const prev = out.get(c.cardNumber);
+    if (prev === undefined) out.set(c.cardNumber, t);
+    else if (!t || !prev) out.set(c.cardNumber, '');
+    else if (Date.parse(t) < Date.parse(prev)) out.set(c.cardNumber, t);
+  }
+  return out;
 }

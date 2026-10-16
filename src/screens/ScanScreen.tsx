@@ -59,7 +59,7 @@ import {
   type ScanPresentation,
 } from '../services/scanPresentation';
 import { CROP_PAD, defaultScanFrameRect, planNativeCrop } from '../utils/scanFrame';
-import { cropProbeToFrame, nativeAutoCaptureAvailable, prepareNativeScanImages } from '../services/nativeScanCapture';
+import { cropProbeToFrame, deleteProbeFiles, nativeAutoCaptureAvailable, prepareNativeScanImages } from '../services/nativeScanCapture';
 import { AUTO_CAPTURE_PROBE_INTERVAL_MS, createAutoCaptureMachine } from '../services/autoCapture';
 import { findCardNumberTokens } from '../utils/cardNumberToken';
 import { useScanDiagnosticsStore } from '../store/scanDiagnosticsStore';
@@ -310,6 +310,10 @@ export default function ScanScreen({ navigation }: any) {
   // Web: after a round the frame must move (a card taken away / a new one) before the
   // next automatic capture — a card left still in front of the camera is not re-scanned.
   const webNeedMotionRef = useRef(false);
+  // Re-renders when the disclosure is accepted (from the auto button, the shutter or the
+  // gallery), so the hint never claims "automatic" while nothing can be captured.
+  const consentVersion = usePhotoUploadConsentStore((st) => st.acceptedVersion);
+  const autoScanNeedsConsent = autoScanActive && !hasPhotoUploadConsent(consentVersion);
   const setAutoScan = (on: boolean) => {
     setAutoScanEnabled(on);
     if (on) { autoMachine.resume(); setAutoPaused(false); }
@@ -659,13 +663,21 @@ export default function ScanScreen({ navigation }: any) {
   // never run while anything is on screen, the app is in the background, the screen
   // is not focused, the photo disclosure is not accepted or the allowance is used up.
   const probeCardNumbers = async (): Promise<string[]> => {
-    const shot = await cameraRef.current?.takePictureAsync({ quality: 0.3, base64: false, shutterSound: false });
-    if (!shot?.uri) return [];
-    const [preview, frameRect] = await Promise.all([measureInWindow(cameraBoxRef), measureInWindow(scanFrameRef)]);
-    const plan = planNativeCrop(preview, frameRect, shot.width && shot.height ? { width: shot.width, height: shot.height } : null);
-    const cropUri = await cropProbeToFrame(shot, plan);
-    if (!cropUri) return [];
-    return findCardNumberTokens(await nativeOcrRecognize(cropUri));
+    let shotUri: string | null = null;
+    let cropUri: string | null = null;
+    try {
+      const shot = await cameraRef.current?.takePictureAsync({ quality: 0.3, base64: false, shutterSound: false });
+      if (!shot?.uri) return [];
+      shotUri = shot.uri;
+      const [preview, frameRect] = await Promise.all([measureInWindow(cameraBoxRef), measureInWindow(scanFrameRef)]);
+      const plan = planNativeCrop(preview, frameRect, shot.width && shot.height ? { width: shot.width, height: shot.height } : null);
+      cropUri = await cropProbeToFrame(shot, plan);
+      if (!cropUri) return [];
+      return findCardNumberTokens(await nativeOcrRecognize(cropUri));
+    } finally {
+      // Probe files are this probe's alone: delete them on every path (no accumulation).
+      void deleteProbeFiles([shotUri, cropUri]);
+    }
   };
   useEffect(() => {
     if (isWeb || !autoScanActive || !permission?.granted) return;
@@ -821,6 +833,14 @@ export default function ScanScreen({ navigation }: any) {
     }),
   });
   const hasUploadConsent = () => hasPhotoUploadConsent(usePhotoUploadConsentStore.getState().acceptedVersion);
+  // First use of automatic mode: show the same disclosure the shutter shows — no
+  // picture is taken here; probing starts only once the user accepted.
+  const enableAutoScan = async () => {
+    if (await requestPhotoUploadConsent()) {
+      autoMachine.resume();
+      setAutoPaused(false);
+    }
+  };
 
 
   // 相機辨識流程本身住在 scanRecognitionFlow，這兩個 adapter 只把 I/O 與 setState 接上，
@@ -1601,6 +1621,8 @@ export default function ScanScreen({ navigation }: any) {
             autoScanActive={autoScanActive}
             autoScanSupported={isWeb}
             onToggleAutoScan={setAutoScan}
+            autoScanNeedsConsent={autoScanNeedsConsent}
+            onEnableAutoScan={enableAutoScan}
             onOpenSession={() => setSessionOpenRequest((n) => n + 1)}
             isCameraReady={isCameraReady}
             cameraError={cameraError}
@@ -1637,6 +1659,8 @@ export default function ScanScreen({ navigation }: any) {
             autoScanActive={autoScanActive}
             autoScanSupported={nativeAutoAvailable}
             onToggleAutoScan={setAutoScan}
+            autoScanNeedsConsent={autoScanNeedsConsent}
+            onEnableAutoScan={enableAutoScan}
             autoScanPaused={autoPaused}
             // Native crop (CR 2026-10-15 P2_1): the frame is measured in window coords at
             // capture; without this ref every native capture fell back to the full photo.

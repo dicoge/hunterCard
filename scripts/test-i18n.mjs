@@ -590,4 +590,14 @@ test('ja summary path does not surface Chinese runtime coverage/source strings',
   }
 });
 
+
+// v41: the web tab title never shows an internal route name (QA baseline saw "Login").
+{
+  const { formatDocumentTitle } = await import('../src/navigation/documentTitle.ts');
+  assert.equal(formatDocumentTitle(undefined), 'HoloHunter', 'Login / AuthLogin (no title) → brand, not "Login"');
+  assert.equal(formatDocumentTitle({ title: t('nav_home', 'zh') }), '首頁 · HoloHunter');
+  assert.equal(formatDocumentTitle({ title: t('nav_home', 'ja') }), `${t('nav_home', 'ja')} · HoloHunter`);
+  assert.equal(formatDocumentTitle({ title: '  ' }), 'HoloHunter');
+  passed += 1;
+}
 console.log(`test-i18n: PASS (${passed} checks)`);

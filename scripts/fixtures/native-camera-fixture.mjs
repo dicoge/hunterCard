@@ -6,7 +6,14 @@ import { View } from 'react-native-web';
 
 export const CameraView = React.forwardRef(function CameraView(props, ref) {
   React.useImperativeHandle(ref, () => ({
-    takePictureAsync: async (opts) => { globalThis.__nativeCameraTakes = (globalThis.__nativeCameraTakes ?? 0) + 1; (globalThis.__nativeCameraCalls ||= []).push({ ...(opts || {}) }); return { ...globalThis.__nativeCameraPhoto }; },
+    takePictureAsync: async (opts) => {
+      globalThis.__nativeCameraTakes = (globalThis.__nativeCameraTakes ?? 0) + 1;
+      const photo = { ...globalThis.__nativeCameraPhoto };
+      // Opt-in: a distinct file per capture, as a device writes one (cleanup proofs).
+      if (globalThis.__nativeCameraUniqueUris) photo.uri = photo.uri.replace(/\.jpg$/, `-${globalThis.__nativeCameraTakes}.jpg`);
+      (globalThis.__nativeCameraCalls ||= []).push({ ...(opts || {}), uri: photo.uri });
+      return photo;
+    },
     getAvailablePictureSizesAsync: async () => ['1440x1920', '3024x4032'],
   }));
   // A device reports readiness from a native event AFTER mount, not synchronously inside

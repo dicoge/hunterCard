@@ -190,6 +190,20 @@ try {
     await p2.kill();
   });
 
+  await test('same person, NEW session token (re-sign-in / token rotation) with a pending offline edit: nothing wiped, the edit is pushed', async () => {
+    await phone1.call('offline', { value: true });
+    await act(phone1, 'own', { cardNumber: 'hBP04-001', version: 'BASE', qty: 2 });
+    const A2 = await server.createSession('two-device-user-a');   // same subject → same account, new token
+    assert.notEqual(A2.session, A.session);
+    assert.equal(A2.user.internalId, userA.internalId);
+    let s = await act(phone1, 'login', { session: A2.session, user: { ...A2.user } });
+    assert.equal(s.collection['hBP04-001|BASE'], 2, 'pending edit kept across the token change');
+    await phone1.call('offline', { value: false });
+    s = await act(phone1, 'foreground');
+    assert.equal(s.sync.dirty, false);
+    assert.equal((await serverSnapshot(A.session)).collection['hBP04-001|BASE'], 2, 'and pushed');
+  });
+
   await test('sign out on phone 1: the account data (incl. the scan list) leaves the device; the next guest starts empty', async () => {
     const s = await act(phone1, 'logout');
     assert.deepEqual(s.collection, {});
