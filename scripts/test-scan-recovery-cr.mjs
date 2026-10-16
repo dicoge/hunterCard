@@ -206,5 +206,58 @@ await test('hostile received values never reach the wire, the log or the export'
   assert.equal(stored.trace.fields.number.received, undefined);
 });
 
+// ============================ #5 (CR b812dc4) ============================
+console.log('\n#5 legacy "exact" evidence verified against the RECEIVED number (strict whole token)');
+for (const which of ['native', 'web', 'gallery']) {
+  for (const [fx, raw] of [
+    ['v37-wire/received-truncated-extra-digit', 'hBP01-0010'],
+    ['v37-wire/received-truncated-extra-digit-tail', 'hBP01-0019'],
+    ['v37-wire/received-truncated-suffix-letters', 'hBP01-001SR'],
+    ['v37-wire/received-truncated-prefix-junk', 'xhBP01-001'],
+    ['v37-wire/received-success-truncated-extra-digit', 'hBP01-0100 (v37 success 0.99)'],
+    ['v37-wire/received-disagrees-with-candidate', 'hBP01-002 vs candidate hBP01-001'],
+    ['v37-wire/received-missing', 'no cardNumberRaw'],
+  ]) {
+    await test(`${which}: received ${raw} → no best, no resolved identity, no price`, async () => {
+      const { p, committed } = await route(fx, which);
+      assert.equal(p.kind, 'none', `got ${p.kind}`);
+      assert.equal(p.card, undefined);
+      assert.deepEqual(committed, []);
+    });
+  }
+  await test(`${which}: valid full token hBP01-001 + OUR → best preview of the OUR printing (verified positive kept)`, async () => {
+    const { p, committed } = await route('v37-wire/received-valid-full-token', which);
+    assert.equal(p.kind, 'best');
+    assert.equal(p.card.id, 'hBP01-001_hBP01_OUR_hBP01-001_OUR');
+    assert.deepEqual(committed, []);
+  });
+  await test(`${which}: v37 success with valid full token hBP01-010 → best preview`, async () => {
+    const { p } = await route('v37-wire/received-success-valid-full-token', which);
+    assert.equal(p.kind, 'best');
+    assert.equal(p.card.id, 'hBP01-010_hBP01_U_hBP01-010_U');
+  });
+}
+await test('unverified candidates stay available as manual correction (suggestions), never as a verified result', async () => {
+  const { p } = await route('v37-wire/received-truncated-extra-digit', 'web');
+  assert.ok(p.suggestions.length > 0);
+  assert.ok(p.suggestions.every((c) => !c.evidence?.includes('cardNumber exact')));
+});
+await test('log keeps received hBP01-0010 as parse_error-capable text beside v37 normalized hbp01-001', async () => {
+  wire = fixture('v37-wire/received-truncated-extra-digit');
+  const r = await recognizeCardFromImage(JPEG); wire = null;
+  const n = diag.diagnosticsFromResult(r).trace.fields.number;
+  assert.equal(n.received, 'hBP01-0010');
+});
+await test('modern explicit match is untouched by the legacy guard (4a566fa matched response)', async () => {
+  wire = fixture('base4a-wire/matched-no-trace');
+  const r = await recognizeCardFromImage(JPEG); wire = null;
+  assert.equal(r.match.status, 'matched');
+  assert.ok(r.candidates[0].evidence.includes('cardNumber exact'));
+});
+await test('local OCR exact read (no backend evidence) still resolves', () => {
+  const card = { id: 'hBP01-010_hBP01_U_hBP01-010_U', cardNumber: 'hBP01-010' };
+  assert.equal(presentLegacyDecision({ action: 'commit', card, confidence: 0.95 }).kind, 'best');
+});
+
 if ((process.exitCode ?? 0) === 0) console.log(`\n✅ scan-recovery-cr: ${passed} checks passed`);
 else console.error('\n❌ scan-recovery-cr failed');

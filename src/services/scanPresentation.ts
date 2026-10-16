@@ -14,6 +14,37 @@
  * imports so the Node regressions drive this exact decision.
  */
 import type { CardInfo, RecognitionResult, RecognizedCandidate } from './cardRecognition';
+import { parseCardNumberToken } from '../utils/cardNumberToken';
+
+/**
+ * CR b812dc4 (2026-10-16): an older backend's `cardNumber exact` is not proof. v37's
+ * unanchored normaliser truncates an invalid reading (`hBP01-0010` → `hBP01-001`) and then
+ * labels the truncated number "exact". Before ANY legacy evidence is trusted, the number
+ * the backend actually received (`debug.extracted.cardNumberRaw`, sent by v37) is
+ * re-parsed with the strict whole-token parser and must equal the candidate's own number.
+ *
+ *   valid received token == candidate number  → the exact claim is kept
+ *   invalid / truncatable / different number   → the exact claim is dropped
+ *   received number missing                    → dropped (fail closed: unverifiable)
+ *
+ * Only the exact-number claim is removed; the candidate stays available as a manual
+ * correction. Responses with an explicit `match` verdict (current backend, strict parser
+ * server-side) are not touched.
+ */
+export function legacyReceivedNumber(body: any): string | null {
+  const raw = body?.debug?.extracted?.cardNumberRaw;
+  return typeof raw === 'string' ? raw : null;
+}
+export function verifyLegacyNumberEvidence(cands: RecognizedCandidate[] | undefined, received: string | null): RecognizedCandidate[] | undefined {
+  if (!cands) return cands;
+  const token = received ? parseCardNumberToken(received) : null;
+  return cands.map((c) => {
+    if (!c.evidence?.includes('cardNumber exact')) return c;
+    if (token && token === String(c.card.cardNumber || '').toLowerCase()) return c;
+    const evidence = c.evidence.filter((e) => e !== 'cardNumber exact');
+    return { ...c, evidence };
+  });
+}
 
 /**
  * Which rule produced a presentation — logged separately from the server verdict so a

@@ -25,7 +25,7 @@ import {
 } from './recognitionImagePolicy';
 import { SCAN_RUNTIME } from './scanRuntime';
 import { findCardNumberTokens } from '../utils/cardNumberToken';
-import { matchFromWire } from './scanPresentation';
+import { matchFromWire, legacyReceivedNumber, verifyLegacyNumberEvidence } from './scanPresentation';
 import { projectTrace, type RecognitionTrace } from './scanTrace';
 
 // ── 類型定義 ──
@@ -584,7 +584,7 @@ async function recognizeViaApi(imageUri: string, options: RecognizeImageOptions 
         success: false,
         error: data.error || '',
         suggestions: Array.isArray(data.candidates) ? data.candidates.map(mapApiCard) : undefined,
-        candidates: mapApiCandidates(data.candidates),
+        candidates: data.match ? mapApiCandidates(data.candidates) : verifyLegacyNumberEvidence(mapApiCandidates(data.candidates), legacyReceivedNumber(data)),
         confidence: data.confidence,
         reason: data.reason,
         raw: data.raw,
@@ -605,7 +605,7 @@ async function recognizeViaApi(imageUri: string, options: RecognizeImageOptions 
         success: true,
         card: cardInfo,
         confidence: typeof data.confidence === 'number' ? data.confidence : undefined,
-        candidates: mapApiCandidates(data.candidates),
+        candidates: data.match ? mapApiCandidates(data.candidates) : verifyLegacyNumberEvidence(mapApiCandidates(data.candidates), legacyReceivedNumber(data)),
         match: mapMatch(data.match),
         debug: diagnosticDebug(data.debug),
         trace: projectTrace(data.trace),

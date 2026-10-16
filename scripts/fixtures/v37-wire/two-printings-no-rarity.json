@@ -105,6 +105,14 @@
     "score": 104,
     "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD08/hBP01-009_C.png"
    }
-  ]
- }
+  ],
+  "debug": {
+   "provider": "gemini",
+   "model": "gemini-2.5-flash",
+   "extracted": {
+    "cardNumberRaw": "hBP01-001"
+   }
+  }
+ },
+ "note": "debug restored 2026-10-16 with ONLY the safe expected field extracted.cardNumberRaw (= what v37 parseField returns for the mocked reading); no raw reply"
 }
