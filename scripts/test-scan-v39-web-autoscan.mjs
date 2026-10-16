@@ -138,11 +138,28 @@ try {
     assert.equal(useScanSessionStore.getState().cardCount, 0);
     assert.equal(useScanQuotaStore.getState().getRemaining(), remaining);
   });
+  await test('v41: the same card left still in the frame after a round is NOT captured again; moving it re-arms', async () => {
+    await click(byTestId('scan-match-retake'));
+    const takes = globalThis.__webCameraTakes, uploads = bodies.length;
+    await tick(3600);
+    assert.equal(globalThis.__webCameraTakes, takes, 'still frame: no second capture of the same card');
+    assert.equal(bodies.length, uploads);
+    providerDown = true;
+    globalThis.__frameStable = false;   // the card is moved / swapped
+    await tick(100);
+    globalThis.__frameStable = true;
+    assert.ok(await waitFor(() => globalThis.__webCameraTakes === takes + 1, 5000), 'motion re-arms: one new capture');
+    assert.ok(await waitFor(() => byTestId('scan-service-failure')), 'that round ends in the service panel (provider down)');
+    await click(byTestId('scan-service-cancel'));
+    providerDown = false;
+  });
   await test('CR 717c3fe P2 #1: local OCR THROWS after a service failure → typed failure kept, panel + same-photo retry, auto-scan paused: one capture, one upload past the cooldown', async () => {
-    await click(byTestId('scan-match-retake'));   // close the preview → auto-scan may run again
     providerDown = true;
     globalThis.__webOcrThrows = true;
     const takes = globalThis.__webCameraTakes, uploads = bodies.length;
+    globalThis.__frameStable = false;   // a new card is brought in → re-armed
+    await tick(100);
+    globalThis.__frameStable = true;
     assert.ok(await waitFor(() => byTestId('scan-service-failure')), 'service panel shown although OCR threw');
     await tick(3600);
     assert.equal(globalThis.__webCameraTakes, takes + 1, 'exactly one capture');

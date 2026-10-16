@@ -59,7 +59,9 @@ import {
   type ScanPresentation,
 } from '../services/scanPresentation';
 import { CROP_PAD, defaultScanFrameRect, planNativeCrop } from '../utils/scanFrame';
-import { prepareNativeScanImages } from '../services/nativeScanCapture';
+import { cropProbeToFrame, nativeAutoCaptureAvailable, prepareNativeScanImages } from '../services/nativeScanCapture';
+import { AUTO_CAPTURE_PROBE_INTERVAL_MS, createAutoCaptureMachine } from '../services/autoCapture';
+import { findCardNumberTokens } from '../utils/cardNumberToken';
 import { useScanDiagnosticsStore } from '../store/scanDiagnosticsStore';
 import { diagnosticsFromResult, type ScanOutcome } from '../services/scanDiagnostics';
 import { analyzeFrameWithStability, resetAutoScan } from '../services/autoScanService';
@@ -297,7 +299,21 @@ export default function ScanScreen({ navigation }: any) {
   // DIC-1427 Pen Cys7V: the mode pill is a REAL toggle on web (the only
   // platform running the frame-stability loop). Native keeps no pill at all.
   const [autoScanEnabled, setAutoScanEnabled] = useState(true);
-  const autoScanActive = isWeb && autoScanEnabled;
+  // v41: native has automatic capture too (src/services/autoCapture) when this build
+  // carries the frame crop + on-device text reader; otherwise only the shutter.
+  const nativeAutoAvailable = useRef(!isWeb && nativeAutoCaptureAvailable()).current;
+  const autoScanSupported = isWeb || nativeAutoAvailable;
+  const autoScanActive = autoScanSupported && autoScanEnabled;
+  const autoMachine = useRef(createAutoCaptureMachine()).current;
+  const probeBusyRef = useRef(false);
+  const [autoPaused, setAutoPaused] = useState(false);
+  // Web: after a round the frame must move (a card taken away / a new one) before the
+  // next automatic capture — a card left still in front of the camera is not re-scanned.
+  const webNeedMotionRef = useRef(false);
+  const setAutoScan = (on: boolean) => {
+    setAutoScanEnabled(on);
+    if (on) { autoMachine.resume(); setAutoPaused(false); }
+  };
   // DIC-1427 Pen AQf9b: the 估值清單 count box asks the session panel to open.
   const [sessionOpenRequest, setSessionOpenRequest] = useState(0);
   const autoScanRef = useRef<number | null>(null);
@@ -593,8 +609,8 @@ export default function ScanScreen({ navigation }: any) {
 
   // Auto-scan rAF loop (web only) — detects card in frame and auto-triggers OCR
   useEffect(() => {
-    // Auto-scan only works on web; native keeps manual scan
-    if (!autoScanActive) return;
+    // Web frame-stability loop; native uses the probe loop below.
+    if (!isWeb || !autoScanActive) return;
     if (!isCameraReady) return;
     if (isScanning || isProcessingOCR) return;
     if (candidateSelector.visible || resultCard.visible || matchSheet) return;
@@ -612,12 +628,14 @@ export default function ScanScreen({ navigation }: any) {
       const video = document.querySelector('video');
       if (video && video.readyState >= 2) {
         const result = analyzeFrameWithStability(video, scanArea);
+        if (!result.isStable) webNeedMotionRef.current = false;
         // Gate auto-scan through the same role/quota check as manual scan so an
         // over-quota user (guest or free) in the scanner UI can't auto-record cards.
-        if (result.isStable && result.confidence > 0.85 && canScanNow()) {
+        if (result.isStable && result.confidence > 0.85 && !webNeedMotionRef.current && canScanNow()) {
           const now = Date.now();
           if (now - lastScanTimeRef.current > SCAN_COOLDOWN_MS) {
             lastScanTimeRef.current = now;
+            webNeedMotionRef.current = true;
             captureAndRecognize();
           }
         }
@@ -634,6 +652,47 @@ export default function ScanScreen({ navigation }: any) {
       }
     };
   }, [isCameraReady, autoScanActive, isScanning, isProcessingOCR, candidateSelector.visible, resultCard.visible, matchSheet, serviceFailure]);
+
+  // Native automatic capture (v41, src/services/autoCapture): a silent low-res probe,
+  // cropped to the frame and read ON THE DEVICE; only a card number held still in the
+  // frame starts the normal scan (one recognition request). Probes never upload and
+  // never run while anything is on screen, the app is in the background, the screen
+  // is not focused, the photo disclosure is not accepted or the allowance is used up.
+  const probeCardNumbers = async (): Promise<string[]> => {
+    const shot = await cameraRef.current?.takePictureAsync({ quality: 0.3, base64: false, shutterSound: false });
+    if (!shot?.uri) return [];
+    const [preview, frameRect] = await Promise.all([measureInWindow(cameraBoxRef), measureInWindow(scanFrameRef)]);
+    const plan = planNativeCrop(preview, frameRect, shot.width && shot.height ? { width: shot.width, height: shot.height } : null);
+    const cropUri = await cropProbeToFrame(shot, plan);
+    if (!cropUri) return [];
+    return findCardNumberTokens(await nativeOcrRecognize(cropUri));
+  };
+  useEffect(() => {
+    if (isWeb || !autoScanActive || !permission?.granted) return;
+    if (!isCameraReady || isScanning || isProcessingOCR || autoPaused) return;
+    if (candidateSelector.visible || resultCard.visible || matchSheet || serviceFailure || scanError || showSearch) return;
+    let stopped = false;
+    const tick = async () => {
+      if (stopped || probeBusyRef.current) return;
+      if (!mountedRef.current || !lifecycle.isFocused() || lifecycle.hasLiveJob()) return;
+      if (AppState.currentState !== 'active') return;
+      if (!canScanNow() || !hasUploadConsent()) return;
+      probeBusyRef.current = true;
+      try {
+        const tokens = await probeCardNumbers();
+        if (stopped) return;
+        const decision = autoMachine.onProbe(tokens);
+        if (autoMachine.state().paused) setAutoPaused(true);
+        if (decision === 'trigger') captureAndRecognize();
+      } catch {
+        // A failed probe is just "nothing readable"; the shutter always works.
+      } finally {
+        probeBusyRef.current = false;
+      }
+    };
+    const id = setInterval(tick, AUTO_CAPTURE_PROBE_INTERVAL_MS);
+    return () => { stopped = true; clearInterval(id); };
+  }, [autoScanActive, permission?.granted, isCameraReady, isScanning, isProcessingOCR, autoPaused, candidateSelector.visible, resultCard.visible, matchSheet, serviceFailure, scanError, showSearch]);
 
   const toggleFlash = () => {
     setFlash(current => !current);
@@ -907,6 +966,9 @@ export default function ScanScreen({ navigation }: any) {
     const job = lifecycle.begin();
     if (!job) return;
     const { signal } = job;
+    // One camera capture at a time: let a running probe finish first (bounded).
+    for (let i = 0; i < 40 && probeBusyRef.current; i++) await new Promise((r) => setTimeout(r, 50));
+    if (!job.isCurrent()) { lifecycle.end(job); return; }
     const diagId = diagStart('camera');
     let stageT0 = Date.now();
 
@@ -1218,6 +1280,11 @@ export default function ScanScreen({ navigation }: any) {
 
   const handleScan = async () => {
     if (isScanning || isProcessingOCR || lifecycle.hasLiveJob()) return;
+    // A manual round: automatic capture waits until the frame is empty again, and an
+    // idle pause ends (the user is here).
+    autoMachine.roundStarted(null);
+    setAutoPaused(false);
+    webNeedMotionRef.current = true;
     if (!canScanNow()) {
       promptScanBlocked();
       return;
@@ -1533,7 +1600,7 @@ export default function ScanScreen({ navigation }: any) {
             flash={flash}
             autoScanActive={autoScanActive}
             autoScanSupported={isWeb}
-            onToggleAutoScan={setAutoScanEnabled}
+            onToggleAutoScan={setAutoScan}
             onOpenSession={() => setSessionOpenRequest((n) => n + 1)}
             isCameraReady={isCameraReady}
             cameraError={cameraError}
@@ -1568,7 +1635,9 @@ export default function ScanScreen({ navigation }: any) {
             isScanning={isScanning}
             flash={flash}
             autoScanActive={autoScanActive}
-            autoScanSupported={false}
+            autoScanSupported={nativeAutoAvailable}
+            onToggleAutoScan={setAutoScan}
+            autoScanPaused={autoPaused}
             // Native crop (CR 2026-10-15 P2_1): the frame is measured in window coords at
             // capture; without this ref every native capture fell back to the full photo.
             scanAreaRef={scanFrameRef}

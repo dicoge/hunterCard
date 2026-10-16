@@ -763,6 +763,7 @@ export const zh = {
   scan_recognizing: '識別中…',
   scan_frame_auto: '將卡牌置於掃描框內',
   scan_frame_manual: '點擊掃描按鈕拍攝卡牌',
+  scan_auto_paused: '自動偵測已暫停，請按掃描按鈕',
   scan_close_a11y: '關閉掃描',
   scan_flash_on: '閃光燈開',
   scan_flash: '閃光燈',

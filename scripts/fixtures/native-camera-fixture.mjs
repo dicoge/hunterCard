@@ -6,10 +6,12 @@ import { View } from 'react-native-web';
 
 export const CameraView = React.forwardRef(function CameraView(props, ref) {
   React.useImperativeHandle(ref, () => ({
-    takePictureAsync: async () => { globalThis.__nativeCameraTakes = (globalThis.__nativeCameraTakes ?? 0) + 1; return { ...globalThis.__nativeCameraPhoto }; },
+    takePictureAsync: async (opts) => { globalThis.__nativeCameraTakes = (globalThis.__nativeCameraTakes ?? 0) + 1; (globalThis.__nativeCameraCalls ||= []).push({ ...(opts || {}) }); return { ...globalThis.__nativeCameraPhoto }; },
     getAvailablePictureSizesAsync: async () => ['1440x1920', '3024x4032'],
   }));
-  React.useEffect(() => { props.onCameraReady?.(); }, []);
+  // A device reports readiness from a native event AFTER mount, not synchronously inside
+  // the first commit (where ScanScreen's own permission effect still resets it).
+  React.useEffect(() => { const id = setTimeout(() => props.onCameraReady?.(), 0); return () => clearTimeout(id); }, []);
   return React.createElement(View, { style: props.style, testID: 'native-camera-fixture' }, props.children);
 });
 export const useCameraPermissions = () => [{ granted: true, canAskAgain: true, status: 'granted' }, async () => ({ granted: true }), async () => ({ granted: true })];

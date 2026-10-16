@@ -109,3 +109,58 @@ export async function prepareNativeScanImages(
     return { ...original, cropSkipped: 'manipulator_failed' };
   }
 }
+
+/** Long edge of an automatic-capture probe crop: enough for the on-device reader. */
+export const PROBE_LONG_EDGE = 900;
+
+/**
+ * v41 automatic capture: the scan frame of a silent probe photo, small, as a local file
+ * for the on-device text reader. No base64 — a probe is never uploaded. null when the
+ * frame cannot be cropped (no measurement, no manipulator): then the probe says nothing,
+ * it never falls back to reading the whole camera view.
+ */
+export async function cropProbeToFrame(
+  photo: CapturedPhoto,
+  plan: NativeCropPlan,
+  deps: { requireImpl?: RequireImpl } = {},
+): Promise<string | null> {
+  if (!plan.ok) return null;
+  let mod: ManipulatorModuleLike | null = null;
+  try {
+    mod = (deps.requireImpl ?? DEFAULT_REQUIRE)('expo-image-manipulator') as ManipulatorModuleLike;
+  } catch {
+    return null;
+  }
+  const manipulate = mod?.ImageManipulator?.manipulate;
+  if (typeof manipulate !== 'function') return null;
+  try {
+    const { crop } = plan;
+    let ctx = manipulate.call(mod!.ImageManipulator, photo.uri)
+      .crop({ originX: crop.x, originY: crop.y, width: crop.width, height: crop.height });
+    const r = resizeFor(crop.width, crop.height, PROBE_LONG_EDGE);
+    if (r) ctx = ctx.resize(r);
+    const out = await (await ctx.renderAsync()).saveAsync({ base64: false, compress: 0.7, format: mod?.SaveFormat?.JPEG ?? 'jpeg' });
+    return typeof out?.uri === 'string' && out.uri ? out.uri : null;
+  } catch {
+    return null;
+  }
+}
+
+const AUTO_REQUIRE: RequireImpl = (name) => {
+  // Static literals for Metro; a missing module throws and auto capture is not offered.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  if (name === 'expo-ocr-kit') return require('expo-ocr-kit');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return require('expo-image-manipulator');
+};
+
+/** Automatic capture needs the frame crop and the on-device reader on this build. */
+export function nativeAutoCaptureAvailable(requireImpl: RequireImpl = AUTO_REQUIRE): boolean {
+  try {
+    const m = requireImpl('expo-image-manipulator') as ManipulatorModuleLike;
+    const o = requireImpl('expo-ocr-kit') as { recognizeText?: unknown };
+    return typeof m?.ImageManipulator?.manipulate === 'function' && typeof o?.recognizeText === 'function';
+  } catch {
+    return false;
+  }
+}

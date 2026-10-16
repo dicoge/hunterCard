@@ -87,6 +87,8 @@ export interface ScanOverlayProps {
    *  inert switch on platforms without the loop. */
   autoScanSupported?: boolean;
   onToggleAutoScan?: (next: boolean) => void;
+  /** Native automatic capture stopped after a long idle stretch (src/services/autoCapture). */
+  autoScanPaused?: boolean;
   /** DIC-1427 Pen AQf9b: the 估值清單 count box opens the session list. */
   onOpenSession?: () => void;
 }
@@ -108,6 +110,7 @@ export default function ScanOverlay({
   scanAreaRef,
   onClose,
   autoScanSupported = false,
+  autoScanPaused = false,
   onToggleAutoScan,
   onOpenSession,
 }: ScanOverlayProps) {
@@ -227,7 +230,7 @@ export default function ScanOverlay({
         </View>
         <View style={styles.overlayBottom}>
           <Text style={styles.hintText}>
-            {autoScanActive ? t('scan_frame_auto') : t('scan_frame_manual')}
+            {autoScanActive ? t(autoScanPaused ? 'scan_auto_paused' : 'scan_frame_auto') : t('scan_frame_manual')}
           </Text>
           {/* Pen Tips row (node Cc84X): three pill chips */}
           <View style={styles.tipsRow} testID="scan-tips-row">

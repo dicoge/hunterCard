@@ -760,6 +760,7 @@ export const ja: Record<keyof typeof zh, string> = {
   scan_recognizing: '認識中…',
   scan_frame_auto: 'カードをスキャン枠に合わせてください',
   scan_frame_manual: 'スキャンボタンでカードを撮影してください',
+  scan_auto_paused: '自動検出を停止しました。スキャンボタンを押してください',
   scan_close_a11y: 'スキャンを閉じる',
   scan_flash_on: 'フラッシュON',
   scan_flash: 'フラッシュ',

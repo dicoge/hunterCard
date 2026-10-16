@@ -367,21 +367,26 @@ await test('camera error retry is still wired from the overlay', () => {
   assert.match(scanScreenSource, /onRetry=\{\(\)\s*=>\s*\{[\s\S]*?setCameraError\(null\)/);
 });
 
-// ── 7. Auto-scan stays platform-bounded; the pill only narrows it ─────────────
-await test('auto-scan activity is platform-bounded — the mode pill can only disable, never enable off-web', () => {
-  // DIC-1427: the Pen Cys7V pill made the toggle REAL on web
-  // (autoScanEnabled), but the capability itself must stay AND-ed with
-  // isWeb so Android never advertises an auto capture it cannot do.
+// ── 7. Auto-scan stays capability-bounded; the pill only narrows it ───────────
+await test('auto-scan activity is capability-bounded — the mode pill can only disable, never enable a missing capability', () => {
+  // DIC-1427 made the pill real on web. v41 (2026-10-17) adds native automatic capture
+  // (src/services/autoCapture: on-device probe of the frame), so the capability is now
+  // "web frame-stability loop OR native frame crop + on-device reader present on this
+  // build" — still AND-ed with the toggle, so a build without the modules never
+  // advertises an auto capture it cannot do.
   assert.match(
     scanScreenSource,
-    /const autoScanActive = isWeb && autoScanEnabled;/,
-    'autoScanActive must stay platform-bounded (isWeb && user toggle)',
+    /const nativeAutoAvailable = useRef\(!isWeb && nativeAutoCaptureAvailable\(\)\)\.current;/,
+    'native capability comes from the runtime module check',
   );
+  assert.match(scanScreenSource, /const autoScanSupported = isWeb \|\| nativeAutoAvailable;/);
   assert.match(
     scanScreenSource,
-    /autoScanSupported=\{isWeb\}/,
-    'the pill capability flag handed to the overlay must be the platform truth',
+    /const autoScanActive = autoScanSupported && autoScanEnabled;/,
+    'autoScanActive must stay capability-bounded (capability && user toggle)',
   );
+  assert.match(scanScreenSource, /autoScanSupported=\{isWeb\}/, 'web pill flag is the platform truth');
+  assert.match(scanScreenSource, /autoScanSupported=\{nativeAutoAvailable\}/, 'native pill flag is the module truth');
 });
 
 // ── 8. ScanScreen wires pickFromGallery into every reachable native surface ──
