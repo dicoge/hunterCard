@@ -68,6 +68,20 @@ export interface CardInfo {
 export interface RecognizedCandidate {
   card: CardInfo;
   confidence: number; // 0-1
+  /**
+   * The backend ranker's evidence tokens for THIS candidate ('cardNumber exact',
+   * 'character exact/contains', 'rarity' …), when the backend sent them. Lets the client
+   * apply the explicit-verdict rules to a response from a backend that predates `match`.
+   */
+  evidence?: string[];
+}
+
+/** Ranker evidence tokens from a wire candidate's `reason` ("a, b, c"); allowlisted. */
+const EVIDENCE_TOKENS = new Set(['cardNumber exact', 'cardNumber fuzzy-1', 'cardNumber fuzzy-2', 'character exact/contains', 'character fuzzy', 'title exact/contains', 'title fuzzy', 'rarity', 'hp', 'bloom/type']);
+export function candidateEvidence(reason: unknown): string[] | undefined {
+  if (typeof reason !== 'string' || !reason) return undefined;
+  const tokens = reason.split(',').map((t) => t.trim()).filter((t) => EVIDENCE_TOKENS.has(t));
+  return tokens.length ? tokens : undefined;
 }
 
 export interface RecognitionResult {
@@ -422,6 +436,7 @@ function mapApiCandidates(raw: any): RecognizedCandidate[] | undefined {
     .map(c => ({
       card: mapApiCard(c),
       confidence: typeof c.confidence === 'number' ? c.confidence : 0,
+      evidence: candidateEvidence(c.reason),
     }));
 }
 

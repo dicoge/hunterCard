@@ -23,7 +23,7 @@ import { nativeOcrRecognize } from '../services/nativeOcr';
 import { useScanSessionStore } from '../stores/scanSessionStore';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, convertPrice } from '../constants';
-import { recognizeCard, recognizeCardFromOcr, recognizeCardFromImage, searchCards, CardInfo, RecognizedCandidate } from '../services/cardRecognition';
+import { recognizeCard, recognizeCardFromOcr, recognizeCardFromImage, searchCards, candidateEvidence, CardInfo, RecognizedCandidate } from '../services/cardRecognition';
 import { RECOGNITION_REQUEST_TIMEOUT_MS } from '../services/recognitionOutcome';
 import { chooseRecognitionPictureSize, validateRecognitionImages } from '../services/recognitionImagePolicy';
 import { ensurePhotoUploadConsent, hasPhotoUploadConsent } from '../services/photoUploadDisclosure';
@@ -389,6 +389,7 @@ export default function ScanScreen({ navigation }: any) {
       .map((c: any) => ({
         card: mapApiCard(c),
         confidence: typeof c.confidence === 'number' ? c.confidence : 0,
+        evidence: candidateEvidence(c.reason),
       }));
   };
 

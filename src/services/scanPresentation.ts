@@ -35,10 +35,42 @@ function sameCardNumber(cands: RecognizedCandidate[]): boolean {
   return cands.length > 0 && numbers.size === 1 && !numbers.has('');
 }
 
-/** Candidates the backend / OCR offered with no verdict: same number → identity, else none. */
+/**
+ * Candidates offered with no verdict — a backend that predates `match` (v37 production
+ * answers every multi-printing card as lowConfidence + top-5) or local OCR.
+ *
+ * Scan regression 2026-10-16: with a v37 backend, a card whose number has 2–4 printings
+ * comes back as its printings PLUS same-character filler of other numbers. Treating that
+ * mixed list as "no match" turned a correctly read card into 證據不足 (offline: 875 of
+ * 1,387 numbers with a perfect reading). When the backend sent per-candidate evidence,
+ * the same rules the v38 server uses apply here: only candidates whose card number was
+ * read EXACTLY count, filler is dropped; one such printing with a corroborating name
+ * (or one singled out by the rarity read) is a best-match preview, several are an
+ * identity without price. Nothing is committed or charged — the user still taps 加入 /
+ * picks the printing. Without exact-number evidence it stays an explicit no-match.
+ */
 export function presentCandidates(cands: RecognizedCandidate[]): ScanPresentation {
   const list = cands.slice(0, 8);
-  if (sameCardNumber(list)) {
+  const exact = list.filter((c) => c.evidence?.includes('cardNumber exact'));
+  const lead = exact[0];
+  if (lead) {
+    const leadNumber = String(lead.card.cardNumber || '').toLowerCase();
+    const printings = exact.filter((c) => String(c.card.cardNumber || '').toLowerCase() === leadNumber);
+    const named = (c: RecognizedCandidate) => !!c.evidence?.some((e) => e.startsWith('character') || e.startsWith('title'));
+    const best = (c: RecognizedCandidate): ScanPresentation => ({
+      kind: 'best', card: c.card, evidence: c.evidence ?? [], alternatives: printings.filter((p) => p !== c),
+    });
+    // The read name matched OTHER numbers but none of these printings: the number was
+    // misread (v38 server: number_name_conflict). No identity, no price — explicit no-match.
+    if (!printings.some(named) && list.some((c) => !printings.includes(c) && named(c))) {
+      return { kind: 'none', reason: 'number_name_conflict', suggestions: list.slice(0, 5) };
+    }
+    if (printings.length === 1 && named(lead)) return best(lead);
+    const byRarity = printings.filter((c) => c.evidence?.includes('rarity'));
+    if (byRarity.length === 1 && named(byRarity[0])) return best(byRarity[0]);
+    return { kind: 'identity', card: withoutPrintingPrice(lead.card), printings };
+  }
+  if (sameCardNumber(list) && list.every((c) => !c.evidence)) {
     return { kind: 'identity', card: withoutPrintingPrice(list[0].card), printings: list };
   }
   return { kind: 'none', reason: 'low_evidence', suggestions: list.slice(0, 5) };
