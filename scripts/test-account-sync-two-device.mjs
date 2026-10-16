@@ -489,6 +489,64 @@ try {
     await pa.kill(); await pb.kill();
   });
 
+  // ── CR b16d7ab (P2): the server's capped pick time is adopted locally on ACK ──
+  await test('CR P2 (b16d7ab): B picks 0 with its clock 5 min ahead → server caps the time and B adopts it on ACK → A (correct clock) picks 1 → B\'s unrelated write hits 409 → server and B keep 1', async () => {
+    const O = await server.createSession('two-device-user-o'); const userO = { ...O.user };
+    const pa = await device('ack-a');
+    const pb = await device('ack-b');
+    await act(pa, 'login', { session: O.session, user: userO });
+    await act(pb, 'login', { session: O.session, user: userO });
+    await act(pa, 'scan', { card: DUAL });
+    await pb.call('resync'); await pb.call('settle');
+    await pb.call('clock', { skewMs: 5 * 60 * 1000 });
+    let sb = await act(pb, 'pickVersion', { index: 0, version: 0 });
+    assert.equal(sb.sync.dirty, false, 'acknowledged');
+    const snap1 = await serverSnapshot(O.session);
+    assert.ok(Date.parse(snap1.scanSession.entries[0].selectedAt) <= Date.now(), 'server capped the future pick time');
+    const adoptedAt = sb.scans[0].selectedAt;
+    await pb.call('clock', { skewMs: 0 });
+    await pa.call('resync'); await pa.call('settle');
+    await act(pa, 'pickVersion', { index: 0, version: 1 });           // newer pick, correct clock
+    assert.equal((await serverSnapshot(O.session)).scanSession.entries[0].selectedVersion, 1);
+    const conflicts = server.log.filter((r) => r.status === 409).length;
+    sb = await act(pb, 'own', { cardNumber: 'hBP05-060', version: 'BASE', qty: 1 });   // stale B, unrelated
+    assert.ok(server.log.filter((r) => r.status === 409).length > conflicts, 'B\'s push really went through a 409');
+    const snap2 = await serverSnapshot(O.session);
+    assert.equal(snap2.scanSession.entries[0].selectedVersion, 1, 'the newer pick survives on the server');
+    assert.equal(sb.scans[0].selectedVersion, 1, 'and on B');
+    assert.equal(snap2.collection['hBP05-060|BASE'], 1, 'B\'s unrelated edit is kept');
+    assert.equal(adoptedAt, snap1.scanSession.entries[0].selectedAt, 'B adopted the server\'s canonical pick time on ACK');
+    await pa.kill(); await pb.kill();
+  });
+
+  await test('CR P2 (b16d7ab): a pick changed while the ACK is pending, and an unrelated edit made meanwhile, are not overwritten by the ACK normalisation', async () => {
+    const Q = await server.createSession('two-device-user-q'); const userQ = { ...Q.user };
+    const pb = await device('ack-pending');
+    await act(pb, 'login', { session: Q.session, user: userQ });
+    await act(pb, 'scan', { card: DUAL });
+    await pb.call('clock', { skewMs: 5 * 60 * 1000 });
+    await pb.call('hold', { method: 'POST' });
+    await pb.call('pickVersion', { index: 0, version: 0 });            // push 1 carries pick 0 (future time)
+    await pb.call('waitHeld', { method: 'POST' });
+    await pb.call('pickVersion', { index: 0, version: 1 });            // changed while the ACK is pending
+    await pb.call('own', { cardNumber: 'hBP05-061', version: 'BASE', qty: 2 });   // unrelated edit meanwhile
+    let s = await pb.call('state');
+    const pendingPickAt = s.scans[0].selectedAt;
+    await pb.call('release', { method: 'POST' });
+    await pb.call('settle');
+    s = await pb.call('state');
+    assert.equal(s.scans[0].selectedVersion, 1, 'the newer local pick is not reverted by push 1\'s ACK');
+    assert.equal(s.collection['hBP05-061|BASE'], 2, 'the unrelated edit survives');
+    const snap = await serverSnapshot(Q.session);
+    assert.equal(snap.scanSession.entries[0].selectedVersion, 1, 'and both reach the server');
+    assert.equal(snap.collection['hBP05-061|BASE'], 2);
+    assert.ok(Date.parse(snap.scanSession.entries[0].selectedAt) <= Date.now() + 1000, 'server-capped');
+    assert.equal(s.scans[0].selectedAt, snap.scanSession.entries[0].selectedAt, 'after its own ACK B holds the canonical time');
+    assert.ok(pendingPickAt && Date.parse(pendingPickAt) > Date.parse(snap.scanSession.entries[0].selectedAt), 'the pending pick had a future (skewed) time before');
+    assert.equal(s.sync.dirty, false);
+    await pb.kill();
+  });
+
   await phone1.kill();
 } finally {
   for (const d of [...live]) await d.kill();

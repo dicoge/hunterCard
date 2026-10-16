@@ -807,6 +807,51 @@ await test('CR (93677fb): the picker stamps selectedAt; it travels to and from t
   store.setState({ cards: [] });
 });
 
+// ── CR b16d7ab: the server's canonical (capped) pick time is adopted on ACK ──
+await test('CR ACK (b16d7ab): an unchanged pick adopts the server\'s capped selectedAt; dirty state unchanged', async () => {
+  const { useScanSessionStore: store } = await import('../src/stores/scanSessionStore.ts');
+  const { useAccountSyncStateStore: meta } = await import('../src/store/accountSyncStateStore.ts');
+  store.setState({ cards: [], removals: {}, clearedAt: null });
+  store.getState().addCard({ ...SNAPSHOT_CARD_FOR_PICK }, { force: true });
+  const id = store.getState().cards[0].instanceId;
+  store.getState().setCardVersion(id, 0);
+  store.setState({ cards: store.getState().cards.map((c) => ({ ...c, selectedAt: '2099-01-01T00:00:00.000Z' })) });
+  const capped = '2026-10-17T00:00:00.000Z';
+  responseQueue = [async () => {
+    const sent = fetchCalls[0].body.patch.scanSession.entries;
+    assert.equal(sent[0].selectedAt, '2099-01-01T00:00:00.000Z', 'the future time is what was sent');
+    return new Response(JSON.stringify({ ok: true, snapshot: { ...SNAPSHOT_V7, revision: 8, scanSession: { entries: sent.map((e) => ({ ...e, selectedAt: capped })), clearedAt: null } } }), { status: 200 });
+  }];
+  const seqBefore = meta.getState().dirtySeq;
+  await pushAccountSyncFromStores(SESSION);
+  assert.equal(store.getState().cards[0].selectedAt, capped, 'local adopts the canonical time');
+  assert.equal(store.getState().cards[0].selectedVersion, 0);
+  assert.equal(meta.getState().dirtySeq, seqBefore, 'no new local change recorded by the normalisation');
+  store.setState({ cards: [] });
+});
+await test('CR ACK (b16d7ab): a pick changed while the request was in flight is NOT overwritten by the ACK', async () => {
+  const { useScanSessionStore: store } = await import('../src/stores/scanSessionStore.ts');
+  store.setState({ cards: [], removals: {}, clearedAt: null });
+  store.getState().addCard({ ...SNAPSHOT_CARD_FOR_PICK }, { force: true });
+  const id = store.getState().cards[0].instanceId;
+  store.getState().setCardVersion(id, 0);
+  let release;
+  responseQueue = [() => new Promise((r) => { release = r; })];
+  const pending = pushAccountSyncFromStores(SESSION);
+  while (!release) await new Promise((r) => setTimeout(r, 0));
+  const sent = fetchCalls[0].body.patch.scanSession.entries;
+  store.getState().setCardVersion(id, 1);                        // user changes the pick meanwhile
+  useDeckStore.setState((st) => ({ ...st, collection: { ...st.collection, 'hBP09-001|BASE': 4 } }));   // and something unrelated
+  const newPick = store.getState().cards[0];
+  release(new Response(JSON.stringify({ ok: true, snapshot: { ...SNAPSHOT_V7, revision: 8, scanSession: { entries: sent.map((e) => ({ ...e, selectedAt: '2000-01-01T00:00:00.000Z' })), clearedAt: null } } }), { status: 200 }));
+  await pending;
+  const after = store.getState().cards[0];
+  assert.equal(after.selectedVersion, 1);
+  assert.equal(after.selectedAt, newPick.selectedAt, 'the pending pick keeps its own time');
+  assert.equal(useDeckStore.getState().collection['hBP09-001|BASE'], 4, 'unrelated edit untouched');
+  store.setState({ cards: [] });
+});
+
 if ((process.exitCode ?? 0) === 0) {
   console.log(`\n✅ account remote-sync orchestrator: ${passed} checks passed`);
 } else {

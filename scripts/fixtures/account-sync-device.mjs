@@ -31,6 +31,16 @@ Object.defineProperty(globalThis, 'navigator', { value: dom.window.navigator, co
 let visibility = 'visible';
 Object.defineProperty(dom.window.document, 'visibilityState', { get: () => visibility, configurable: true });
 
+// This phone's clock offset (CR b16d7ab: a device clock running ahead). Everything in
+// the app that reads the time (Date.now(), new Date()) sees it; the server does not.
+const RealDate = Date;
+let clockSkewMs = 0;
+class DeviceDate extends RealDate {
+  constructor(...args) { if (args.length === 0) super(RealDate.now() + clockSkewMs); else super(...args); }
+  static now() { return RealDate.now() + clockSkewMs; }
+}
+globalThis.Date = DeviceDate;
+
 const PORT = process.env.SYNC_PORT;
 let offline = false;
 let inflight = 0;
@@ -99,6 +109,7 @@ const commands = {
     useFavoritesStore.getState().addFavorite?.({ cardNumber, printing: 'BASE', addedAt: new Date().toISOString() });
   },
   async offline({ value }) { offline = value; },
+  async clock({ skewMs }) { clockSkewMs = skewMs; },
   /** The next sync request with this method waits (in flight) until `release`. */
   async hold({ method }) {
     let release;
@@ -143,7 +154,7 @@ const commands = {
     return {
       collection: useDeckStore.getState().collection,
       decks: useDeckStore.getState().decks.map((d) => d.id),
-      scans: scans.cards.map((c) => ({ instanceId: c.instanceId, cardNumber: c.cardNumber, selectedVersion: c.selectedVersion, versionConfident: c.versionConfident, sellPrice: c.sellPrice })),
+      scans: scans.cards.map((c) => ({ instanceId: c.instanceId, cardNumber: c.cardNumber, selectedVersion: c.selectedVersion, versionConfident: c.versionConfident, selectedAt: c.selectedAt ?? null, sellPrice: c.sellPrice })),
       language: useSettingsStore.getState().preferredLanguage,
       quotaRemaining: useScanQuotaStore.getState().getRemaining(),
       sync: { ownerId: sync.ownerId, dirty: sync.dirtySeq !== sync.ackedSeq, lastRevision: sync.lastRevision },

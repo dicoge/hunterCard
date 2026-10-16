@@ -269,6 +269,44 @@ export function baselineFrom(snapshot: Partial<AccountSyncSnapshot> | AccountSyn
   return { collection, decks, scans };
 }
 
+/**
+ * After a server ACK (CR b16d7ab): the server stores its CANONICAL `selectedAt` — it
+ * caps a pick time ahead of its clock to now (and normalises the ISO form). A local
+ * scan entry whose pick is still exactly what this push sent takes the server's
+ * value, so a device clock running fast cannot keep a future time locally and win a
+ * later 409 merge against a newer pick made elsewhere. An entry whose pick changed
+ * while the request was in flight (version, confidence or pick time differs from
+ * what was sent) is left alone — that newer local pick is still pending. Only
+ * `selectedAt` is adopted, only when the server kept the same pick; nothing else in
+ * the stores is touched and the device's dirty state is unchanged.
+ */
+function reconcileAckedScanSelections(pushed: AccountSyncPatch, confirmed: AccountSyncSnapshot): void {
+  const sent = new Map((pushed.scanSession?.entries ?? []).map((e) => [e.instanceId, e]));
+  const acked = new Map((confirmed.scanSession?.entries ?? []).map((e) => [e.instanceId, e]));
+  if (sent.size === 0 || acked.size === 0) return;
+  let changed = false;
+  const next = useScanSessionStore.getState().cards.map((c) => {
+    const s = sent.get(c.instanceId);
+    const a = acked.get(c.instanceId);
+    if (!s || !a) return c;
+    const unchangedSinceSent = c.selectedVersion === s.selectedVersion
+      && c.versionConfident === s.versionConfident
+      && (c.selectedAt ?? null) === (s.selectedAt ?? null);
+    const serverKeptPick = a.selectedVersion === s.selectedVersion && a.versionConfident === s.versionConfident;
+    if (!unchangedSinceSent || !serverKeptPick || (a.selectedAt ?? null) === (c.selectedAt ?? null)) return c;
+    changed = true;
+    const { selectedAt: _dropped, ...rest } = c;
+    return a.selectedAt ? { ...rest, selectedAt: a.selectedAt } : rest;
+  });
+  if (!changed) return;
+  applyingServerState = true;
+  try {
+    useScanSessionStore.setState({ cards: next });
+  } finally {
+    applyingServerState = false;
+  }
+}
+
 /** Everything a merge or a push would send, for "did the user change anything meanwhile?". */
 function localFingerprint(): string {
   return JSON.stringify(snapshotFromLocalStores());
@@ -733,6 +771,7 @@ export async function pushAccountSyncFromStores(
         // Server has our removals + decreases — drop exactly those markers so
         // the next push does not carry them again (newer ones stay).
         clearAckedTombstones(tombstones);
+        reconcileAckedScanSelections(patch, confirmed);
         const st = useAccountSyncStateStore.getState();
         st.markSynced(lastKnownRevision, seqAtPush);
         st.setBaseline(baselineFrom(confirmed.collection || confirmed.decks || confirmed.scanSession ? confirmed : patch));
