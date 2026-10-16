@@ -21,7 +21,7 @@ import { CameraView, useCameraPermissions, CameraType } from 'expo-camera';
 import WebCamera, { WebCameraHandle } from '../components/WebCamera';
 import CameraPermissionDeniedView from '../components/CameraPermissionDeniedView';
 import ScanSessionPanel from '../components/ScanSessionPanel';
-import { nativeOcrRecognize } from '../services/nativeOcr';
+import { nativeOcrProbe, nativeOcrRecognize } from '../services/nativeOcr';
 import { useScanSessionStore } from '../stores/scanSessionStore';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, convertPrice } from '../constants';
@@ -60,7 +60,7 @@ import {
 } from '../services/scanPresentation';
 import { CROP_PAD, defaultScanFrameRect, planNativeCrop } from '../utils/scanFrame';
 import { cropProbeToFrame, deleteProbeFiles, nativeAutoCaptureAvailable, prepareNativeScanImages } from '../services/nativeScanCapture';
-import { AUTO_CAPTURE_PROBE_INTERVAL_MS, createAutoCaptureMachine } from '../services/autoCapture';
+import { AUTO_CAPTURE_PROBE_INTERVAL_MS, createAutoCaptureMachine, type ProbeObservation } from '../services/autoCapture';
 import { findCardNumberTokens } from '../utils/cardNumberToken';
 import { useScanDiagnosticsStore } from '../store/scanDiagnosticsStore';
 import { diagnosticsFromResult, type ScanOutcome } from '../services/scanDiagnostics';
@@ -662,7 +662,7 @@ export default function ScanScreen({ navigation }: any) {
   // frame starts the normal scan (one recognition request). Probes never upload and
   // never run while anything is on screen, the app is in the background, the screen
   // is not focused, the photo disclosure is not accepted or the allowance is used up.
-  const probeCardNumbers = async (): Promise<string[]> => {
+  const probeCardNumbers = async (): Promise<ProbeObservation[]> => {
     let shotUri: string | null = null;
     let cropUri: string | null = null;
     try {
@@ -671,9 +671,19 @@ export default function ScanScreen({ navigation }: any) {
       shotUri = shot.uri;
       const [preview, frameRect] = await Promise.all([measureInWindow(cameraBoxRef), measureInWindow(scanFrameRef)]);
       const plan = planNativeCrop(preview, frameRect, shot.width && shot.height ? { width: shot.width, height: shot.height } : null);
-      cropUri = await cropProbeToFrame(shot, plan);
-      if (!cropUri) return [];
-      return findCardNumberTokens(await nativeOcrRecognize(cropUri));
+      const crop = await cropProbeToFrame(shot, plan);
+      if (!crop) return [];
+      cropUri = crop.uri;
+      // Each readable card number with WHERE it is (normalised to the crop), so the
+      // trigger can require it inside the frame and held still (src/services/autoCapture).
+      const observations: ProbeObservation[] = [];
+      for (const block of await nativeOcrProbe(crop.uri)) {
+        const box = block.box && crop.width > 0 && crop.height > 0
+          ? { x: block.box.x / crop.width, y: block.box.y / crop.height, width: block.box.width / crop.width, height: block.box.height / crop.height }
+          : null;
+        for (const token of findCardNumberTokens(block.text)) observations.push({ token, box });
+      }
+      return observations;
     } finally {
       // Probe files are this probe's alone: delete them on every path (no accumulation).
       void deleteProbeFiles([shotUri, cropUri]);

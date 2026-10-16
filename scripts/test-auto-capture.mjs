@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict';
 
-const { createAutoCaptureMachine } = await import('../src/services/autoCapture.ts');
+const { createAutoCaptureMachine, DEFAULT_FRAME_REGION } = await import('../src/services/autoCapture.ts');
 const { findCardNumberTokens } = await import('../src/utils/cardNumberToken.ts');
 
 let passed = 0;
@@ -14,7 +14,11 @@ function test(label, fn) {
   try { fn(); passed += 1; console.log(`  ✓ ${label}`); }
   catch (err) { process.exitCode = 1; console.error(`  ✗ ${label} — ${err.message}`); }
 }
-const run = (m, probes) => probes.map((p) => m.onProbe(p));
+// The card number's box in the probe crop (normalised): bottom-left of the frame, steady.
+const STEADY = { x: 0.1, y: 0.86, width: 0.22, height: 0.04 };
+const at = (token, box = STEADY) => ({ token, box });
+// Token-sequence tests: each reading is a number held at the same in-frame position.
+const run = (m, probes) => probes.map((p) => m.onProbe(p.map((t) => at(t))));
 
 test('nothing readable never triggers (no blind timer capture)', () => {
   const m = createAutoCaptureMachine();
@@ -89,6 +93,39 @@ test('stableHits can never be configured below 2 (one probe is never enough)', (
   const m = createAutoCaptureMachine({ stableHits: 1 });
   assert.deepEqual(run(m, [['hbp01-010'], ['hbp01-010']]), ['none', 'trigger']);
 });
+test('geometry: the same number whose box MOVES between probes (card waved through) never triggers', () => {
+  const m = createAutoCaptureMachine();
+  const moving = [0.1, 0.25, 0.4, 0.55, 0.7].map((x) => [at('hbp01-010', { ...STEADY, x })]);
+  assert.deepEqual(moving.map((p) => m.onProbe(p)), Array(5).fill('none'));
+});
+test('geometry: held still after moving → triggers once it stayed for two probes', () => {
+  const m = createAutoCaptureMachine();
+  assert.deepEqual([
+    [at('hbp01-010', { ...STEADY, x: 0.3 })],
+    [at('hbp01-010', { ...STEADY, x: 0.1 })],
+    [at('hbp01-010', { ...STEADY, x: 0.105, y: 0.862 })],  // hand shake within tolerance
+  ].map((p) => m.onProbe(p)), ['none', 'none', 'trigger']);
+});
+test('geometry: a number in the crop margin (outside the frame) never triggers', () => {
+  const m = createAutoCaptureMachine();
+  const margin = { x: 0.005, y: 0.5, width: 0.2, height: 0.04 };   // left of the frame edge
+  assert.ok(margin.x < DEFAULT_FRAME_REGION.x);
+  assert.deepEqual([[at('hbp01-010', margin)], [at('hbp01-010', margin)], [at('hbp01-010', margin)]].map((p) => m.onProbe(p)), ['none', 'none', 'none']);
+});
+test('geometry: a reading without a box (reader gave none) never triggers — fail closed', () => {
+  const m = createAutoCaptureMachine();
+  assert.deepEqual([['hbp01-010'], ['hbp01-010'], ['hbp01-010']].map((p) => m.onProbe(p)), ['none', 'none', 'none']);
+});
+test('geometry: the same number read twice in one probe (two places) is ambiguous → no trigger', () => {
+  const m = createAutoCaptureMachine();
+  const two = [at('hbp01-010'), at('hbp01-010', { ...STEADY, y: 0.2 })];
+  assert.deepEqual([two, two, two].map((p) => m.onProbe(p)), ['none', 'none', 'none']);
+});
+test('geometry: a box growing fast (card pulled toward the lens) is not steady', () => {
+  const m = createAutoCaptureMachine();
+  assert.deepEqual([[at('hbp01-010')], [at('hbp01-010', { ...STEADY, width: 0.3, height: 0.055 })]].map((p) => m.onProbe(p)), ['none', 'none']);
+});
+
 test('probe readings use the strict whole-token parser: truncation / extra digits are not numbers', () => {
   assert.deepEqual(findCardNumberTokens('hBP01-0100'), []);
   assert.deepEqual(findCardNumberTokens('hBP01-010SR'), []);

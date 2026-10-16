@@ -97,3 +97,34 @@ export async function nativeOcrRecognize(
 
   return typeof result?.text === 'string' ? result.text : '';
 }
+
+/** One text block of an automatic-capture probe, with its box in probe-image pixels. */
+export interface ProbeOcrBlock {
+  text: string;
+  box: { x: number; y: number; width: number; height: number } | null;
+}
+
+/**
+ * Probe-only reader for native automatic capture (v41): the same on-device
+ * expo-ocr-kit call, but KEEPING each block's bounding box (ML Kit on Android, Vision
+ * on iOS return them) so the trigger can check where the card number sits and whether
+ * it stayed put. The normal recognition path keeps using nativeOcrRecognize (text
+ * only) — unchanged. Any failure → no blocks (the probe says nothing).
+ */
+export async function nativeOcrProbe(uri: string, deps: NativeOcrDeps = {}): Promise<ProbeOcrBlock[]> {
+  const requireImpl = deps.requireImpl ?? DEFAULT_REQUIRE;
+  let mod: any;
+  try { mod = requireImpl('expo-ocr-kit'); } catch { return []; }
+  if (!mod || typeof mod.recognizeText !== 'function') return [];
+  let result: any;
+  try { result = await mod.recognizeText(uri); } catch { return []; }
+  const blocks = Array.isArray(result?.blocks) ? result.blocks : [];
+  return blocks
+    .filter((b: any) => typeof b?.text === 'string')
+    .map((b: any) => {
+      const r = b.boundingBox;
+      const ok = r && [r.x, r.y, r.width, r.height].every((v: unknown) => typeof v === 'number' && Number.isFinite(v))
+        && r.width > 0 && r.height > 0;
+      return { text: b.text, box: ok ? { x: r.x, y: r.y, width: r.width, height: r.height } : null };
+    });
+}

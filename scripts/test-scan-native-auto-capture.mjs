@@ -66,6 +66,10 @@ const FULL_B64 = jpeg('context'), CROP_B64 = jpeg('crop');
 // What the on-device reader "sees" inside the frame on each call (probe or fallback).
 let frameText = '';
 let ocrThrows = false;
+// Where the printed number sits in the probe crop (normalised); a steady, in-frame spot
+// unless a test moves it. A function lets a test move it on every probe.
+let numberBox = () => ({ x: 0.1, y: 0.86, width: 0.22, height: 0.04 });
+const cropDims = new Map();
 const ocrCalls = [];
 const manipulations = [];
 const deleted = [];
@@ -87,7 +91,14 @@ globalThis.require = (name) => {
                 manipulations.push({ uri, ops, base64: !!o?.base64 });
                 const isCrop = ops.some((x) => x[0] === 'crop');
                 const n = ++cropSeq;
-                return { base64: o?.base64 ? (isCrop ? CROP_B64 : FULL_B64) : undefined, uri: isCrop ? `file:///cache/ImageManipulator/frame-${n}.jpg` : `file:///cache/ImageManipulator/full-${n}.jpg` };
+                const outUri = isCrop ? `file:///cache/ImageManipulator/frame-${n}.jpg` : `file:///cache/ImageManipulator/full-${n}.jpg`;
+                // Report the saved size like the real manipulator does.
+                const c = ops.find((x) => x[0] === 'crop')?.[1];
+                const r = ops.find((x) => x[0] === 'resize')?.[1];
+                let w = c ? c.width : 3024, h = c ? c.height : 4032;
+                if (r?.width) { h = Math.round(h * r.width / w); w = r.width; } else if (r?.height) { w = Math.round(w * r.height / h); h = r.height; }
+                cropDims.set(outUri, { w, h });
+                return { base64: o?.base64 ? (isCrop ? CROP_B64 : FULL_B64) : undefined, uri: outUri, width: w, height: h };
               } };
             },
           };
@@ -96,7 +107,14 @@ globalThis.require = (name) => {
       },
     };
   }
-  if (name === 'expo-ocr-kit') return { recognizeText: async (uri) => { ocrCalls.push(uri); if (ocrThrows) throw new Error('reader crashed'); return { text: frameText }; } };
+  if (name === 'expo-ocr-kit') return { recognizeText: async (uri) => {
+    ocrCalls.push(uri);
+    if (ocrThrows) throw new Error('reader crashed');
+    const d = cropDims.get(uri) ?? { w: 900, h: 1200 };
+    const b = numberBox();
+    const blocks = frameText ? [{ text: frameText, boundingBox: { x: Math.round(b.x * d.w), y: Math.round(b.y * d.h), width: Math.round(b.width * d.w), height: Math.round(b.height * d.h) } }] : [];
+    return { text: frameText, blocks };
+  } };
   throw new Error(`unexpected require ${name}`);
 };
 globalThis.__nativeCameraPhoto = { uri: 'file:///cache/Camera/shot.jpg', width: 3024, height: 4032, base64: jpeg('original') };
@@ -301,6 +319,36 @@ try {
     await appState('active');
     await probes(2);
     assert.ok(takes() > t, 'resumed');
+  });
+
+  await test('geometry: a card number that keeps MOVING through the frame is never captured', async () => {
+    frameText = '';
+    await probes(4);   // empty frame → re-armed
+    const n = bodies.length;
+    let x = 0.08;
+    numberBox = () => { x = x > 0.6 ? 0.08 : x + 0.12; return { x, y: 0.86, width: 0.22, height: 0.04 }; };
+    frameText = 'hBP03-024';
+    await probes(5);
+    assert.equal(bodies.length, n, 'no request while the number moves');
+    numberBox = () => ({ x: 0.1, y: 0.86, width: 0.22, height: 0.04 });
+  });
+
+  await test('geometry: a number readable only in the crop margin (outside the frame) is never captured', async () => {
+    const n = bodies.length;
+    numberBox = () => ({ x: 0.004, y: 0.5, width: 0.2, height: 0.04 });
+    frameText = 'hBP03-025';
+    await probes(4);
+    assert.equal(bodies.length, n);
+    numberBox = () => ({ x: 0.1, y: 0.86, width: 0.22, height: 0.04 });
+  });
+
+  await test('geometry: once held still inside the frame, it is captured exactly once', async () => {
+    const n = bodies.length;
+    frameText = 'hBP03-026';
+    for (let i = 0; i < 50 && bodies.length === n; i++) await tick(100);
+    await tick(600);
+    assert.equal(bodies.length, n + 1);
+    await click(byTestId('scan-match-retake'));
   });
 
   await test('manual mode: the pill turns automatic capture off — a card in the frame is not captured', async () => {

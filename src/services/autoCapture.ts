@@ -8,10 +8,16 @@
  * card numbers (src/utils/cardNumberToken, whole-token) are readable inside the frame.
  *
  * When does it trigger the normal scan (one recognition request)?
- *   • exactly ONE valid card number is inside the frame, and
- *   • the SAME number was read on `stableHits` consecutive probes (the card is held
- *     still and legible), and
+ *   • exactly ONE valid card number is readable in the probe, and
+ *   • the reader's bounding box of that number lies INSIDE the scan frame (not in the
+ *     crop's padding margin), and
+ *   • on `stableHits` consecutive probes it is the same number whose box stayed put
+ *     (centre moved ≤ `maxMove` of the frame per axis, size changed ≤ `maxSizeChange`)
+ *     — the number is held still in the frame, and
  *   • the machine is armed.
+ * A reading without a box (the reader returned none) never counts. What is measured is
+ * the printed card NUMBER's position — not the card's full outline: a card whose
+ * number is inside the frame but whose edges are cut off still triggers.
  *
  * After every round (automatic or manual) it disarms. It re-arms only after
  * `absentToRearm` (3) CONSECUTIVE probes without the card that was scanned (after a
@@ -30,7 +36,38 @@ export interface AutoCaptureOptions {
   maxIdleProbes?: number;
   /** Consecutive probes without the scanned card before re-arming (OCR noise guard). */
   absentToRearm?: number;
+  /** Where the scan frame lies inside a probe crop (normalised 0..1); default from CROP_PAD. */
+  frameRegion?: NormBox;
+  /** Max centre movement between consecutive hits, as a fraction of the crop per axis. */
+  maxMove?: number;
+  /** Max relative change of the box width / height between consecutive hits. */
+  maxSizeChange?: number;
 }
+
+/** A box normalised to the probe crop: 0..1 on each axis. */
+export interface NormBox { x: number; y: number; width: number; height: number }
+/** One card number the on-device reader found in a probe, with where it was. */
+export interface ProbeObservation { token: string; box?: NormBox | null }
+
+/**
+ * The probe crop is the frame plus CROP_PAD (6 % / 4 % of the frame on each side,
+ * src/utils/scanFrame); the frame is the inner part of it. Near the photo edge the pad
+ * can be clipped — then this region is slightly smaller than the real frame (stricter).
+ */
+export const DEFAULT_FRAME_REGION: NormBox = (() => {
+  const px = 0.06 / (1 + 2 * 0.06);
+  const py = 0.04 / (1 + 2 * 0.04);
+  return { x: px, y: py, width: 1 - 2 * px, height: 1 - 2 * py };
+})();
+
+const inside = (b: NormBox, r: NormBox) =>
+  b.width > 0 && b.height > 0
+  && b.x >= r.x && b.y >= r.y && b.x + b.width <= r.x + r.width && b.y + b.height <= r.y + r.height;
+const steady = (a: NormBox, b: NormBox, maxMove: number, maxSize: number) =>
+  Math.abs((a.x + a.width / 2) - (b.x + b.width / 2)) <= maxMove
+  && Math.abs((a.y + a.height / 2) - (b.y + b.height / 2)) <= maxMove
+  && Math.abs(b.width - a.width) <= maxSize * a.width
+  && Math.abs(b.height - a.height) <= maxSize * a.height;
 
 export type AutoCaptureDecision = 'none' | 'trigger';
 
@@ -38,8 +75,9 @@ export type AutoCaptureDecision = 'none' | 'trigger';
 type Held = string | '*' | null;
 
 export interface AutoCaptureMachine {
-  /** One probe's readable card numbers (already whole-token validated). */
-  onProbe(tokens: string[]): AutoCaptureDecision;
+  /** One probe's readable card numbers (whole-token validated) with their boxes. A bare
+   *  string has no box and can never trigger. */
+  onProbe(observations: Array<ProbeObservation | string>): AutoCaptureDecision;
   /** A round began (auto trigger or the shutter). */
   roundStarted(token?: string | null): void;
   /** Resume after an idle pause (user action). */
@@ -51,6 +89,10 @@ export function createAutoCaptureMachine(options: AutoCaptureOptions = {}): Auto
   const stableHits = Math.max(2, options.stableHits ?? 2);
   const maxIdleProbes = Math.max(1, options.maxIdleProbes ?? 45);
   const absentToRearm = Math.max(2, options.absentToRearm ?? 3);
+  const frameRegion = options.frameRegion ?? DEFAULT_FRAME_REGION;
+  const maxMove = options.maxMove ?? 0.03;
+  const maxSizeChange = options.maxSizeChange ?? 0.2;
+  let lastBox: NormBox | null = null;
   let armed = true;
   let absent = 0;
   let held: Held = null;
@@ -59,12 +101,13 @@ export function createAutoCaptureMachine(options: AutoCaptureOptions = {}): Auto
   let idleProbes = 0;
   let paused = false;
 
-  const clearCandidate = () => { candidate = null; hits = 0; };
+  const clearCandidate = () => { candidate = null; hits = 0; lastBox = null; };
 
   return {
-    onProbe(tokens) {
+    onProbe(raw) {
       if (paused) return 'none';
-      const unique = [...new Set(tokens)];
+      const observations: ProbeObservation[] = raw.map((o) => (typeof o === 'string' ? { token: o } : o));
+      const unique = [...new Set(observations.map((o) => o.token))];
       if (!armed) {
         // Re-arm only once the scanned card has left the frame.
         const gone = held === '*' ? unique.length === 0 : !unique.includes(held as string);
@@ -90,8 +133,18 @@ export function createAutoCaptureMachine(options: AutoCaptureOptions = {}): Auto
         return 'none';
       }
       const token = unique[0];
-      if (token === candidate) hits += 1;
+      const boxes = observations.filter((o) => o.token === token).map((o) => o.box);
+      const box = boxes.length === 1 ? boxes[0] : null;   // the same number twice = ambiguous
+      if (!box || !inside(box, frameRegion)) {
+        // Not provably inside the frame (no box, or the number sits in the margin).
+        clearCandidate();
+        idleProbes += 1;
+        if (idleProbes >= maxIdleProbes) paused = true;
+        return 'none';
+      }
+      if (token === candidate && lastBox && steady(lastBox, box, maxMove, maxSizeChange)) hits += 1;
       else { candidate = token; hits = 1; }
+      lastBox = box;
       if (hits < stableHits) return 'none';
       armed = false;
       held = token;

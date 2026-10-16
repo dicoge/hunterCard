@@ -119,11 +119,18 @@ export const PROBE_LONG_EDGE = 900;
  * frame cannot be cropped (no measurement, no manipulator): then the probe says nothing,
  * it never falls back to reading the whole camera view.
  */
+export interface ProbeCrop {
+  uri: string;
+  /** Pixel size of the saved crop — the space the on-device reader's boxes are in. */
+  width: number;
+  height: number;
+}
+
 export async function cropProbeToFrame(
   photo: CapturedPhoto,
   plan: NativeCropPlan,
   deps: { requireImpl?: RequireImpl } = {},
-): Promise<string | null> {
+): Promise<ProbeCrop | null> {
   if (!plan.ok) return null;
   let mod: ManipulatorModuleLike | null = null;
   try {
@@ -139,8 +146,13 @@ export async function cropProbeToFrame(
       .crop({ originX: crop.x, originY: crop.y, width: crop.width, height: crop.height });
     const r = resizeFor(crop.width, crop.height, PROBE_LONG_EDGE);
     if (r) ctx = ctx.resize(r);
-    const out = await (await ctx.renderAsync()).saveAsync({ base64: false, compress: 0.7, format: mod?.SaveFormat?.JPEG ?? 'jpeg' });
-    return typeof out?.uri === 'string' && out.uri ? out.uri : null;
+    const out = await (await ctx.renderAsync()).saveAsync({ base64: false, compress: 0.7, format: mod?.SaveFormat?.JPEG ?? 'jpeg' }) as { uri?: string; width?: number; height?: number };
+    if (typeof out?.uri !== 'string' || !out.uri) return null;
+    // The manipulator reports the saved size; otherwise derive it from the crop + resize.
+    const scale = r ? (r.width ? r.width / crop.width : (r.height ?? crop.height) / crop.height) : 1;
+    const width = Number.isFinite(out.width) && (out.width as number) > 0 ? out.width as number : Math.round(crop.width * scale);
+    const height = Number.isFinite(out.height) && (out.height as number) > 0 ? out.height as number : Math.round(crop.height * scale);
+    return { uri: out.uri, width, height };
   } catch {
     return null;
   }
