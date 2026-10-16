@@ -66,6 +66,9 @@ const FULL_B64 = jpeg('context'), CROP_B64 = jpeg('crop');
 // What the on-device reader "sees" inside the frame on each call (probe or fallback).
 let frameText = '';
 let ocrThrows = false;
+// Hold the on-device reader (a probe stays in flight until released).
+let ocrHold = null;
+const holdReader = () => { let release; const p = new Promise((r) => { release = r; }); ocrHold = p; return () => { ocrHold = null; release(); }; };
 // Where the printed number sits in the probe crop (normalised); a steady, in-frame spot
 // unless a test moves it. A function lets a test move it on every probe.
 let numberBox = () => ({ x: 0.1, y: 0.86, width: 0.22, height: 0.04 });
@@ -109,6 +112,7 @@ globalThis.require = (name) => {
   }
   if (name === 'expo-ocr-kit') return { recognizeText: async (uri) => {
     ocrCalls.push(uri);
+    if (ocrHold) await ocrHold;
     if (ocrThrows) throw new Error('reader crashed');
     const d = cropDims.get(uri) ?? { w: 900, h: 1200 };
     const b = numberBox();
@@ -168,7 +172,13 @@ const appState = async (next) => { await act(async () => { globalThis.__setAppSt
 usePhotoUploadConsentStore.setState({ acceptedVersion: null });
 useScanQuotaStore.getState().resetQuota();
 useScanSessionStore.getState().clearSession();
-const navigation = { navigate() {}, goBack() {}, openDrawer() {}, isFocused: () => true, addListener: () => () => {} };
+const navListeners = { focus: new Set(), blur: new Set() };
+let navFocused = true;
+const navigation = {
+  navigate() {}, goBack() {}, openDrawer() {}, isFocused: () => navFocused,
+  addListener: (ev, cb) => { navListeners[ev]?.add(cb); return () => navListeners[ev]?.delete(cb); },
+};
+const navEvent = async (ev) => { navFocused = ev === 'focus'; await act(async () => { for (const cb of [...navListeners[ev]]) cb(); await Promise.resolve(); }); };
 const host = document.createElement('div');
 document.body.appendChild(host);
 const root = createRoot(host);
@@ -349,6 +359,50 @@ try {
     await tick(600);
     assert.equal(bodies.length, n + 1);
     await click(byTestId('scan-match-retake'));
+  });
+
+  // PM race (2026-10-16): a probe already in flight when the app goes to the background
+  // (no navigation blur) must not trigger a capture when it resolves later.
+  const waitProbeInFlight = async (since) => { for (let i = 0; i < 60 && ocrCalls.length === since; i++) await tick(50); };
+  await test('race: second probe in flight → app backgrounded → it resolves with a valid steady reading → NO capture, upload or charge; files still deleted', async () => {
+    frameText = '';
+    await probes(4);                                  // re-armed, empty frame
+    const n = bodies.length, remaining = useScanQuotaStore.getState().getRemaining();
+    frameText = 'hBP04-012';
+    let since = ocrCalls.length;
+    await waitProbeInFlight(since);                   // first steady hit
+    await tick(100);
+    since = ocrCalls.length;
+    const release = holdReader();
+    await waitProbeInFlight(since);                   // second probe now in flight, held
+    const heldShot = globalThis.__nativeCameraCalls.filter((c) => c.shutterSound === false).at(-1).uri;
+    await appState('background');
+    release();                                        // resolves with the same steady reading
+    await tick(1500);
+    assert.equal(bodies.length, n, 'no recognition request from the stale probe');
+    assert.equal(useScanQuotaStore.getState().getRemaining(), remaining);
+    assert.ok(!byTestId('scan-match-best'));
+    assert.ok(deleted.includes(heldShot), 'the held probe still deleted its photo');
+    await appState('active');
+    frameText = '';
+    await probes(4);
+  });
+  await test('race: probe in flight → screen blurred and focused again → the stale reading is dropped (no capture)', async () => {
+    const n = bodies.length;
+    frameText = 'hBP04-013';
+    let since = ocrCalls.length;
+    await waitProbeInFlight(since);
+    await tick(100);
+    since = ocrCalls.length;
+    const release = holdReader();
+    await waitProbeInFlight(since);
+    await navEvent('blur');
+    await navEvent('focus');
+    release();
+    await tick(400);
+    assert.equal(bodies.length, n, 'the blurred-and-refocused probe did not capture');
+    frameText = '';
+    await probes(4);
   });
 
   await test('manual mode: the pill turns automatic capture off — a card in the frame is not captured', async () => {

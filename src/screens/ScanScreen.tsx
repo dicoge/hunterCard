@@ -306,6 +306,10 @@ export default function ScanScreen({ navigation }: any) {
   const autoScanActive = autoScanSupported && autoScanEnabled;
   const autoMachine = useRef(createAutoCaptureMachine()).current;
   const probeBusyRef = useRef(false);
+  // Bumped whenever a probe in flight must not count any more (background, blur,
+  // cancel, close, unmount): its late reading is dropped, never fed to the trigger.
+  const probeEpochRef = useRef(0);
+  const invalidateProbes = () => { probeEpochRef.current += 1; };
   const [autoPaused, setAutoPaused] = useState(false);
   // Web: after a round the frame must move (a card taken away / a new one) before the
   // next automatic capture — a card left still in front of the camera is not re-scanned.
@@ -478,6 +482,7 @@ export default function ScanScreen({ navigation }: any) {
   // Clears the busy / progress UI of a scan that was cancelled by leaving the screen,
   // so coming back never shows a stuck spinner.
   const resetScanUi = () => {
+    invalidateProbes();
     diagOutcome('cancelled');
     clearRetry();
     setMatchSheet(null);
@@ -498,6 +503,7 @@ export default function ScanScreen({ navigation }: any) {
     const offBlur = typeof navigation?.addListener === 'function'
       ? navigation.addListener('blur', () => {
         if (!mountedRef.current) return;
+        invalidateProbes();
         diagOutcome('cancelled');
         clearRetry();
         setMatchSheet(null);
@@ -523,6 +529,7 @@ export default function ScanScreen({ navigation }: any) {
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next) => {
       if (next === 'active' || pickerOpenRef.current || !mountedRef.current) return;
+      invalidateProbes();
       lifecycle.cancel();
       resetScanUi();
       setCandidateSelector({ visible: false, tier: 'mid', candidates: [] });
@@ -694,16 +701,20 @@ export default function ScanScreen({ navigation }: any) {
     if (!isCameraReady || isScanning || isProcessingOCR || autoPaused) return;
     if (candidateSelector.visible || resultCard.visible || matchSheet || serviceFailure || scanError || showSearch) return;
     let stopped = false;
+    const probeAllowed = () => mountedRef.current && lifecycle.isFocused() && !lifecycle.hasLiveJob()
+      && AppState.currentState === 'active' && canScanNow() && hasUploadConsent();
     const tick = async () => {
       if (stopped || probeBusyRef.current) return;
-      if (!mountedRef.current || !lifecycle.isFocused() || lifecycle.hasLiveJob()) return;
-      if (AppState.currentState !== 'active') return;
-      if (!canScanNow() || !hasUploadConsent()) return;
+      if (!probeAllowed()) return;
       probeBusyRef.current = true;
+      const epoch = probeEpochRef.current;
       try {
-        const tokens = await probeCardNumbers();
-        if (stopped) return;
-        const decision = autoMachine.onProbe(tokens);
+        const observations = await probeCardNumbers();
+        // Everything is re-checked AFTER the awaits: the app may have gone to the
+        // background (no navigation blur), the screen may have lost focus, a scan may
+        // have started — a late reading of a probe from before that never triggers.
+        if (stopped || epoch !== probeEpochRef.current || !probeAllowed()) return;
+        const decision = autoMachine.onProbe(observations);
         if (autoMachine.state().paused) setAutoPaused(true);
         if (decision === 'trigger') captureAndRecognize();
       } catch {
@@ -713,7 +724,7 @@ export default function ScanScreen({ navigation }: any) {
       }
     };
     const id = setInterval(tick, AUTO_CAPTURE_PROBE_INTERVAL_MS);
-    return () => { stopped = true; clearInterval(id); };
+    return () => { stopped = true; invalidateProbes(); clearInterval(id); };
   }, [autoScanActive, permission?.granted, isCameraReady, isScanning, isProcessingOCR, autoPaused, candidateSelector.visible, resultCard.visible, matchSheet, serviceFailure, scanError, showSearch]);
 
   const toggleFlash = () => {
@@ -1458,6 +1469,7 @@ export default function ScanScreen({ navigation }: any) {
     // Cancel first: the drawer keeps this screen mounted, so the running scan must be
     // retired before navigating (the blur that follows is then a no-op).
     if (lifecycle.cancel()) resetScanUi();
+    invalidateProbes();
     clearRetry();
     navigation.navigate('MainDrawer', { screen: 'Home' });
   };
