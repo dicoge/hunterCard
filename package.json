@@ -30,6 +30,7 @@
     "render:app-screenshots": "node scripts/render-app-screens-screenshots.mjs",
     "render:shell-preview": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-web-render.mjs scripts/render-shell-preview.mjs",
     "render:shell-screenshots": "node scripts/render-shell-screenshots.mjs",
+    "test:qa-harness-loopback": "node scripts/test-qa-harness-loopback.mjs",
     "qa:local-candidate": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/qa/local-candidate.mjs",
     "test:push-freshness": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-push-freshness.mjs",
     "test:push-backend": "node scripts/test-push-backend.cjs",

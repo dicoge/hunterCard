@@ -31,6 +31,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
+import { isLoopbackUrl } from './loopback-url.mjs';
 
 const require = createRequire(import.meta.url);
 const PORT = Number(process.env.QA_PORT || 8790);
@@ -57,7 +58,7 @@ globalThis.fetch = async (url, init) => {
     if (providerMode === 'busy') return new Response('busy', { status: 429 });
     return Response.json({ candidates: [{ content: { parts: [{ text: REPLIES[providerMode] ?? REPLIES.kanata }] } }] });
   }
-  if (/^https?:\/\/(127\.0\.0\.1|localhost)/.test(href)) return realFetch(url, init);
+  if (isLoopbackUrl(href)) return realFetch(url, init);
   throw new Error(`QA harness blocks outbound request: ${href}`);
 };
 const recognize = (await import('../../api/recognize-card.ts')).default;
