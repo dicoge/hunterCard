@@ -19,6 +19,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { adaptDatabase } from '../src/utils/deckCardData.ts';
 import { priceAlertKey } from '../src/utils/priceAlerts.ts';
+import { assertFreshDatabase, parseRestoreSince } from './lib/push-freshness.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATABASE_PATH = path.join(path.resolve(__dirname, '..'), 'data', 'database.json');
@@ -84,6 +85,9 @@ async function fetchWatchedPrintings() {
 
 function buildPriceIndex() {
   const raw = JSON.parse(fs.readFileSync(DATABASE_PATH, 'utf8'));
+  // v41: a desired-price alert must judge a CURRENT price — a stale database (or one
+  // from before PUSH_RESTORE_SINCE) sends nothing (scripts/lib/push-freshness.mjs).
+  assertFreshDatabase(raw, Date.now(), parseRestoreSince(process.env.PUSH_RESTORE_SINCE));
   const { priceRecords } = adaptDatabase(Object.values(raw.cards || {}));
   const index = new Map();
   for (const record of priceRecords) {
@@ -96,13 +100,14 @@ async function main() {
   if (!NOTIFY_SECRET) {
     throw new Error('PUSH_NOTIFY_SECRET not set — /api/push/price-alert-run would reject the request');
   }
+  // Freshness first: nothing is read from KV for a run that could not send anyway.
+  const index = buildPriceIndex();
   const watched = await fetchWatchedPrintings();
   if (watched.length === 0) {
     console.log('[price-alerts] No exact-version price alerts registered');
     return;
   }
 
-  const index = buildPriceIndex();
   const prices = [];
   for (const { cardNumber, printing } of watched) {
     const record = index.get(priceAlertKey(cardNumber, printing));

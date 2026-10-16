@@ -418,6 +418,9 @@ jobs:
       - name: Verify push notification backend (DIC-390)
         run: npm run test:push-backend
 
+      - name: Verify push restoration gate — stale / pre-restoration trend or price data never sends (v41)
+        run: npm run test:push-freshness
+
       - name: Verify account remote-sync backend (DIC-1156)
         run: npm run test:account-sync-backend
 
