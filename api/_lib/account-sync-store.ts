@@ -499,6 +499,11 @@ function cleanScanVersion(value: unknown, ctx: string): SyncScanPriceVersion {
   };
 }
 
+function capToNow(iso: string): string {
+  const now = Date.now();
+  return Date.parse(iso) > now ? new Date(now).toISOString() : iso;
+}
+
 function cleanScanEntry(value: unknown, ctx: string): SyncScanEntry {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new AccountSyncError('invalid_request', `${ctx} must be an object`, 400);
@@ -522,6 +527,11 @@ function cleanScanEntry(value: unknown, ctx: string): SyncScanEntry {
     priceVersions,
     selectedVersion,
     versionConfident: v.versionConfident,
+    // Optional (v41 CR): when the version was last picked by hand — merge provenance.
+    // Absent from older clients; validated and kept when sent. A time ahead of the
+    // server's clock is capped to now, so a device clock running fast cannot pin its
+    // pick above every later one.
+    ...(v.selectedAt === undefined || v.selectedAt === null ? {} : { selectedAt: capToNow(cleanIso(v.selectedAt, `${ctx}.selectedAt`)) }),
   };
 }
 

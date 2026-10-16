@@ -749,6 +749,64 @@ await test('CR merge: without a baseline (or a server without the scan list) the
   assert.equal(oldServer.scanSession.entries.length, 1, 'a server that does not carry the list cannot delete from it');
 });
 
+const SNAPSHOT_CARD_FOR_PICK = {
+  id: 'pick-card', name: 'n', cardNumber: 'hBP01-051', type: '', rarity: 'SR', series: 'hBP01', sellPrice: 120,
+  yuyuName: '', color: '', imageUrl: '', prices: [{ name: '風真いろは', sellPrice: 120 }, { name: '風真いろは(パラレル)', sellPrice: 980 }],
+};
+// ── CR 93677fb: explicit version-pick provenance in the scan-list merge ──
+const picked = (id, version, selectedAt, confident = true) => ({ ...scanEntry(id, '2026-10-01T00:00:00Z'), selectedVersion: version, versionConfident: confident, ...(selectedAt ? { selectedAt } : {}) });
+await test('CR merge (93677fb): a newer explicit pick wins over an older one on the server, and over a server copy with no pick', () => {
+  let merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, scanSession: { entries: [picked('s1', 0, '2026-10-02T00:00:00Z')], clearedAt: null } },
+    { scanSession: { entries: [picked('s1', 1, '2026-10-03T00:00:00Z')], clearedAt: null } }, {},
+  );
+  assert.equal(merged.scanSession.entries[0].selectedVersion, 1);
+  merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, scanSession: { entries: [picked('s1', 0, null)], clearedAt: null } },
+    { scanSession: { entries: [picked('s1', 1, '2026-10-03T00:00:00Z')], clearedAt: null } }, {},
+  );
+  assert.equal(merged.scanSession.entries[0].selectedVersion, 1);
+});
+await test('CR merge (93677fb): an older or absent local pick never overrides a newer server pick; ties keep the old rules (resolved beats unresolved, then the server copy)', () => {
+  let merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, scanSession: { entries: [picked('s1', 1, '2026-10-03T00:00:00Z')], clearedAt: null } },
+    { scanSession: { entries: [picked('s1', 0, '2026-10-02T00:00:00Z')], clearedAt: null } }, {},
+  );
+  assert.equal(merged.scanSession.entries[0].selectedVersion, 1, 'older local pick loses');
+  merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, scanSession: { entries: [picked('s1', 1, '2026-10-03T00:00:00Z')], clearedAt: null } },
+    { scanSession: { entries: [picked('s1', 0, null)], clearedAt: null } }, {},
+  );
+  assert.equal(merged.scanSession.entries[0].selectedVersion, 1, 'no local pick loses');
+  merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, scanSession: { entries: [picked('s1', 0, null, false)], clearedAt: null } },
+    { scanSession: { entries: [picked('s1', 1, null, true)], clearedAt: null } }, {},
+  );
+  assert.equal(merged.scanSession.entries[0].selectedVersion, 1, 'no picks: the resolved copy wins');
+  merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, scanSession: { entries: [picked('s1', 0, '2026-10-03T00:00:00Z')], clearedAt: null } },
+    { scanSession: { entries: [picked('s1', 1, '2026-10-03T00:00:00Z')], clearedAt: null } }, {},
+  );
+  assert.equal(merged.scanSession.entries[0].selectedVersion, 0, 'same pick time: the server copy stays');
+});
+await test('CR (93677fb): the picker stamps selectedAt; it travels to and from the sync form; an out-of-range pick is ignored', async () => {
+  const { useScanSessionStore: store, toSyncEntry, fromSyncEntry } = await import('../src/stores/scanSessionStore.ts');
+  store.setState({ cards: [] });
+  store.getState().addCard({ ...SNAPSHOT_CARD_FOR_PICK }, { force: true });
+  const id = store.getState().cards[0].instanceId;
+  store.getState().setCardVersion(id, 5);                      // out of range: nothing changes
+  assert.equal(store.getState().cards[0].selectedAt, undefined);
+  store.getState().setCardVersion(id, 1);
+  const card = store.getState().cards[0];
+  assert.equal(card.selectedVersion, 1);
+  assert.ok(Number.isFinite(Date.parse(card.selectedAt)), 'explicit pick is timestamped');
+  const entry = toSyncEntry(card, false);
+  assert.equal(entry.selectedAt, card.selectedAt);
+  assert.equal(fromSyncEntry(entry).selectedAt, card.selectedAt);
+  assert.equal(toSyncEntry({ ...card, selectedVersion: 9 }, false).selectedAt, undefined, 'no provenance for an out-of-range index');
+  store.setState({ cards: [] });
+});
+
 if ((process.exitCode ?? 0) === 0) {
   console.log(`\n✅ account remote-sync orchestrator: ${passed} checks passed`);
 } else {

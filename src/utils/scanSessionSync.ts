@@ -39,6 +39,10 @@ export interface SyncScanEntry {
   priceVersions: SyncScanPriceVersion[];
   selectedVersion: number;
   versionConfident: boolean;
+  /** When the player last picked the version EXPLICITLY (ISO). Absent = never picked
+   *  by hand (the scan's own resolution). Merge provenance: a later explicit pick wins
+   *  over an older one or none, whichever side it is on (CR 2026-10-17). */
+  selectedAt?: string;
 }
 
 export interface SyncScanSession {
@@ -54,6 +58,25 @@ export function emptyScanSession(): SyncScanSession {
 }
 
 const ms = (iso: string | null | undefined): number => (iso ? Date.parse(iso) || 0 : 0);
+
+/**
+ * Which copy of the SAME scan wins in a merge (lists are passed server-first):
+ *   1. the later explicit version pick (`selectedAt`) — a correction made on a stale
+ *      device must survive the 409 against an older pick or none, and an unchanged
+ *      copy never overrides a newer pick made elsewhere;
+ *   2. no pick on either side, or the same pick time: a resolved version beats an
+ *      unresolved one;
+ *   3. still tied: the earlier list (the server's copy) stays.
+ * Pick times come from device clocks: a device whose clock is far behind can lose a
+ * genuinely newer pick (documented limitation, as for clearedAt).
+ */
+export function preferScanEntry(prev: SyncScanEntry, next: SyncScanEntry): SyncScanEntry {
+  const a = ms(prev.selectedAt);
+  const b = ms(next.selectedAt);
+  if (a !== b) return b > a ? next : prev;
+  if (!prev.versionConfident && next.versionConfident) return next;
+  return prev;
+}
 
 /** The later of two clear times (null = never cleared). */
 export function laterClear(a: string | null | undefined, b: string | null | undefined): string | null {
@@ -78,10 +101,10 @@ export function unionScanEntries(
       if (!e || !INSTANCE_ID.test(e.instanceId)) continue;
       if (clearedAt && ms(e.scannedAt) <= ms(clearedAt)) continue;
       if (removedAt[e.instanceId]) continue;
-      // Same scan on both sides: the copy with a resolved version wins (an explicit
-      // pick is newer information than the default).
+      // Same scan on both sides: see preferScanEntry (newer explicit pick, then a
+      // resolved version, then the server's copy).
       const prev = byId.get(e.instanceId);
-      if (!prev || (!prev.versionConfident && e.versionConfident)) byId.set(e.instanceId, e);
+      byId.set(e.instanceId, prev ? preferScanEntry(prev, e) : e);
     }
   }
   return [...byId.values()]

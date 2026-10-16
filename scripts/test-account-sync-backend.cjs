@@ -865,6 +865,29 @@ async function testScanSessionValidationRejectsHostileEntries() {
   assert.equal((await request('GET', undefined, session)).body.snapshot.revision, 0, 'nothing committed');
 }
 
+async function testScanSelectionProvenanceIsKept() {
+  // CR 93677fb: the optional explicit-pick time is validated, stored and returned;
+  // older clients (no field) still work; a malformed one is rejected; a time ahead of
+  // the server clock is capped to now.
+  resetKv(); configureBackend();
+  const { session } = await createSession('scan-user-sel');
+  let res = await request('POST', { baseRevision: 0, idempotencyKey: 'sel-0001', patch: { scanSession: { entries: [
+    scanEntry('sel-1', { selectedAt: '2026-10-16T10:00:00.000Z' }), scanEntry('sel-2'),
+  ], clearedAt: null } } }, session);
+  assert.equal(res.status, 200);
+  res = await request('GET', undefined, session);
+  const byId = Object.fromEntries(res.body.snapshot.scanSession.entries.map((e) => [e.instanceId, e]));
+  assert.equal(byId['sel-1'].selectedAt, '2026-10-16T10:00:00.000Z', 'kept on the server');
+  assert.equal('selectedAt' in byId['sel-2'], false, 'absent stays absent (older clients)');
+  res = await request('POST', { baseRevision: 1, idempotencyKey: 'sel-0002', patch: { scanSession: { entries: [scanEntry('sel-3', { selectedAt: 'soon' })], clearedAt: null } } }, session);
+  assert.equal(res.status, 400, 'malformed selectedAt rejected');
+  const future = new Date(Date.now() + 10 * 24 * 3600 * 1000).toISOString();
+  res = await request('POST', { baseRevision: 1, idempotencyKey: 'sel-0003', patch: { scanSession: { entries: [scanEntry('sel-4', { selectedAt: future })], clearedAt: null } } }, session);
+  assert.equal(res.status, 200);
+  const stored = res.body.snapshot.scanSession.entries[0].selectedAt;
+  assert.ok(Date.parse(stored) <= Date.now(), `a future pick time is capped to the server clock (${stored})`);
+}
+
 async function testForgedSessionCannotReadAnotherUser() {
   resetKv(); configureBackend();
   const a = await createSession('scan-user-d');
@@ -878,6 +901,7 @@ async function testForgedSessionCannotReadAnotherUser() {
 
 (async () => {
   await testScanSessionRoundTripAndUserIsolation();
+  await testScanSelectionProvenanceIsKept();
   await testScanSessionValidationRejectsHostileEntries();
   await testForgedSessionCannotReadAnotherUser();
   await testUnauthorizedFailsClosed();

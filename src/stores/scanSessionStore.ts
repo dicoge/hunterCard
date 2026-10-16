@@ -34,6 +34,8 @@ export interface SessionCard extends CardInfo {
   /** false while the source cannot prove WHICH listing this card is — the same
    * fail-closed state the card page and the deck estimator already honour. */
   versionConfident: boolean;
+  /** When the player last picked the version by hand (ISO); sync merge provenance. */
+  selectedAt?: string;
 }
 
 /**
@@ -150,7 +152,7 @@ export const useScanSessionStore = create<ScanSessionState>()(
           c.instanceId === instanceId &&
           versionIndex >= 0 &&
           versionIndex < c.priceVersions.length
-            ? { ...c, selectedVersion: versionIndex, versionConfident: true }
+            ? { ...c, selectedVersion: versionIndex, versionConfident: true, selectedAt: new Date().toISOString() }
             : c
         );
         set({ cards: newCards, totalValue: computeTotal(newCards) });
@@ -254,6 +256,7 @@ export function toSyncEntry(c: SessionCard, includeBuyPrice: boolean): SyncScanE
     priceVersions: versions,
     selectedVersion: inRange ? selected : 0,
     versionConfident: inRange ? c.versionConfident === true : false,
+    ...(inRange && c.selectedAt && Number.isFinite(Date.parse(c.selectedAt)) ? { selectedAt: c.selectedAt } : {}),
   };
 }
 
@@ -276,6 +279,7 @@ export function fromSyncEntry(e: SyncScanEntry): SessionCard {
     priceVersions: e.priceVersions.map((v) => ({ ...v })),
     selectedVersion: e.selectedVersion,
     versionConfident: e.versionConfident,
+    ...(e.selectedAt ? { selectedAt: e.selectedAt } : {}),
   };
 }
 

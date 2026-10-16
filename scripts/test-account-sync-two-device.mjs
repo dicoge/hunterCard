@@ -35,6 +35,12 @@ const cardOf = (id) => {
 };
 const KANATA = cardOf('hBP01-010_hBP01_U_hBP01-010_U');
 const IROHA_SR = cardOf('hBP01-051_hEB01_SR_hBP01-051_SR_02');
+// Synthetic two-listing card (the public data carries one listing per printing row):
+// the scan-list picker then offers versions 0 and 1, as for a real ambiguous scan.
+const DUAL = { ...IROHA_SR, prices: [
+  { name: '風真いろは', sellPrice: 120, imageUrl: '' },
+  { name: '風真いろは(パラレル)', sellPrice: 980, imageUrl: '' },
+] };
 
 const live = new Set();
 function spawnDevice(name) {
@@ -430,6 +436,57 @@ try {
     assert.equal(snap.collection['hBP05-042|BASE'], 1, 'the other phone\'s edit is kept');
     assert.equal((await p2.call('state')).collection['hBP05-040|BASE'], undefined);
     await p1.kill(); await p2.kill();
+  });
+
+  // ── CR 93677fb (P2): a version correction made on a stale phone survives the 409 ──
+  await test('CR P2 (93677fb): both phones hold a scan confirmed at version 0; A changes something else; STALE B picks version 1 → 409 → server, B, B after restart and A all keep version 1', async () => {
+    const M = await server.createSession('two-device-user-m'); const userM = { ...M.user };
+    const pa = await device('sel-a');
+    let pb = await device('sel-b');
+    await act(pa, 'login', { session: M.session, user: userM });
+    await act(pb, 'login', { session: M.session, user: userM });
+    await act(pa, 'scan', { card: DUAL });
+    await act(pa, 'pickVersion', { index: 0, version: 0 });           // confirmed at 0
+    await pb.call('resync'); await pb.call('settle');
+    let sb = await pb.call('state');
+    assert.equal(sb.scans.length, 1); assert.equal(sb.scans[0].selectedVersion, 0); assert.equal(sb.scans[0].versionConfident, true);
+    await act(pa, 'own', { cardNumber: 'hBP05-050', version: 'BASE', qty: 1 });   // server revision moves on; B is stale
+    const conflicts = server.log.filter((r) => r.status === 409).length;
+    sb = await act(pb, 'pickVersion', { index: 0, version: 1 });       // the correction, on the stale phone
+    assert.ok(server.log.filter((r) => r.status === 409).length > conflicts, 'B\'s push really went through a 409');
+    assert.equal(sb.scans[0].selectedVersion, 1, 'B keeps its correction after the 409 merge');
+    assert.equal(sb.sync.dirty, false, 'and the server acknowledged it');
+    let snap = await serverSnapshot(M.session);
+    assert.equal(snap.scanSession.entries[0].selectedVersion, 1, 'the server holds the correction');
+    assert.equal(snap.collection['hBP05-050|BASE'], 1, 'A\'s unrelated edit is kept');
+    await pb.kill();
+    pb = await device('sel-b');                                      // restart: same persisted stores
+    await pb.call('settle');
+    sb = await pb.call('state');
+    assert.equal(sb.scans[0].selectedVersion, 1, 'still 1 after a restart');
+    const sa = await act(pa, 'resync');
+    assert.equal(sa.scans[0].selectedVersion, 1, 'phone A gets the correction');
+    await pa.kill(); await pb.kill();
+  });
+
+  await test('CR P2 (93677fb): the reverse — a newer pick made elsewhere is not overridden by a stale phone\'s unchanged copy', async () => {
+    const N = await server.createSession('two-device-user-n'); const userN = { ...N.user };
+    const pa = await device('sel2-a');
+    const pb = await device('sel2-b');
+    await act(pa, 'login', { session: N.session, user: userN });
+    await act(pb, 'login', { session: N.session, user: userN });
+    await act(pa, 'scan', { card: DUAL });
+    await act(pa, 'pickVersion', { index: 0, version: 0 });
+    await pb.call('resync'); await pb.call('settle');
+    await act(pa, 'pickVersion', { index: 0, version: 1 });           // newer pick on A
+    const conflicts = server.log.filter((r) => r.status === 409).length;
+    const sb = await act(pb, 'own', { cardNumber: 'hBP05-051', version: 'BASE', qty: 1 });   // stale B, unrelated edit → 409
+    assert.ok(server.log.filter((r) => r.status === 409).length > conflicts, 'B\'s push really went through a 409');
+    assert.equal(sb.scans[0].selectedVersion, 1, 'B takes A\'s newer pick');
+    const snap = await serverSnapshot(N.session);
+    assert.equal(snap.scanSession.entries[0].selectedVersion, 1);
+    assert.equal(snap.collection['hBP05-051|BASE'], 1);
+    await pa.kill(); await pb.kill();
   });
 
   await phone1.kill();
