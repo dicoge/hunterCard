@@ -1734,7 +1734,7 @@ export default function ScanScreen({ navigation }: any) {
         </View>
       ) : null}
 
-      {/* 辨識服務無法回應（v39）：不是「找不到卡」，可用同一張照片手動重試 */}
+      {/* 辨識服務無法回應（v39）：不是「找不到卡」。簡短原因＋重試（同一張照片）／取消 */}
       {serviceFailure && !scanError && (
         <View style={resultStyles.errorContainer} testID="scan-service-failure">
           <Text style={resultStyles.errorText}>⚠️ {t(`scan_failure_${serviceFailure}` as TranslationKey)}</Text>
@@ -1750,15 +1750,14 @@ export default function ScanScreen({ navigation }: any) {
                 <Text style={resultStyles.retryText}>{t('scan_retry_recognition')}</Text>
               </TouchableOpacity>
             ) : null}
+            {/* 取消：丟掉暫存的照片、收起面板，回到可掃描狀態（不上傳、不扣次）。 */}
             <TouchableOpacity
               style={resultStyles.retryButton}
-              onPress={() => {
-                clearRetry();
-                setShowSearch(true);
-              }}
-              testID="scan-service-manual"
+              onPress={clearRetry}
+              accessibilityRole="button"
+              testID="scan-service-cancel"
             >
-              <Text style={resultStyles.retryText}>{t('scan_manual_search')}</Text>
+              <Text style={resultStyles.retryText}>{t('scan_service_cancel')}</Text>
             </TouchableOpacity>
           </View>
         </View>
