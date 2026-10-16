@@ -177,7 +177,7 @@ export const ja: Record<keyof typeof zh, string> = {
   // binding (App.tsx gates it on FEATURES.favorites | .watchlist |
   // .premium, all false under STORE_MVP), so decks / settings /
   // favorites / price alerts live on-device only.
-  login_description_store: 'ログインするとアカウント機能が利用できます。ゲストも毎月 50 枚までスキャンできます（ログイン後もこの端末の上限を共有）。このバージョンではデッキと設定は端末内に保存されます。',
+  login_description_store: 'ログインすると、カード所持数・デッキ・スキャン一覧・設定が同じアカウントの他の端末と同期されます。ゲストも毎月 50 枚までスキャンできます（ログイン後もこの端末の上限を共有）。',
   login_or: 'または',
   login_guest_button: 'ゲストとして利用',
   login_guest_hint: 'ゲストはルール閲覧・検索に加え、毎月 50 枚までカードをスキャンできます',
@@ -270,7 +270,7 @@ export const ja: Record<keyof typeof zh, string> = {
   // ト / 端末間で同期" phrasing so the shipping-copy predicate cannot
   // confuse login-binding with data-sync. Data-storage clause states
   // the fact.
-  settings_link_hint_store: '複数のログイン方法を連携すると機種変更や身分確認の追加に便利です。このバージョンではデッキと設定は端末内に保存され、端末間では同期されません。ログイン方法は1つ以上残してください。',
+  settings_link_hint_store: '複数のログイン方法を連携すると機種変更や身分確認の追加に便利です。ログイン中はカード所持数・デッキ・スキャン一覧・設定が端末間で同期されます（スキャン上限は端末ごと）。ログイン方法は1つ以上残してください。',
   // DIC-1380 W12 CR — describe the ACTUAL per-provider deletion path.
   // Google: backend cascade delete works; App clears local session
   // and calls GoogleSignin.signOut() on Android only (local SDK cache
@@ -286,7 +286,7 @@ export const ja: Record<keyof typeof zh, string> = {
   settings_guest_sync: 'ログインしていません。ログインするとお気に入りを端末間で同期できます。',
   // DIC-1381 W10 CR — Store MVP does NOT install the account-sync
   // binding, so decks/settings do not sync. State this truthfully.
-  settings_guest_sync_store: 'ログインしていません。ゲストも毎月 50 枚までスキャンでき、ログインしても上限は増えずリセットもされません。このバージョンではデッキと設定は端末内に保存されます。',
+  settings_guest_sync_store: 'ログインしていません。ゲストも毎月 50 枚までスキャンでき、ログインしても上限は増えずリセットもされません。ログインすると、この端末のカード所持数・デッキ・スキャン一覧・設定がアカウントに統合され、端末間で同期されます。',
   settings_footer: 'hololive PCGプレイヤーのために',
 
   // Tutorial landing

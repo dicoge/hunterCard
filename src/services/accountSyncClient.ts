@@ -33,6 +33,7 @@
  * source of truth for shape validation. Pinning them here would let a
  * client-side type drift silently loosen a server-side gate.
  */
+import type { SyncScanSession } from '../utils/scanSessionSync';
 import { PRODUCTION_ORIGIN } from '../config/apiOrigin';
 
 // Same resolution rule as `getApiBase` in `pushNotificationService.ts`, but
@@ -75,6 +76,8 @@ export interface AccountSyncSnapshot {
   collection: AccountSyncCollection;
   priceAlerts: unknown[];
   settings: AccountSyncSettings;
+  /** 估值清單 (v41). Absent from a server that predates it — then left alone locally. */
+  scanSession?: SyncScanSession;
 }
 
 export interface AccountSyncPatch {
@@ -83,6 +86,7 @@ export interface AccountSyncPatch {
   collection?: AccountSyncCollection;
   priceAlerts?: unknown[];
   settings?: Partial<AccountSyncSettings>;
+  scanSession?: SyncScanSession;
 }
 
 export interface PushSnapshotInput {
@@ -223,8 +227,14 @@ export async function pushAccountSnapshot(
 
   const body = await parseJsonSafe(res);
   if (res.status === 409 && body.error === 'revision_conflict') {
-    const serverRevision = typeof body.serverRevision === 'number' ? body.serverRevision : 0;
-    throw new AccountSyncConflictError(serverRevision, snapshotFromBody(body));
+    // The server (api/_lib/account-sync-store AccountSyncError extra) sends
+    // `currentRevision`; reading only `serverRevision` made every merge retry go out
+    // against revision 0 and fail again (found by the v41 two-device regression).
+    const snap = snapshotFromBody(body);
+    const serverRevision = typeof body.currentRevision === 'number' ? body.currentRevision
+      : typeof body.serverRevision === 'number' ? body.serverRevision
+        : typeof snap?.revision === 'number' ? snap.revision : 0;
+    throw new AccountSyncConflictError(serverRevision, snap);
   }
   if (res.status === 410 || body.error === 'account_deleted') return null;
   if (res.status === 401 || res.status === 404) return null;

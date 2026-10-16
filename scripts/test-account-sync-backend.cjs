@@ -183,6 +183,7 @@ for (const rel of [
   'api/_lib/apple-token-store.ts',
   'api/auth/[action].ts',
   'api/auth/delete-account.ts',
+  'src/utils/scanSessionSync.ts',
 ]) compileTs(rel);
 
 const { issueSession } = require(path.join(outDir, 'api/_lib/session.js'));
@@ -800,7 +801,85 @@ async function testDualLinkedGoogleApple501WithConfigButNoStoredToken() {
   delete process.env.APPLE_PRIVATE_KEY;
 }
 
+// v41 (2026-10-17): the 估值清單 travels as an additive, validated `scanSession`.
+const scanEntry = (id, over = {}) => ({
+  instanceId: id,
+  scannedAt: '2026-10-17T01:00:00.000Z',
+  card: { id: 'hBP01-010_hBP01_U_hBP01-010_U', cardNumber: 'hBP01-010', name: '天音かなた', rarity: 'U', series: 'hBP01', imageUrl: 'https://hololive-official-cardgame.com/x.png', sellPrice: 30 },
+  priceVersions: [{ name: '天音かなた', printing: 'BASE', sellPrice: 30, buyPrice: null }],
+  selectedVersion: 0,
+  versionConfident: true,
+  ...over,
+});
+
+async function testScanSessionRoundTripAndUserIsolation() {
+  resetKv(); configureBackend();
+  const a = await createSession('scan-user-a');
+  const b = await createSession('scan-user-b');
+  let res = await request('GET', undefined, a.session);
+  assert.deepEqual(res.body.snapshot.scanSession, { entries: [], clearedAt: null }, 'a fresh account has an empty list');
+  res = await request('POST', {
+    baseRevision: 0, idempotencyKey: 'scan-0001', userId: b.user.internalId,
+    patch: { scanSession: { entries: [scanEntry('m1abc-x1')], clearedAt: null } },
+  }, a.session);
+  assert.equal(res.status, 200);
+  assert.equal(res.body.snapshot.scanSession.entries[0].instanceId, 'm1abc-x1');
+  // B (another Google account) sees nothing of A's list, whatever userId A put in the body.
+  res = await request('GET', undefined, b.session);
+  assert.deepEqual(res.body.snapshot.scanSession.entries, [], 'user B never sees user A data');
+  assert.equal(res.body.snapshot.revision, 0);
+  // A second device of A reads the same list.
+  res = await request('GET', undefined, a.session);
+  assert.equal(res.body.snapshot.scanSession.entries.length, 1);
+  // A patch without scanSession keeps it (other fields only).
+  res = await request('POST', { baseRevision: 1, idempotencyKey: 'scan-0002', patch: { settings: { preferredLanguage: 'ja' } } }, a.session);
+  assert.equal(res.body.snapshot.scanSession.entries.length, 1, 'untouched field kept');
+  // An old snapshot written before v41 (no scanSession) reads as an empty list.
+  kvState.values.set(`account-sync:user:${b.user.internalId}`, JSON.stringify({ schemaVersion: 1, revision: 4, collection: { 'x|BASE': 1 } }));
+  res = await request('GET', undefined, b.session);
+  assert.deepEqual(res.body.snapshot.scanSession, { entries: [], clearedAt: null });
+  assert.equal(res.body.snapshot.collection['x|BASE'], 1);
+}
+
+async function testScanSessionValidationRejectsHostileEntries() {
+  resetKv(); configureBackend();
+  const { session } = await createSession('scan-user-c');
+  const bad = [
+    [{ entries: [scanEntry('ok-1', { instanceId: '../../etc' })], clearedAt: null }, 'instanceId format'],
+    [{ entries: [scanEntry('ok-2'), scanEntry('ok-2')], clearedAt: null }, 'duplicate instanceId'],
+    [{ entries: [scanEntry('ok-3', { card: { ...scanEntry('x').card, imageUrl: 'javascript:alert(1)' } })], clearedAt: null }, 'non-https image'],
+    [{ entries: [scanEntry('ok-4', { card: { ...scanEntry('x').card, name: 'x'.repeat(5000) } })], clearedAt: null }, 'overlong text'],
+    [{ entries: [scanEntry('ok-5', { selectedVersion: -1 })], clearedAt: null }, 'negative version'],
+    [{ entries: [scanEntry('ok-6', { versionConfident: 'yes' })], clearedAt: null }, 'non-boolean'],
+    [{ entries: [scanEntry('ok-7', { scannedAt: 'yesterday' })], clearedAt: null }, 'bad timestamp'],
+    [{ entries: 'nope', clearedAt: null }, 'entries not array'],
+  ];
+  let idem = 100;
+  for (const [scanSession, why] of bad) {
+    const res = await request('POST', { baseRevision: 0, idempotencyKey: `scan-bad-${idem++}`, patch: { scanSession } }, session);
+    assert.equal(res.status, 400, `${why} rejected`);
+  }
+  const tooMany = { entries: Array.from({ length: 301 }, (_, i) => scanEntry(`n-${i}`)), clearedAt: null };
+  const res = await request('POST', { baseRevision: 0, idempotencyKey: 'scan-bad-many', patch: { scanSession: tooMany } }, session);
+  assert.ok(res.status === 413 || res.status === 400, 'over the entry cap rejected');
+  assert.equal((await request('GET', undefined, session)).body.snapshot.revision, 0, 'nothing committed');
+}
+
+async function testForgedSessionCannotReadAnotherUser() {
+  resetKv(); configureBackend();
+  const a = await createSession('scan-user-d');
+  await request('POST', { baseRevision: 0, idempotencyKey: 'scan-d-001', patch: { collection: { 'hBP01-001|BASE': 3 } } }, a.session);
+  const forged = `${a.session.slice(0, -4)}AAAA`;
+  const res = await request('GET', undefined, forged);
+  assert.equal(res.status, 401, 'tampered session signature rejected');
+  const res2 = await request('GET', undefined, a.user.internalId);
+  assert.equal(res2.status, 401, 'a bare user id is not a session');
+}
+
 (async () => {
+  await testScanSessionRoundTripAndUserIsolation();
+  await testScanSessionValidationRejectsHostileEntries();
+  await testForgedSessionCannotReadAnotherUser();
   await testUnauthorizedFailsClosed();
   await testSnapshotRoundTripBySessionUser();
   await testOptimisticConflictAndIdempotentReplay();

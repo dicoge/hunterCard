@@ -178,7 +178,7 @@ export const zh = {
   // .watchlist | .premium, all false under STORE_MVP), so favorites /
   // decks / price alerts / settings live on-device only. Do not promise
   // cross-device sync here.
-  login_description_store: '登入後可使用帳號功能；訪客也能每月掃描 50 張卡牌（與登入後共用此裝置額度）。此版本的牌組與設定為裝置本機儲存。',
+  login_description_store: '登入後，卡牌持有數量、牌組、掃描清單與設定會同步到同一帳號的其他裝置；訪客也能每月掃描 50 張卡牌（與登入後共用此裝置額度）。',
   login_or: '或',
   login_guest_button: '以訪客身份進入',
   login_guest_hint: '訪客可瀏覽規則、查詢卡片，並每月掃描 50 張卡牌',
@@ -272,7 +272,7 @@ export const zh = {
   // Multi-provider login binding is described without "同一個帳號 /
   // 帳號同步" phrasing so the shipping-copy predicate does not confuse
   // login-binding with data-sync. Data-storage clause states the fact.
-  settings_link_hint_store: '綁定多種登入方式方便未來更換裝置或補充驗證。牌組與設定在此版本為裝置本機儲存，不會跨裝置同步。至少需保留一種登入方式，無法解除最後一個。',
+  settings_link_hint_store: '綁定多種登入方式方便未來更換裝置或補充驗證。登入後，卡牌持有數量、牌組、掃描清單與設定會跨裝置同步（掃描額度仍按裝置計算）。至少需保留一種登入方式，無法解除最後一個。',
   // DIC-1380 W12 CR — describe the ACTUAL per-provider deletion path.
   // Google-linked: backend cascade delete works; App clears local
   // session + calls GoogleSignin.signOut() on Android (best-effort
@@ -289,7 +289,7 @@ export const zh = {
   settings_guest_sync: '尚未登入。登入後可跨裝置同步收藏。',
   // DIC-1381 W10 CR — Store MVP does NOT install the account-sync
   // binding, so decks/settings do not sync. State this truthfully.
-  settings_guest_sync_store: '尚未登入。訪客每月可掃描 50 張卡牌，登入不會增加或重置額度。此版本的牌組與設定為裝置本機儲存。',
+  settings_guest_sync_store: '尚未登入。訪客每月可掃描 50 張卡牌，登入不會增加或重置額度。登入後，此裝置的卡牌持有數量、牌組、掃描清單與設定會併入帳號並跨裝置同步。',
   settings_footer: '專為 hololive PCG 玩家打造',
 
   // Tutorial landing

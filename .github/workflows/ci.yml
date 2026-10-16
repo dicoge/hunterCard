@@ -430,6 +430,9 @@ jobs:
       - name: Verify account remote-sync store binding (DIC-1380 W4)
         run: npm run test:account-sync-binding
 
+      - name: Verify same-account sync across two simulated phones on the real sync handler — Store MVP, guest merge, deletions, offline restart, 409 merge, logout / account-switch isolation (v41)
+        run: npm run test:account-sync-two-device
+
       - name: Verify shared card name resolver (DIC-1380 naming consistency)
         run: npm run test:card-display-name
 

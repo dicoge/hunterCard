@@ -70,7 +70,8 @@ const collapse = /if\s*\(!FEATURES\.premium && role === 'subscriber'\)\s*return\
 // collection + priceAlerts + settings + favorites — NOT scan quota,
 // NOT subscription state. Prove it by grep-testing the orchestrator +
 // client type for those absent fields.
-const orchestratorFields = orchestratorSrc.match(/export function snapshotFromLocalStores\([\s\S]*?return\s*\{([\s\S]*?)\n\s*\};/);
+// v41: the literal is wrapped in activeDomainsOnly(...) (hidden surfaces filtered).
+const orchestratorFields = orchestratorSrc.match(/export function snapshotFromLocalStores\([\s\S]*?return\s*(?:activeDomainsOnly\()?\{([\s\S]*?)\n\s*\}\)?;/);
 assert.ok(orchestratorFields, 'orchestrator must expose snapshotFromLocalStores() returning a patch literal');
 const returnedFields = orchestratorFields[1];
 const syncsFavorites = /\bfavorites\b/.test(returnedFields);
@@ -133,28 +134,33 @@ ok('privacy.html states the sync payload does NOT currently carry scan-quota pro
     || /(未列入 sync payload)/i.test(privacyRaw)
     || /(NOT part of the current sync payload)/i.test(privacyRaw));
 
-// ── DIC-1380 W8 CR: sync binding gate — Store MVP does NOT install the
-// binding, so any legal-copy claim that sync is "active" for
-// favorites/decks/alerts/settings is false. Truth source: App.tsx.
-const bindingGate = /installAccountSyncBinding\(\)/.test(appSrc)
-  && /FEATURES\.favorites\s*\|\|\s*FEATURES\.watchlist\s*\|\|\s*FEATURES\.premium/.test(appSrc);
-ok('code sanity: App.tsx gates installAccountSyncBinding() on FEATURES.favorites || .watchlist || .premium', bindingGate);
+// ── v41 (2026-10-17) supersedes DIC-1380 W8: the binding is installed in every
+// profile (App.tsx, unconditional) and Store MVP syncs its visible data. Truth
+// source: App.tsx + snapshotFromLocalStores/activeDomainsOnly. The pages must
+// now disclose what syncs (and what does not) and must not keep the stale
+// "not installed / no sync request" statement.
+const bindingInstalled = /^\s*installAccountSyncBinding\(\);/m.test(appSrc)
+  && !/if\s*\([^)]*FEATURES\.(favorites|watchlist|premium)[^)]*\)\s*\{\s*\n\s*installAccountSyncBinding/.test(appSrc);
+ok('code sanity (v41): App.tsx installs the account-sync binding unconditionally', bindingInstalled);
+const syncsScanSession = /\bscanSession\b/.test(returnedFields);
+ok('code sanity (v41): the sync payload carries the scan list (scanSession)', syncsScanSession);
 
 for (const [page, raw] of [['support.html', supportRaw], ['privacy.html', privacyRaw]]) {
-  // Every page must name the binding-install gate — either by naming
-  // `installAccountSyncBinding` or by stating "sync binding is not
-  // installed under Store MVP" explicitly.
   ok(
-    `${page} discloses that the sync binding is NOT installed under Store MVP (DIC-1380 W8 CR)`,
-    /(installAccountSyncBinding|不會安裝 sync binding|不會啟動雲端同步|不會發出任何|does NOT install the sync binding|does not currently issue any|does not install the sync binding|does NOT install the account-sync binding)/i.test(raw),
-    'page must state that Store MVP does not activate the account-sync binding',
+    `${page} discloses that signed-in accounts sync collection / decks / valuation list / settings (v41)`,
+    /(同步[\s\S]{0,40}卡牌收藏數量|卡牌收藏數量、牌組、估值清單)/.test(raw)
+      && /(collection counts, decks, valuation list|card collection counts, decks and valuation list)/i.test(raw),
+    'page must name what the account sync carries',
   );
-  // No page may claim sync is ACTIVELY happening for the four data
-  // stores today, because it is not under Store MVP.
   ok(
-    `${page} does NOT claim the sync binding is ACTIVELY running for favorites/decks/alerts today under Store MVP`,
-    !/(sync binding is (installed|running|active) under Store MVP|Store MVP.{0,80}sync binding.{0,40}(已安裝|已啟用|已運作))/i.test(raw),
-    'page must not contradict App.tsx by asserting sync is active in Store MVP',
+    `${page} no longer claims the Production build sends no sync request (stale since v41)`,
+    !/(不會安裝 sync binding|不會啟動雲端同步|does NOT install the sync binding|does not install the sync binding|does NOT install the account-sync binding|does not currently issue any)/i.test(raw),
+  );
+  ok(
+    `${page} states photos / diagnostics / scan quota are NOT synced`,
+    page === 'support.html'
+      ? /(照片、辨識過程資料、診斷紀錄與每月掃描額度不在同步範圍|掃描額度不同步)/.test(raw)
+      : /照片、辨識過程資料、診斷紀錄與每月掃描額度不在同步範圍/.test(raw) && /Photos, recognition details, diagnostic logs and the monthly scan quota are not synced/.test(raw),
   );
   // No page may claim monthly quota is aggregated / shared across
   // devices via Internal User ID today — permissionService's local
