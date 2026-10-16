@@ -378,32 +378,72 @@ const fetchStub = () => async () => ({ prices: {}, fetchedCards: 0, seriesFetche
 {
   // (g1) the hang consumes the whole remaining stage budget, so the relaunch
   // that would follow must be skipped rather than granted a fresh launch budget.
-  let launches = 0;
-  const t0 = Date.now();
-  const result = await scrapeYuyuPrices({
-    launchBrowserFn: async () => {
-      launches++;
-      if (launches > 1) return new Promise(() => {});
-      return fakeBrowser();
-    },
-    scrapeSeriesPageFn: (browser, url) =>
-      url.endsWith('/hang') ? new Promise(() => {}) : Promise.resolve(cardsFor('hBP01-001')),
-    seriesPages: [
-      { name: 'ok1', url: '/ok1' },
-      { name: 'hang', url: '/hang' },
-      { name: 'never', url: '/never' },
-    ],
-    sleepFn: async () => {},
-    fetchAllFn: fetchStub(),
-    seriesBudgetMs: 60_000,
-    stageBudgetMs: 300,
-    launchBudgetMs: 60_000,
-  });
-  const elapsed = Date.now() - t0;
-  assert.equal(launches, 1, 'no relaunch may start once the stage deadline has passed');
-  assert.ok(elapsed < 3_000, `stage must end at its deadline, not after a fresh launch budget (took ${elapsed}ms)`);
-  assert.equal(result.truncated, true);
-  assert.deepEqual(Object.keys(result.prices), ['hBP01-001']);
+  //
+  // CI 38966981568 (2026-10-16): with the REAL Date.now as the stage clock this
+  // case raced. The hang's wall-clock timer (300 ms minus elapsed) is scheduled
+  // from libuv's cached loop time, so it can fire while Date.now still shows 1 ms
+  // of stage time left; production then correctly allowed a relaunch capped at that
+  // 1 ms, and the test (which assumed "timer fired ⇒ deadline passed") saw 2
+  // launches. The stage clock is therefore the deterministic nowFn the function
+  // already takes: the hang advances it to the deadline, i.e. it consumed the
+  // whole remaining budget. The real setTimeout budget and the real wall-clock
+  // bound below are unchanged. (g1b)/(g1c) cover the before-deadline cases.
+  const stageRun = async (hangAdvancesClockTo, { stageBudgetMs = 300, launchBudgetMs = 60_000 } = {}) => {
+    let launches = 0;
+    let relaunchStartedAt = null;
+    let fakeNow = 0;
+    const t0 = Date.now();
+    const result = await scrapeYuyuPrices({
+      nowFn: () => fakeNow,
+      launchBrowserFn: async () => {
+        launches++;
+        if (launches > 1) { relaunchStartedAt = Date.now(); return new Promise(() => {}); }
+        return fakeBrowser();
+      },
+      scrapeSeriesPageFn: (browser, url) => {
+        if (url.endsWith('/hang')) { fakeNow = hangAdvancesClockTo; return new Promise(() => {}); }
+        return Promise.resolve(cardsFor('hBP01-001'));
+      },
+      seriesPages: [
+        { name: 'ok1', url: '/ok1' },
+        { name: 'hang', url: '/hang' },
+        { name: 'never', url: '/never' },
+      ],
+      sleepFn: async () => {},
+      fetchAllFn: fetchStub(),
+      seriesBudgetMs: 60_000,
+      stageBudgetMs,
+      launchBudgetMs,
+    });
+    const end = Date.now();
+    return { launches, result, elapsed: end - t0, relaunchMs: relaunchStartedAt === null ? null : end - relaunchStartedAt };
+  };
+  {
+    const { launches, result, elapsed } = await stageRun(300);
+    assert.equal(launches, 1, 'no relaunch may start once the stage deadline has passed');
+    assert.ok(elapsed < 3_000, `stage must end at its deadline, not after a fresh launch budget (took ${elapsed}ms)`);
+    assert.equal(result.truncated, true);
+    assert.deepEqual(Object.keys(result.prices), ['hBP01-001']);
+  }
+  // (g1b) before the deadline a relaunch is allowed, but only for the stage time
+  // that is left (50 ms here), never a fresh launch budget (5 s here).
+  {
+    const { launches, result, elapsed, relaunchMs } = await stageRun(250, { launchBudgetMs: 5_000 });
+    assert.equal(launches, 2, 'with stage time left the hung browser is relaunched');
+    assert.ok(relaunchMs !== null && relaunchMs < 1_000, `the relaunch is capped to the remaining stage time, not the launch budget (took ${relaunchMs}ms)`);
+    assert.ok(elapsed < 3_000, `took ${elapsed}ms`);
+    assert.equal(result.truncated, true);
+    assert.deepEqual(Object.keys(result.prices), ['hBP01-001'], 'the series after the failed relaunch is not visited');
+  }
+  // (g1c) the exact CI boundary: 1 ms of stage time left. Production may start a
+  // relaunch, bounded to that 1 ms — the stage still ends at its deadline.
+  {
+    const { launches, result, elapsed, relaunchMs } = await stageRun(299, { launchBudgetMs: 5_000 });
+    assert.equal(launches, 2);
+    assert.ok(relaunchMs !== null && relaunchMs < 1_000, `1 ms left → relaunch bounded to it (took ${relaunchMs}ms)`);
+    assert.ok(elapsed < 3_000, `took ${elapsed}ms`);
+    assert.equal(result.truncated, true);
+  }
 
   // (g2) rotation helper
   const pages = ['a', 'b', 'c', 'd'].map((name) => ({ name, url: `/${name}` }));
