@@ -559,6 +559,34 @@ for (const [name, msg, reach] of [['post-ready critical error', '相機已停止
   });
 }
 
+await test('native MANUAL camera (expo-camera) fails to start: ONE loading layer, ONE error with 重試 (by label) → a NEW expo-camera mount → ready, shutter works', async () => {
+  try {
+    await mountScreen();
+    await click(byTestId('scan-mode-manual'));
+    await tick(50);
+    globalThis.__nativeCameraFailMount = true;
+    await click(byTestId('scan-mode-auto'));
+    await tick(50);
+    await click(byTestId('scan-mode-manual'));                 // a fresh manual mount that fails
+    await tick(50);
+    const msg = 'Camera component could not be rendered';
+    assert.equal(instancesOf(INIT).length, 1, 'exactly ONE loading layer');
+    const shown = instancesOf(msg);
+    assert.equal(shown.length, 1, `the error is shown exactly once (found ${shown.length})`);
+    const retry = buttonIn(panelOf(shown[0]), RETRY);
+    assert.ok(retry, '重試 next to the error');
+    globalThis.__nativeCameraFailMount = false;
+    const camMounts = globalThis.__nativeCameraMounts ?? 0;
+    await click(retry);
+    await tick(50);
+    assert.equal(globalThis.__nativeCameraMounts ?? 0, camMounts + 1, 'a NEW expo-camera view (not the failed one)');
+    assert.ok(!text().includes(msg) && !text().includes(INIT), 'ready');
+    await manualShutterWorks();
+  } finally {
+    globalThis.__nativeCameraFailMount = false;
+  }
+});
+
 // ── CR dee6f4b: Android WITHOUT a loadable frame scanner → manual only, never periodic stills ──
 const { AUTO_CAPTURE_PROBE_INTERVAL_MS } = await import('../src/services/autoCapture.ts');
 const UNAVAILABLE = '此裝置無法自動偵測';

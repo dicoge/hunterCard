@@ -43,7 +43,15 @@ export const CameraView = React.forwardRef(function CameraView(props, ref) {
   }));
   // A device reports readiness from a native event AFTER mount, not synchronously inside
   // the first commit (where ScanScreen's own permission effect still resets it).
-  React.useEffect(() => { const id = setTimeout(() => props.onCameraReady?.(), 0); return () => clearTimeout(id); }, []);
+  // globalThis.__nativeCameraFailMount: this mount reports onMountError instead (as expo-camera
+  // does when CameraX cannot bind).
+  React.useEffect(() => {
+    const id = setTimeout(() => {
+      if (globalThis.__nativeCameraFailMount) props.onMountError?.({ message: 'Camera component could not be rendered' });
+      else props.onCameraReady?.();
+    }, 0);
+    return () => clearTimeout(id);
+  }, []);
   return React.createElement(View, { style: props.style, testID: 'native-camera-fixture' }, props.children);
 });
 // Permission state (default: granted, as before). A test may start from
