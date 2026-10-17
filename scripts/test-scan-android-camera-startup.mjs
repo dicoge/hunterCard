@@ -411,11 +411,13 @@ const streamingThenSteady = async () => {
 
 await test('streaming → ready → CRITICAL camera error: 「相機已停止運作」 + 重試 + 改用手動拍照, analysis off; an analysis started before the error and delivered in the SAME batch → no still, no request', async () => {
   await streamingThenSteady();
-  const base = baseline();
+  const base = baseline(), attempts = fs_.stillAttempts ?? 0;
   const late = globalThis.__startFrameUnguarded(frame('hBP01-010'));   // 2nd steady frame in ML Kit
   await act(async () => { globalThis.__frameScannerCriticalError(); late(); await Promise.resolve(); });
   await tick(200);
   failurePanel(STOPPED);
+  assert.equal(fs_.stillAttempts ?? 0, attempts, 'the screen did not even ask the failed camera for a still');
+  assert.ok(!text().includes('辨識失敗'), 'no recognition-failure banner');
   assert.equal(fs_.props.active, false, 'analysis off');
   assertNoCapture(base);
   assert.equal(await emit(frame('hBP01-010'), 3), false, 'the failed view analyses nothing');

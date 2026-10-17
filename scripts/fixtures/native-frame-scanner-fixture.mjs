@@ -42,6 +42,7 @@ export const FrameScannerView = React.forwardRef(function HoloHunterCardScanner(
   }
   React.useImperativeHandle(ref, () => ({
     takePicture: (quality, base64) => {
+      state.stillAttempts = (state.stillAttempts ?? 0) + 1;     // asked for, even if refused
       if (failed.current) return Promise.reject(Object.assign(new Error('The camera is not ready'), { code: 'E_CAMERA_NOT_READY' }));
       state.stills += 1;
       state.stillCalls.push({ quality, base64 });
