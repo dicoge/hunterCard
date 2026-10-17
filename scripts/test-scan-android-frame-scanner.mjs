@@ -257,7 +257,7 @@ await emit(frame(''));                                  // first frame: geometry
 try {
   await test('shipping Android path: the native frame-scanner view is mounted (not expo-camera); analysis active once ready; bounded interval; no torch', () => {
     assert.ok(byTestId('scan-frame-scanner'), 'frame scanner rendered');
-    assert.equal(byTestId('native-camera-fixture'), null, 'expo-camera CameraView not mounted in automatic mode');
+    assert.ok(!byTestId('native-camera-fixture'), 'expo-camera CameraView not mounted in automatic mode');
     assert.equal(fs_.mounts, 1);
     assert.equal(fs_.props.active, true);
     assert.equal(fs_.props.analysisIntervalMs, FRAME_ANALYSIS_INTERVAL_MS);
@@ -351,7 +351,7 @@ try {
     assert.equal(stills(), 3, 'with the photo already taken');
     await click(byTestId('scan-service-cancel'));
     await tick(20);
-    assert.equal(byTestId('scan-service-failure'), null);
+    assert.ok(!byTestId('scan-service-failure'));
     assert.equal(useScanQuotaStore.getState().getRemaining(), remaining, 'failure + retry + cancel use 0');
     providerDown = false;
   });
@@ -531,6 +531,8 @@ try {
     await click(byTestId('scan-mode-manual'));
     await tick(80);
     assert.equal(fs_.rejected, rejected + 1, 'release settled the pending capture exactly once');
+    assert.ok(!byTestId('scan-error'), 'a mode switch the user made is a cancel, not a 「辨識失敗」');
+    assert.ok(!byTestId('scan-service-failure'));
     assert.equal(await deliverLater(() => globalThis.__settleCapture(true)), false, 'a late native success is ignored');
     assert.equal(bodies.length, n, 'no request');
     assert.equal(useScanQuotaStore.getState().getRemaining(), remaining);
@@ -562,7 +564,7 @@ try {
     await click(byTestId('scan-mode-manual'));
     await tick(50);
     assert.equal(fs_.unmounts, before + 1, 'native view destroyed → release()');
-    assert.equal(byTestId('scan-frame-scanner'), null);
+    assert.ok(!byTestId('scan-frame-scanner'));
     assert.ok(byTestId('native-camera-fixture'), 'expo-camera for manual mode');
     assert.equal(globalThis.__emitFrame(frame('hBP01-010')), false, 'a released scanner delivers nothing');
     await click(byTestId('scan-mode-auto'));
