@@ -12,7 +12,10 @@
 //     __frameScannerCaptureMode = 'deferred' it stays pending until __settleCapture(); on
 //     unmount (native release()) every pending capture is REJECTED exactly once
 //     (E_CAMERA_RELEASED) and a late native success is ignored          → stills, pending
-//   • onCameraReady after mount, or onMountError when __frameScannerFailMount is set
+//   • onCameraReady = the preview STREAMS (v43 contract) — after mount by default; with
+//     __frameScannerStartMode = 'stall' the view is bound but its preview never streams
+//     (the v42 device symptom: no event at all) until __frameScannerStream() is called;
+//     onMountError instead when __frameScannerFailMount is set
 //   • mounts / unmounts, latest props                                  → __frameScanner.props
 import React from 'react';
 import { View } from 'react-native-web';
@@ -91,9 +94,10 @@ export const FrameScannerView = React.forwardRef(function HoloHunterCardScanner(
       if (ok) p.resolve(p.photo); else p.reject(Object.assign(new Error('Capture failed'), { code: 'E_CAPTURE_FAILED' }));
       return true;
     };
+    globalThis.__frameScannerStream = () => { if (!alive.current) return false; propsRef.current.onCameraReady?.({ nativeEvent: {} }); return true; };
     const id = setTimeout(() => {
-      if (globalThis.__frameScannerFailMount) propsRef.current.onMountError?.({ nativeEvent: { message: 'Camera could not be started' } });
-      else propsRef.current.onCameraReady?.({ nativeEvent: {} });
+      if (globalThis.__frameScannerFailMount) propsRef.current.onMountError?.({ nativeEvent: { message: 'Camera error 5' } });
+      else if (globalThis.__frameScannerStartMode !== 'stall') propsRef.current.onCameraReady?.({ nativeEvent: {} });
     }, 0);
     return () => {
       alive.current = false;

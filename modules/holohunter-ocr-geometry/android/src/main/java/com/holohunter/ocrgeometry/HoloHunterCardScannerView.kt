@@ -9,6 +9,8 @@ import android.graphics.Rect
 import android.os.SystemClock
 import android.util.Base64
 import android.util.Size
+import android.view.View
+import android.view.ViewGroup
 import androidx.camera.core.AspectRatio
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
@@ -70,6 +72,12 @@ import java.util.concurrent.atomic.AtomicBoolean
  *    or release); the ImageProxy is always closed; JPEG work runs on an IO executor that
  *    release() does not cancel, and a file written for a capture that was released / no
  *    longer wanted is deleted.
+ *  - Layout (v43, user device: automatic scan showed no camera): React Native swallows
+ *    requestLayout(), and CameraX adds the preview's SurfaceView/TextureView only AFTER
+ *    binding — never laid out, it stays 0×0 and the preview is black. This view lays the
+ *    PreviewView and its children out itself (as expo-camera's view does) and lets
+ *    Android layout run on requestLayout. "Ready" means the preview is STREAMING, not
+ *    merely that the camera device opened.
  *  - Lifecycle: bound to the Activity; release() on view destroy rejects pending
  *    captures, stops analysis, unbinds, closes ML Kit and the executors. No events after.
  */
@@ -129,10 +137,30 @@ class HoloHunterCardScannerView(context: Context, appContext: AppContext) : Expo
   private var bindRequested = false
   private var bindStarted = false
   private var readySent = false
+  private var errorSent = false
   private var frameSeq = 0
 
+  // requestLayout() from the preview surface re-runs measure + layout here (ExpoView posts it).
+  override val shouldUseAndroidLayout: Boolean = true
+
   init {
-    addView(previewView)
+    previewView.setOnHierarchyChangeListener(object : ViewGroup.OnHierarchyChangeListener {
+      override fun onChildViewAdded(parent: View?, child: View?) = layoutPreview()
+      override fun onChildViewRemoved(parent: View?, child: View?) = Unit
+    })
+    addView(previewView, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+  }
+
+  /** Measure + lay out the PreviewView (and the surface CameraX put in it) to this view's size. */
+  private fun layoutPreview() {
+    val w = width
+    val h = height
+    if (w <= 0 || h <= 0) return
+    previewView.measure(
+      View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
+      View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY)
+    )
+    previewView.layout(0, 0, w, h)
   }
 
   override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -144,7 +172,7 @@ class HoloHunterCardScannerView(context: Context, appContext: AppContext) : Expo
   }
 
   override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
-    previewView.layout(0, 0, right - left, bottom - top)
+    layoutPreview()
     // The ViewPort needs the laid-out PreviewView size.
     if (bindRequested && !bindStarted && right - left > 0 && bottom - top > 0) {
       previewView.post { startBind() }
@@ -235,10 +263,22 @@ class HoloHunterCardScannerView(context: Context, appContext: AppContext) : Expo
         imageCapture = captureUseCase
         imageAnalysis = analysisUseCase
         bound.cameraControl.enableTorch(torchOn)
-        bound.cameraInfo.cameraState.observe(owner) { state ->
-          if (state.type == CameraState.Type.OPEN && !readySent && !released) {
+        layoutPreview()
+        // Ready = frames are on screen. An opened camera with a preview that never streams
+        // is NOT ready (the screen's startup watchdog then offers retry / manual camera).
+        previewView.previewStreamState.observe(owner) { state ->
+          if (state == PreviewView.StreamState.STREAMING && !readySent && !released) {
             readySent = true
             onCameraReady(mapOf<String, Any>())
+          }
+        }
+        // CameraX retries recoverable errors itself; a critical one (camera disabled, fatal
+        // device error…) before the preview streams is reported once.
+        bound.cameraInfo.cameraState.observe(owner) { state ->
+          val error = state.error
+          if (error != null && error.type == CameraState.ErrorType.CRITICAL && !readySent && !errorSent && !released) {
+            errorSent = true
+            onMountError(mapOf("message" to "Camera error ${error.code}"))
           }
         }
       } catch (e: Exception) {

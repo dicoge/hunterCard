@@ -630,6 +630,9 @@ jobs:
       - name: Verify the frame-scanner field-of-view mapping (CameraX view-port crop, rotations, aspect fallback) (v42)
         run: npm run test:scan-frame-geometry
 
+      - name: Verify Android automatic-scan CAMERA STARTUP on the real ScanScreen (permission entry, streaming-preview ready, never-ready → 重試 / 改用手動拍照, resume) (v43)
+        run: npm run test:scan-android-camera-startup
+
       - name: Verify local scan / sign-in diagnostics — allowlist + redaction on write and export, 100/7-day retention, real clear, never affects scan or quota (2026-10-15)
         run: npm run test:scan-diagnostics
 

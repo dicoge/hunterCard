@@ -190,5 +190,30 @@ await test('tracked native FRAME-SCANNER contract (v42 CR): CameraX preview + Im
   assert.match(gradle, new RegExp(`camerax_version = "${v.replace(/\./g, '\\.')}"`), `same CameraX ${v} as expo-camera`);
 });
 
+await test('v43 preview LAYOUT contract (user device: automatic scan showed no camera): the preview surface CameraX adds after binding is laid out by the view itself; ready = preview STREAMING, not camera OPEN', () => {
+  const view = fs.readFileSync(new URL('../modules/holohunter-ocr-geometry/android/src/main/java/com/holohunter/ocrgeometry/HoloHunterCardScannerView.kt', import.meta.url), 'utf8');
+  const rnGroup = fs.readFileSync(new URL('../node_modules/react-native/ReactAndroid/src/main/java/com/facebook/react/views/view/ReactViewGroup.kt', import.meta.url), 'utf8');
+  const expoCamera = fs.readFileSync(new URL('../node_modules/expo-camera/android/src/main/java/expo/modules/camera/ExpoCameraView.kt', import.meta.url), 'utf8');
+  // Why: the installed React Native swallows requestLayout(), and the working expo-camera view
+  // lays its PreviewView children out on hierarchy change for exactly that reason.
+  assert.match(rnGroup, /override fun requestLayout\(\) \{\s*\/\/ No-op/, 'premise: RN parents swallow requestLayout()');
+  assert.match(expoCamera, /setOnHierarchyChangeListener[\s\S]{0,300}onChildViewAdded[\s\S]{0,200}measure\([\s\S]{0,200}layout\(/, 'reference: expo-camera lays out the surface child');
+  assert.match(view, /previewView\.setOnHierarchyChangeListener\([\s\S]{0,200}onChildViewAdded\([^)]*\) = layoutPreview\(\)/, 'the surface child CameraX adds is laid out');
+  const lp = /private fun layoutPreview\(\) \{([\s\S]*?)\n  \}/.exec(view)?.[1] ?? '';
+  assert.match(lp, /previewView\.measure\([\s\S]*EXACTLY[\s\S]*EXACTLY/, 'measured EXACTLY to the view size');
+  assert.match(lp, /previewView\.layout\(0, 0, w, h\)/, 'laid out to the view size');
+  assert.match(view, /addView\(previewView, ViewGroup\.LayoutParams\(ViewGroup\.LayoutParams\.MATCH_PARENT, ViewGroup\.LayoutParams\.MATCH_PARENT\)\)/);
+  assert.match(view, /override val shouldUseAndroidLayout: Boolean = true/, 'requestLayout() from the surface re-runs measure + layout');
+  const onLayout = /override fun onLayout\([\s\S]*?\n  \}/.exec(view)?.[0] ?? '';
+  assert.match(onLayout, /layoutPreview\(\)/);
+  const bind = /private fun startBind\(\) \{([\s\S]*?)\n  \}\n/.exec(view)?.[1] ?? '';
+  assert.match(bind, /bindToLifecycle[\s\S]*layoutPreview\(\)/, 'laid out again right after binding');
+  assert.match(bind, /previewView\.previewStreamState\.observe\(owner\)[\s\S]{0,200}StreamState\.STREAMING[\s\S]{0,120}onCameraReady/, 'ready only when the preview streams');
+  assert.ok(!/CameraState\.Type\.OPEN[\s\S]{0,120}onCameraReady/.test(bind), 'an opened camera alone is not "ready"');
+  assert.match(bind, /ErrorType\.CRITICAL[\s\S]{0,120}onMountError/, 'a critical camera error before streaming is reported');
+  const analyze = /private fun analyze\(proxy: ImageProxy\) \{([\s\S]*?)\n  \}\n/.exec(view)?.[1] ?? '';
+  assert.ok(!/takePicture/.test(analyze), 'still: never from analysis');
+});
+
 if ((process.exitCode ?? 0) === 0) console.log(`\n✅ scan-ocr-geometry: ${passed} checks passed`);
 else console.error('\n❌ scan-ocr-geometry failed');

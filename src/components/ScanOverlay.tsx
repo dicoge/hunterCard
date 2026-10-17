@@ -71,6 +71,8 @@ export interface ScanOverlayProps {
   onFlash: () => void;
   onScan: () => void;
   onRetry: () => void;
+  // v43: shown with a camera start error — leave the automatic camera for the manual one.
+  onManualCamera?: () => void;
   // Gallery entry — mounted unconditionally (no `isWeb` gate) so the shipped
   // Android APK exposes a native gallery scan path. ScanScreen wires this to
   // its own `pickFromGallery`; if the platform later cannot fulfil the pick
@@ -109,6 +111,7 @@ export default function ScanOverlay({
   onFlash,
   onScan,
   onRetry,
+  onManualCamera,
   onGallery,
   onScanAreaLayout,
   scanAreaRef,
@@ -146,6 +149,15 @@ export default function ScanOverlay({
                 >
                   <Text style={resultStyles.retryText}>{t('common_retry')}</Text>
                 </TouchableOpacity>
+                {onManualCamera && (
+                  <TouchableOpacity
+                    style={resultStyles.retryButton}
+                    onPress={onManualCamera}
+                    testID="scan-camera-manual"
+                  >
+                    <Text style={resultStyles.retryText}>{t('scan_camera_use_manual')}</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             )}
           </View>

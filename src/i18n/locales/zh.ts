@@ -713,6 +713,8 @@ export const zh = {
   scan_use_gallery: '🖼️ 改用相簿上傳（免相機）',
   scan_camera_loading: '載入相機中...',
   scan_camera_initializing: '相機初始化中...',
+  scan_camera_start_failed: '相機未能啟動',
+  scan_camera_use_manual: '改用手動拍照',
   scan_gallery_title: '相簿上傳模式',
   scan_gallery_body: '相機無法使用時，可從相簿選擇卡牌照片進行辨識。',
   scan_choose_photo: '選擇卡牌照片',

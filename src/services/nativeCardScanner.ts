@@ -20,6 +20,9 @@ const DEFAULT_REQUIRE: RequireImpl = () => {
 export const NATIVE_CARD_SCANNER = 'HoloHunterCardScanner';
 /** One analysed preview frame at most this often (the native side also enforces ≥ 250 ms). */
 export const FRAME_ANALYSIS_INTERVAL_MS = 700;
+/** v43: no streaming preview within this time → the camera start counts as failed (retry /
+ *  manual camera are offered). Only surfaces the failure; it never captures anything. */
+export const FRAME_SCANNER_STARTUP_TIMEOUT_MS = 8000;
 
 export { visibleUprightRect, frameCropInFrame, type FrameTextEvent } from '../utils/frameGeometry';
 

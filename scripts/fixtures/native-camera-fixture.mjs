@@ -46,6 +46,19 @@ export const CameraView = React.forwardRef(function CameraView(props, ref) {
   React.useEffect(() => { const id = setTimeout(() => props.onCameraReady?.(), 0); return () => clearTimeout(id); }, []);
   return React.createElement(View, { style: props.style, testID: 'native-camera-fixture' }, props.children);
 });
-export const useCameraPermissions = () => [{ granted: true, canAskAgain: true, status: 'granted' }, async () => ({ granted: true }), async () => ({ granted: true })];
+// Permission state (default: granted, as before). A test may start from
+// globalThis.__cameraPermission (null = still loading, or a denied answer) and set what the
+// system dialog answers in globalThis.__cameraPermissionAnswer; requests are counted.
+const GRANTED = { granted: true, canAskAgain: true, status: 'granted' };
+export const useCameraPermissions = () => {
+  const [permission, setPermission] = React.useState(() => ('__cameraPermission' in globalThis ? globalThis.__cameraPermission : GRANTED));
+  const request = async () => {
+    globalThis.__cameraPermissionRequests = (globalThis.__cameraPermissionRequests ?? 0) + 1;
+    const answer = globalThis.__cameraPermissionAnswer ?? GRANTED;
+    setPermission(answer);
+    return answer;
+  };
+  return [permission, request, async () => permission];
+};
 export const CameraType = {};
 export default { CameraView, useCameraPermissions, CameraType };

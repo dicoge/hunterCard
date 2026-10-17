@@ -22,7 +22,7 @@ import WebCamera, { WebCameraHandle } from '../components/WebCamera';
 import CameraPermissionDeniedView from '../components/CameraPermissionDeniedView';
 import ScanSessionPanel from '../components/ScanSessionPanel';
 import { geometryBlocksFromNative, nativeOcrProbe, nativeOcrRecognize } from '../services/nativeOcr';
-import { FRAME_ANALYSIS_INTERVAL_MS, frameCropInFrame, loadNativeCardScannerView, type FrameTextEvent } from '../services/nativeCardScanner';
+import { FRAME_ANALYSIS_INTERVAL_MS, FRAME_SCANNER_STARTUP_TIMEOUT_MS, frameCropInFrame, loadNativeCardScannerView, type FrameTextEvent } from '../services/nativeCardScanner';
 import { useScanSessionStore } from '../stores/scanSessionStore';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, convertPrice } from '../constants';
@@ -318,7 +318,7 @@ export default function ScanScreen({ navigation }: any) {
     ? { takePictureAsync: (o: { quality?: number; base64?: boolean } = {}) => frameScannerRef.current?.takePicture(o.quality ?? 0.7, !!o.base64) }
     : cameraRef.current);
   // Re-evaluates the frame-analysis gate when focus / app state change (refs, not state).
-  const [, setGateTick] = useState(0);
+  const [gateTick, setGateTick] = useState(0);
   const frameGeometryRef = useRef<{ preview: any; frame: any } | null>(null);
   // Analysis session (v42 CR fea33de): bumped whenever frame analysis turns on or off.
   // The native view tags every frame with the session it STARTED in; an event from any
@@ -807,6 +807,25 @@ export default function ScanScreen({ navigation }: any) {
     if (autoMachine.state().paused) setAutoPaused(true);
     if (decision === 'trigger') captureAndRecognize();
   };
+  // v43 (user device: automatic scan showed no camera): the frame scanner reports ready only
+  // once its preview STREAMS. A start failure, or no streaming preview within a bounded wait
+  // while the screen is in front, becomes a short error with 重試 and 改用手動拍照 — never a
+  // silent 「相機初始化中」 and never a capture (the timer only surfaces the failure).
+  const handleFrameScannerError = (nativeMessage?: string) => {
+    if (!mountedRef.current) return;
+    if (nativeMessage) console.warn('[scan] frame scanner start failed:', nativeMessage);
+    setCameraError(t('scan_camera_start_failed'));
+    setIsCameraReady(false);
+  };
+  useEffect(() => {
+    if (!useFrameScanner || !permission?.granted || isCameraReady || cameraError) return;
+    if (!lifecycle.isFocused() || AppState.currentState !== 'active') return;
+    const id = setTimeout(() => {
+      if (!mountedRef.current || !lifecycle.isFocused() || AppState.currentState !== 'active') return;
+      handleFrameScannerError('no streaming preview');
+    }, FRAME_SCANNER_STARTUP_TIMEOUT_MS);
+    return () => clearTimeout(id);
+  }, [useFrameScanner, permission?.granted, isCameraReady, cameraError, scannerKey, gateTick]);
   useEffect(() => {
     if (!FrameScannerView) return;
     // Every app-state / focus change retires frame ownership now, not at the next render.
@@ -1768,7 +1787,7 @@ export default function ScanScreen({ navigation }: any) {
             torch={flash}
             analysisIntervalMs={FRAME_ANALYSIS_INTERVAL_MS}
             onCameraReady={() => { handleCameraReady(); void refreshFrameGeometry(); }}
-            onMountError={(e: any) => handleMountError(e?.nativeEvent ?? {})}
+            onMountError={(e: any) => handleFrameScannerError(e?.nativeEvent?.message)}
             onFrameText={(e: any) => handleFrameText(e?.nativeEvent)}
             testID="scan-frame-scanner"
           />
@@ -1804,6 +1823,7 @@ export default function ScanScreen({ navigation }: any) {
                 frameGeometryRef.current = null;
                 setScannerKey((k) => k + 1);
               }}
+              onManualCamera={() => { setCameraError(null); setAutoScan(false); }}
             />
           </View>
         </View>
