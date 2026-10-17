@@ -618,6 +618,18 @@ jobs:
       - name: Verify native automatic capture on the real ScanScreen — on-device probes only, one request per round, no repeat / no auto-retry / no background probing, charge only on add (v41)
         run: npm run test:scan-native-auto-capture
 
+      - name: Verify the installed expo-camera / expo-ocr-kit Android contract the scanner relies on (v42 automatic-scan flashing)
+        run: npm run test:scan-android-camera-contract
+
+      - name: Verify automatic scan measures the card number's own line/element box, not the ML Kit text block (v42)
+        run: npm run test:scan-ocr-geometry
+
+      - name: Verify the Android automatic scan reads PREVIEW FRAMES on the real ScanScreen (no stills while empty/moving; one still per held card; lifecycle races) (v42)
+        run: npm run test:scan-android-frame-scanner
+
+      - name: Verify the frame-scanner field-of-view mapping (CameraX view-port crop, rotations, aspect fallback) (v42)
+        run: npm run test:scan-frame-geometry
+
       - name: Verify local scan / sign-in diagnostics — allowlist + redaction on write and export, 100/7-day retention, real clear, never affects scan or quota (2026-10-15)
         run: npm run test:scan-diagnostics
 

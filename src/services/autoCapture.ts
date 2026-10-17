@@ -82,6 +82,9 @@ export interface AutoCaptureMachine {
   roundStarted(token?: string | null): void;
   /** Resume after an idle pause (user action). */
   resume(): void;
+  /** Forget a half-built "held still" streak (a lifecycle change: nothing seen before it
+   *  may count towards a trigger after it). Does not re-arm and keeps the held card. */
+  resetStability(): void;
   state(): { armed: boolean; held: Held; candidate: string | null; hits: number; idleProbes: number; paused: boolean };
 }
 
@@ -165,9 +168,58 @@ export function createAutoCaptureMachine(options: AutoCaptureOptions = {}): Auto
       paused = false;
       idleProbes = 0;
     },
+    resetStability() {
+      clearCandidate();
+    },
     state: () => ({ armed, held, candidate, hits, idleProbes, paused }),
   };
 }
 
 /** Minimum time between two probes; a probe also never starts while one is running. */
 export const AUTO_CAPTURE_PROBE_INTERVAL_MS = 1300;
+
+type PixelBox = { x: number; y: number; width: number; height: number };
+type ProbeUnit = { text: string; box: PixelBox | null };
+/** The probe reader's output (src/services/nativeOcr ProbeOcrBlock), structurally. */
+export interface ProbeTextBlock extends ProbeUnit {
+  lines?: Array<ProbeUnit & { elements?: ProbeUnit[] }>;
+}
+
+/**
+ * v42 (Android): WHERE a card number is = the box of the number itself — the ML Kit
+ * element (word) that reads as the number, else the line that contains it. The text
+ * BLOCK box is used only when the reader gives no lines (iOS, whose entries are Vision
+ * line observations already) or when the number is split across lines. A block groups
+ * whatever text ML Kit puts together on that frame, so its bounds move although the
+ * printed number did not; measuring it made a card held still look like it moved.
+ * Boxes are normalised to the probe crop (0..1). The trigger rules are unchanged.
+ */
+export function observationsFromProbeText(
+  blocks: readonly ProbeTextBlock[],
+  tokenize: (text: string) => string[],
+  cropWidth: number,
+  cropHeight: number,
+  /** Where the crop starts in the reader's image (preview frames: the frame crop inside the whole camera frame). */
+  originX = 0,
+  originY = 0,
+): ProbeObservation[] {
+  const norm = (b: PixelBox | null | undefined): NormBox | null =>
+    b && cropWidth > 0 && cropHeight > 0
+      ? { x: (b.x - originX) / cropWidth, y: (b.y - originY) / cropHeight, width: b.width / cropWidth, height: b.height / cropHeight }
+      : null;
+  const out: ProbeObservation[] = [];
+  for (const block of blocks) {
+    const seen = new Set<string>();
+    for (const line of block.lines ?? []) {
+      for (const token of tokenize(line.text)) {
+        seen.add(token);
+        const element = (line.elements ?? []).find((e) => tokenize(e.text).includes(token));
+        out.push({ token, box: norm(element?.box ?? line.box) });
+      }
+    }
+    for (const token of tokenize(block.text)) {
+      if (!seen.has(token)) out.push({ token, box: norm(block.box) });
+    }
+  }
+  return out;
+}

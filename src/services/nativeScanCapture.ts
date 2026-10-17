@@ -111,7 +111,13 @@ export async function prepareNativeScanImages(
 }
 
 /** Long edge of an automatic-capture probe crop: enough for the on-device reader. */
-export const PROBE_LONG_EDGE = 900;
+// v42 (Android 41 user report "never detects"): the probe crop is read by ML Kit, which
+// needs roughly ≥16 px per character; a hOCG card number is ≈2 % of the card height, so a
+// 900 px crop of a quality-0.3 still left it at the edge of readability. The probe now
+// keeps the frame crop at up to 1600 px from a quality-0.7 still (local only, deleted).
+export const PROBE_LONG_EDGE = 1600;
+/** JPEG quality of the silent probe still (expo-camera takePictureAsync). */
+export const PROBE_JPEG_QUALITY = 0.7;
 
 /**
  * v41 automatic capture: the scan frame of a silent probe photo, small, as a local file

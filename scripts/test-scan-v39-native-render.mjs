@@ -326,12 +326,16 @@ try {
     assert.equal(useScanQuotaStore.getState().getRemaining(), remaining, 'a preview charges nothing');
     await click(byTestId('scan-match-retake'));
   });
-  await test('version not resolved: body is just 「請選擇卡片版本。」, the chooser stays, no price, no quota sentence', async () => {
+  // v42 (user 2026-10-17): version selection says only 請選擇卡片版本; failed recognition
+  // says 辨識失敗，請再試一次; no number/name mismatch narrative on any scanner surface.
+  const MISMATCH_COPY = /卡號與角色|不一致|對應|已依角色|讀不到卡號|資料庫沒有/;
+  await test('version not resolved: body is exactly 「請選擇卡片版本」, the chooser stays, no price, no quota sentence', async () => {
     providerReply = 'CARD_NUMBER: hBP01-024';
     await shutter();
     const sheet = byTestId('scan-match-identity');
     assert.ok(sheet, 'identity sheet');
-    assert.ok(sheet.textContent.includes('請選擇卡片版本。'), sheet.textContent);
+    assert.ok(sheet.textContent.includes('請選擇卡片版本'), sheet.textContent);
+    assert.ok(!MISMATCH_COPY.test(sheet.textContent), sheet.textContent);
     assert.ok(!sheet.textContent.includes('此卡號有多個版本'), 'old long explanation gone');
     assert.ok(byTestId('scan-match-pick'), 'version chooser offered');
     assert.ok(!/[¥$]\s?\d/.test(sheet.textContent), 'no price');
@@ -339,13 +343,14 @@ try {
     await click(byTestId('scan-match-manual'));
     await tick(20);
   });
-  await test('photo no-match: short reason, no quota sentence, nothing charged', async () => {
+  await test('photo no-match (number/name conflict): 「辨識失敗，請再試一次」 only — the conflict is NOT shown; nothing charged', async () => {
     const remaining = useScanQuotaStore.getState().getRemaining();
     providerReply = 'CHARACTER: 宝鐘マリン\nCARD_NUMBER: hBP01-014';
     await shutter();
     const sheet = byTestId('scan-match-none');
     assert.ok(sheet, 'no-match sheet (the service answered)');
-    assert.ok(sheet.textContent.includes('卡號與角色不一致。'), sheet.textContent);
+    assert.ok(sheet.textContent.includes('辨識失敗，請再試一次'), sheet.textContent);
+    assert.ok(!MISMATCH_COPY.test(sheet.textContent), `no mismatch narrative: ${sheet.textContent}`);
     assert.ok(!QUOTA_COPY.test(sheet.textContent));
     await click(byTestId('scan-match-cancel'));
     assert.equal(useScanQuotaStore.getState().getRemaining(), remaining);
@@ -353,12 +358,13 @@ try {
   // v41 (PM requirement, Grok no-match N2): a no-match shows a short reason and the
   // same visible 重試／取消 pair as a service failure — not only 重拍／手動搜尋.
   const NO_MATCH = 'CARD_NUMBER: NONE\nCHARACTER: NONE\nTITLE: NONE';
-  await test('no-match: short reason + visible 重試 and 取消 (manual search still reachable)', async () => {
+  await test('no-match: 「辨識失敗，請再試一次」 + visible 重試 and 取消 (manual search still reachable)', async () => {
     providerReply = NO_MATCH;
     await shutter();
     const sheet = byTestId('scan-match-none');
     assert.ok(sheet, 'no-match sheet');
-    assert.ok(sheet.textContent.includes('讀不到卡號。'), sheet.textContent);
+    assert.ok(sheet.textContent.includes('辨識失敗，請再試一次'), sheet.textContent);
+    assert.ok(!MISMATCH_COPY.test(sheet.textContent), sheet.textContent);
     assert.equal(byTestId('scan-match-retry')?.textContent, '重試');
     assert.equal(byTestId('scan-match-cancel')?.textContent, '取消');
     assert.ok(byTestId('scan-match-manual'), 'manual search link kept');
@@ -406,7 +412,7 @@ try {
       await act(async () => { useSettingsStore.setState({ preferredLanguage: 'ja' }); });
       providerReply = NO_MATCH;
       await shutter();
-      assert.ok(byTestId('scan-match-none')?.textContent.includes('カード番号を読み取れません。'));
+      assert.ok(byTestId('scan-match-none')?.textContent.includes('認識できませんでした。もう一度お試しください'));
       assert.equal(byTestId('scan-match-retry')?.textContent, '再試行');
       assert.equal(byTestId('scan-match-cancel')?.textContent, 'キャンセル');
       await click(byTestId('scan-match-cancel'));
@@ -414,12 +420,15 @@ try {
       await act(async () => { useSettingsStore.setState({ preferredLanguage: prev }); });
     }
   });
-  await test('corrected identity: short note + chooser; a double tap on a version adds it once and charges once', async () => {
+  await test('corrected identity: only 「請選擇卡片版本」 + chooser (conflict kept in local diagnostics); a double tap on a version adds it once and charges once', async () => {
     providerReply = 'CHARACTER: 宝鐘マリン\nCARD_NUMBER: hBP01-014\nRARITY: SR';
     await shutter();
     const note = byTestId('scan-match-number-corrected');
     assert.ok(note, 'corrected note');
-    assert.equal(note.textContent, '卡號與角色不一致，已依角色判斷。請確認並選擇卡片版本。');
+    assert.equal(note.textContent, '請選擇卡片版本');
+    assert.ok(!MISMATCH_COPY.test(byTestId('scan-match-identity').textContent));
+    const diag = useScanDiagnosticsStore.getState().entries.at(-1);
+    assert.equal(diag?.presentation?.reason, 'number_name_conflict', 'the conflict is recorded in the LOCAL diagnostics log');
     await click(byTestId('scan-match-pick'));
     const first = host.querySelector('[data-testid="scan-candidate-meta"]');
     assert.ok(first.textContent.includes('hEB01-014') && first.textContent.includes('SR'));

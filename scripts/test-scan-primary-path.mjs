@@ -371,13 +371,18 @@ await test('camera error retry is still wired from the overlay', () => {
 await test('auto-scan activity is capability-bounded — the mode pill can only disable, never enable a missing capability', () => {
   // DIC-1427 made the pill real on web. v41 (2026-10-17) adds native automatic capture
   // (src/services/autoCapture: on-device probe of the frame), so the capability is now
-  // "web frame-stability loop OR native frame crop + on-device reader present on this
-  // build" — still AND-ed with the toggle, so a build without the modules never
-  // advertises an auto capture it cannot do.
+  // "web frame-stability loop OR (v42) the native frame scanner OR native frame crop +
+  // on-device reader present on this build" — still AND-ed with the toggle, so a build
+  // without the modules never advertises an auto capture it cannot do.
   assert.match(
     scanScreenSource,
-    /const nativeAutoAvailable = useRef\(!isWeb && nativeAutoCaptureAvailable\(\)\)\.current;/,
-    'native capability comes from the runtime module check',
+    /const FrameScannerView = useRef\(isWeb \? null : loadNativeCardScannerView\(\)\)\.current;/,
+    'the frame scanner comes from the runtime native-module check',
+  );
+  assert.match(
+    scanScreenSource,
+    /const nativeAutoAvailable = useRef\(!isWeb && \(!!FrameScannerView \|\| nativeAutoCaptureAvailable\(\)\)\)\.current;/,
+    'native capability comes from the runtime module checks',
   );
   assert.match(scanScreenSource, /const autoScanSupported = isWeb \|\| nativeAutoAvailable;/);
   assert.match(
