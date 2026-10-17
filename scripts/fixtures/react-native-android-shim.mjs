@@ -2,10 +2,15 @@
 // branch can be rendered under jsdom (scripts/test-scan-native-crop-render.mjs).
 export * from 'react-native-web';
 import * as W from 'react-native-web';
+// A suite that covers the iOS-only path sets globalThis.__rnPlatformOS = 'ios' before
+// importing the screen (same native branch, iOS platform answers).
 export const Platform = {
   ...W.Platform,
-  OS: 'android',
-  select: (o) => (o.android !== undefined ? o.android : o.native !== undefined ? o.native : o.default),
+  get OS() { return globalThis.__rnPlatformOS ?? 'android'; },
+  select: (o) => {
+    const os = globalThis.__rnPlatformOS ?? 'android';
+    return o[os] !== undefined ? o[os] : o.native !== undefined ? o.native : o.default;
+  },
 };
 
 // Android hardware back for rendered tests: listeners run newest first until one

@@ -16,6 +16,7 @@ import { register } from 'node:module';
 import { JSDOM } from 'jsdom';
 import { FrameScannerView } from './fixtures/native-frame-scanner-fixture.mjs';
 let scannerModulePresent = true;
+let viewManagerThrows = false;   // the view manager fails to load (module registered, view not)
 
 register(
   'data:text/javascript,' + encodeURIComponent(`
@@ -149,7 +150,10 @@ globalThis.require = (name) => {
   // v42: the local native module modules/holohunter-ocr-geometry, reached through
   // expo-modules-core like on a device; only exposed when a test turns it on.
   if (name === 'expo-modules-core') return {
-    requireNativeViewManager: (n) => (n === 'HoloHunterCardScanner' ? FrameScannerView : null),
+    requireNativeViewManager: (n) => {
+      if (n === 'HoloHunterCardScanner' && viewManagerThrows) throw new Error("Unable to find the 'HoloHunterCardScanner' view manager");
+      return n === 'HoloHunterCardScanner' ? FrameScannerView : null;
+    },
     requireOptionalNativeModule: (n) => (n === 'HoloHunterCardScanner' && scannerModulePresent ? {} : n === 'HoloHunterOcrGeometry' && geometryOn ? {
       recognizeGeometry: async (uri) => {
         geometryCalls.push(uri);
@@ -494,6 +498,40 @@ await test('post-ready failure → 改用手動拍照: the manual camera mounts,
   assert.ok(!text().includes(STOPPED) && !text().includes(INIT));
   await manualShutterWorks();
 });
+
+// ── CR dee6f4b: Android WITHOUT a loadable frame scanner → manual only, never periodic stills ──
+const { AUTO_CAPTURE_PROBE_INTERVAL_MS } = await import('../src/services/autoCapture.ts');
+const UNAVAILABLE = '此裝置無法自動偵測';
+const androidWithoutScanner = (label, setup) => test(label, async () => {
+  setup(true);
+  try {
+    const { Platform } = await import('react-native');
+    assert.equal(Platform.OS, 'android');
+    frameText = 'hBP01-010';                       // a readable number would be "seen" by any probe
+    const base = baseline(), ocr0 = ocrCalls.length, man0 = manipulations.length, mounts = fs_.mounts;
+    const attempts0 = fs_.stillAttempts ?? 0, calls0 = (globalThis.__nativeCameraCalls ?? []).length;
+    await mountScreen();
+    await tick(AUTO_CAPTURE_PROBE_INTERVAL_MS * 3 + 300);            // three legacy probe ticks
+    console.log(`    COUNTS ${JSON.stringify({ stillAttempts: takes() - base.takes, ocr: ocrCalls.length - ocr0, crops: manipulations.length - man0, requests: bodies.length - base.requests })}`);
+    assert.equal(takes(), base.takes, 'NO periodic still (expo-camera take attempts)');
+    assert.equal((globalThis.__nativeCameraCalls ?? []).length, calls0, 'takePictureAsync never called');
+    assert.equal(fs_.stillAttempts ?? 0, attempts0);
+    assert.equal(ocrCalls.length, ocr0, 'NO on-device OCR probe');
+    assert.equal(manipulations.length, man0, 'NO probe crop file');
+    assert.equal(bodies.length, base.requests, 'NO recognition request');
+    assert.equal(fs_.mounts, mounts, 'no frame scanner mounted');
+    assert.ok(byTestId('native-camera-fixture'), 'the manual camera (expo-camera) is mounted');
+    assert.ok(!text().includes(INIT), 'manual camera ready');
+    assert.ok(byTestId('scan-hint')?.textContent.includes(UNAVAILABLE), 'explains that automatic detection is unavailable');
+    assert.ok(!byTestId('scan-mode-pill'), 'no automatic mode offered');
+    await manualShutterWorks();                                     // the shutter goes through the expo-camera ref
+  } finally {
+    setup(false);
+    frameText = '';
+  }
+});
+await androidWithoutScanner('Android, scanner view manager THROWS while OCR + ImageManipulator are installed: manual camera + 「此裝置無法自動偵測」, 0 still attempts / 0 OCR / 0 requests over 3 probe intervals; the manual shutter works', (on) => { viewManagerThrows = on; });
+await androidWithoutScanner('Android, scanner module absent while OCR + ImageManipulator are installed: same — manual only, no periodic stills', (on) => { scannerModulePresent = !on; });
 
 if ((process.exitCode ?? 0) === 0) console.log(`\n✅ scan-android-camera-startup: ${passed} checks passed`);
 else console.error('\n❌ scan-android-camera-startup failed');

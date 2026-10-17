@@ -306,7 +306,12 @@ export default function ScanScreen({ navigation }: any) {
   // HoloHunterCardScanner view (src/services/nativeCardScanner) — no still photos while it
   // looks. Without that module (iOS, other builds) the v41 still-photo probes remain.
   const FrameScannerView = useRef(isWeb ? null : loadNativeCardScannerView()).current;
-  const nativeAutoAvailable = useRef(!isWeb && (!!FrameScannerView || nativeAutoCaptureAvailable())).current;
+  // v43 (CR dee6f4b): on Android the automatic scan IS the frame scanner. If its view is
+  // missing or failed to load, automatic detection is unavailable — the manual camera with a
+  // short explanation, never the old periodic still-photo probes. iOS keeps those probes.
+  const isAndroid = Platform.OS === 'android';
+  const nativeAutoAvailable = useRef(!isWeb && (!!FrameScannerView || (!isAndroid && nativeAutoCaptureAvailable()))).current;
+  const autoScanUnavailableOnAndroid = isAndroid && !FrameScannerView;
   const autoScanSupported = isWeb || nativeAutoAvailable;
   const autoScanActive = autoScanSupported && autoScanEnabled;
   const useFrameScanner = !isWeb && !!FrameScannerView && autoScanActive;
@@ -1871,6 +1876,7 @@ export default function ScanScreen({ navigation }: any) {
             flash={flash}
             autoScanActive={autoScanActive}
             autoScanSupported={nativeAutoAvailable}
+            autoScanUnavailable={autoScanUnavailableOnAndroid}
             onToggleAutoScan={setAutoScan}
             autoScanNeedsConsent={autoScanNeedsConsent}
             onEnableAutoScan={enableAutoScan}

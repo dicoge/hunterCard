@@ -88,6 +88,8 @@ export interface ScanOverlayProps {
    *  frame-stability loop is a real capability (web today). Never render an
    *  inert switch on platforms without the loop. */
   autoScanSupported?: boolean;
+  // v43: Android build whose automatic scanner view could not be loaded — say so (manual only).
+  autoScanUnavailable?: boolean;
   onToggleAutoScan?: (next: boolean) => void;
   /** Native automatic capture stopped after a long idle stretch (src/services/autoCapture). */
   autoScanPaused?: boolean;
@@ -117,6 +119,7 @@ export default function ScanOverlay({
   scanAreaRef,
   onClose,
   autoScanSupported = false,
+  autoScanUnavailable = false,
   autoScanPaused = false,
   autoScanNeedsConsent = false,
   onEnableAutoScan,
@@ -251,7 +254,7 @@ export default function ScanOverlay({
           <Text style={styles.hintText} testID="scan-hint">
             {autoScanActive
               ? t(autoScanNeedsConsent ? 'scan_auto_needs_consent' : autoScanPaused ? 'scan_auto_paused' : 'scan_frame_auto')
-              : t('scan_frame_manual')}
+              : t(autoScanUnavailable ? 'scan_auto_unavailable' : 'scan_frame_manual')}
           </Text>
           {autoScanActive && autoScanNeedsConsent && onEnableAutoScan ? (
             <TouchableOpacity

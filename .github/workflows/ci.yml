@@ -615,7 +615,7 @@ jobs:
       - name: Verify native automatic capture trigger rules — one stable card number in the frame, no repeat, re-arm on removal, idle pause (v41)
         run: npm run test:auto-capture
 
-      - name: Verify native automatic capture on the real ScanScreen — on-device probes only, one request per round, no repeat / no auto-retry / no background probing, charge only on add (v41)
+      - name: Verify iOS / legacy still-photo automatic capture on the real ScanScreen — on-device probes only, one request per round, no repeat / no auto-retry / no background probing, charge only on add (v41; Android never uses it since v43)
         run: npm run test:scan-native-auto-capture
 
       - name: Verify the installed expo-camera / expo-ocr-kit Android contract the scanner relies on (v42 automatic-scan flashing)

@@ -774,6 +774,7 @@ export const zh = {
   scan_recognizing: '識別中…',
   scan_frame_auto: '將卡牌置於掃描框內',
   scan_frame_manual: '點擊掃描按鈕拍攝卡牌',
+  scan_auto_unavailable: '此裝置無法自動偵測，請按掃描按鈕拍攝卡牌',
   scan_auto_paused: '自動偵測已暫停，請按掃描按鈕',
   scan_auto_needs_consent: '同意照片上傳說明後才能自動掃描',
   scan_auto_enable: '開始自動掃描',
