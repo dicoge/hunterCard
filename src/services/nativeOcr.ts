@@ -98,20 +98,84 @@ export async function nativeOcrRecognize(
   return typeof result?.text === 'string' ? result.text : '';
 }
 
-/** One text block of an automatic-capture probe, with its box in probe-image pixels. */
-export interface ProbeOcrBlock {
+type OcrBox = { x: number; y: number; width: number; height: number };
+
+/** One recognised unit of an automatic-capture probe, with its box in probe-image pixels. */
+export interface ProbeOcrUnit {
   text: string;
-  box: { x: number; y: number; width: number; height: number } | null;
+  box: OcrBox | null;
 }
 
 /**
- * Probe-only reader for native automatic capture (v41): the same on-device
- * expo-ocr-kit call, but KEEPING each block's bounding box (ML Kit on Android, Vision
- * on iOS return them) so the trigger can check where the card number sits and whether
- * it stayed put. The normal recognition path keeps using nativeOcrRecognize (text
- * only) — unchanged. Any failure → no blocks (the probe says nothing).
+ * One text block of an automatic-capture probe. `lines` (each with its `elements`) are
+ * present when the on-device reader exposes them — Android through the local
+ * holohunter-ocr-geometry module (v42). Without them the block itself is the finest
+ * unit: on iOS expo-ocr-kit returns one Vision observation per entry, which is a line.
  */
-export async function nativeOcrProbe(uri: string, deps: NativeOcrDeps = {}): Promise<ProbeOcrBlock[]> {
+export interface ProbeOcrBlock extends ProbeOcrUnit {
+  lines?: Array<ProbeOcrUnit & { elements: ProbeOcrUnit[] }>;
+}
+
+const toBox = (r: any): OcrBox | null =>
+  r && [r.x, r.y, r.width, r.height].every((v: unknown) => typeof v === 'number' && Number.isFinite(v))
+    && r.width > 0 && r.height > 0
+    ? { x: r.x, y: r.y, width: r.width, height: r.height }
+    : null;
+
+const toUnit = (u: any): ProbeOcrUnit | null =>
+  typeof u?.text === 'string' ? { text: u.text, box: toBox(u.boundingBox) } : null;
+
+type GeometryModuleLike = { recognizeGeometry?: (uri: string) => Promise<unknown> };
+
+const DEFAULT_GEOMETRY = (): GeometryModuleLike | null => {
+  // The local Expo module modules/holohunter-ocr-geometry (Android only). Absent on iOS,
+  // on web and in any build without it → null, and the probe falls back to expo-ocr-kit.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const core: any = require('expo-modules-core');
+  return core?.requireOptionalNativeModule?.('HoloHunterOcrGeometry') ?? null;
+};
+
+/**
+ * Probe-only reader for native automatic capture. The normal recognition path keeps
+ * using nativeOcrRecognize (text only) — unchanged. Any failure → no blocks (the probe
+ * says nothing).
+ *
+ * v42: on Android the trigger must measure the printed card NUMBER, not the ML Kit text
+ * BLOCK it happens to be grouped into — the block's bounds change from frame to frame
+ * whenever neighbouring text joins or leaves it, although the number has not moved
+ * (PM reproduction BLOCK_GROUPING_REPRO: alternating grouping never stabilised). The
+ * geometry module returns lines and elements; when it is not available, the
+ * expo-ocr-kit blocks are used as before.
+ */
+export async function nativeOcrProbe(
+  uri: string,
+  deps: NativeOcrDeps & { geometryImpl?: () => GeometryModuleLike | null } = {},
+): Promise<ProbeOcrBlock[]> {
+  let geometry: GeometryModuleLike | null = null;
+  try { geometry = (deps.geometryImpl ?? DEFAULT_GEOMETRY)(); } catch { geometry = null; }
+  if (geometry && typeof geometry.recognizeGeometry === 'function') {
+    try {
+      const result: any = await geometry.recognizeGeometry(uri);
+      const blocks = Array.isArray(result?.blocks) ? result.blocks : [];
+      return blocks
+        .map((b: any): ProbeOcrBlock | null => {
+          const unit = toUnit(b);
+          if (!unit) return null;
+          const lines = Array.isArray(b.lines)
+            ? b.lines.map((l: any) => {
+              const line = toUnit(l);
+              if (!line) return null;
+              const elements = Array.isArray(l.elements) ? l.elements.map(toUnit).filter(Boolean) as ProbeOcrUnit[] : [];
+              return { ...line, elements };
+            }).filter(Boolean)
+            : undefined;
+          return lines ? { ...unit, lines } : unit;
+        })
+        .filter((b: ProbeOcrBlock | null): b is ProbeOcrBlock => !!b);
+    } catch {
+      // fall through to the block-only reader
+    }
+  }
   const requireImpl = deps.requireImpl ?? DEFAULT_REQUIRE;
   let mod: any;
   try { mod = requireImpl('expo-ocr-kit'); } catch { return []; }
@@ -119,12 +183,5 @@ export async function nativeOcrProbe(uri: string, deps: NativeOcrDeps = {}): Pro
   let result: any;
   try { result = await mod.recognizeText(uri); } catch { return []; }
   const blocks = Array.isArray(result?.blocks) ? result.blocks : [];
-  return blocks
-    .filter((b: any) => typeof b?.text === 'string')
-    .map((b: any) => {
-      const r = b.boundingBox;
-      const ok = r && [r.x, r.y, r.width, r.height].every((v: unknown) => typeof v === 'number' && Number.isFinite(v))
-        && r.width > 0 && r.height > 0;
-      return { text: b.text, box: ok ? { x: r.x, y: r.y, width: r.width, height: r.height } : null };
-    });
+  return blocks.map(toUnit).filter((b: ProbeOcrUnit | null): b is ProbeOcrUnit => !!b);
 }

@@ -72,6 +72,24 @@ const holdReader = () => { let release; const p = new Promise((r) => { release =
 // Where the printed number sits in the probe crop (normalised); a steady, in-frame spot
 // unless a test moves it. A function lets a test move it on every probe.
 let numberBox = () => ({ x: 0.1, y: 0.86, width: 0.22, height: 0.04 });
+// v42 (PM BLOCK_GROUPING_REPRO): the SAME printed number, alternately grouped by ML Kit
+// with the line above it into one block, or standalone. Number line/element: fixed.
+let alternateGrouping = false;
+let geometryOn = false;
+let groupingParity = 0;
+const geometryCalls = [];
+const groupedFrame = (uri) => {
+  const d = cropDims.get(uri) ?? { w: 900, h: 1200 };
+  const b = numberBox();
+  const num = { x: Math.round(b.x * d.w), y: Math.round(b.y * d.h), width: Math.round(b.width * d.w), height: Math.round(b.height * d.h) };
+  const grouped = (groupingParity++ % 2) === 0;
+  const above = { x: num.x, y: num.y - 4 * num.height, width: Math.round(num.width * 1.1), height: num.height };
+  const numberLine = { text: frameText, boundingBox: num, elements: [{ text: frameText, boundingBox: num }] };
+  return grouped
+    ? { text: `illustrator text\n${frameText}`, boundingBox: { x: num.x, y: above.y, width: above.width, height: num.y + num.height - above.y },
+      lines: [{ text: 'illustrator text', boundingBox: above, elements: [] }, numberLine] }
+    : { text: frameText, boundingBox: num, lines: [numberLine] };
+};
 const cropDims = new Map();
 const ocrCalls = [];
 const manipulations = [];
@@ -114,11 +132,28 @@ globalThis.require = (name) => {
     ocrCalls.push(uri);
     if (ocrHold) await ocrHold;
     if (ocrThrows) throw new Error('reader crashed');
+    if (alternateGrouping && frameText) {
+      const f = groupedFrame(uri);
+      return { text: f.text, blocks: [{ text: f.text, boundingBox: f.boundingBox }] };   // block-only export (v41 native)
+    }
     const d = cropDims.get(uri) ?? { w: 900, h: 1200 };
     const b = numberBox();
     const blocks = frameText ? [{ text: frameText, boundingBox: { x: Math.round(b.x * d.w), y: Math.round(b.y * d.h), width: Math.round(b.width * d.w), height: Math.round(b.height * d.h) } }] : [];
     return { text: frameText, blocks };
   } };
+  // v42: the local native module modules/holohunter-ocr-geometry, reached through
+  // expo-modules-core like on a device; only exposed when a test turns it on.
+  if (name === 'expo-modules-core') return {
+    requireOptionalNativeModule: (n) => (n === 'HoloHunterOcrGeometry' && geometryOn ? {
+      recognizeGeometry: async (uri) => {
+        geometryCalls.push(uri);
+        ocrCalls.push(uri);
+        if (!frameText) return { text: '', blocks: [] };
+        const f = groupedFrame(uri);
+        return { text: f.text, blocks: [{ text: f.text, boundingBox: f.boundingBox, lines: f.lines }] };
+      },
+    } : null),
+  };
   throw new Error(`unexpected require ${name}`);
 };
 globalThis.__nativeCameraPhoto = { uri: 'file:///cache/Camera/shot.jpg', width: 3024, height: 4032, base64: jpeg('original') };
@@ -230,6 +265,37 @@ try {
     assert.ok(probeCalls.every((o) => o.shutterSound === false && o.base64 === false), 'probes are silent and carry no image bytes');
     assert.ok(ocrCalls.length > 0 && ocrCalls.every((u) => /\/ImageManipulator\/frame-\d+\.jpg$/.test(u)), 'the reader reads the FRAME crop only');
     assert.ok(manipulations.every((m) => m.base64 === false), 'probe crops are never encoded for upload');
+  });
+
+  // v42 (Android 41 user report "只會一直閃"): the probes must be invisible on the preview.
+  // The fixture applies the installed expo-camera Android contract (pinned by
+  // test:scan-android-camera-contract): a capture without animateShutter={false} paints the
+  // view white; flash="on" fires the LED on every capture; a pictureSize/facing change
+  // rebinds CameraX.
+  await test('v42: idle probing never flashes the preview — 0 white shutter frames, 0 LED fires, camera mounted once, no rebind per probe', async () => {
+    const t = takes();
+    const rebinds = globalThis.__nativeRebinds ?? 0;
+    await probes(4);
+    assert.ok(takes() >= t + 2, `probes kept running (${takes() - t})`);
+    assert.equal(globalThis.__nativeShutterFlashes ?? 0, 0, `white shutter overlays: ${globalThis.__nativeShutterFlashes}`);
+    assert.equal(globalThis.__nativeLedFlashes ?? 0, 0);
+    assert.equal(globalThis.__nativeCameraMounts, 1, 'the preview is never remounted');
+    assert.equal(globalThis.__nativeRebinds ?? 0, rebinds, 'no CameraX rebind caused by probing');
+    assert.ok((globalThis.__nativeRebinds ?? 0) <= 1, 'at most the one picture-size bind after the first ready');
+    assert.equal(globalThis.__nativeCameraProps.animateShutter, false);
+  });
+  await test('v42: the probe still is readable by the on-device reader — quality ≥ 0.7 and the frame crop kept up to 1600 px (not shrunk to 900)', async () => {
+    const probeCalls = globalThis.__nativeCameraCalls.filter((o) => o.shutterSound === false && o.base64 === false);
+    assert.ok(probeCalls.length > 0);
+    assert.ok(probeCalls.every((o) => o.quality >= 0.7), `probe qualities ${[...new Set(probeCalls.map((o) => o.quality))]}`);
+    const probeCrops = manipulations.filter((m) => !m.base64 && m.ops.some((x) => x[0] === 'crop'));
+    assert.ok(probeCrops.length > 0);
+    for (const m of probeCrops) {
+      const c = m.ops.find((x) => x[0] === 'crop')[1];
+      const r = m.ops.find((x) => x[0] === 'resize')?.[1];
+      const long = r ? (r.width ?? r.height) : Math.max(c.width, c.height);
+      assert.ok(long >= Math.min(1600, Math.max(c.width, c.height)) && long <= 1600, `probe crop long edge ${long} (crop ${c.width}×${c.height})`);
+    }
   });
 
   await test('a card number held still in the frame → exactly ONE recognition request, shown as a preview, nothing charged', async () => {
@@ -429,6 +495,51 @@ try {
     await probes(4);
   });
 
+  // v42 (Android 41 "根本不會偵測"): the real screen, the same card held still, ML Kit
+  // alternately grouping its number with the line above. Block boxes (the only geometry
+  // the v41 native export gave) never look steady; the number's own box does.
+  await test('v42: number held still but alternately grouped into a text block — block-only export: NO capture; line/element geometry: exactly ONE recognition request', async () => {
+    frameText = '';
+    await probes(4);                                   // re-armed, empty frame
+    const n = bodies.length;
+    alternateGrouping = true;
+    frameText = 'hBP03-041';
+    await probes(6);
+    assert.equal(bodies.length, n, 'block-only geometry (v41 native export): the held card is never captured');
+    geometryOn = true;
+    for (let i = 0; i < 50 && bodies.length === n; i++) await tick(100);
+    await tick(600);
+    assert.ok(geometryCalls.length >= 2, 'the probe read the native line/element geometry');
+    assert.equal(bodies.length, n + 1, 'one recognition request once the number itself is measured');
+    await click(byTestId('scan-match-retake'));
+    await probes(4);
+    assert.equal(bodies.length, n + 1, 'the same card left in the frame is not sent again');
+    alternateGrouping = false;
+    geometryOn = false;
+    frameText = '';
+    await probes(4);
+  });
+
+  await test('v42: flash in automatic mode is a continuous torch — probes never fire the capture flash; the props switch without remount or rebind', async () => {
+    frameText = '';
+    const rebinds = globalThis.__nativeRebinds ?? 0;
+    await click(byTestId('scan-top-bar-flash'));
+    await tick(50);
+    assert.equal(globalThis.__nativeCameraProps.flash, 'off', 'no per-capture flash in automatic mode');
+    assert.equal(globalThis.__nativeCameraProps.enableTorch, true, 'continuous light instead');
+    const led = globalThis.__nativeLedFlashes ?? 0;
+    const t = takes();
+    await probes(3);
+    assert.ok(takes() > t, 'probes ran with the light on');
+    assert.equal(globalThis.__nativeLedFlashes ?? 0, led, 'no LED strobe per probe');
+    assert.equal(globalThis.__nativeShutterFlashes ?? 0, 0);
+    assert.equal(globalThis.__nativeRebinds ?? 0, rebinds);
+    assert.equal(globalThis.__nativeCameraMounts, 1);
+    await click(byTestId('scan-top-bar-flash'));
+    await tick(50);
+    assert.equal(globalThis.__nativeCameraProps.enableTorch, false);
+  });
+
   await test('manual mode: the pill turns automatic capture off — a card in the frame is not captured', async () => {
     await click(byTestId('scan-mode-manual'));
     frameText = 'hBP02-033';
@@ -437,6 +548,16 @@ try {
     assert.equal(takes(), t);
     assert.equal(bodies.length, n);
     assert.ok(host.textContent.includes('點擊掃描按鈕拍攝卡牌'));
+  });
+  await test('v42: manual mode keeps the capture flash (flash="on", no torch) and a shutter photo still never paints the preview white', async () => {
+    await click(byTestId('scan-top-bar-flash'));
+    await tick(50);
+    assert.equal(globalThis.__nativeCameraProps.flash, 'on');
+    assert.equal(globalThis.__nativeCameraProps.enableTorch, false);
+    await click(byTestId('scan-top-bar-flash'));
+    await tick(50);
+    assert.equal(globalThis.__nativeCameraProps.flash, 'off');
+    assert.equal(globalThis.__nativeShutterFlashes ?? 0, 0, 'no white shutter overlay for any capture in this run');
   });
 } finally {
   await act(async () => root.unmount());
