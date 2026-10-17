@@ -18,6 +18,7 @@ import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
+import androidx.camera.core.UseCaseGroup
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
@@ -40,32 +41,37 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.util.Collections
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Continuous CameraX preview + on-device frame analysis for the automatic card scan.
  *
- *  - Preview: PreviewView, FILL_CENTER (cover), never interrupted by analysis; no still
- *    captures, no files, no shutter overlay and no flash while the scanner only looks.
- *  - ImageAnalysis: 4:3 frames (same field of view as the 4:3 preview), backpressure
- *    STRATEGY_KEEP_ONLY_LATEST, at most ONE frame in ML Kit at a time and at most one
- *    analysed frame per `analysisIntervalMs`; frames arriving in between are closed at
- *    once. Analysis runs only while `active` is true (JS turns it off while a scan, a
- *    result or an error is on screen, in the background, unfocused, without consent or
- *    allowance).
- *  - onFrameText: { seq, width, height, blocks: [{ text, boundingBox, lines: [{ text,
- *    boundingBox, elements: [...] }] }] } in the upright frame's pixel space.
- *  - takePicture(quality, base64): one silent still (flash off; the light is the torch),
- *    rotated upright and written as JPEG to the app cache: { uri, width, height, base64? }.
- *  - Lifecycle: bound to the Activity (CameraX stops in the background); release() on
- *    view destroy clears the analyzer, unbinds the use cases, closes ML Kit and the
- *    executor. Events are never sent after release.
+ *  - ONE field of view: Preview, ImageAnalysis and ImageCapture are bound as a
+ *    UseCaseGroup with the PreviewView's ViewPort, so CameraX gives every analysed frame
+ *    and every still a crop rect equal to what the preview shows (independent of each
+ *    stream's own resolution / aspect fallback / sensor rotation). Frame events carry that
+ *    crop rect, the buffer size and the rotation; the still is cropped to it and rotated
+ *    upright, so the still IS the visible preview.
+ *  - Frames: STRATEGY_KEEP_ONLY_LATEST, at most one frame in ML Kit, at most one analysed
+ *    frame per `analysisIntervalMs`; analysis only while `active`. Every analysis is tagged
+ *    with the JS `session` and a native `generation` taken when the frame STARTS; a result
+ *    is delivered only if both are unchanged and analysis is still on — a completion from
+ *    before a deactivate/reactivate (background, blur, a result on screen…) is dropped.
+ *  - Stills: each takePicture is a pending record settled exactly once (success, failure
+ *    or release); the ImageProxy is always closed; JPEG work runs on an IO executor that
+ *    release() does not cancel, and a file written for a capture that was released / no
+ *    longer wanted is deleted.
+ *  - Lifecycle: bound to the Activity; release() on view destroy rejects pending
+ *    captures, stops analysis, unbinds, closes ML Kit and the executors. No events after.
  */
 @SuppressLint("ViewConstructor")
 class HoloHunterCardScannerView(context: Context, appContext: AppContext) : ExpoView(context, appContext) {
@@ -73,6 +79,23 @@ class HoloHunterCardScannerView(context: Context, appContext: AppContext) : Expo
     const val DEFAULT_INTERVAL_MS = 700
     private const val MIN_INTERVAL_MS = 250
     private const val MAX_INTERVAL_MS = 5000
+  }
+
+  /** One still capture in flight; settled exactly once. */
+  private class PendingCapture(private val promise: Promise) {
+    private val settled = AtomicBoolean(false)
+    @Volatile var file: File? = null
+    val isSettled: Boolean get() = settled.get()
+    fun resolve(value: Any): Boolean {
+      if (!settled.compareAndSet(false, true)) return false
+      promise.resolve(value)
+      return true
+    }
+    fun reject(code: String, message: String, cause: Throwable?): Boolean {
+      if (!settled.compareAndSet(false, true)) return false
+      promise.reject(code, message, cause)
+      return true
+    }
   }
 
   private val onCameraReady by EventDispatcher()
@@ -84,6 +107,9 @@ class HoloHunterCardScannerView(context: Context, appContext: AppContext) : Expo
   }
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
   private val analysisExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+  private val ioExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+  private val pendingCaptures: MutableSet<PendingCapture> =
+    Collections.newSetFromMap(ConcurrentHashMap<PendingCapture, Boolean>())
   private var recognizer: TextRecognizer? = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
   private var cameraProvider: ProcessCameraProvider? = null
@@ -93,12 +119,15 @@ class HoloHunterCardScannerView(context: Context, appContext: AppContext) : Expo
   private var imageAnalysis: ImageAnalysis? = null
 
   @Volatile private var analysisActive = false
+  @Volatile private var session = 0
+  @Volatile private var generation = 0
   @Volatile private var intervalMs = DEFAULT_INTERVAL_MS.toLong()
   @Volatile private var lastAnalysedAt = 0L
   @Volatile private var inFlight = false
   @Volatile private var released = false
   private var torchOn = false
   private var bindRequested = false
+  private var bindStarted = false
   private var readySent = false
   private var frameSeq = 0
 
@@ -116,11 +145,26 @@ class HoloHunterCardScannerView(context: Context, appContext: AppContext) : Expo
 
   override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
     previewView.layout(0, 0, right - left, bottom - top)
+    // The ViewPort needs the laid-out PreviewView size.
+    if (bindRequested && !bindStarted && right - left > 0 && bottom - top > 0) {
+      previewView.post { startBind() }
+    }
   }
 
   fun setAnalysisActive(active: Boolean) {
-    analysisActive = active && !released
-    if (!active) lastAnalysedAt = 0L
+    val next = active && !released
+    if (next != analysisActive) {
+      generation += 1          // anything started under the previous state is void
+      lastAnalysedAt = 0L
+    }
+    analysisActive = next
+  }
+
+  fun setSession(value: Int) {
+    if (value != session) {
+      session = value
+      generation += 1
+    }
   }
 
   fun setAnalysisInterval(ms: Int) {
@@ -135,10 +179,18 @@ class HoloHunterCardScannerView(context: Context, appContext: AppContext) : Expo
   fun ensureCamera() {
     if (bindRequested || released) return
     bindRequested = true
+    if (previewView.width > 0 && previewView.height > 0) startBind()
+  }
+
+  private fun startBind() {
+    if (bindStarted || released) return
+    bindStarted = true
     scope.launch {
       try {
         val owner = appContext.currentActivity as? LifecycleOwner
           ?: throw IllegalStateException("No lifecycle owner for the camera")
+        val viewPort = previewView.viewPort
+          ?: throw IllegalStateException("The preview has no view port yet")
         val provider = ProcessCameraProvider.awaitInstance(context)
         if (released) return@launch
         val fourByThree = ResolutionSelector.Builder()
@@ -148,8 +200,6 @@ class HoloHunterCardScannerView(context: Context, appContext: AppContext) : Expo
           .setResolutionSelector(fourByThree)
           .build()
           .also { it.surfaceProvider = previewView.surfaceProvider }
-        // The recognition still: ~1600 px long edge, like the device picture size the
-        // normal scan already chooses (recognitionImagePolicy), so one JPEG fits.
         val captureUseCase = ImageCapture.Builder()
           .setResolutionSelector(
             ResolutionSelector.Builder()
@@ -170,9 +220,15 @@ class HoloHunterCardScannerView(context: Context, appContext: AppContext) : Expo
           .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
           .build()
         analysisUseCase.setAnalyzer(analysisExecutor) { proxy -> analyze(proxy) }
+        val group = UseCaseGroup.Builder()
+          .setViewPort(viewPort)
+          .addUseCase(previewUseCase)
+          .addUseCase(captureUseCase)
+          .addUseCase(analysisUseCase)
+          .build()
 
         provider.unbindAll()
-        val bound = provider.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, previewUseCase, captureUseCase, analysisUseCase)
+        val bound = provider.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, group)
         cameraProvider = provider
         camera = bound
         preview = previewUseCase
@@ -206,15 +262,33 @@ class HoloHunterCardScannerView(context: Context, appContext: AppContext) : Expo
     }
     lastAnalysedAt = now
     inFlight = true
+    // Ownership of this analysis: the state it STARTED in.
+    val startSession = session
+    val startGeneration = generation
     val rotation = proxy.imageInfo.rotationDegrees
-    val width = if (rotation % 180 == 0) proxy.width else proxy.height
-    val height = if (rotation % 180 == 0) proxy.height else proxy.width
+    val bufferWidth = proxy.width
+    val bufferHeight = proxy.height
+    val crop = Rect(proxy.cropRect)
+    val width = if (rotation % 180 == 0) bufferWidth else bufferHeight
+    val height = if (rotation % 180 == 0) bufferHeight else bufferWidth
     val seq = ++frameSeq
     try {
       reader.process(InputImage.fromMediaImage(media, rotation))
         .addOnSuccessListener(ContextCompat.getMainExecutor(context)) { text ->
-          if (!released && analysisActive) {
-            onFrameText(mapOf("seq" to seq, "width" to width, "height" to height, "blocks" to mapBlocks(text)))
+          if (!released && analysisActive && startSession == session && startGeneration == generation) {
+            onFrameText(
+              mapOf(
+                "seq" to seq,
+                "session" to startSession,
+                "width" to width,
+                "height" to height,
+                "rotation" to rotation,
+                "bufferWidth" to bufferWidth,
+                "bufferHeight" to bufferHeight,
+                "cropRect" to mapOf("x" to crop.left, "y" to crop.top, "width" to crop.width(), "height" to crop.height()),
+                "blocks" to mapBlocks(text)
+              )
+            )
           }
         }
         .addOnCompleteListener(ContextCompat.getMainExecutor(context)) {
@@ -249,51 +323,88 @@ class HoloHunterCardScannerView(context: Context, appContext: AppContext) : Expo
 
   fun takePicture(quality: Double, base64: Boolean, promise: Promise) {
     val capture = imageCapture
+    val pending = PendingCapture(promise)
     if (released || capture == null) {
-      promise.reject("E_CAMERA_NOT_READY", "The camera is not ready", null)
+      pending.reject("E_CAMERA_NOT_READY", "The camera is not ready", null)
       return
     }
+    pendingCaptures.add(pending)
     capture.takePicture(ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageCapturedCallback() {
       override fun onCaptureSuccess(image: ImageProxy) {
-        val rotation = image.imageInfo.rotationDegrees
-        val buffer = image.planes[0].buffer
-        val bytes = ByteArray(buffer.remaining()).also { buffer.get(it) }
-        image.close()
-        scope.launch {
-          try {
-            val result = withContext(Dispatchers.IO) { writeUpright(bytes, rotation, quality, base64) }
-            promise.resolve(result)
-          } catch (e: Exception) {
-            promise.reject("E_CAPTURE_FAILED", e.message ?: "Capture failed", e)
+        var bytes: ByteArray? = null
+        var rotation = 0
+        var crop: Rect? = null
+        try {
+          if (!released && !pending.isSettled) {
+            val buffer = image.planes[0].buffer
+            bytes = ByteArray(buffer.remaining()).also { buffer.get(it) }
+            rotation = image.imageInfo.rotationDegrees
+            crop = Rect(image.cropRect)
           }
+        } catch (e: Exception) {
+          bytes = null
+        } finally {
+          image.close()
+        }
+        val data = bytes
+        val visible = crop
+        if (data == null || visible == null) {
+          pending.reject("E_CAMERA_RELEASED", "The camera was closed", null)
+          pendingCaptures.remove(pending)
+          return
+        }
+        try {
+          ioExecutor.execute { process(pending, data, rotation, visible, quality, base64) }
+        } catch (e: RejectedExecutionException) {
+          pending.reject("E_CAMERA_RELEASED", "The camera was closed", e)
+          pendingCaptures.remove(pending)
         }
       }
 
       override fun onError(exception: ImageCaptureException) {
-        promise.reject("E_CAPTURE_FAILED", exception.message ?: "Capture failed", exception)
+        pending.reject("E_CAPTURE_FAILED", exception.message ?: "Capture failed", exception)
+        pendingCaptures.remove(pending)
       }
     })
   }
 
-  private fun writeUpright(jpeg: ByteArray, rotation: Int, quality: Double, base64: Boolean): Map<String, Any> {
+  private fun process(pending: PendingCapture, jpeg: ByteArray, rotation: Int, crop: Rect, quality: Double, base64: Boolean) {
+    try {
+      if (released || pending.isSettled) return
+      val result = writeVisibleUpright(pending, jpeg, rotation, crop, quality, base64)
+      if (!pending.resolve(result)) pending.file?.delete()      // released meanwhile: no orphan file
+    } catch (e: Exception) {
+      pending.file?.delete()
+      pending.reject("E_CAPTURE_FAILED", e.message ?: "Capture failed", e)
+    } finally {
+      pendingCaptures.remove(pending)
+    }
+  }
+
+  /** Crop the still to the shared view-port rect (buffer coordinates), then rotate upright. */
+  private fun writeVisibleUpright(pending: PendingCapture, jpeg: ByteArray, rotation: Int, crop: Rect, quality: Double, base64: Boolean): Map<String, Any> {
     val decoded = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)
       ?: throw IllegalStateException("Could not decode the captured image")
-    val upright = if (rotation != 0) {
-      Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, Matrix().apply { postRotate(rotation.toFloat()) }, true)
-    } else decoded
+    val left = crop.left.coerceIn(0, decoded.width - 1)
+    val top = crop.top.coerceIn(0, decoded.height - 1)
+    val cw = crop.width().coerceIn(1, decoded.width - left)
+    val ch = crop.height().coerceIn(1, decoded.height - top)
+    val matrix = Matrix().apply { if (rotation != 0) postRotate(rotation.toFloat()) }
+    val visible = Bitmap.createBitmap(decoded, left, top, cw, ch, matrix, true)
     val out = ByteArrayOutputStream()
-    upright.compress(Bitmap.CompressFormat.JPEG, (quality * 100).toInt().coerceIn(1, 100), out)
+    visible.compress(Bitmap.CompressFormat.JPEG, (quality * 100).toInt().coerceIn(1, 100), out)
     val data = out.toByteArray()
     val dir = File(context.cacheDir, "HoloHunterScan").apply { mkdirs() }
     val file = File(dir, "${UUID.randomUUID()}.jpg")
+    pending.file = file
     FileOutputStream(file).use { it.write(data) }
     val result = mutableMapOf<String, Any>(
       "uri" to "file://${file.absolutePath}",
-      "width" to upright.width,
-      "height" to upright.height
+      "width" to visible.width,
+      "height" to visible.height
     )
     if (base64) result["base64"] = Base64.encodeToString(data, Base64.NO_WRAP)
-    if (upright !== decoded) upright.recycle()
+    if (visible !== decoded) visible.recycle()
     decoded.recycle()
     return result
   }
@@ -302,6 +413,10 @@ class HoloHunterCardScannerView(context: Context, appContext: AppContext) : Expo
     if (released) return
     released = true
     analysisActive = false
+    generation += 1
+    for (pending in pendingCaptures.toList()) {
+      pending.reject("E_CAMERA_RELEASED", "The camera was closed", null)
+    }
     imageAnalysis?.clearAnalyzer()
     val useCases = listOfNotNull(preview, imageCapture, imageAnalysis)
     if (useCases.isNotEmpty()) cameraProvider?.unbind(*useCases.toTypedArray())
@@ -309,6 +424,7 @@ class HoloHunterCardScannerView(context: Context, appContext: AppContext) : Expo
     recognizer?.close()
     recognizer = null
     analysisExecutor.shutdown()
-    scope.cancel()
+    ioExecutor.shutdown()           // queued JPEG work still runs and deletes its file
+    scope.cancel()                  // binding only; no capture settlement depends on it
   }
 }

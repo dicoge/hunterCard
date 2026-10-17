@@ -196,7 +196,8 @@ const { usePhotoUploadConsentStore } = await import('../src/store/photoUploadCon
 const { PHOTO_UPLOAD_DISCLOSURE_VERSION } = await import('../src/services/photoUploadDisclosure.ts');
 const { useScanQuotaStore } = await import('../src/store/scanQuotaStore.ts');
 const { useScanSessionStore } = await import('../src/stores/scanSessionStore.ts');
-const { FRAME_ANALYSIS_INTERVAL_MS } = await import('../src/services/nativeCardScanner.ts');
+const { FRAME_ANALYSIS_INTERVAL_MS, frameCropInFrame } = await import('../src/services/nativeCardScanner.ts');
+const { DEFAULT_FRAME_REGION } = await import('../src/services/autoCapture.ts');
 
 let passed = 0;
 async function test(label, fn) {
@@ -234,6 +235,7 @@ const frame = (text, nb = STEADY, { grouped = false } = {}) => {
 // (A build/screen without the frame scanner never installs these hooks: frames go nowhere.)
 const emit = async (payload, n = 1) => { for (let i = 0; i < n; i++) { await act(async () => { globalThis.__emitFrame?.(payload); await Promise.resolve(); }); await tick(5); } };
 const emitInFlight = async (payload) => { await act(async () => { globalThis.__emitFrameInFlight?.(payload); await Promise.resolve(); }); await tick(5); };
+const deliverLater = async (deliver) => { let r; await act(async () => { r = deliver(); await Promise.resolve(); }); await tick(5); return r; };
 
 usePhotoUploadConsentStore.setState({ acceptedVersion: PHOTO_UPLOAD_DISCLOSURE_VERSION });
 useScanQuotaStore.getState().resetQuota();
@@ -423,6 +425,129 @@ try {
     await emit(frame(''), 3);
   });
 
+  // ── v42 CR fea33de: stale ML Kit completions across deactivate / reactivate ──
+  await test('CR repro: 1 steady frame → background → foreground → the pre-background completion arrives → NO still, NO request (even from a native without its own guard)', async () => {
+    await emit(frame(''), 3);
+    const s = stills(), n = bodies.length;
+    await emit(frame('hBP05-010'));                            // first steady frame (half a streak)
+    const late = globalThis.__startFrameUnguarded(frame('hBP05-010'));   // second one already in ML Kit
+    await appState('background');
+    await tick(10);
+    await appState('active');
+    await tick(10);
+    assert.equal(fs_.props.active, true);
+    assert.equal(await deliverLater(late), true, 'the stale completion reached the screen');
+    await tick(200);
+    assert.equal(stills(), s, 'no still from a pre-background frame');
+    assert.equal(bodies.length, n, 'no request');
+  });
+  await test('after resume the streak starts over: ONE fresh steady frame does not trigger, the second does (exactly one still)', async () => {
+    const s = stills(), n = bodies.length;
+    await emit(frame('hBP05-010'));
+    await tick(50);
+    assert.equal(stills(), s, 'one fresh frame is not enough');
+    await emit(frame('hBP05-010'));
+    await settle(n);
+    assert.equal(stills(), s + 1);
+    assert.equal(bodies.length, n + 1);
+    await click(byTestId('scan-match-retake'));
+    await emit(frame(''), 3);
+  });
+  await test('native guard: a frame started before background is dropped by the view itself (not delivered)', async () => {
+    await emit(frame('hBP05-011'));
+    const late = globalThis.__startFrame(frame('hBP05-011'));
+    await appState('background'); await tick(10);
+    await appState('active'); await tick(10);
+    assert.equal(await deliverLater(late), false, 'session/generation changed → not delivered');
+    await emit(frame(''), 3);
+  });
+  await test('blur → focus: a completion started before the blur does not count (JS session check) and the streak restarts', async () => {
+    const s = stills(), n = bodies.length;
+    await emit(frame('hBP05-012'));
+    const late = globalThis.__startFrameUnguarded(frame('hBP05-012'));
+    await navEvent('blur');
+    await navEvent('focus');
+    await deliverLater(late);
+    await emit(frame('hBP05-012'));                            // only ONE fresh frame
+    await tick(200);
+    assert.equal(stills(), s);
+    assert.equal(bodies.length, n);
+    await emit(frame(''), 3);
+  });
+
+  // ── v42 CR fea33de: the scan frame through the shared CameraX view port ──
+  await test('off-centre view-port crop on a rotated (90°) landscape buffer: a number inside the on-screen frame triggers; the old full-frame cover-fit would have put it outside the frame', async () => {
+    // buffer 1280×960 (sensor), rotation 90 → upright 960×1280; CameraX view-port crop
+    // (buffer coords) off-centre with the preview's aspect (788:390 after rotation).
+    const ev = { width: 960, height: 1280, rotation: 90, bufferWidth: 1280, bufferHeight: 960, cropRect: { x: 100, y: 50, width: 1100, height: 544 } };
+    const plan = frameCropInFrame(PREVIEW, FRAME, ev);
+    assert.ok(plan.ok);
+    const nb = { x: 0.8, y: 0.86, width: 0.1, height: 0.04 };
+    const num = { x: Math.round(plan.crop.x + nb.x * plan.crop.width), y: Math.round(plan.crop.y + nb.y * plan.crop.height), width: Math.round(nb.width * plan.crop.width), height: Math.round(nb.height * plan.crop.height) };
+    const old = planNativeCrop(PREVIEW, FRAME, { width: 960, height: 1280 }).crop;
+    const oldRight = (num.x + num.width - old.x) / old.width;
+    assert.ok(oldRight > DEFAULT_FRAME_REGION.x + DEFAULT_FRAME_REGION.width, `old mapping: right edge ${oldRight.toFixed(3)} outside the frame region`);
+    const payload = (seqNo) => ({ ...ev, seq: seqNo, blocks: [{ text: 'hBP05-013', boundingBox: num, lines: [{ text: 'hBP05-013', boundingBox: num, elements: [{ text: 'hBP05-013', boundingBox: num }] }] }] });
+    const s = stills(), n = bodies.length;
+    await emit(payload(++seq));
+    await emit(payload(++seq));
+    await settle(n);
+    assert.equal(stills(), s + 1, 'mapped through the view port → inside → one still');
+    assert.equal(bodies.length, n + 1);
+    await click(byTestId('scan-match-retake'));
+    await emit(frame(''), 3);
+  });
+
+  // ── v42 CR fea33de: pending still captures ──
+  await test('capture fails natively → 「辨識失敗，請再試一次」 + 重試／取消; no request, 0 charge; 重試 takes one new still', async () => {
+    globalThis.__frameScannerCaptureMode = 'deferred';
+    const remaining = useScanQuotaStore.getState().getRemaining();
+    const s = stills(), n = bodies.length;
+    await emit(frame('hBP05-014'), 2);
+    await tick(20);
+    assert.equal(stills(), s + 1, 'capture requested');
+    await act(async () => { globalThis.__settleCapture(false); await Promise.resolve(); });
+    await tick(50);
+    assert.ok(byTestId('scan-error')?.textContent.includes('辨識失敗，請再試一次'));
+    assert.ok(byTestId('scan-error-retry') && byTestId('scan-error-cancel'));
+    assert.equal(bodies.length, n);
+    globalThis.__frameScannerCaptureMode = 'immediate';
+    await click(byTestId('scan-error-retry'));
+    await settle(n);
+    assert.equal(stills(), s + 2);
+    assert.equal(bodies.length, n + 1);
+    assert.equal(useScanQuotaStore.getState().getRemaining(), remaining, 'nothing charged');
+    await click(byTestId('scan-match-retake'));
+    await emit(frame(''), 3);
+  });
+  await test('switching to manual WHILE the still is pending: the native release rejects it once, the scan is cancelled (not busy), no request, 0 charge; a late native success is ignored; manual shutter works', async () => {
+    globalThis.__frameScannerCaptureMode = 'deferred';
+    const remaining = useScanQuotaStore.getState().getRemaining();
+    const s = stills(), n = bodies.length, rejected = fs_.rejected;
+    await emit(frame('hBP05-015'), 2);
+    await tick(20);
+    assert.equal(stills(), s + 1);
+    assert.equal(fs_.pending.filter((p) => !p.settled).length, 1, 'still pending');
+    await click(byTestId('scan-mode-manual'));
+    await tick(80);
+    assert.equal(fs_.rejected, rejected + 1, 'release settled the pending capture exactly once');
+    assert.equal(await deliverLater(() => globalThis.__settleCapture(true)), false, 'a late native success is ignored');
+    assert.equal(bodies.length, n, 'no request');
+    assert.equal(useScanQuotaStore.getState().getRemaining(), remaining);
+    assert.ok(byTestId('native-camera-fixture'), 'manual camera');
+    globalThis.__frameScannerCaptureMode = 'immediate';
+    fs_.pending.length = 0;
+    const takes0 = globalThis.__nativeCameraTakes ?? 0;
+    await click(byTestId('scan-primary-action'));
+    await settle(n);
+    assert.equal((globalThis.__nativeCameraTakes ?? 0), takes0 + 1, 'the scan screen is not stuck busy: the manual shutter captures');
+    assert.equal(bodies.length, n + 1);
+    await click(byTestId('scan-match-retake'));
+    await click(byTestId('scan-mode-auto'));
+    await tick(50);
+    await emit(frame(''), 3);
+  });
+
   await test('flash in automatic mode = continuous torch on the frame scanner (no capture flash exists on this path)', async () => {
     await click(byTestId('scan-top-bar-flash'));
     await tick(20);
@@ -443,6 +568,29 @@ try {
     await click(byTestId('scan-mode-auto'));
     await tick(50);
     assert.ok(byTestId('scan-frame-scanner'), 'back in automatic mode');
+  });
+  // ── v42 CR fea33de: explicit retry after a native bind failure ──
+  await test('camera bind fails → error + 重試 (no automatic retry); tapping it remounts the native view → ready → a held card triggers once', async () => {
+    globalThis.__frameScannerFailMount = true;
+    const mounts = fs_.mounts;
+    await click(byTestId('scan-mode-manual')); await tick(50);
+    await click(byTestId('scan-mode-auto')); await tick(80);
+    assert.equal(fs_.mounts, mounts + 1);
+    assert.ok(byTestId('scan-camera-retry'), 'retry offered');
+    await tick(500);
+    assert.equal(fs_.mounts, mounts + 1, 'no automatic remount / retry storm');
+    globalThis.__frameScannerFailMount = false;
+    await click(byTestId('scan-camera-retry'));
+    await tick(80);
+    assert.equal(fs_.mounts, mounts + 2, 'one fresh native view');
+    assert.equal(fs_.props.active, true, 'ready again');
+    const s = stills(), n = bodies.length;
+    await emit(frame(''), 3);
+    await emit(frame('hBP05-016'), 2);
+    await settle(n);
+    assert.equal(stills(), s + 1);
+    assert.equal(bodies.length, n + 1);
+    await click(byTestId('scan-match-retake'));
   });
 } finally {
   await act(async () => root.unmount());

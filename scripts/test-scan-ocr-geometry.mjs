@@ -135,7 +135,7 @@ await test('tracked native FRAME-SCANNER contract (v42 CR): CameraX preview + Im
   assert.match(mod, /Name\("HoloHunterCardScanner"\)/);
   assert.match(js, /NATIVE_CARD_SCANNER = 'HoloHunterCardScanner'/, 'JS loads the same native name');
   assert.match(mod, /Events\("onCameraReady", "onMountError", "onFrameText"\)/);
-  for (const prop of ['active', 'torch', 'analysisIntervalMs']) assert.match(mod, new RegExp(`Prop\\("${prop}"\\)`));
+  for (const prop of ['active', 'session', 'torch', 'analysisIntervalMs']) assert.match(mod, new RegExp(`Prop\\("${prop}"\\)`));
   assert.match(mod, /OnViewDestroys \{ view: HoloHunterCardScannerView ->\s*view\.release\(\)/);
   assert.match(mod, /AsyncFunction\("takePicture"\)/);
   // continuous preview, cover-fit like the screen's crop mapping; 4:3 preview AND analysis
@@ -147,7 +147,21 @@ await test('tracked native FRAME-SCANNER contract (v42 CR): CameraX preview + Im
   assert.match(view, /if \(released \|\| !analysisActive \|\| inFlight \|\| reader == null \|\| now - lastAnalysedAt < intervalMs\) \{\s*proxy\.close\(\)/);
   assert.match(view, /coerceIn\(MIN_INTERVAL_MS, MAX_INTERVAL_MS\)/);
   assert.match(view, /addOnCompleteListener[\s\S]{0,120}inFlight = false\s*proxy\.close\(\)/);
-  assert.match(view, /if \(!released && analysisActive\) \{\s*onFrameText\(/, 'no frame event after release or with analysis off');
+  // CR fea33de P2: ownership of an analysis = the session + generation it STARTED in
+  assert.match(view, /val startSession = session\s*val startGeneration = generation/);
+  assert.match(view, /if \(!released && analysisActive && startSession == session && startGeneration == generation\) \{\s*onFrameText\(/,
+    'a completion from before a deactivate/reactivate or session change is not delivered');
+  assert.match(view, /fun setAnalysisActive\(active: Boolean\) \{[\s\S]{0,120}if \(next != analysisActive\) \{\s*generation \+= 1/, 'every on/off transition voids in-flight work');
+  assert.match(view, /fun setSession\(value: Int\) \{[\s\S]{0,80}generation \+= 1/);
+  assert.match(view, /"session" to startSession/);
+  // CR fea33de geometry: one field of view for preview / analysis / still
+  assert.match(view, /val viewPort = previewView\.viewPort/);
+  assert.match(view, /UseCaseGroup\.Builder\(\)\s*\.setViewPort\(viewPort\)\s*\.addUseCase\(previewUseCase\)\s*\.addUseCase\(captureUseCase\)\s*\.addUseCase\(analysisUseCase\)/);
+  assert.match(view, /bindToLifecycle\(owner, CameraSelector\.DEFAULT_BACK_CAMERA, group\)/);
+  for (const field of ['"rotation" to rotation', '"bufferWidth" to bufferWidth', '"bufferHeight" to bufferHeight', '"cropRect" to mapOf']) assert.ok(view.includes(field), field);
+  assert.match(view, /val crop = Rect\(proxy\.cropRect\)/);
+  assert.match(view, /crop = Rect\(image\.cropRect\)/, 'the still uses the view-port crop of its own capture');
+  assert.match(view, /Bitmap\.createBitmap\(decoded, left, top, cw, ch, matrix, true\)/, 'still cropped to the visible rect and rotated upright');
   // ML Kit line/element geometry, on the frame itself (no file)
   assert.match(view, /InputImage\.fromMediaImage\(media, rotation\)/);
   assert.match(view, /"elements" to line\.elements\.map/);
@@ -156,11 +170,20 @@ await test('tracked native FRAME-SCANNER contract (v42 CR): CameraX preview + Im
   // the still: only through takePicture, flash off (the light is the torch)
   assert.match(view, /setFlashMode\(ImageCapture\.FLASH_MODE_OFF\)/);
   assert.match(view, /cameraControl\.enableTorch/);
+  // CR fea33de P2: pending captures settled exactly once; proxy always closed; no orphan file
+  assert.match(view, /private class PendingCapture[\s\S]{0,400}settled\.compareAndSet\(false, true\)/);
+  assert.match(view, /pendingCaptures\.add\(pending\)/);
+  assert.match(view, /\} finally \{\s*image\.close\(\)\s*\}/, 'ImageProxy closed on every path');
+  assert.match(view, /ioExecutor\.execute \{ process\(pending, data, rotation, visible, quality, base64\) \}/, 'JPEG work not on the cancellable scope');
+  assert.match(view, /if \(!pending\.resolve\(result\)\) pending\.file\?\.delete\(\)/, 'a file for a released capture is deleted');
+  assert.match(view, /catch \(e: Exception\) \{\s*pending\.file\?\.delete\(\)\s*pending\.reject\(/);
+  assert.match(view, /override fun onError\(exception: ImageCaptureException\) \{\s*pending\.reject\(/);
   // deterministic release
   const release = view.slice(view.indexOf('fun release()'));
-  for (const step of ['released = true', 'analysisActive = false', 'clearAnalyzer()', 'cameraProvider?.unbind(', 'recognizer?.close()', 'analysisExecutor.shutdown()', 'scope.cancel()']) {
+  for (const step of ['released = true', 'analysisActive = false', 'generation += 1', 'pending.reject("E_CAMERA_RELEASED"', 'clearAnalyzer()', 'cameraProvider?.unbind(', 'recognizer?.close()', 'analysisExecutor.shutdown()', 'ioExecutor.shutdown()', 'scope.cancel()']) {
     assert.ok(release.includes(step), `release: ${step}`);
   }
+  assert.ok(release.indexOf('pending.reject') < release.indexOf('scope.cancel()'), 'pending captures settled before the scope is cancelled');
   const gradle = fs.readFileSync(new URL('../modules/holohunter-ocr-geometry/android/build.gradle', import.meta.url), 'utf8');
   const cameraGradle = fs.readFileSync(new URL('../node_modules/expo-camera/android/build.gradle', import.meta.url), 'utf8');
   const v = /camerax_version = "([^"]+)"/.exec(cameraGradle)[1];

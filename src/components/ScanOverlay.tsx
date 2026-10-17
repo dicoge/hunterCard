@@ -142,6 +142,7 @@ export default function ScanOverlay({
                 <TouchableOpacity
                   style={resultStyles.retryButton}
                   onPress={onRetry}
+                  testID="scan-camera-retry"
                 >
                   <Text style={resultStyles.retryText}>{t('common_retry')}</Text>
                 </TouchableOpacity>

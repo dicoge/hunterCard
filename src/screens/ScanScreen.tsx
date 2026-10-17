@@ -22,7 +22,7 @@ import WebCamera, { WebCameraHandle } from '../components/WebCamera';
 import CameraPermissionDeniedView from '../components/CameraPermissionDeniedView';
 import ScanSessionPanel from '../components/ScanSessionPanel';
 import { geometryBlocksFromNative, nativeOcrProbe, nativeOcrRecognize } from '../services/nativeOcr';
-import { FRAME_ANALYSIS_INTERVAL_MS, loadNativeCardScannerView, type FrameTextEvent } from '../services/nativeCardScanner';
+import { FRAME_ANALYSIS_INTERVAL_MS, frameCropInFrame, loadNativeCardScannerView, type FrameTextEvent } from '../services/nativeCardScanner';
 import { useScanSessionStore } from '../stores/scanSessionStore';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, convertPrice } from '../constants';
@@ -320,6 +320,14 @@ export default function ScanScreen({ navigation }: any) {
   // Re-evaluates the frame-analysis gate when focus / app state change (refs, not state).
   const [, setGateTick] = useState(0);
   const frameGeometryRef = useRef<{ preview: any; frame: any } | null>(null);
+  // Analysis session (v42 CR fea33de): bumped whenever frame analysis turns on or off.
+  // The native view tags every frame with the session it STARTED in; an event from any
+  // other session (e.g. an ML Kit result from before background → foreground) is dropped,
+  // and the "held still" streak is reset at every transition.
+  const analysisSessionRef = useRef(0);
+  const analysisOpenRef = useRef(false);
+  // Explicit camera retry after a mount error remounts the native scanner (a fresh bind).
+  const [scannerKey, setScannerKey] = useState(0);
   const autoMachine = useRef(createAutoCaptureMachine()).current;
   const probeBusyRef = useRef(false);
   // Bumped whenever a probe in flight must not count any more (background, blur,
@@ -336,8 +344,13 @@ export default function ScanScreen({ navigation }: any) {
   const autoScanNeedsConsent = autoScanActive && !hasPhotoUploadConsent(consentVersion);
   const setAutoScan = (on: boolean) => {
     // Android: automatic and manual use different camera views (frame scanner / expo-camera);
-    // the new one reports readiness itself.
-    if (FrameScannerView && on !== autoScanEnabled) setIsCameraReady(false);
+    // the new one reports readiness itself. A scan running on the old camera is cancelled:
+    // its still may never arrive (the view is destroyed) and must not keep the screen busy.
+    if (FrameScannerView && on !== autoScanEnabled) {
+      invalidateProbes();
+      if (lifecycle.cancel()) resetScanUi();
+      setIsCameraReady(false);
+    }
     setAutoScanEnabled(on);
     if (on) { autoMachine.resume(); setAutoPaused(false); }
   };
@@ -749,17 +762,29 @@ export default function ScanScreen({ navigation }: any) {
     && !autoPaused && !candidateSelector.visible && !resultCard.visible && !matchSheet && !serviceFailure && !scanError
     && !showSearch && lifecycle.isFocused() && !lifecycle.hasLiveJob() && AppState.currentState === 'active'
     && canScanNow() && hasUploadConsent();
+  // Evaluated at render: a gate change starts a new session and drops the streak.
+  const frameAnalysisSession = () => {
+    const open = frameAnalysisOpen();
+    if (open !== analysisOpenRef.current) {
+      analysisOpenRef.current = open;
+      analysisSessionRef.current += 1;
+      autoMachine.resetStability();
+    }
+    return { open, session: analysisSessionRef.current };
+  };
   const refreshFrameGeometry = async () => {
     const [preview, frame] = await Promise.all([measureInWindow(cameraBoxRef), measureInWindow(scanFrameRef)]);
     if (preview && frame && mountedRef.current) frameGeometryRef.current = { preview, frame };
   };
   const handleFrameText = (event: FrameTextEvent | undefined) => {
     if (!event || !useFrameScannerRef.current || !frameAnalysisOpen()) return;
+    if (event.session !== analysisSessionRef.current) return;   // started in another session
     if (!mountedRef.current || !lifecycle.isFocused() || lifecycle.hasLiveJob() || AppState.currentState !== 'active') return;
     const geometry = frameGeometryRef.current;
     void refreshFrameGeometry();
     if (!geometry) return;
-    const plan = planNativeCrop(geometry.preview, geometry.frame, { width: event.width, height: event.height });
+    // The scan frame inside this analysed frame, through the shared CameraX view port.
+    const plan = frameCropInFrame(geometry.preview, geometry.frame, event);
     if (!plan.ok) return;
     const { crop } = plan;
     const observations = observationsFromProbeText(
@@ -1723,7 +1748,9 @@ export default function ScanScreen({ navigation }: any) {
           <FrameScannerView
             ref={frameScannerRef}
             style={StyleSheet.absoluteFill}
-            active={frameAnalysisOpen()}
+            key={`frame-scanner-${scannerKey}`}
+            active={frameAnalysisSession().open}
+            session={frameAnalysisSession().session}
             torch={flash}
             analysisIntervalMs={FRAME_ANALYSIS_INTERVAL_MS}
             onCameraReady={() => { handleCameraReady(); void refreshFrameGeometry(); }}
@@ -1755,9 +1782,12 @@ export default function ScanScreen({ navigation }: any) {
               onGallery={pickFromGallery}
               onClose={handleClose}
               onRetry={() => {
+                // Explicit retry after a mount error: a fresh native view (new bind).
+                // Only on the user's tap — never automatically.
                 setCameraError(null);
-                if (webCameraRef.current) webCameraRef.current.retry();
-                else setIsCameraReady(false);
+                setIsCameraReady(false);
+                frameGeometryRef.current = null;
+                setScannerKey((k) => k + 1);
               }}
             />
           </View>

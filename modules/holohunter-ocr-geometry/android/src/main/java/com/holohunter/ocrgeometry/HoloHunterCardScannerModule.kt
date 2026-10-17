@@ -21,6 +21,10 @@ class HoloHunterCardScannerModule : Module() {
         view.setAnalysisActive(active ?: false)
       }
 
+      Prop("session") { view: HoloHunterCardScannerView, session: Int? ->
+        view.setSession(session ?: 0)
+      }
+
       Prop("torch") { view: HoloHunterCardScannerView, torch: Boolean? ->
         view.setTorch(torch ?: false)
       }

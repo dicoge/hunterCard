@@ -95,6 +95,7 @@
     "test:scan-android-camera-contract": "node scripts/test-scan-android-camera-contract.mjs",
     "test:scan-ocr-geometry": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-scan-ocr-geometry.mjs",
     "test:scan-android-frame-scanner": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-web-render.mjs scripts/test-scan-android-frame-scanner.mjs",
+    "test:scan-frame-geometry": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-scan-frame-geometry.mjs",
     "test:scan-native-auto-capture": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-web-render.mjs scripts/test-scan-native-auto-capture.mjs",
     "test:scan-trace": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-scan-trace.mjs",
     "test:scan-legacy-backend": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-scan-legacy-backend.mjs",

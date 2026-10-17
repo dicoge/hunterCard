@@ -21,12 +21,7 @@ export const NATIVE_CARD_SCANNER = 'HoloHunterCardScanner';
 /** One analysed preview frame at most this often (the native side also enforces ≥ 250 ms). */
 export const FRAME_ANALYSIS_INTERVAL_MS = 700;
 
-export interface FrameTextEvent {
-  seq: number;
-  width: number;
-  height: number;
-  blocks: unknown;
-}
+export { visibleUprightRect, frameCropInFrame, type FrameTextEvent } from '../utils/frameGeometry';
 
 export interface NativeCardScannerPhoto {
   uri: string;

@@ -82,6 +82,9 @@ export interface AutoCaptureMachine {
   roundStarted(token?: string | null): void;
   /** Resume after an idle pause (user action). */
   resume(): void;
+  /** Forget a half-built "held still" streak (a lifecycle change: nothing seen before it
+   *  may count towards a trigger after it). Does not re-arm and keeps the held card. */
+  resetStability(): void;
   state(): { armed: boolean; held: Held; candidate: string | null; hits: number; idleProbes: number; paused: boolean };
 }
 
@@ -164,6 +167,9 @@ export function createAutoCaptureMachine(options: AutoCaptureOptions = {}): Auto
     resume() {
       paused = false;
       idleProbes = 0;
+    },
+    resetStability() {
+      clearCandidate();
     },
     state: () => ({ armed, held, candidate, hits, idleProbes, paused }),
   };
