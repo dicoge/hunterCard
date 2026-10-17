@@ -554,6 +554,19 @@ try {
     assert.equal(bodies.length, n);
     await twoFreshFramesTrigger('hBP05-022');
   });
+  await test('a gate change with no lifecycle callback (photo-upload consent withdrawn, then given again) also restarts the streak: two fresh frames are needed', async () => {
+    await cleanSlate();
+    const s = stills(), n = bodies.length;
+    await emit(frame('hBP05-024'));                            // one steady observation
+    await act(async () => { usePhotoUploadConsentStore.setState({ acceptedVersion: null }); await Promise.resolve(); });
+    await tick(20);
+    assert.equal(fs_.props.active, false, 'no analysis without consent');
+    await act(async () => { usePhotoUploadConsentStore.setState({ acceptedVersion: PHOTO_UPLOAD_DISCLOSURE_VERSION }); await Promise.resolve(); });
+    await tick(20);
+    assert.equal(fs_.props.active, true);
+    counts('consent off+on', { stills: stills() - s, requests: bodies.length - n });
+    await twoFreshFramesTrigger('hBP05-024');
+  });
   const press = (id) => byTestId(id).dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
   await test('manual then auto in one batch with a frame in ML Kit → no still from it; the scanner comes back READY by itself (fresh mount); then two fresh frames are needed', async () => {
     await cleanSlate();
