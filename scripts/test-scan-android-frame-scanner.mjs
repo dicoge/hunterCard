@@ -231,8 +231,9 @@ const frame = (text, nb = STEADY, { grouped = false } = {}) => {
     boundingBox: { x: num.x, y: above.y, width: above.width, height: num.y + num.height - above.y },
     lines: [{ text: 'illustrator text', boundingBox: above, elements: [] }, numberLine] }] };
 };
-const emit = async (payload, n = 1) => { for (let i = 0; i < n; i++) { await act(async () => { globalThis.__emitFrame(payload); await Promise.resolve(); }); await tick(5); } };
-const emitInFlight = async (payload) => { await act(async () => { globalThis.__emitFrameInFlight(payload); await Promise.resolve(); }); await tick(5); };
+// (A build/screen without the frame scanner never installs these hooks: frames go nowhere.)
+const emit = async (payload, n = 1) => { for (let i = 0; i < n; i++) { await act(async () => { globalThis.__emitFrame?.(payload); await Promise.resolve(); }); await tick(5); } };
+const emitInFlight = async (payload) => { await act(async () => { globalThis.__emitFrameInFlight?.(payload); await Promise.resolve(); }); await tick(5); };
 
 usePhotoUploadConsentStore.setState({ acceptedVersion: PHOTO_UPLOAD_DISCLOSURE_VERSION });
 useScanQuotaStore.getState().resetQuota();
@@ -262,10 +263,12 @@ try {
     assert.equal(fs_.props.torch, false);
   });
 
-  await test('no card: 12 analysed frames → 0 still photos, 0 probe files, 0 recognition requests (frames ARE analysed — not "zero camera activity")', async () => {
+  await test('no card for 4 s: analysed frames only → 0 still photos (frame scanner AND expo-camera), 0 probe files, 0 recognition requests (frames ARE analysed — not "zero camera activity")', async () => {
     const d = fs_.delivered;
     await emit(frame(''), 12);
+    await tick(4000);                                   // ≈ 3 intervals of the old still-photo polling
     assert.equal(fs_.delivered, d + 12, 'frames reached the screen');
+    assert.equal(globalThis.__nativeCameraTakes ?? 0, 0, `expo-camera stills: ${globalThis.__nativeCameraTakes ?? 0}`);
     assert.equal(stills(), 0);
     assert.equal(globalThis.__nativeCameraTakes ?? 0, 0, 'expo-camera never captured');
     assert.equal(manipulations.length, 0, 'no image files made');
