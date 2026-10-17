@@ -50,8 +50,16 @@
       "currency": "JPY",
       "cardId": "hBP03-113_hBP03_C_hBP03-113_C",
       "sourceProduct": "hBP03"
+    },
+    {
+      "date": "2026-10-17",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-113_hBP03_C_hBP03-113_C",
+      "sourceProduct": "hBP03"
     }
   ],
-  "lastUpdated": "2026-10-16T17:38:50.382Z",
+  "lastUpdated": "2026-10-17T12:05:01.266Z",
   "nameZh": "Risuners"
 }

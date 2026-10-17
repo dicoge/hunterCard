@@ -50,8 +50,16 @@
       "currency": "JPY",
       "cardId": "hBP09-104_hBP09_C_hBP09-104_C",
       "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-10-17",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-104_hBP09_C_hBP09-104_C",
+      "sourceProduct": "hBP09"
     }
   ],
-  "lastUpdated": "2026-10-16T17:38:50.523Z",
+  "lastUpdated": "2026-10-17T12:05:02.041Z",
   "nameZh": "HoloLive體力王決定戰"
 }
