@@ -144,12 +144,12 @@ await test('tracked native FRAME-SCANNER contract (v42 CR): CameraX preview + Im
   assert.match(view, /AspectRatioStrategy\(AspectRatio\.RATIO_4_3/);
   // backpressure + bounded sampling + active gate, frame closed on every path
   assert.match(view, /setBackpressureStrategy\(ImageAnalysis\.STRATEGY_KEEP_ONLY_LATEST\)/);
-  assert.match(view, /if \(released \|\| !analysisActive \|\| inFlight \|\| reader == null \|\| now - lastAnalysedAt < intervalMs\) \{\s*proxy\.close\(\)/);
+  assert.match(view, /if \(released \|\| (?:failed \|\| )?!analysisActive \|\| inFlight \|\| reader == null \|\| now - lastAnalysedAt < intervalMs\) \{\s*proxy\.close\(\)/);
   assert.match(view, /coerceIn\(MIN_INTERVAL_MS, MAX_INTERVAL_MS\)/);
   assert.match(view, /addOnCompleteListener[\s\S]{0,120}inFlight = false\s*proxy\.close\(\)/);
   // CR fea33de P2: ownership of an analysis = the session + generation it STARTED in
   assert.match(view, /val startSession = session\s*val startGeneration = generation/);
-  assert.match(view, /if \(!released && analysisActive && startSession == session && startGeneration == generation\) \{\s*onFrameText\(/,
+  assert.match(view, /if \(!released && (?:!failed && )?analysisActive && startSession == session && startGeneration == generation\) \{\s*onFrameText\(/,
     'a completion from before a deactivate/reactivate or session change is not delivered');
   assert.match(view, /fun setAnalysisActive\(active: Boolean\) \{[\s\S]{0,120}if \(next != analysisActive\) \{\s*generation \+= 1/, 'every on/off transition voids in-flight work');
   assert.match(view, /fun setSession\(value: Int\) \{[\s\S]{0,80}generation \+= 1/);
@@ -210,9 +210,31 @@ await test('v43 preview LAYOUT contract (user device: automatic scan showed no c
   assert.match(bind, /bindToLifecycle[\s\S]*layoutPreview\(\)/, 'laid out again right after binding');
   assert.match(bind, /previewView\.previewStreamState\.observe\(owner\)[\s\S]{0,200}StreamState\.STREAMING[\s\S]{0,120}onCameraReady/, 'ready only when the preview streams');
   assert.ok(!/CameraState\.Type\.OPEN[\s\S]{0,120}onCameraReady/.test(bind), 'an opened camera alone is not "ready"');
-  assert.match(bind, /ErrorType\.CRITICAL[\s\S]{0,120}onMountError/, 'a critical camera error before streaming is reported');
+  assert.match(bind, /ErrorType\.CRITICAL\) fail\(/, 'a critical camera error is terminal (fail)');
   const analyze = /private fun analyze\(proxy: ImageProxy\) \{([\s\S]*?)\n  \}\n/.exec(view)?.[1] ?? '';
   assert.ok(!/takePicture/.test(analyze), 'still: never from analysis');
+});
+
+await test('CR c5acd45 native FAILURE contract: a CRITICAL camera error before OR after STREAMING is reported once and latched — no ready, frame or still from that view afterwards', () => {
+  const view = fs.readFileSync(new URL('../modules/holohunter-ocr-geometry/android/src/main/java/com/holohunter/ocrgeometry/HoloHunterCardScannerView.kt', import.meta.url), 'utf8');
+  const bind = /private fun startBind\(\) \{([\s\S]*?)\n  \}\n/.exec(view)?.[1] ?? '';
+  const observer = /cameraInfo\.cameraState\.observe\(owner\) \{([\s\S]*?)\n        \}/.exec(bind)?.[1] ?? '';
+  assert.ok(observer, 'camera-state observer found');
+  assert.match(observer, /error\.type == CameraState\.ErrorType\.CRITICAL\) fail\(/);
+  assert.ok(!/readySent/.test(observer), 'not limited to before the first STREAMING');
+  assert.match(bind, /catch \(e: Exception\) \{\s*fail\(/, 'bind exceptions take the same path');
+  const fail = /private fun fail\(message: String\) \{([\s\S]*?)\n  \}/.exec(view)?.[1] ?? '';
+  assert.match(fail, /if \(released \|\| errorSent\) return\s*errorSent = true\s*failed = true/, 'once, then latched');
+  assert.match(fail, /analysisActive = false/);
+  assert.match(fail, /generation \+= 1/, 'analyses in flight are void');
+  assert.match(fail, /pending\.reject\("E_CAMERA_FAILED"/, 'pending stills settled');
+  assert.ok(fail.indexOf('pending.reject') < fail.indexOf('onMountError'), 'settled before JS hears about it');
+  assert.match(view, /StreamState\.STREAMING && !readySent && !released && !failed/, 'no ready after a failure');
+  assert.match(view, /val next = active && !released && !failed/, 'analysis cannot be re-enabled on the failed view');
+  const analyze = /private fun analyze\(proxy: ImageProxy\) \{([\s\S]*?)\n  \}\n/.exec(view)?.[1] ?? '';
+  assert.match(analyze, /if \(released \|\| failed \|\| !analysisActive/, 'no new analysis');
+  assert.match(analyze, /if \(!released && !failed && analysisActive && startSession == session && startGeneration == generation\)/, 'no delivery of one in flight');
+  assert.match(view, /if \(released \|\| failed \|\| capture == null\) \{\s*pending\.reject\("E_CAMERA_NOT_READY"/, 'no still');
 });
 
 if ((process.exitCode ?? 0) === 0) console.log(`\n✅ scan-ocr-geometry: ${passed} checks passed`);

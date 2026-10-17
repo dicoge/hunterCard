@@ -384,5 +384,114 @@ await test('ready, then background → foreground: the preview stays ready (no �
   assertNoCapture(base);
 });
 
+// ── CR c5acd45: a CRITICAL camera error AFTER the preview streamed ──
+const STOPPED = '相機已停止運作';
+const FW = 960, FH = 1280;
+const crop = planNativeCrop(PREVIEW, FRAME, { width: FW, height: FH }).crop;
+const STEADY = { x: 0.1, y: 0.86, width: 0.22, height: 0.04 };
+let seq = 0;
+const frame = (txt) => {
+  if (!txt) return { seq: ++seq, width: FW, height: FH, blocks: [] };
+  const b = { x: Math.round(crop.x + STEADY.x * crop.width), y: Math.round(crop.y + STEADY.y * crop.height), width: Math.round(STEADY.width * crop.width), height: Math.round(STEADY.height * crop.height) };
+  return { seq: ++seq, width: FW, height: FH, blocks: [{ text: txt, boundingBox: b, lines: [{ text: txt, boundingBox: b, elements: [{ text: txt, boundingBox: b }] }] }] };
+};
+const emit = async (payload, n = 1) => { let r; for (let i = 0; i < n; i++) { await act(async () => { r = globalThis.__emitFrame?.(payload); await Promise.resolve(); }); await tick(5); } return r; };
+const settleRequests = async (n) => { for (let i = 0; i < 60 && bodies.length === n; i++) await tick(20); await tick(150); };
+const failurePanel = (msg) => {
+  assert.ok(text().includes(msg), `「${msg}」 shown`);
+  assert.ok(byTestId('scan-camera-retry'), '重試');
+  assert.ok(byTestId('scan-camera-manual'), '改用手動拍照');
+};
+const streamingThenSteady = async () => {
+  await mountScreen();
+  assert.ok(!text().includes(INIT), 'streaming → ready');
+  await emit(frame(''));                                  // geometry measured
+  await emit(frame('hBP01-010'));                         // ONE steady observation
+};
+
+await test('streaming → ready → CRITICAL camera error: 「相機已停止運作」 + 重試 + 改用手動拍照, analysis off; an analysis started before the error and delivered in the SAME batch → no still, no request', async () => {
+  await streamingThenSteady();
+  const base = baseline();
+  const late = globalThis.__startFrameUnguarded(frame('hBP01-010'));   // 2nd steady frame in ML Kit
+  await act(async () => { globalThis.__frameScannerCriticalError(); late(); await Promise.resolve(); });
+  await tick(200);
+  failurePanel(STOPPED);
+  assert.equal(fs_.props.active, false, 'analysis off');
+  assertNoCapture(base);
+  assert.equal(await emit(frame('hBP01-010'), 3), false, 'the failed view analyses nothing');
+  await tick(FRAME_SCANNER_STARTUP_TIMEOUT_MS + 300);
+  failurePanel(STOPPED);
+  assertNoCapture(base);
+});
+
+await test('after the error: a late ready (even forced past the native latch) cannot clear it; late frames take no photo', async () => {
+  await streamingThenSteady();
+  const base = baseline();
+  await act(async () => { globalThis.__frameScannerCriticalError(); await Promise.resolve(); });
+  await tick(20);
+  assert.equal(globalThis.__frameScannerStream(), false, 'native latch: no ready after a failure');
+  await act(async () => { globalThis.__frameScannerStream({ force: true }); await Promise.resolve(); });
+  await tick(20);
+  failurePanel(STOPPED);
+  assert.equal(fs_.props.active, false, 'still no analysis');
+  for (let i = 0; i < 3; i++) await act(async () => { globalThis.__startFrameUnguarded(frame('hBP01-010'))(); await Promise.resolve(); });
+  await tick(200);
+  assertNoCapture(base);
+});
+
+await test('the camera fails while the still is pending: the scan is cancelled (no request, 0 charge, no 辨識失敗), the camera panel is shown', async () => {
+  globalThis.__frameScannerCaptureMode = 'deferred';
+  try {
+    await streamingThenSteady();
+    const remaining = useScanQuotaStore.getState().getRemaining(), n = bodies.length, s = fs_.stills;
+    await emit(frame('hBP01-010'));                       // 2nd steady → trigger → still pending
+    await tick(20);
+    assert.equal(fs_.stills, s + 1, 'still requested');
+    await act(async () => { globalThis.__frameScannerCriticalError(); await Promise.resolve(); });
+    await tick(200);
+    failurePanel(STOPPED);
+    assert.ok(!text().includes('辨識失敗'), 'a camera failure is not a recognition failure');
+    assert.equal(bodies.length, n, 'no request');
+    assert.equal(useScanQuotaStore.getState().getRemaining(), remaining, '0 charge');
+  } finally {
+    globalThis.__frameScannerCaptureMode = 'immediate';
+    fs_.pending.length = 0;
+  }
+});
+
+await test('post-ready failure → 重試: ONE new mount, it streams → ready, analysis on; two fresh steady frames → exactly one still + one request', async () => {
+  await streamingThenSteady();
+  await act(async () => { globalThis.__frameScannerCriticalError(); await Promise.resolve(); });
+  await tick(20);
+  const mounts = fs_.mounts;
+  await click(byTestId('scan-camera-retry'));
+  await tick(50);
+  assert.equal(fs_.mounts, mounts + 1, 'a new native view');
+  assert.ok(!text().includes(STOPPED) && !text().includes(INIT), 'ready again');
+  assert.equal(fs_.props.active, true);
+  const s = fs_.stills, n = bodies.length;
+  await emit(frame(''));
+  await emit(frame('hBP01-010'));
+  await tick(50);
+  assert.equal(fs_.stills, s, 'one fresh frame is not enough');
+  await emit(frame('hBP01-010'));
+  await settleRequests(n);
+  assert.equal(fs_.stills, s + 1, 'exactly one still');
+  assert.equal(bodies.length, n + 1, 'exactly one request');
+});
+
+await test('post-ready failure → 改用手動拍照: the manual camera mounts, is ready, and its shutter works', async () => {
+  await streamingThenSteady();
+  await act(async () => { globalThis.__frameScannerCriticalError(); await Promise.resolve(); });
+  await tick(20);
+  const unmounts = fs_.unmounts;
+  await click(byTestId('scan-camera-manual'));
+  await tick(50);
+  assert.equal(fs_.unmounts, unmounts + 1, 'the failed automatic camera is released');
+  assert.ok(byTestId('native-camera-fixture'));
+  assert.ok(!text().includes(STOPPED) && !text().includes(INIT));
+  await manualShutterWorks();
+});
+
 if ((process.exitCode ?? 0) === 0) console.log(`\n✅ scan-android-camera-startup: ${passed} checks passed`);
 else console.error('\n❌ scan-android-camera-startup failed');

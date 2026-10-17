@@ -811,11 +811,28 @@ export default function ScanScreen({ navigation }: any) {
   // once its preview STREAMS. A start failure, or no streaming preview within a bounded wait
   // while the screen is in front, becomes a short error with 重試 and 改用手動拍照 — never a
   // silent 「相機初始化中」 and never a capture (the timer only surfaces the failure).
+  // A failure is terminal for THAT native view (CR c5acd45: also after it was streaming):
+  // ownership is retired at once, a running scan is cancelled (0 charge), and a late
+  // ready / frame from the same mount can neither clear the error nor take a photo. Only
+  // 重試 (a new mount) or the manual camera leave it.
+  const frameFailedKeyRef = useRef<number | null>(null);
+  const frameReadyKeyRef = useRef<number | null>(null);
   const handleFrameScannerError = (nativeMessage?: string) => {
     if (!mountedRef.current) return;
-    if (nativeMessage) console.warn('[scan] frame scanner start failed:', nativeMessage);
-    setCameraError(t('scan_camera_start_failed'));
+    if (nativeMessage) console.warn('[scan] frame scanner failed:', nativeMessage);
+    const wasStreaming = frameReadyKeyRef.current === scannerKey;
+    frameFailedKeyRef.current = scannerKey;
+    frameReadyKeyRef.current = null;
+    invalidateProbes();
+    if (lifecycle.cancel()) resetScanUi();
+    setCameraError(t(wasStreaming ? 'scan_camera_stopped' : 'scan_camera_start_failed'));
     setIsCameraReady(false);
+  };
+  const handleFrameScannerReady = () => {
+    if (frameFailedKeyRef.current === scannerKey) return;   // late ready from the failed view
+    frameReadyKeyRef.current = scannerKey;
+    handleCameraReady();
+    void refreshFrameGeometry();
   };
   useEffect(() => {
     if (!useFrameScanner || !permission?.granted || isCameraReady || cameraError) return;
@@ -1786,7 +1803,7 @@ export default function ScanScreen({ navigation }: any) {
             session={frameAnalysisSession().session}
             torch={flash}
             analysisIntervalMs={FRAME_ANALYSIS_INTERVAL_MS}
-            onCameraReady={() => { handleCameraReady(); void refreshFrameGeometry(); }}
+            onCameraReady={handleFrameScannerReady}
             onMountError={(e: any) => handleFrameScannerError(e?.nativeEvent?.message)}
             onFrameText={(e: any) => handleFrameText(e?.nativeEvent)}
             testID="scan-frame-scanner"

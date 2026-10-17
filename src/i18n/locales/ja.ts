@@ -709,6 +709,7 @@ export const ja: Record<keyof typeof zh, string> = {
   scan_camera_loading: 'カメラを読み込み中...',
   scan_camera_initializing: 'カメラを初期化中...',
   scan_camera_start_failed: 'カメラを起動できません',
+  scan_camera_stopped: 'カメラが停止しました',
   scan_camera_use_manual: '手動撮影に切り替え',
   scan_gallery_title: '写真アップロードモード',
   scan_gallery_body: 'カメラを使えない場合は、写真ライブラリからカード画像を選んで認識できます。',

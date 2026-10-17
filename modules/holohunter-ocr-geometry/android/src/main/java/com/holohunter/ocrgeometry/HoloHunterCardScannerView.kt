@@ -133,6 +133,9 @@ class HoloHunterCardScannerView(context: Context, appContext: AppContext) : Expo
   @Volatile private var lastAnalysedAt = 0L
   @Volatile private var inFlight = false
   @Volatile private var released = false
+  // Terminal camera failure (start or later): latched until this view is replaced (JS retry
+  // remounts it). No ready, frame or still after it.
+  @Volatile private var failed = false
   private var torchOn = false
   private var bindRequested = false
   private var bindStarted = false
@@ -180,7 +183,7 @@ class HoloHunterCardScannerView(context: Context, appContext: AppContext) : Expo
   }
 
   fun setAnalysisActive(active: Boolean) {
-    val next = active && !released
+    val next = active && !released && !failed
     if (next != analysisActive) {
       generation += 1          // anything started under the previous state is void
       lastAnalysedAt = 0L
@@ -267,31 +270,43 @@ class HoloHunterCardScannerView(context: Context, appContext: AppContext) : Expo
         // Ready = frames are on screen. An opened camera with a preview that never streams
         // is NOT ready (the screen's startup watchdog then offers retry / manual camera).
         previewView.previewStreamState.observe(owner) { state ->
-          if (state == PreviewView.StreamState.STREAMING && !readySent && !released) {
+          if (state == PreviewView.StreamState.STREAMING && !readySent && !released && !failed) {
             readySent = true
             onCameraReady(mapOf<String, Any>())
           }
         }
         // CameraX retries recoverable errors itself; a critical one (camera disabled, fatal
-        // device error…) before the preview streams is reported once.
+        // device error…) is terminal for this view — before OR after the preview streamed
+        // (CR c5acd45: a failure after ready must not leave a black, "ready" screen).
         bound.cameraInfo.cameraState.observe(owner) { state ->
           val error = state.error
-          if (error != null && error.type == CameraState.ErrorType.CRITICAL && !readySent && !errorSent && !released) {
-            errorSent = true
-            onMountError(mapOf("message" to "Camera error ${error.code}"))
-          }
+          if (error != null && error.type == CameraState.ErrorType.CRITICAL) fail("Camera error ${error.code}")
         }
       } catch (e: Exception) {
-        if (!released) onMountError(mapOf("message" to (e.message ?: "Camera could not be started")))
+        fail(e.message ?: "Camera could not be started")
       }
     }
+  }
+
+  /** Terminal failure, reported once: analysis stops, work in flight is void, pending stills
+   *  are rejected; nothing is ready / delivered / captured until a new view. */
+  private fun fail(message: String) {
+    if (released || errorSent) return
+    errorSent = true
+    failed = true
+    analysisActive = false
+    generation += 1
+    for (pending in pendingCaptures.toList()) {
+      pending.reject("E_CAMERA_FAILED", "The camera stopped", null)
+    }
+    onMountError(mapOf("message" to message))
   }
 
   @SuppressLint("UnsafeOptInUsageError")
   private fun analyze(proxy: ImageProxy) {
     val now = SystemClock.elapsedRealtime()
     val reader = recognizer
-    if (released || !analysisActive || inFlight || reader == null || now - lastAnalysedAt < intervalMs) {
+    if (released || failed || !analysisActive || inFlight || reader == null || now - lastAnalysedAt < intervalMs) {
       proxy.close()
       return
     }
@@ -315,7 +330,7 @@ class HoloHunterCardScannerView(context: Context, appContext: AppContext) : Expo
     try {
       reader.process(InputImage.fromMediaImage(media, rotation))
         .addOnSuccessListener(ContextCompat.getMainExecutor(context)) { text ->
-          if (!released && analysisActive && startSession == session && startGeneration == generation) {
+          if (!released && !failed && analysisActive && startSession == session && startGeneration == generation) {
             onFrameText(
               mapOf(
                 "seq" to seq,
@@ -364,7 +379,7 @@ class HoloHunterCardScannerView(context: Context, appContext: AppContext) : Expo
   fun takePicture(quality: Double, base64: Boolean, promise: Promise) {
     val capture = imageCapture
     val pending = PendingCapture(promise)
-    if (released || capture == null) {
+    if (released || failed || capture == null) {
       pending.reject("E_CAMERA_NOT_READY", "The camera is not ready", null)
       return
     }

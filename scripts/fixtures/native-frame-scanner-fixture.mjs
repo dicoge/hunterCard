@@ -16,6 +16,11 @@
 //     __frameScannerStartMode = 'stall' the view is bound but its preview never streams
 //     (the v42 device symptom: no event at all) until __frameScannerStream() is called;
 //     onMountError instead when __frameScannerFailMount is set
+//   • __frameScannerCriticalError(): a CRITICAL CameraX error at any time (also after
+//     STREAMING). Like the Kotlin fail(): reported once, latched for this mount — no ready,
+//     no frame, no still afterwards; pending stills rejected (E_CAMERA_FAILED). A test may
+//     force a late event past the latch (__frameScannerStream({ force: true }),
+//     __startFrameUnguarded) to prove the screen's own guard.     → __frameScanner.failures
 //   • mounts / unmounts, latest props                                  → __frameScanner.props
 import React from 'react';
 import { View } from 'react-native-web';
@@ -28,6 +33,7 @@ export const FrameScannerView = React.forwardRef(function HoloHunterCardScanner(
   propsRef.current = props;
   state.props = props;
   const alive = React.useRef(true);
+  const failed = React.useRef(false);
   const generation = React.useRef(0);
   const last = React.useRef({ active: props.active, session: props.session });
   if (last.current.active !== props.active || last.current.session !== props.session) {
@@ -36,6 +42,7 @@ export const FrameScannerView = React.forwardRef(function HoloHunterCardScanner(
   }
   React.useImperativeHandle(ref, () => ({
     takePicture: (quality, base64) => {
+      if (failed.current) return Promise.reject(Object.assign(new Error('The camera is not ready'), { code: 'E_CAMERA_NOT_READY' }));
       state.stills += 1;
       state.stillCalls.push({ quality, base64 });
       const photo = {
@@ -58,7 +65,7 @@ export const FrameScannerView = React.forwardRef(function HoloHunterCardScanner(
       propsRef.current.onFrameText?.({ nativeEvent: payload });
     };
     globalThis.__emitFrame = (payload) => {
-      if (!alive.current) return false;
+      if (!alive.current || failed.current) return false;
       state.offered += 1;
       if (!propsRef.current.active) return false;
       deliver({ ...payload, session: propsRef.current.session });
@@ -76,7 +83,7 @@ export const FrameScannerView = React.forwardRef(function HoloHunterCardScanner(
       const startGen = generation.current;
       const startedActive = !!propsRef.current.active && alive.current;
       return () => {
-        if (!alive.current || !startedActive || !propsRef.current.active
+        if (!alive.current || failed.current || !startedActive || !propsRef.current.active
           || startSession !== propsRef.current.session || startGen !== generation.current) return false;
         deliver({ ...payload, session: startSession });
         return true;
@@ -94,7 +101,21 @@ export const FrameScannerView = React.forwardRef(function HoloHunterCardScanner(
       if (ok) p.resolve(p.photo); else p.reject(Object.assign(new Error('Capture failed'), { code: 'E_CAPTURE_FAILED' }));
       return true;
     };
-    globalThis.__frameScannerStream = () => { if (!alive.current) return false; propsRef.current.onCameraReady?.({ nativeEvent: {} }); return true; };
+    globalThis.__frameScannerStream = ({ force = false } = {}) => {
+      if (!alive.current || (failed.current && !force)) return false;
+      propsRef.current.onCameraReady?.({ nativeEvent: {} });
+      return true;
+    };
+    globalThis.__frameScannerCriticalError = () => {
+      if (!alive.current || failed.current) return false;
+      failed.current = true;
+      state.failures = (state.failures ?? 0) + 1;
+      for (const p of state.pending) {
+        if (!p.settled) { p.settled = true; p.reject(Object.assign(new Error('The camera stopped'), { code: 'E_CAMERA_FAILED' })); }
+      }
+      propsRef.current.onMountError?.({ nativeEvent: { message: 'Camera error 3' } });
+      return true;
+    };
     const id = setTimeout(() => {
       if (globalThis.__frameScannerFailMount) propsRef.current.onMountError?.({ nativeEvent: { message: 'Camera error 5' } });
       else if (globalThis.__frameScannerStartMode !== 'stall') propsRef.current.onCameraReady?.({ nativeEvent: {} });
