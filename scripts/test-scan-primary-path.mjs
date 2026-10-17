@@ -374,6 +374,8 @@ await test('auto-scan activity is capability-bounded — the mode pill can only 
   // "web frame-stability loop OR (v42) the native frame scanner OR native frame crop +
   // on-device reader present on this build" — still AND-ed with the toggle, so a build
   // without the modules never advertises an auto capture it cannot do.
+  // v43 (CR dee6f4b): the still-photo probe capability is iOS only — on Android the frame
+  // scanner is the ONLY automatic capability (behaviour: test:scan-android-camera-startup).
   assert.match(
     scanScreenSource,
     /const FrameScannerView = useRef\(isWeb \? null : loadNativeCardScannerView\(\)\)\.current;/,
@@ -381,8 +383,8 @@ await test('auto-scan activity is capability-bounded — the mode pill can only 
   );
   assert.match(
     scanScreenSource,
-    /const nativeAutoAvailable = useRef\(!isWeb && \(!!FrameScannerView \|\| nativeAutoCaptureAvailable\(\)\)\)\.current;/,
-    'native capability comes from the runtime module checks',
+    /const nativeAutoAvailable = useRef\(!isWeb && \(!!FrameScannerView \|\| \(!isAndroid && nativeAutoCaptureAvailable\(\)\)\)\)\.current;/,
+    'native capability comes from the runtime module checks (still-photo probes never on Android)',
   );
   assert.match(scanScreenSource, /const autoScanSupported = isWeb \|\| nativeAutoAvailable;/);
   assert.match(
