@@ -475,6 +475,118 @@ try {
     await emit(frame(''), 3);
   });
 
+  // ── v42 CR f7d8774: lifecycle callbacks delivered in ONE batch, before React commits ──
+  // The guarded native view only sees the new session after a render; the screen must
+  // retire ownership inside the callbacks themselves.
+  const counts = (label, o) => console.log(`    COUNTS ${label} ${JSON.stringify(o)}`);
+  // Each case starts clean (no result sheet, card removed), so one failing case does not cascade.
+  const cleanSlate = async () => {
+    if (byTestId('scan-match-retake')) await click(byTestId('scan-match-retake'));
+    if (!byTestId('scan-frame-scanner')) { await click(byTestId('scan-mode-auto')); await tick(50); }
+    await emit(frame(''), 3);
+  };
+  const batched = async (fn) => { let r; await act(async () => { r = fn(); await Promise.resolve(); }); await tick(10); return r; };
+  const twoFreshFramesTrigger = async (text) => {
+    const s = stills(), n = bodies.length;
+    await emit(frame(text));
+    await tick(50);
+    counts('  after 1 fresh frame', { stills: stills() - s, requests: bodies.length - n });
+    assert.equal(stills(), s, 'one fresh frame after the lifecycle change is not enough');
+    assert.equal(bodies.length, n);
+    await emit(frame(text));
+    await settle(n);
+    assert.equal(stills(), s + 1, 'the second fresh frame triggers exactly one still');
+    assert.equal(bodies.length, n + 1);
+    await click(byTestId('scan-match-retake'));
+    await emit(frame(''), 3);
+  };
+  await test('batched background+foreground, guarded native completion delivered BEFORE the commit → dropped (0 still, 0 request); then two fresh frames are needed', async () => {
+    await cleanSlate();
+    const s = stills(), n = bodies.length;
+    await emit(frame('hBP05-020'));                            // one steady observation
+    const late = globalThis.__startFrame(frame('hBP05-020'));  // the next one is in ML Kit
+    const session0 = fs_.props.session;
+    const delivered = await batched(() => {
+      globalThis.__setAppState('background');
+      globalThis.__setAppState('active');
+      return late();                                           // native props not updated yet
+    });
+    await tick(200);
+    counts('bg+fg/before-commit', { delivered, oldSession: session0, newSession: fs_.props.session, stills: stills() - s, requests: bodies.length - n });
+    assert.equal(delivered, true, 'the native view (old props) did deliver it');
+    assert.equal(stills(), s, 'no still from the pre-background frame');
+    assert.equal(bodies.length, n, 'no request');
+    assert.notEqual(fs_.props.session, session0, 'the render passed the new session on');
+    assert.equal(fs_.props.active, true);
+    await twoFreshFramesTrigger('hBP05-020');
+  });
+  await test('batched background+foreground, guarded native completion delivered AFTER the commit → not delivered; then two fresh frames are needed', async () => {
+    await cleanSlate();
+    const s = stills(), n = bodies.length;
+    await emit(frame('hBP05-021'));
+    const late = globalThis.__startFrame(frame('hBP05-021'));
+    const session0 = fs_.props.session;
+    await batched(() => { globalThis.__setAppState('background'); globalThis.__setAppState('active'); });
+    const newSession = fs_.props.session;
+    const delivered = await deliverLater(late);
+    await tick(200);
+    counts('bg+fg/after-commit', { delivered, oldSession: session0, newSession, stills: stills() - s, requests: bodies.length - n });
+    assert.notEqual(newSession, session0, 'session changed although analysis was never rendered closed');
+    assert.equal(delivered, false, 'the native view drops it (generation changed)');
+    assert.equal(stills(), s);
+    assert.equal(bodies.length, n);
+    await twoFreshFramesTrigger('hBP05-021');
+  });
+  await test('rapid blur+focus in one batch, guarded completion before the commit → dropped; then two fresh frames are needed', async () => {
+    await cleanSlate();
+    const s = stills(), n = bodies.length;
+    await emit(frame('hBP05-022'));
+    const late = globalThis.__startFrame(frame('hBP05-022'));
+    const delivered = await batched(() => {
+      navFocused = false; for (const cb of [...navListeners.blur]) cb();
+      navFocused = true; for (const cb of [...navListeners.focus]) cb();
+      return late();
+    });
+    await tick(200);
+    counts('blur+focus/before-commit', { delivered, stills: stills() - s, requests: bodies.length - n });
+    assert.equal(delivered, true, 'delivered under the old native props');
+    assert.equal(stills(), s);
+    assert.equal(bodies.length, n);
+    await twoFreshFramesTrigger('hBP05-022');
+  });
+  const press = (id) => byTestId(id).dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+  await test('manual then auto in one batch with a frame in ML Kit → no still from it; the scanner comes back READY by itself (fresh mount); then two fresh frames are needed', async () => {
+    await cleanSlate();
+    const s = stills(), n = bodies.length, mounts = fs_.mounts;
+    await emit(frame('hBP05-023'));
+    const late = globalThis.__startFrameUnguarded(frame('hBP05-023'));
+    await batched(() => { press('scan-mode-manual'); late(); press('scan-mode-auto'); });
+    await tick(50);
+    counts('manual+auto/one-batch', { mounts: fs_.mounts - mounts, active: fs_.props.active, stills: stills() - s, requests: bodies.length - n });
+    assert.ok(byTestId('scan-frame-scanner'), 'automatic mode');
+    assert.equal(fs_.mounts, mounts + 1, 'a fresh native view (it reports ready again)');
+    assert.equal(fs_.props.active, true, 'analysis on again without any extra tap');
+    await emit(frame(''), 1);                                  // geometry of the new view
+    assert.equal(stills(), s);
+    assert.equal(bodies.length, n);
+    await twoFreshFramesTrigger('hBP05-023');
+  });
+  await test('manual → auto → manual in one batch → the manual camera is a fresh mount and ready (the shutter captures)', async () => {
+    await cleanSlate();
+    await batched(() => { press('scan-mode-manual'); press('scan-mode-auto'); press('scan-mode-manual'); });
+    await tick(50);
+    assert.ok(byTestId('native-camera-fixture'), 'manual camera');
+    const n = bodies.length, takes0 = globalThis.__nativeCameraTakes ?? 0;
+    await click(byTestId('scan-primary-action'));
+    await settle(n);
+    assert.equal(globalThis.__nativeCameraTakes ?? 0, takes0 + 1, 'manual camera ready: the shutter captures');
+    assert.equal(bodies.length, n + 1);
+    await click(byTestId('scan-match-retake'));
+    await click(byTestId('scan-mode-auto'));
+    await tick(50);
+    await emit(frame(''), 3);
+  });
+
   // ── v42 CR fea33de: the scan frame through the shared CameraX view port ──
   await test('off-centre view-port crop on a rotated (90°) landscape buffer: a number inside the on-screen frame triggers; the old full-frame cover-fit would have put it outside the frame', async () => {
     // buffer 1280×960 (sensor), rotation 90 → upright 960×1280; CameraX view-port crop

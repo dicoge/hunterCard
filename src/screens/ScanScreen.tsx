@@ -332,8 +332,15 @@ export default function ScanScreen({ navigation }: any) {
   const probeBusyRef = useRef(false);
   // Bumped whenever a probe in flight must not count any more (background, blur,
   // cancel, close, unmount): its late reading is dropped, never fed to the trigger.
+  // The frame-analysis session is retired at the same moment, INSIDE the callback (CR
+  // f7d8774): background → foreground delivered before the next render must still drop a
+  // pre-background ML Kit result and the streak. The next render passes the new session on.
   const probeEpochRef = useRef(0);
-  const invalidateProbes = () => { probeEpochRef.current += 1; };
+  const invalidateProbes = () => {
+    probeEpochRef.current += 1;
+    analysisSessionRef.current += 1;
+    autoMachine.resetStability();
+  };
   const [autoPaused, setAutoPaused] = useState(false);
   // Web: after a round the frame must move (a card taken away / a new one) before the
   // next automatic capture — a card left still in front of the camera is not re-scanned.
@@ -342,15 +349,21 @@ export default function ScanScreen({ navigation }: any) {
   // gallery), so the hint never claims "automatic" while nothing can be captured.
   const consentVersion = usePhotoUploadConsentStore((st) => st.acceptedVersion);
   const autoScanNeedsConsent = autoScanActive && !hasPhotoUploadConsent(consentVersion);
+  const autoScanEnabledRef = useRef(autoScanEnabled);
   const setAutoScan = (on: boolean) => {
     // Android: automatic and manual use different camera views (frame scanner / expo-camera);
     // the new one reports readiness itself. A scan running on the old camera is cancelled:
     // its still may never arrive (the view is destroyed) and must not keep the screen busy.
-    if (FrameScannerView && on !== autoScanEnabled) {
+    // Compared with the latest choice (a ref), and the camera view is always a fresh mount:
+    // two switches before a render (manual → auto) must not leave a view that never
+    // reports ready again (CR f7d8774).
+    if (FrameScannerView && on !== autoScanEnabledRef.current) {
       invalidateProbes();
       if (lifecycle.cancel()) resetScanUi();
       setIsCameraReady(false);
+      setScannerKey((k) => k + 1);
     }
+    autoScanEnabledRef.current = on;
     setAutoScanEnabled(on);
     if (on) { autoMachine.resume(); setAutoPaused(false); }
   };
@@ -796,7 +809,8 @@ export default function ScanScreen({ navigation }: any) {
   };
   useEffect(() => {
     if (!FrameScannerView) return;
-    const bump = () => setGateTick((n) => n + 1);
+    // Every app-state / focus change retires frame ownership now, not at the next render.
+    const bump = () => { invalidateProbes(); setGateTick((n) => n + 1); };
     const sub = AppState.addEventListener('change', bump);
     const offFocus = typeof navigation?.addListener === 'function' ? navigation.addListener('focus', bump) : undefined;
     const offBlur = typeof navigation?.addListener === 'function' ? navigation.addListener('blur', bump) : undefined;
@@ -1784,6 +1798,7 @@ export default function ScanScreen({ navigation }: any) {
               onRetry={() => {
                 // Explicit retry after a mount error: a fresh native view (new bind).
                 // Only on the user's tap — never automatically.
+                invalidateProbes();
                 setCameraError(null);
                 setIsCameraReady(false);
                 frameGeometryRef.current = null;
@@ -1795,6 +1810,7 @@ export default function ScanScreen({ navigation }: any) {
         ) : (
         <View ref={cameraBoxRef} style={styles.camera} collapsable={false} testID="scan-camera-box">
         <CameraView
+          key={`camera-${scannerKey}`}
           ref={cameraRef}
           style={styles.camera}
           facing={facing}
