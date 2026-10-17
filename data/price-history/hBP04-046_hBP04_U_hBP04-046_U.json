@@ -50,8 +50,16 @@
       "currency": "JPY",
       "cardId": "hBP04-046_hBP04_U_hBP04-046_U",
       "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-10-17",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-046_hBP04_U_hBP04-046_U",
+      "sourceProduct": "hBP04"
     }
   ],
-  "lastUpdated": "2026-10-16T17:38:50.395Z",
+  "lastUpdated": "2026-10-17T12:05:01.306Z",
   "nameZh": "雪花菈米"
 }

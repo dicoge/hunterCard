@@ -50,8 +50,16 @@
       "currency": "JPY",
       "cardId": "hBP06-083_hBP06_R_hBP06-083_R",
       "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-10-17",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-083_hBP06_R_hBP06-083_R",
+      "sourceProduct": "hBP06"
     }
   ],
-  "lastUpdated": "2026-10-16T17:38:50.275Z",
+  "lastUpdated": "2026-10-17T12:05:00.799Z",
   "nameZh": "蓮達"
 }

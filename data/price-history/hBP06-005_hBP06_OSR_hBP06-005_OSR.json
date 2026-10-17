@@ -50,8 +50,16 @@
       "currency": "JPY",
       "cardId": "hBP06-005_hBP06_OSR_hBP06-005_OSR",
       "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-10-17",
+      "price": 500,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-005_hBP06_OSR_hBP06-005_OSR",
+      "sourceProduct": "hBP06"
     }
   ],
-  "lastUpdated": "2026-10-16T17:38:50.269Z",
+  "lastUpdated": "2026-10-17T12:05:00.781Z",
   "nameZh": "霸子·貝爾茲"
 }
