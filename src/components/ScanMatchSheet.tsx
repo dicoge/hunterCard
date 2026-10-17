@@ -106,8 +106,10 @@ export default function ScanMatchSheet({
     return (
       <View style={styles.sheet} testID="scan-match-identity">
         <Text style={styles.title}>{t('scan_identity_title', { name, number: card.cardNumber })}</Text>
+        {/* v42: only 請選擇卡片版本 — how the identity was resolved (e.g. a number/name
+            conflict) is kept in the local diagnostics log, never shown here. */}
         <Text style={styles.body} testID={presentation.numberCorrected ? 'scan-match-number-corrected' : undefined}>
-          {t(presentation.numberCorrected ? 'scan_identity_body_corrected' : 'scan_identity_body')}
+          {t('scan_identity_body')}
         </Text>
         <View style={styles.pill}><Text style={styles.pillText}>{t('scan_identity_price')}</Text></View>
         <TouchableOpacity style={styles.primary} onPress={onPickPrinting} testID="scan-match-pick">
@@ -120,14 +122,12 @@ export default function ScanMatchSheet({
     );
   }
 
-  const bodyKey = presentation.reason === 'number_not_in_database' ? 'scan_none_body_not_in_db'
-    : presentation.reason === 'number_name_conflict' ? 'scan_none_body_conflict'
-      : presentation.reason === 'low_evidence' ? 'scan_none_body_low'
-        : 'scan_none_body_no_number';
+  // v42: one short line — 辨識失敗，請再試一次. Why it failed (no number read, number
+  // not in the catalogue, number/name conflict, low evidence) is in the local
+  // diagnostics log only (presentation.reason), not on screen.
   return (
     <View style={styles.sheet} testID="scan-match-none">
-      <Text style={styles.title}>{t('scan_none_title')}</Text>
-      <Text style={styles.body}>{t(bodyKey)}</Text>
+      <Text style={styles.title}>{t('scan_failed_title')}</Text>
       {/* v41: a short reason + 重試／取消 (same pair as the service-failure panel).
           重試 starts a new capture; 取消 ends this round (nothing sent, nothing used). */}
       <TouchableOpacity style={styles.primary} onPress={onRetry ?? onRetake} accessibilityRole="button" testID="scan-match-retry">

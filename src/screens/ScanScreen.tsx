@@ -59,8 +59,8 @@ import {
   type ScanPresentation,
 } from '../services/scanPresentation';
 import { CROP_PAD, defaultScanFrameRect, planNativeCrop } from '../utils/scanFrame';
-import { cropProbeToFrame, deleteProbeFiles, nativeAutoCaptureAvailable, prepareNativeScanImages } from '../services/nativeScanCapture';
-import { AUTO_CAPTURE_PROBE_INTERVAL_MS, createAutoCaptureMachine, type ProbeObservation } from '../services/autoCapture';
+import { cropProbeToFrame, deleteProbeFiles, nativeAutoCaptureAvailable, prepareNativeScanImages, PROBE_JPEG_QUALITY } from '../services/nativeScanCapture';
+import { AUTO_CAPTURE_PROBE_INTERVAL_MS, createAutoCaptureMachine, observationsFromProbeText, type ProbeObservation } from '../services/autoCapture';
 import { findCardNumberTokens } from '../utils/cardNumberToken';
 import { useScanDiagnosticsStore } from '../store/scanDiagnosticsStore';
 import { diagnosticsFromResult, type ScanOutcome } from '../services/scanDiagnostics';
@@ -673,7 +673,7 @@ export default function ScanScreen({ navigation }: any) {
     let shotUri: string | null = null;
     let cropUri: string | null = null;
     try {
-      const shot = await cameraRef.current?.takePictureAsync({ quality: 0.3, base64: false, shutterSound: false });
+      const shot = await cameraRef.current?.takePictureAsync({ quality: PROBE_JPEG_QUALITY, base64: false, shutterSound: false });
       if (!shot?.uri) return [];
       shotUri = shot.uri;
       const [preview, frameRect] = await Promise.all([measureInWindow(cameraBoxRef), measureInWindow(scanFrameRef)]);
@@ -681,16 +681,10 @@ export default function ScanScreen({ navigation }: any) {
       const crop = await cropProbeToFrame(shot, plan);
       if (!crop) return [];
       cropUri = crop.uri;
-      // Each readable card number with WHERE it is (normalised to the crop), so the
-      // trigger can require it inside the frame and held still (src/services/autoCapture).
-      const observations: ProbeObservation[] = [];
-      for (const block of await nativeOcrProbe(crop.uri)) {
-        const box = block.box && crop.width > 0 && crop.height > 0
-          ? { x: block.box.x / crop.width, y: block.box.y / crop.height, width: block.box.width / crop.width, height: block.box.height / crop.height }
-          : null;
-        for (const token of findCardNumberTokens(block.text)) observations.push({ token, box });
-      }
-      return observations;
+      // Each readable card number with WHERE the number itself is (its element / line
+      // box, normalised to the crop — v42), so the trigger can require it inside the frame
+      // and held still (src/services/autoCapture).
+      return observationsFromProbeText(await nativeOcrProbe(crop.uri), findCardNumberTokens, crop.width, crop.height);
     } finally {
       // Probe files are this probe's alone: delete them on every path (no accumulation).
       void deleteProbeFiles([shotUri, cropUri]);
@@ -1670,7 +1664,14 @@ export default function ScanScreen({ navigation }: any) {
           ref={cameraRef}
           style={styles.camera}
           facing={facing}
-          flash={flash ? 'on' : 'off'}
+          // v42 (Android 41 "一直閃"): expo-camera paints the whole view white on every
+          // capture unless animateShutter is false — with a silent probe every ~1.3 s that
+          // was a constant flashing. No capture ever animates the shutter now.
+          animateShutter={false}
+          // In automatic mode the light is a continuous torch, never a per-capture flash,
+          // so the silent probes cannot strobe the LED. Manual mode keeps the flash.
+          flash={flash && !autoScanActive ? 'on' : 'off'}
+          enableTorch={flash && autoScanActive}
           pictureSize={nativePictureSize}
           onCameraReady={handleCameraReady}
           onMountError={handleMountError}
@@ -1883,26 +1884,31 @@ export default function ScanScreen({ navigation }: any) {
       )}
 
       {/* 掃描失敗提示（OCR 回傳空） */}
+      {/* 辨識失敗（v42）：辨識失敗，請再試一次＋重試（重新拍攝）／取消；手動搜尋保留為連結 */}
       {scanError && (
-        <View style={resultStyles.errorContainer}>
+        <View style={resultStyles.errorContainer} testID="scan-error">
           <Text style={resultStyles.errorText}>⚠️ {scanError}</Text>
           <View style={resultStyles.errorActions}>
             <TouchableOpacity
               style={resultStyles.retryButton}
-              onPress={() => {
-                setScanError(null);
-                setShowSearch(true);
-              }}
+              onPress={() => { setScanError(null); void handleScan(); }}
+              accessibilityRole="button"
+              testID="scan-error-retry"
             >
-              <Text style={resultStyles.retryText}>{t('scan_manual_search')}</Text>
+              <Text style={resultStyles.retryText}>{t('scan_retry_recognition')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={resultStyles.retryButton}
-              onPress={handleScan}
+              onPress={() => setScanError(null)}
+              accessibilityRole="button"
+              testID="scan-error-cancel"
             >
-              <Text style={resultStyles.retryText}>{t('scan_retry_scan')}</Text>
+              <Text style={resultStyles.retryText}>{t('scan_service_cancel')}</Text>
             </TouchableOpacity>
           </View>
+          <TouchableOpacity onPress={() => { setScanError(null); setShowSearch(true); }} testID="scan-error-manual">
+            <Text style={resultStyles.retryText}>{t('scan_manual_search')}</Text>
+          </TouchableOpacity>
         </View>
       )}
       
