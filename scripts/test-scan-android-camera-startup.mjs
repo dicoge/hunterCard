@@ -499,6 +499,66 @@ await test('post-ready failure → 改用手動拍照: the manual camera mounts,
   await manualShutterWorks();
 });
 
+// ── v43 NATIVE FAIL 2026-10-18 (PM emulator, exact CI APK d9f8d2c): the full-screen outer
+// 「相機初始化中」 layer of ScanScreen rendered on native too, ABOVE the camera and its
+// ScanOverlay — the user saw only its retry (no 改用手動拍照), which cleared the error but kept
+// the failed native view: black forever. jsdom has no layout, so these checks look at EVERY
+// rendered instance of the loading text / error message (whatever layer it is in): there
+// must be exactly one, and the panel showing it must offer BOTH actions, found by their
+// visible labels, and its 重試 must produce a NEW native camera mount. ──
+const ownText = (el) => [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join('');
+const instancesOf = (msg) => [...document.body.querySelectorAll('*')].filter((el) => ownText(el).includes(msg));
+const isPressable = (el) => el.getAttribute('role') === 'button' || el.hasAttribute('tabindex');
+const pressablesIn = (root) => [...root.querySelectorAll('*')].filter(isPressable);
+const panelOf = (el) => { let p = el.parentElement; while (p && pressablesIn(p).length === 0) p = p.parentElement; return p; };
+const buttonIn = (panel, label) => pressablesIn(panel).find((b) => b.textContent.trim() === label);
+const RETRY = '重試', MANUAL = '改用手動拍照';
+const onlyRecoveryPanel = (msg) => {
+  assert.equal(instancesOf(INIT).length, 1, `exactly ONE 「${INIT}」 layer (found ${instancesOf(INIT).length})`);
+  const shown = instancesOf(msg);
+  assert.equal(shown.length, 1, `the error 「${msg}」 is shown exactly once (found ${shown.length})`);
+  const panel = panelOf(shown[0]);
+  assert.ok(panel, 'the error has actions next to it');
+  const retry = buttonIn(panel, RETRY), manual = buttonIn(panel, MANUAL);
+  assert.ok(retry, `「${RETRY}」 next to the error`);
+  assert.ok(manual, `「${MANUAL}」 next to the error`);
+  return { retry, manual };
+};
+const failAfterStreaming = async () => {
+  await mountScreen();
+  assert.ok(!text().includes(INIT), 'streaming → ready');
+  await act(async () => { globalThis.__frameScannerCriticalError(); await Promise.resolve(); });
+  await tick(20);
+};
+const neverStreams = async () => {
+  globalThis.__frameScannerStartMode = 'stall';
+  await mountScreen();
+  await tick(FRAME_SCANNER_STARTUP_TIMEOUT_MS + 300);
+  globalThis.__frameScannerStartMode = undefined;
+};
+for (const [name, msg, reach] of [['post-ready critical error', '相機已停止運作', failAfterStreaming], ['preview never streams', '相機未能啟動', neverStreams]]) {
+  await test(`native ${name}: ONE loading layer, ONE error, and its own 重試 (by label) mounts a NEW native camera that streams → ready`, async () => {
+    await reach();
+    const { retry } = onlyRecoveryPanel(msg);
+    const mounts = fs_.mounts;
+    await click(retry);
+    await tick(50);
+    assert.equal(fs_.mounts, mounts + 1, 'a new native scanner view (not the failed one)');
+    assert.ok(!text().includes(msg) && !text().includes(INIT), 'the new view streams → ready');
+    assert.equal(fs_.props.active, true, 'analysis on again');
+  });
+  await test(`native ${name}: the 改用手動拍照 next to the error (by label) opens the manual camera, whose shutter works`, async () => {
+    await reach();
+    const { manual } = onlyRecoveryPanel(msg);
+    const camMounts = globalThis.__nativeCameraMounts ?? 0;
+    await click(manual);
+    await tick(50);
+    assert.equal(globalThis.__nativeCameraMounts ?? 0, camMounts + 1, 'expo-camera mounted');
+    assert.ok(!text().includes(msg) && !text().includes(INIT), 'manual camera ready');
+    await manualShutterWorks();
+  });
+}
+
 // ── CR dee6f4b: Android WITHOUT a loadable frame scanner → manual only, never periodic stills ──
 const { AUTO_CAPTURE_PROBE_INTERVAL_MS } = await import('../src/services/autoCapture.ts');
 const UNAVAILABLE = '此裝置無法自動偵測';

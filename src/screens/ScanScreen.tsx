@@ -1500,6 +1500,18 @@ export default function ScanScreen({ navigation }: any) {
     setIsCameraReady(false);
   };
 
+  // Explicit camera retry on Android/iOS: a FRESH native camera view (new key → new bind),
+  // for the automatic frame scanner and the manual camera alike. Clearing the error alone
+  // keeps the failed view (black, and a failed mount never re-arms the startup wait).
+  // Only on the user's tap — never automatically.
+  const retryNativeCamera = () => {
+    invalidateProbes();
+    setCameraError(null);
+    setIsCameraReady(false);
+    frameGeometryRef.current = null;
+    setScannerKey((k) => k + 1);
+  };
+
   const handleRetry = () => {
     setCameraError(null);
     if (isWeb && webCameraRef.current) {
@@ -1707,8 +1719,11 @@ export default function ScanScreen({ navigation }: any) {
     <View style={styles.container}>
       {/* Quota now rides the Pen top bar: inside ScanOverlay when the
           camera is up, and on the gallery surface's own top bar below. */}
-      {/* 初始化中遮罩 — 相機在下面照常 mount，讓 getUserMedia 有機會啟動 */}
-      {!isCameraReady && !webGalleryMode && (
+      {/* 初始化中遮罩 — 相機在下面照常 mount，讓 getUserMedia 有機會啟動。WEB ONLY (v43 native
+          FAIL 2026-10-18): on Android/iOS this full-screen layer sat ABOVE the camera and its
+          ScanOverlay, hiding the real recovery panel (重試 that remounts + 改用手動拍照) behind
+          a retry that never rebound the camera. Native cameras show ScanOverlay's own layer. */}
+      {isWeb && !isCameraReady && !webGalleryMode && (
         <View style={[styles.loadingOverlay, belowTopBar]}>
           <View style={styles.loadingContainer}>
             <Text style={styles.loadingText}>{t('scan_camera_initializing')}</Text>
@@ -1836,15 +1851,7 @@ export default function ScanScreen({ navigation }: any) {
               onScan={handleScan}
               onGallery={pickFromGallery}
               onClose={handleClose}
-              onRetry={() => {
-                // Explicit retry after a mount error: a fresh native view (new bind).
-                // Only on the user's tap — never automatically.
-                invalidateProbes();
-                setCameraError(null);
-                setIsCameraReady(false);
-                frameGeometryRef.current = null;
-                setScannerKey((k) => k + 1);
-              }}
+              onRetry={retryNativeCamera}
               onManualCamera={() => { setCameraError(null); setAutoScan(false); }}
             />
           </View>
@@ -1891,11 +1898,7 @@ export default function ScanScreen({ navigation }: any) {
             onScan={handleScan}
             onGallery={pickFromGallery}
             onClose={handleClose}
-            onRetry={() => {
-              setCameraError(null);
-              if (webCameraRef.current) webCameraRef.current.retry();
-              else setIsCameraReady(false);
-            }}
+            onRetry={retryNativeCamera}
           />
         </CameraView>
         </View>
