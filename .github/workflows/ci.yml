@@ -624,6 +624,9 @@ jobs:
       - name: Verify automatic scan measures the card number's own line/element box, not the ML Kit text block (v42)
         run: npm run test:scan-ocr-geometry
 
+      - name: Verify the Android automatic scan reads PREVIEW FRAMES on the real ScanScreen (no stills while empty/moving; one still per held card; lifecycle races) (v42)
+        run: npm run test:scan-android-frame-scanner
+
       - name: Verify local scan / sign-in diagnostics — allowlist + redaction on write and export, 100/7-day retention, real clear, never affects scan or quota (2026-10-15)
         run: npm run test:scan-diagnostics
 
