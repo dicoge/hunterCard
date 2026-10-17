@@ -22,7 +22,7 @@ import WebCamera, { WebCameraHandle } from '../components/WebCamera';
 import CameraPermissionDeniedView from '../components/CameraPermissionDeniedView';
 import ScanSessionPanel from '../components/ScanSessionPanel';
 import { geometryBlocksFromNative, nativeOcrProbe, nativeOcrRecognize } from '../services/nativeOcr';
-import { FRAME_ANALYSIS_INTERVAL_MS, frameCropInFrame, loadNativeCardScannerView, type FrameTextEvent } from '../services/nativeCardScanner';
+import { FRAME_ANALYSIS_INTERVAL_MS, FRAME_SCANNER_STARTUP_TIMEOUT_MS, frameCropInFrame, loadNativeCardScannerView, type FrameTextEvent } from '../services/nativeCardScanner';
 import { useScanSessionStore } from '../stores/scanSessionStore';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, convertPrice } from '../constants';
@@ -306,7 +306,12 @@ export default function ScanScreen({ navigation }: any) {
   // HoloHunterCardScanner view (src/services/nativeCardScanner) — no still photos while it
   // looks. Without that module (iOS, other builds) the v41 still-photo probes remain.
   const FrameScannerView = useRef(isWeb ? null : loadNativeCardScannerView()).current;
-  const nativeAutoAvailable = useRef(!isWeb && (!!FrameScannerView || nativeAutoCaptureAvailable())).current;
+  // v43 (CR dee6f4b): on Android the automatic scan IS the frame scanner. If its view is
+  // missing or failed to load, automatic detection is unavailable — the manual camera with a
+  // short explanation, never the old periodic still-photo probes. iOS keeps those probes.
+  const isAndroid = Platform.OS === 'android';
+  const nativeAutoAvailable = useRef(!isWeb && (!!FrameScannerView || (!isAndroid && nativeAutoCaptureAvailable()))).current;
+  const autoScanUnavailableOnAndroid = isAndroid && !FrameScannerView;
   const autoScanSupported = isWeb || nativeAutoAvailable;
   const autoScanActive = autoScanSupported && autoScanEnabled;
   const useFrameScanner = !isWeb && !!FrameScannerView && autoScanActive;
@@ -318,7 +323,7 @@ export default function ScanScreen({ navigation }: any) {
     ? { takePictureAsync: (o: { quality?: number; base64?: boolean } = {}) => frameScannerRef.current?.takePicture(o.quality ?? 0.7, !!o.base64) }
     : cameraRef.current);
   // Re-evaluates the frame-analysis gate when focus / app state change (refs, not state).
-  const [, setGateTick] = useState(0);
+  const [gateTick, setGateTick] = useState(0);
   const frameGeometryRef = useRef<{ preview: any; frame: any } | null>(null);
   // Analysis session (v42 CR fea33de): bumped whenever frame analysis turns on or off.
   // The native view tags every frame with the session it STARTED in; an event from any
@@ -807,6 +812,42 @@ export default function ScanScreen({ navigation }: any) {
     if (autoMachine.state().paused) setAutoPaused(true);
     if (decision === 'trigger') captureAndRecognize();
   };
+  // v43 (user device: automatic scan showed no camera): the frame scanner reports ready only
+  // once its preview STREAMS. A start failure, or no streaming preview within a bounded wait
+  // while the screen is in front, becomes a short error with 重試 and 改用手動拍照 — never a
+  // silent 「相機初始化中」 and never a capture (the timer only surfaces the failure).
+  // A failure is terminal for THAT native view (CR c5acd45: also after it was streaming):
+  // ownership is retired at once, a running scan is cancelled (0 charge), and a late
+  // ready / frame from the same mount can neither clear the error nor take a photo. Only
+  // 重試 (a new mount) or the manual camera leave it.
+  const frameFailedKeyRef = useRef<number | null>(null);
+  const frameReadyKeyRef = useRef<number | null>(null);
+  const handleFrameScannerError = (nativeMessage?: string) => {
+    if (!mountedRef.current) return;
+    if (nativeMessage) console.warn('[scan] frame scanner failed:', nativeMessage);
+    const wasStreaming = frameReadyKeyRef.current === scannerKey;
+    frameFailedKeyRef.current = scannerKey;
+    frameReadyKeyRef.current = null;
+    invalidateProbes();
+    if (lifecycle.cancel()) resetScanUi();
+    setCameraError(t(wasStreaming ? 'scan_camera_stopped' : 'scan_camera_start_failed'));
+    setIsCameraReady(false);
+  };
+  const handleFrameScannerReady = () => {
+    if (frameFailedKeyRef.current === scannerKey) return;   // late ready from the failed view
+    frameReadyKeyRef.current = scannerKey;
+    handleCameraReady();
+    void refreshFrameGeometry();
+  };
+  useEffect(() => {
+    if (!useFrameScanner || !permission?.granted || isCameraReady || cameraError) return;
+    if (!lifecycle.isFocused() || AppState.currentState !== 'active') return;
+    const id = setTimeout(() => {
+      if (!mountedRef.current || !lifecycle.isFocused() || AppState.currentState !== 'active') return;
+      handleFrameScannerError('no streaming preview');
+    }, FRAME_SCANNER_STARTUP_TIMEOUT_MS);
+    return () => clearTimeout(id);
+  }, [useFrameScanner, permission?.granted, isCameraReady, cameraError, scannerKey, gateTick]);
   useEffect(() => {
     if (!FrameScannerView) return;
     // Every app-state / focus change retires frame ownership now, not at the next render.
@@ -1459,6 +1500,18 @@ export default function ScanScreen({ navigation }: any) {
     setIsCameraReady(false);
   };
 
+  // Explicit camera retry on Android/iOS: a FRESH native camera view (new key → new bind),
+  // for the automatic frame scanner and the manual camera alike. Clearing the error alone
+  // keeps the failed view (black, and a failed mount never re-arms the startup wait).
+  // Only on the user's tap — never automatically.
+  const retryNativeCamera = () => {
+    invalidateProbes();
+    setCameraError(null);
+    setIsCameraReady(false);
+    frameGeometryRef.current = null;
+    setScannerKey((k) => k + 1);
+  };
+
   const handleRetry = () => {
     setCameraError(null);
     if (isWeb && webCameraRef.current) {
@@ -1666,8 +1719,11 @@ export default function ScanScreen({ navigation }: any) {
     <View style={styles.container}>
       {/* Quota now rides the Pen top bar: inside ScanOverlay when the
           camera is up, and on the gallery surface's own top bar below. */}
-      {/* 初始化中遮罩 — 相機在下面照常 mount，讓 getUserMedia 有機會啟動 */}
-      {!isCameraReady && !webGalleryMode && (
+      {/* 初始化中遮罩 — 相機在下面照常 mount，讓 getUserMedia 有機會啟動。WEB ONLY (v43 native
+          FAIL 2026-10-18): on Android/iOS this full-screen layer sat ABOVE the camera and its
+          ScanOverlay, hiding the real recovery panel (重試 that remounts + 改用手動拍照) behind
+          a retry that never rebound the camera. Native cameras show ScanOverlay's own layer. */}
+      {isWeb && !isCameraReady && !webGalleryMode && (
         <View style={[styles.loadingOverlay, belowTopBar]}>
           <View style={styles.loadingContainer}>
             <Text style={styles.loadingText}>{t('scan_camera_initializing')}</Text>
@@ -1767,8 +1823,8 @@ export default function ScanScreen({ navigation }: any) {
             session={frameAnalysisSession().session}
             torch={flash}
             analysisIntervalMs={FRAME_ANALYSIS_INTERVAL_MS}
-            onCameraReady={() => { handleCameraReady(); void refreshFrameGeometry(); }}
-            onMountError={(e: any) => handleMountError(e?.nativeEvent ?? {})}
+            onCameraReady={handleFrameScannerReady}
+            onMountError={(e: any) => handleFrameScannerError(e?.nativeEvent?.message)}
             onFrameText={(e: any) => handleFrameText(e?.nativeEvent)}
             testID="scan-frame-scanner"
           />
@@ -1795,15 +1851,8 @@ export default function ScanScreen({ navigation }: any) {
               onScan={handleScan}
               onGallery={pickFromGallery}
               onClose={handleClose}
-              onRetry={() => {
-                // Explicit retry after a mount error: a fresh native view (new bind).
-                // Only on the user's tap — never automatically.
-                invalidateProbes();
-                setCameraError(null);
-                setIsCameraReady(false);
-                frameGeometryRef.current = null;
-                setScannerKey((k) => k + 1);
-              }}
+              onRetry={retryNativeCamera}
+              onManualCamera={() => { setCameraError(null); setAutoScan(false); }}
             />
           </View>
         </View>
@@ -1834,6 +1883,7 @@ export default function ScanScreen({ navigation }: any) {
             flash={flash}
             autoScanActive={autoScanActive}
             autoScanSupported={nativeAutoAvailable}
+            autoScanUnavailable={autoScanUnavailableOnAndroid}
             onToggleAutoScan={setAutoScan}
             autoScanNeedsConsent={autoScanNeedsConsent}
             onEnableAutoScan={enableAutoScan}
@@ -1848,11 +1898,7 @@ export default function ScanScreen({ navigation }: any) {
             onScan={handleScan}
             onGallery={pickFromGallery}
             onClose={handleClose}
-            onRetry={() => {
-              setCameraError(null);
-              if (webCameraRef.current) webCameraRef.current.retry();
-              else setIsCameraReady(false);
-            }}
+            onRetry={retryNativeCamera}
           />
         </CameraView>
         </View>

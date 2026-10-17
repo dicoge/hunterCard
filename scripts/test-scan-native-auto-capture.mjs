@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 /**
- * v41 native automatic capture on the REAL native ScanScreen (Platform.OS = 'android',
- * <CameraView> branch) — same device seams as test-scan-native-crop-render: camera,
+ * v41 still-photo automatic capture — since v43 the iOS / legacy path ONLY — on the REAL
+ * native ScanScreen (Platform.OS = 'ios' via globalThis.__rnPlatformOS, <CameraView>
+ * branch). Android never uses these probes: it scans preview frames with the
+ * HoloHunterCardScanner view, and without that view it is manual only (CR dee6f4b;
+ * test:scan-android-camera-startup). The expo-camera fixture keeps applying the stricter
+ * installed Android camera contract (shutter overlay / LED / rebind) — same device seams as test-scan-native-crop-render: camera,
  * manipulator and on-device OCR are fixtures, fetch → the REAL recognize-card handler
  * with the provider mocked. The on-device reader is fed a scripted sequence of texts,
  * standing in for "what is legible inside the frame" on each probe. No device, no
@@ -11,6 +15,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { register } from 'node:module';
 import { JSDOM } from 'jsdom';
+globalThis.__rnPlatformOS = 'ios';   // the still-photo probes exist on iOS only
 
 register(
   'data:text/javascript,' + encodeURIComponent(`
@@ -222,6 +227,11 @@ await act(async () => root.render(React.createElement(ScanScreen, { navigation }
 await tick(50);
 
 try {
+  await test('the harness runs the iOS platform branch (the only platform that keeps still-photo probes)', async () => {
+    const { Platform } = await import('react-native');
+    assert.equal(Platform.OS, 'ios');
+  });
+
   await test('native shows the Auto / Manual pill (capability present on this build) and starts in automatic mode', () => {
     assert.ok(byTestId('scan-mode-pill'), 'mode pill rendered on native');
     assert.equal(byTestId('scan-mode-auto').getAttribute('aria-selected'), 'true');

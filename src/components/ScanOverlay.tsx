@@ -71,6 +71,8 @@ export interface ScanOverlayProps {
   onFlash: () => void;
   onScan: () => void;
   onRetry: () => void;
+  // v43: shown with a camera start error — leave the automatic camera for the manual one.
+  onManualCamera?: () => void;
   // Gallery entry — mounted unconditionally (no `isWeb` gate) so the shipped
   // Android APK exposes a native gallery scan path. ScanScreen wires this to
   // its own `pickFromGallery`; if the platform later cannot fulfil the pick
@@ -86,6 +88,8 @@ export interface ScanOverlayProps {
    *  frame-stability loop is a real capability (web today). Never render an
    *  inert switch on platforms without the loop. */
   autoScanSupported?: boolean;
+  // v43: Android build whose automatic scanner view could not be loaded — say so (manual only).
+  autoScanUnavailable?: boolean;
   onToggleAutoScan?: (next: boolean) => void;
   /** Native automatic capture stopped after a long idle stretch (src/services/autoCapture). */
   autoScanPaused?: boolean;
@@ -109,11 +113,13 @@ export default function ScanOverlay({
   onFlash,
   onScan,
   onRetry,
+  onManualCamera,
   onGallery,
   onScanAreaLayout,
   scanAreaRef,
   onClose,
   autoScanSupported = false,
+  autoScanUnavailable = false,
   autoScanPaused = false,
   autoScanNeedsConsent = false,
   onEnableAutoScan,
@@ -146,6 +152,15 @@ export default function ScanOverlay({
                 >
                   <Text style={resultStyles.retryText}>{t('common_retry')}</Text>
                 </TouchableOpacity>
+                {onManualCamera && (
+                  <TouchableOpacity
+                    style={resultStyles.retryButton}
+                    onPress={onManualCamera}
+                    testID="scan-camera-manual"
+                  >
+                    <Text style={resultStyles.retryText}>{t('scan_camera_use_manual')}</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             )}
           </View>
@@ -239,7 +254,7 @@ export default function ScanOverlay({
           <Text style={styles.hintText} testID="scan-hint">
             {autoScanActive
               ? t(autoScanNeedsConsent ? 'scan_auto_needs_consent' : autoScanPaused ? 'scan_auto_paused' : 'scan_frame_auto')
-              : t('scan_frame_manual')}
+              : t(autoScanUnavailable ? 'scan_auto_unavailable' : 'scan_frame_manual')}
           </Text>
           {autoScanActive && autoScanNeedsConsent && onEnableAutoScan ? (
             <TouchableOpacity

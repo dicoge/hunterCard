@@ -144,12 +144,12 @@ await test('tracked native FRAME-SCANNER contract (v42 CR): CameraX preview + Im
   assert.match(view, /AspectRatioStrategy\(AspectRatio\.RATIO_4_3/);
   // backpressure + bounded sampling + active gate, frame closed on every path
   assert.match(view, /setBackpressureStrategy\(ImageAnalysis\.STRATEGY_KEEP_ONLY_LATEST\)/);
-  assert.match(view, /if \(released \|\| !analysisActive \|\| inFlight \|\| reader == null \|\| now - lastAnalysedAt < intervalMs\) \{\s*proxy\.close\(\)/);
+  assert.match(view, /if \(released \|\| (?:failed \|\| )?!analysisActive \|\| inFlight \|\| reader == null \|\| now - lastAnalysedAt < intervalMs\) \{\s*proxy\.close\(\)/);
   assert.match(view, /coerceIn\(MIN_INTERVAL_MS, MAX_INTERVAL_MS\)/);
   assert.match(view, /addOnCompleteListener[\s\S]{0,120}inFlight = false\s*proxy\.close\(\)/);
   // CR fea33de P2: ownership of an analysis = the session + generation it STARTED in
   assert.match(view, /val startSession = session\s*val startGeneration = generation/);
-  assert.match(view, /if \(!released && analysisActive && startSession == session && startGeneration == generation\) \{\s*onFrameText\(/,
+  assert.match(view, /if \(!released && (?:!failed && )?analysisActive && startSession == session && startGeneration == generation\) \{\s*onFrameText\(/,
     'a completion from before a deactivate/reactivate or session change is not delivered');
   assert.match(view, /fun setAnalysisActive\(active: Boolean\) \{[\s\S]{0,120}if \(next != analysisActive\) \{\s*generation \+= 1/, 'every on/off transition voids in-flight work');
   assert.match(view, /fun setSession\(value: Int\) \{[\s\S]{0,80}generation \+= 1/);
@@ -188,6 +188,53 @@ await test('tracked native FRAME-SCANNER contract (v42 CR): CameraX preview + Im
   const cameraGradle = fs.readFileSync(new URL('../node_modules/expo-camera/android/build.gradle', import.meta.url), 'utf8');
   const v = /camerax_version = "([^"]+)"/.exec(cameraGradle)[1];
   assert.match(gradle, new RegExp(`camerax_version = "${v.replace(/\./g, '\\.')}"`), `same CameraX ${v} as expo-camera`);
+});
+
+await test('v43 preview LAYOUT contract (user device: automatic scan showed no camera): the preview surface CameraX adds after binding is laid out by the view itself; ready = preview STREAMING, not camera OPEN', () => {
+  const view = fs.readFileSync(new URL('../modules/holohunter-ocr-geometry/android/src/main/java/com/holohunter/ocrgeometry/HoloHunterCardScannerView.kt', import.meta.url), 'utf8');
+  const rnGroup = fs.readFileSync(new URL('../node_modules/react-native/ReactAndroid/src/main/java/com/facebook/react/views/view/ReactViewGroup.kt', import.meta.url), 'utf8');
+  const expoCamera = fs.readFileSync(new URL('../node_modules/expo-camera/android/src/main/java/expo/modules/camera/ExpoCameraView.kt', import.meta.url), 'utf8');
+  // Why: the installed React Native swallows requestLayout(), and the working expo-camera view
+  // lays its PreviewView children out on hierarchy change for exactly that reason.
+  assert.match(rnGroup, /override fun requestLayout\(\) \{\s*\/\/ No-op/, 'premise: RN parents swallow requestLayout()');
+  assert.match(expoCamera, /setOnHierarchyChangeListener[\s\S]{0,300}onChildViewAdded[\s\S]{0,200}measure\([\s\S]{0,200}layout\(/, 'reference: expo-camera lays out the surface child');
+  assert.match(view, /previewView\.setOnHierarchyChangeListener\([\s\S]{0,200}onChildViewAdded\([^)]*\) = layoutPreview\(\)/, 'the surface child CameraX adds is laid out');
+  const lp = /private fun layoutPreview\(\) \{([\s\S]*?)\n  \}/.exec(view)?.[1] ?? '';
+  assert.match(lp, /previewView\.measure\([\s\S]*EXACTLY[\s\S]*EXACTLY/, 'measured EXACTLY to the view size');
+  assert.match(lp, /previewView\.layout\(0, 0, w, h\)/, 'laid out to the view size');
+  assert.match(view, /addView\(previewView, ViewGroup\.LayoutParams\(ViewGroup\.LayoutParams\.MATCH_PARENT, ViewGroup\.LayoutParams\.MATCH_PARENT\)\)/);
+  assert.match(view, /override val shouldUseAndroidLayout: Boolean = true/, 'requestLayout() from the surface re-runs measure + layout');
+  const onLayout = /override fun onLayout\([\s\S]*?\n  \}/.exec(view)?.[0] ?? '';
+  assert.match(onLayout, /layoutPreview\(\)/);
+  const bind = /private fun startBind\(\) \{([\s\S]*?)\n  \}\n/.exec(view)?.[1] ?? '';
+  assert.match(bind, /bindToLifecycle[\s\S]*layoutPreview\(\)/, 'laid out again right after binding');
+  assert.match(bind, /previewView\.previewStreamState\.observe\(owner\)[\s\S]{0,200}StreamState\.STREAMING[\s\S]{0,120}onCameraReady/, 'ready only when the preview streams');
+  assert.ok(!/CameraState\.Type\.OPEN[\s\S]{0,120}onCameraReady/.test(bind), 'an opened camera alone is not "ready"');
+  assert.match(bind, /ErrorType\.CRITICAL\) fail\(/, 'a critical camera error is terminal (fail)');
+  const analyze = /private fun analyze\(proxy: ImageProxy\) \{([\s\S]*?)\n  \}\n/.exec(view)?.[1] ?? '';
+  assert.ok(!/takePicture/.test(analyze), 'still: never from analysis');
+});
+
+await test('CR c5acd45 native FAILURE contract: a CRITICAL camera error before OR after STREAMING is reported once and latched — no ready, frame or still from that view afterwards', () => {
+  const view = fs.readFileSync(new URL('../modules/holohunter-ocr-geometry/android/src/main/java/com/holohunter/ocrgeometry/HoloHunterCardScannerView.kt', import.meta.url), 'utf8');
+  const bind = /private fun startBind\(\) \{([\s\S]*?)\n  \}\n/.exec(view)?.[1] ?? '';
+  const observer = /cameraInfo\.cameraState\.observe\(owner\) \{([\s\S]*?)\n        \}/.exec(bind)?.[1] ?? '';
+  assert.ok(observer, 'camera-state observer found');
+  assert.match(observer, /error\.type == CameraState\.ErrorType\.CRITICAL\) fail\(/);
+  assert.ok(!/readySent/.test(observer), 'not limited to before the first STREAMING');
+  assert.match(bind, /catch \(e: Exception\) \{\s*fail\(/, 'bind exceptions take the same path');
+  const fail = /private fun fail\(message: String\) \{([\s\S]*?)\n  \}/.exec(view)?.[1] ?? '';
+  assert.match(fail, /if \(released \|\| errorSent\) return\s*errorSent = true\s*failed = true/, 'once, then latched');
+  assert.match(fail, /analysisActive = false/);
+  assert.match(fail, /generation \+= 1/, 'analyses in flight are void');
+  assert.match(fail, /pending\.reject\("E_CAMERA_FAILED"/, 'pending stills settled');
+  assert.ok(fail.indexOf('pending.reject') < fail.indexOf('onMountError'), 'settled before JS hears about it');
+  assert.match(view, /StreamState\.STREAMING && !readySent && !released && !failed/, 'no ready after a failure');
+  assert.match(view, /val next = active && !released && !failed/, 'analysis cannot be re-enabled on the failed view');
+  const analyze = /private fun analyze\(proxy: ImageProxy\) \{([\s\S]*?)\n  \}\n/.exec(view)?.[1] ?? '';
+  assert.match(analyze, /if \(released \|\| failed \|\| !analysisActive/, 'no new analysis');
+  assert.match(analyze, /if \(!released && !failed && analysisActive && startSession == session && startGeneration == generation\)/, 'no delivery of one in flight');
+  assert.match(view, /if \(released \|\| failed \|\| capture == null\) \{\s*pending\.reject\("E_CAMERA_NOT_READY"/, 'no still');
 });
 
 if ((process.exitCode ?? 0) === 0) console.log(`\n✅ scan-ocr-geometry: ${passed} checks passed`);
