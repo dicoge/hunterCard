@@ -125,6 +125,26 @@ const toBox = (r: any): OcrBox | null =>
 const toUnit = (u: any): ProbeOcrUnit | null =>
   typeof u?.text === 'string' ? { text: u.text, box: toBox(u.boundingBox) } : null;
 
+/** Native geometry payload (blocks → lines → elements, boxes as `boundingBox`) → probe blocks. */
+export function geometryBlocksFromNative(raw: unknown): ProbeOcrBlock[] {
+  const blocks = Array.isArray(raw) ? raw : [];
+  return blocks
+    .map((b: any): ProbeOcrBlock | null => {
+      const unit = toUnit(b);
+      if (!unit) return null;
+      const lines = Array.isArray(b.lines)
+        ? b.lines.map((l: any) => {
+          const line = toUnit(l);
+          if (!line) return null;
+          const elements = Array.isArray(l.elements) ? l.elements.map(toUnit).filter(Boolean) as ProbeOcrUnit[] : [];
+          return { ...line, elements };
+        }).filter(Boolean)
+        : undefined;
+      return lines ? { ...unit, lines } : unit;
+    })
+    .filter((b: ProbeOcrBlock | null): b is ProbeOcrBlock => !!b);
+}
+
 type GeometryModuleLike = { recognizeGeometry?: (uri: string) => Promise<unknown> };
 
 const DEFAULT_GEOMETRY = (): GeometryModuleLike | null => {
@@ -156,22 +176,7 @@ export async function nativeOcrProbe(
   if (geometry && typeof geometry.recognizeGeometry === 'function') {
     try {
       const result: any = await geometry.recognizeGeometry(uri);
-      const blocks = Array.isArray(result?.blocks) ? result.blocks : [];
-      return blocks
-        .map((b: any): ProbeOcrBlock | null => {
-          const unit = toUnit(b);
-          if (!unit) return null;
-          const lines = Array.isArray(b.lines)
-            ? b.lines.map((l: any) => {
-              const line = toUnit(l);
-              if (!line) return null;
-              const elements = Array.isArray(l.elements) ? l.elements.map(toUnit).filter(Boolean) as ProbeOcrUnit[] : [];
-              return { ...line, elements };
-            }).filter(Boolean)
-            : undefined;
-          return lines ? { ...unit, lines } : unit;
-        })
-        .filter((b: ProbeOcrBlock | null): b is ProbeOcrBlock => !!b);
+      return geometryBlocksFromNative(result?.blocks);
     } catch {
       // fall through to the block-only reader
     }

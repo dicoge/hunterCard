@@ -193,10 +193,13 @@ export function observationsFromProbeText(
   tokenize: (text: string) => string[],
   cropWidth: number,
   cropHeight: number,
+  /** Where the crop starts in the reader's image (preview frames: the frame crop inside the whole camera frame). */
+  originX = 0,
+  originY = 0,
 ): ProbeObservation[] {
   const norm = (b: PixelBox | null | undefined): NormBox | null =>
     b && cropWidth > 0 && cropHeight > 0
-      ? { x: b.x / cropWidth, y: b.y / cropHeight, width: b.width / cropWidth, height: b.height / cropHeight }
+      ? { x: (b.x - originX) / cropWidth, y: (b.y - originY) / cropHeight, width: b.width / cropWidth, height: b.height / cropHeight }
       : null;
   const out: ProbeObservation[] = [];
   for (const block of blocks) {

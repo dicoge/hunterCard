@@ -109,7 +109,7 @@ await test('fail-safe: a throwing geometry module falls back to expo-ocr-kit; bo
 await test('tracked native module contract: autolinked Android module named HoloHunterOcrGeometry exporting blocks → lines → elements with boxes, same scaling as expo-ocr-kit', () => {
   const cfg = JSON.parse(fs.readFileSync(new URL('../modules/holohunter-ocr-geometry/expo-module.config.json', import.meta.url), 'utf8'));
   assert.deepEqual(cfg.platforms, ['android']);
-  assert.deepEqual(cfg.android.modules, ['com.holohunter.ocrgeometry.HoloHunterOcrGeometryModule']);
+  assert.deepEqual(cfg.android.modules, ['com.holohunter.ocrgeometry.HoloHunterOcrGeometryModule', 'com.holohunter.ocrgeometry.HoloHunterCardScannerModule']);
   const kt = fs.readFileSync(new URL('../modules/holohunter-ocr-geometry/android/src/main/java/com/holohunter/ocrgeometry/HoloHunterOcrGeometryModule.kt', import.meta.url), 'utf8');
   assert.match(kt, /^package com\.holohunter\.ocrgeometry$/m);
   assert.match(kt, /class HoloHunterOcrGeometryModule : Module\(\)/);
@@ -125,6 +125,46 @@ await test('tracked native module contract: autolinked Android module named Holo
   assert.match(gradle, /com\.google\.mlkit:text-recognition:16\.0\.1/, 'same ML Kit artifact as expo-ocr-kit (no new SDK)');
   const js = fs.readFileSync(new URL('../src/services/nativeOcr.ts', import.meta.url), 'utf8');
   assert.match(js, /requireOptionalNativeModule\?\.\('HoloHunterOcrGeometry'\)/, 'JS loads the module by the native Name');
+});
+
+await test('tracked native FRAME-SCANNER contract (v42 CR): CameraX preview + ImageAnalysis (keep-only-latest, one frame in ML Kit, bounded interval, active gate), still only on request, deterministic release', () => {
+  const dir = '../modules/holohunter-ocr-geometry/android/src/main/java/com/holohunter/ocrgeometry/';
+  const mod = fs.readFileSync(new URL(dir + 'HoloHunterCardScannerModule.kt', import.meta.url), 'utf8');
+  const view = fs.readFileSync(new URL(dir + 'HoloHunterCardScannerView.kt', import.meta.url), 'utf8');
+  const js = fs.readFileSync(new URL('../src/services/nativeCardScanner.ts', import.meta.url), 'utf8');
+  assert.match(mod, /Name\("HoloHunterCardScanner"\)/);
+  assert.match(js, /NATIVE_CARD_SCANNER = 'HoloHunterCardScanner'/, 'JS loads the same native name');
+  assert.match(mod, /Events\("onCameraReady", "onMountError", "onFrameText"\)/);
+  for (const prop of ['active', 'torch', 'analysisIntervalMs']) assert.match(mod, new RegExp(`Prop\\("${prop}"\\)`));
+  assert.match(mod, /OnViewDestroys \{ view: HoloHunterCardScannerView ->\s*view\.release\(\)/);
+  assert.match(mod, /AsyncFunction\("takePicture"\)/);
+  // continuous preview, cover-fit like the screen's crop mapping; 4:3 preview AND analysis
+  assert.match(view, /scaleType = PreviewView\.ScaleType\.FILL_CENTER/);
+  assert.match(view, /RATIO_4_3_FALLBACK_AUTO_STRATEGY/);
+  assert.match(view, /AspectRatioStrategy\(AspectRatio\.RATIO_4_3/);
+  // backpressure + bounded sampling + active gate, frame closed on every path
+  assert.match(view, /setBackpressureStrategy\(ImageAnalysis\.STRATEGY_KEEP_ONLY_LATEST\)/);
+  assert.match(view, /if \(released \|\| !analysisActive \|\| inFlight \|\| reader == null \|\| now - lastAnalysedAt < intervalMs\) \{\s*proxy\.close\(\)/);
+  assert.match(view, /coerceIn\(MIN_INTERVAL_MS, MAX_INTERVAL_MS\)/);
+  assert.match(view, /addOnCompleteListener[\s\S]{0,120}inFlight = false\s*proxy\.close\(\)/);
+  assert.match(view, /if \(!released && analysisActive\) \{\s*onFrameText\(/, 'no frame event after release or with analysis off');
+  // ML Kit line/element geometry, on the frame itself (no file)
+  assert.match(view, /InputImage\.fromMediaImage\(media, rotation\)/);
+  assert.match(view, /"elements" to line\.elements\.map/);
+  const analyze = view.slice(view.indexOf('private fun analyze'), view.indexOf('private fun mapBlocks'));
+  assert.ok(!/takePicture|FileOutputStream/.test(analyze), 'frame analysis never captures a still or writes a file');
+  // the still: only through takePicture, flash off (the light is the torch)
+  assert.match(view, /setFlashMode\(ImageCapture\.FLASH_MODE_OFF\)/);
+  assert.match(view, /cameraControl\.enableTorch/);
+  // deterministic release
+  const release = view.slice(view.indexOf('fun release()'));
+  for (const step of ['released = true', 'analysisActive = false', 'clearAnalyzer()', 'cameraProvider?.unbind(', 'recognizer?.close()', 'analysisExecutor.shutdown()', 'scope.cancel()']) {
+    assert.ok(release.includes(step), `release: ${step}`);
+  }
+  const gradle = fs.readFileSync(new URL('../modules/holohunter-ocr-geometry/android/build.gradle', import.meta.url), 'utf8');
+  const cameraGradle = fs.readFileSync(new URL('../node_modules/expo-camera/android/build.gradle', import.meta.url), 'utf8');
+  const v = /camerax_version = "([^"]+)"/.exec(cameraGradle)[1];
+  assert.match(gradle, new RegExp(`camerax_version = "${v.replace(/\./g, '\\.')}"`), `same CameraX ${v} as expo-camera`);
 });
 
 if ((process.exitCode ?? 0) === 0) console.log(`\n✅ scan-ocr-geometry: ${passed} checks passed`);

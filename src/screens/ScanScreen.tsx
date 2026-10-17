@@ -21,7 +21,8 @@ import { CameraView, useCameraPermissions, CameraType } from 'expo-camera';
 import WebCamera, { WebCameraHandle } from '../components/WebCamera';
 import CameraPermissionDeniedView from '../components/CameraPermissionDeniedView';
 import ScanSessionPanel from '../components/ScanSessionPanel';
-import { nativeOcrProbe, nativeOcrRecognize } from '../services/nativeOcr';
+import { geometryBlocksFromNative, nativeOcrProbe, nativeOcrRecognize } from '../services/nativeOcr';
+import { FRAME_ANALYSIS_INTERVAL_MS, loadNativeCardScannerView, type FrameTextEvent } from '../services/nativeCardScanner';
 import { useScanSessionStore } from '../stores/scanSessionStore';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, convertPrice } from '../constants';
@@ -301,9 +302,24 @@ export default function ScanScreen({ navigation }: any) {
   const [autoScanEnabled, setAutoScanEnabled] = useState(true);
   // v41: native has automatic capture too (src/services/autoCapture) when this build
   // carries the frame crop + on-device text reader; otherwise only the shutter.
-  const nativeAutoAvailable = useRef(!isWeb && nativeAutoCaptureAvailable()).current;
+  // v42: on Android the automatic scan reads PREVIEW FRAMES through the native
+  // HoloHunterCardScanner view (src/services/nativeCardScanner) — no still photos while it
+  // looks. Without that module (iOS, other builds) the v41 still-photo probes remain.
+  const FrameScannerView = useRef(isWeb ? null : loadNativeCardScannerView()).current;
+  const nativeAutoAvailable = useRef(!isWeb && (!!FrameScannerView || nativeAutoCaptureAvailable())).current;
   const autoScanSupported = isWeb || nativeAutoAvailable;
   const autoScanActive = autoScanSupported && autoScanEnabled;
+  const useFrameScanner = !isWeb && !!FrameScannerView && autoScanActive;
+  const useFrameScannerRef = useRef(useFrameScanner);
+  useFrameScannerRef.current = useFrameScanner;
+  const frameScannerRef = useRef<any>(null);
+  // The camera the next still comes from: the frame scanner while it is shown, else expo-camera.
+  const nativeStillCamera = () => (useFrameScannerRef.current
+    ? { takePictureAsync: (o: { quality?: number; base64?: boolean } = {}) => frameScannerRef.current?.takePicture(o.quality ?? 0.7, !!o.base64) }
+    : cameraRef.current);
+  // Re-evaluates the frame-analysis gate when focus / app state change (refs, not state).
+  const [, setGateTick] = useState(0);
+  const frameGeometryRef = useRef<{ preview: any; frame: any } | null>(null);
   const autoMachine = useRef(createAutoCaptureMachine()).current;
   const probeBusyRef = useRef(false);
   // Bumped whenever a probe in flight must not count any more (background, blur,
@@ -319,6 +335,9 @@ export default function ScanScreen({ navigation }: any) {
   const consentVersion = usePhotoUploadConsentStore((st) => st.acceptedVersion);
   const autoScanNeedsConsent = autoScanActive && !hasPhotoUploadConsent(consentVersion);
   const setAutoScan = (on: boolean) => {
+    // Android: automatic and manual use different camera views (frame scanner / expo-camera);
+    // the new one reports readiness itself.
+    if (FrameScannerView && on !== autoScanEnabled) setIsCameraReady(false);
     setAutoScanEnabled(on);
     if (on) { autoMachine.resume(); setAutoPaused(false); }
   };
@@ -692,6 +711,7 @@ export default function ScanScreen({ navigation }: any) {
   };
   useEffect(() => {
     if (isWeb || !autoScanActive || !permission?.granted) return;
+    if (useFrameScanner) return;   // v42: preview frames, not still probes
     if (!isCameraReady || isScanning || isProcessingOCR || autoPaused) return;
     if (candidateSelector.visible || resultCard.visible || matchSheet || serviceFailure || scanError || showSearch) return;
     let stopped = false;
@@ -719,7 +739,44 @@ export default function ScanScreen({ navigation }: any) {
     };
     const id = setInterval(tick, AUTO_CAPTURE_PROBE_INTERVAL_MS);
     return () => { stopped = true; invalidateProbes(); clearInterval(id); };
-  }, [autoScanActive, permission?.granted, isCameraReady, isScanning, isProcessingOCR, autoPaused, candidateSelector.visible, resultCard.visible, matchSheet, serviceFailure, scanError, showSearch]);
+  }, [autoScanActive, useFrameScanner, permission?.granted, isCameraReady, isScanning, isProcessingOCR, autoPaused, candidateSelector.visible, resultCard.visible, matchSheet, serviceFailure, scanError, showSearch]);
+
+  // v42 Android: preview-frame analysis. The native view analyses frames only while this
+  // gate is open, and every frame event is re-checked here (a late event after background,
+  // blur, a scan starting or a result appearing is dropped). A card number held still
+  // inside the frame starts ONE normal scan — the only still photo the automatic scan takes.
+  const frameAnalysisOpen = () => useFrameScanner && !!permission?.granted && isCameraReady && !isScanning && !isProcessingOCR
+    && !autoPaused && !candidateSelector.visible && !resultCard.visible && !matchSheet && !serviceFailure && !scanError
+    && !showSearch && lifecycle.isFocused() && !lifecycle.hasLiveJob() && AppState.currentState === 'active'
+    && canScanNow() && hasUploadConsent();
+  const refreshFrameGeometry = async () => {
+    const [preview, frame] = await Promise.all([measureInWindow(cameraBoxRef), measureInWindow(scanFrameRef)]);
+    if (preview && frame && mountedRef.current) frameGeometryRef.current = { preview, frame };
+  };
+  const handleFrameText = (event: FrameTextEvent | undefined) => {
+    if (!event || !useFrameScannerRef.current || !frameAnalysisOpen()) return;
+    if (!mountedRef.current || !lifecycle.isFocused() || lifecycle.hasLiveJob() || AppState.currentState !== 'active') return;
+    const geometry = frameGeometryRef.current;
+    void refreshFrameGeometry();
+    if (!geometry) return;
+    const plan = planNativeCrop(geometry.preview, geometry.frame, { width: event.width, height: event.height });
+    if (!plan.ok) return;
+    const { crop } = plan;
+    const observations = observationsFromProbeText(
+      geometryBlocksFromNative(event.blocks), findCardNumberTokens, crop.width, crop.height, crop.x, crop.y,
+    );
+    const decision = autoMachine.onProbe(observations);
+    if (autoMachine.state().paused) setAutoPaused(true);
+    if (decision === 'trigger') captureAndRecognize();
+  };
+  useEffect(() => {
+    if (!FrameScannerView) return;
+    const bump = () => setGateTick((n) => n + 1);
+    const sub = AppState.addEventListener('change', bump);
+    const offFocus = typeof navigation?.addListener === 'function' ? navigation.addListener('focus', bump) : undefined;
+    const offBlur = typeof navigation?.addListener === 'function' ? navigation.addListener('blur', bump) : undefined;
+    return () => { sub.remove(); if (typeof offFocus === 'function') offFocus(); if (typeof offBlur === 'function') offBlur(); };
+  }, [navigation]);
 
   const toggleFlash = () => {
     setFlash(current => !current);
@@ -992,7 +1049,8 @@ export default function ScanScreen({ navigation }: any) {
         Alert.alert(t('scan_error_title'), t('scan_camera_not_ready'));
         return;
       }
-    } else if (!cameraRef.current) {
+    } else if (!(useFrameScannerRef.current ? frameScannerRef.current : cameraRef.current)) {
+      // The camera that takes this still: the frame scanner in Android automatic mode.
       Alert.alert(t('scan_error_title'), t('scan_camera_not_ready'));
       return;
     }
@@ -1025,7 +1083,7 @@ export default function ScanScreen({ navigation }: any) {
       } else {
         // The bytes come from the capture itself: the uri is a device-local path and is
         // never what gets uploaded (recognitionImagePolicy refuses it).
-        photo = await cameraRef.current?.takePictureAsync({
+        photo = await nativeStillCamera()?.takePictureAsync({
           quality: 0.7,
           base64: true,
         });
@@ -1659,6 +1717,52 @@ export default function ScanScreen({ navigation }: any) {
           />
         </WebCamera>
       ) : (
+        useFrameScanner ? (
+        <View ref={cameraBoxRef} style={styles.camera} collapsable={false} testID="scan-camera-box">
+          {/* v42 Android automatic mode: continuous preview, frames read on the device. */}
+          <FrameScannerView
+            ref={frameScannerRef}
+            style={StyleSheet.absoluteFill}
+            active={frameAnalysisOpen()}
+            torch={flash}
+            analysisIntervalMs={FRAME_ANALYSIS_INTERVAL_MS}
+            onCameraReady={() => { handleCameraReady(); void refreshFrameGeometry(); }}
+            onMountError={(e: any) => handleMountError(e?.nativeEvent ?? {})}
+            onFrameText={(e: any) => handleFrameText(e?.nativeEvent)}
+            testID="scan-frame-scanner"
+          />
+          <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+            <ScanOverlay
+              scanLineAnim={scanLineAnim}
+              pulseAnim={pulseAnim}
+              borderAnim={borderAnim}
+              isScanning={isScanning}
+              flash={flash}
+              autoScanActive={autoScanActive}
+              autoScanSupported={nativeAutoAvailable}
+              onToggleAutoScan={setAutoScan}
+              autoScanNeedsConsent={autoScanNeedsConsent}
+              onEnableAutoScan={enableAutoScan}
+              autoScanPaused={autoPaused}
+              // Native crop (CR 2026-10-15 P2_1): the frame is measured in window coords at
+              // capture; without this ref every native capture fell back to the full photo.
+              scanAreaRef={scanFrameRef}
+              onOpenSession={() => setSessionOpenRequest((n) => n + 1)}
+              isCameraReady={isCameraReady}
+              cameraError={cameraError}
+              onFlash={toggleFlash}
+              onScan={handleScan}
+              onGallery={pickFromGallery}
+              onClose={handleClose}
+              onRetry={() => {
+                setCameraError(null);
+                if (webCameraRef.current) webCameraRef.current.retry();
+                else setIsCameraReady(false);
+              }}
+            />
+          </View>
+        </View>
+        ) : (
         <View ref={cameraBoxRef} style={styles.camera} collapsable={false} testID="scan-camera-box">
         <CameraView
           ref={cameraRef}
@@ -1706,6 +1810,7 @@ export default function ScanScreen({ navigation }: any) {
           />
         </CameraView>
         </View>
+        )
       )}
       
       {/* Floating result card */}

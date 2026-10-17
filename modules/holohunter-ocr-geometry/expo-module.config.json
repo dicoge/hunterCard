@@ -1,6 +1,11 @@
 {
-  "platforms": ["android"],
+  "platforms": [
+    "android"
+  ],
   "android": {
-    "modules": ["com.holohunter.ocrgeometry.HoloHunterOcrGeometryModule"]
+    "modules": [
+      "com.holohunter.ocrgeometry.HoloHunterOcrGeometryModule",
+      "com.holohunter.ocrgeometry.HoloHunterCardScannerModule"
+    ]
   }
 }
