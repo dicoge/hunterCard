@@ -222,16 +222,52 @@ function assertAmbiguous(label, result) {
   });
   check('the catalog has many divergent-price card numbers to cover', divergent.length >= 20, `got ${divergent.length}`);
 
+  // v44: a divergent number may resolve to ONE version only when its rows are proven to be
+  // the same physical printing — judged here INDEPENDENTLY from the raw catalog rows (not
+  // by the implementation): exactly one row from the ent07 aggregation bucket plus one
+  // product row, the same shop listing (yuyuImage), the same official art, the same rarity
+  // and name, no known language / condition difference, and distinct quote times. Then the
+  // version must carry every raw id, the LATEST row's price and every raw quote, and the raw
+  // rows must stay loadable with their own prices. Anything else must stay ambiguous.
+  const rawDb = JSON.parse(read('public/data/database.json')).cards;
+  const provenSameListing = (list) => {
+    const raw = list.map((c) => rawDb[c.id]);
+    if (raw.length !== 2 || raw.some((r) => !r)) return null;
+    const agg = raw.filter((r) => r.sourceProduct === 'ent07');
+    const own = raw.filter((r) => r.sourceProduct !== 'ent07');
+    const same = (k) => new Set(raw.map((r) => r[k] ?? null)).size === 1;
+    if (agg.length !== 1 || own.length !== 1) return null;
+    if (!raw[0].yuyuImage || !same('yuyuImage') || !raw[0].officialImage || !same('officialImage')) return null;
+    if (!raw[0].rarity || !same('rarity') || !same('name') || !same('language') || !same('condition')) return null;
+    const t = raw.map((r) => Date.parse(r.timestamp));
+    if (t.some((x) => !Number.isFinite(x)) || t[0] === t[1]) return null;
+    const latest = raw[t[0] > t[1] ? 0 : 1];
+    return { own: own[0], latest, raw };
+  };
   const leaked = [];
-  for (const [cardNumber] of divergent) {
+  let ambiguous = 0, proven = 0;
+  for (const [cardNumber, list] of divergent) {
     const res = resolvePrintingByCardNumber(all, cardNumber);
-    if (res.status !== 'ambiguous') leaked.push({ cardNumber, status: res.status });
+    if (res.status === 'ambiguous') { ambiguous += 1; continue; }
+    const proof = provenSameListing(list);
+    const card = res.card;
+    const ok = !!proof && res.status === 'unique'
+      && card.id === proof.own.id
+      && JSON.stringify([...(card.aliasIds ?? [])].sort()) === JSON.stringify(proof.raw.map((r) => r.id).sort())
+      && card.sellPrice === proof.latest.sellPrice
+      && JSON.stringify((card.priceQuotes ?? []).map((q) => q.price).sort((x, y) => x - y)) === JSON.stringify(proof.raw.map((r) => r.sellPrice).sort((x, y) => x - y))
+      && proof.raw.every((r) => all.find((c) => c.id === r.id)?.sellPrice === r.sellPrice);
+    if (ok) proven += 1; else leaked.push({ cardNumber, status: res.status, provenByRawRows: !!proof });
   }
   check(
-    `every one of the ${divergent.length} divergent-price numbers resolves as ambiguous, never first-match`,
-    leaked.length === 0,
+    `every one of the ${divergent.length} divergent-price numbers resolves as ambiguous, or (independently proven from raw rows) as ONE same-listing version at its latest quote with all aliases and quotes — never first-match`,
+    leaked.length === 0 && ambiguous + proven === divergent.length,
     `${leaked.length} leaked, e.g. ${JSON.stringify(leaked[0])}`,
   );
+  check('the multi-printing majority still resolves as ambiguous (consolidation is the exception)', ambiguous > proven * 10, `ambiguous ${ambiguous}, proven ${proven}`);
+  const hBP01024 = resolvePrintingByCardNumber(all, 'hBP01-024');
+  check('hBP01-024 (genuinely different printings) stays ambiguous', hBP01024.status === 'ambiguous' && hBP01024.printings.length >= 2);
+  console.log(`    divergent ${divergent.length}: ambiguous ${ambiguous}, proven same-listing versions ${proven}`);
 }
 
 // ── 7. Source guards, including the leg this harness cannot execute ─────────
