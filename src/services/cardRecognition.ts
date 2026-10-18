@@ -516,17 +516,27 @@ export function consolidateCandidates(cands: RecognizedCandidate[] | undefined):
   });
 }
 
-/** The API's single card, replaced by its proven version when a candidate merged it. */
-function versionOfCard(card: CardInfo, cands: RecognizedCandidate[] | undefined): CardInfo {
+/**
+ * v44 (CR 14f19ab): the proven printing version a single card row belongs to, with its
+ * current proven quote, aliases and every quote kept. Its same-number siblings come from
+ * `catalog`; the row itself is used AS GIVEN (an API row's own, possibly newer quote is
+ * never replaced by the catalog copy of that id) and the existing rules reconcile the
+ * quote times — a same-time disagreement stays unpriced. No siblings (or an empty catalog
+ * after a load failure) → the row unchanged: nothing is inferred without the catalog.
+ */
+export function provenVersionOf(card: CardInfo, catalog: CardInfo[]): CardInfo {
+  if (!card?.cardNumber || (card.aliasIds?.length ?? 0) > 1) return card;
+  const siblings = catalog.filter((c) => c.cardNumber === card.cardNumber && c.id !== card.id);
+  if (siblings.length === 0) return card;
+  const version = consolidatePrintingCards([card, ...siblings]).find((c) => (c.aliasIds ?? [c.id]).includes(card.id));
+  return version && (version.aliasIds?.length ?? 0) > 1 ? version : card;
+}
+
+/** The API's single card → its proven version (candidates first, else the catalog — loaded, not assumed). */
+async function versionOfCard(card: CardInfo, cands: RecognizedCandidate[] | undefined): Promise<CardInfo> {
   const merged = cands?.find((c) => (c.card.aliasIds?.length ?? 0) > 1 && c.card.aliasIds!.includes(card.id));
   if (merged) return merged.card;
-  // The API sent its card alone: its proven siblings are in the local catalog.
-  if (cachedDb) {
-    const own = consolidatePrintingCards(cachedDb.filter((c) => c.cardNumber === card.cardNumber))
-      .find((c) => (c.aliasIds?.length ?? 0) > 1 && c.aliasIds!.includes(card.id));
-    if (own) return own;
-  }
-  return card;
+  return provenVersionOf(card, await loadAllCards());
 }
 
 /**
@@ -692,7 +702,7 @@ async function recognizeViaApi(imageUri: string, options: RecognizeImageOptions 
     // API returned full card info — use it directly
     if (data.card) {
       const candidates = data.match ? mapApiCandidates(data.candidates) : verifyLegacyNumberEvidence(mapApiCandidates(data.candidates), legacyReceivedNumber(data));
-      const cardInfo = versionOfCard(mapApiCard(data.card), candidates);
+      const cardInfo = await versionOfCard(mapApiCard(data.card), candidates);
       return {
         success: true,
         card: cardInfo,
@@ -928,19 +938,20 @@ export async function recognizeCard(searchText: string): Promise<RecognitionResu
   // 1. 精確匹配卡號 (大小寫不敏感)
   const exactIdMatch = allCards.find(c => c.id.toLowerCase() === query.toLowerCase());
   if (exactIdMatch) {
-    return { success: true, card: exactIdMatch };
+    // Any raw id (an alias row included) resolves to its proven version.
+    return { success: true, card: provenVersionOf(exactIdMatch, allCards) };
   }
 
   // 2. 名稱完全匹配
   const exactNameMatch = allCards.find(c => c.name === query);
   if (exactNameMatch) {
-    return { success: true, card: exactNameMatch };
+    return { success: true, card: provenVersionOf(exactNameMatch, allCards) };
   }
 
   // 3. 卡號前綴匹配 (如 "hBP04" 匹配所有 hBP04 系列)
   const idPrefixMatch = allCards.filter(c => c.id.toLowerCase().startsWith(query.toLowerCase()));
   if (idPrefixMatch.length === 1) {
-    return { success: true, card: idPrefixMatch[0] };
+    return { success: true, card: provenVersionOf(idPrefixMatch[0], allCards) };
   }
   if (idPrefixMatch.length > 1) {
     // Reached from the OCR path (Step 2 below calls recognizeCard per line), so
@@ -964,7 +975,7 @@ export async function recognizeCard(searchText: string): Promise<RecognitionResu
   const queryLower = query.toLowerCase();
   const containsMatch = allCards.filter(c => c.name.toLowerCase().includes(queryLower));
   if (containsMatch.length === 1) {
-    return { success: true, card: containsMatch[0] };
+    return { success: true, card: provenVersionOf(containsMatch[0], allCards) };
   }
   if (containsMatch.length > 1) {
     return {
@@ -1002,7 +1013,7 @@ export async function recognizeCard(searchText: string): Promise<RecognitionResu
     return queryLower.includes(cardLower);
   }).sort((a, b) => b.name.length - a.name.length); // 最長（最精確）的優先
   if (reversedMatch.length === 1) {
-    return { success: true, card: reversedMatch[0] };
+    return { success: true, card: provenVersionOf(reversedMatch[0], allCards) };
   }
   if (reversedMatch.length > 1) {
     return {
@@ -1071,13 +1082,18 @@ export async function searchCards(query: string, limit: number = 10): Promise<Ca
   const allCards = await loadAllCards();
   const queryLower = query.toLowerCase();
 
-  return allCards
-    .filter(card =>
-      card.name.toLowerCase().includes(queryLower) ||
-      card.id.toLowerCase().includes(queryLower) ||
-      card.series.toLowerCase().includes(queryLower),
-    )
-    .slice(0, limit);
+  // Each match becomes its proven version (alias rows of one version → one suggestion).
+  const seen = new Set<string>();
+  const out: CardInfo[] = [];
+  for (const card of allCards) {
+    if (out.length >= limit) break;
+    if (!(card.name.toLowerCase().includes(queryLower) || card.id.toLowerCase().includes(queryLower) || card.series.toLowerCase().includes(queryLower))) continue;
+    const version = provenVersionOf(card, allCards);
+    if (seen.has(version.id)) continue;
+    seen.add(version.id);
+    out.push(version);
+  }
+  return out;
 }
 
 export default {
