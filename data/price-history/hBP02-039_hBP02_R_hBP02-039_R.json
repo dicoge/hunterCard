@@ -58,8 +58,16 @@
       "currency": "JPY",
       "cardId": "hBP02-039_hBP02_R_hBP02-039_R",
       "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-10-18",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-039_hBP02_R_hBP02-039_R",
+      "sourceProduct": "hBP02"
     }
   ],
-  "lastUpdated": "2026-10-17T12:05:01.121Z",
+  "lastUpdated": "2026-10-18T12:09:03.313Z",
   "nameZh": "沙花叉克蘿伊"
 }

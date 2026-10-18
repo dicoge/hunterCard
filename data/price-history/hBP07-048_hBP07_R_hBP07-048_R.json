@@ -58,8 +58,16 @@
       "currency": "JPY",
       "cardId": "hBP07-048_hBP07_R_hBP07-048_R",
       "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-10-18",
+      "price": 220,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-048_hBP07_R_hBP07-048_R",
+      "sourceProduct": "hBP07"
     }
   ],
-  "lastUpdated": "2026-10-17T12:05:00.845Z",
+  "lastUpdated": "2026-10-18T12:09:01.747Z",
   "nameZh": "伊莉莎白·蘿絲·布拉德弗雷姆"
 }
