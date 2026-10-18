@@ -196,7 +196,7 @@ const { usePhotoUploadConsentStore } = await import('../src/store/photoUploadCon
 const { PHOTO_UPLOAD_DISCLOSURE_VERSION } = await import('../src/services/photoUploadDisclosure.ts');
 const { useScanQuotaStore } = await import('../src/store/scanQuotaStore.ts');
 const { useScanSessionStore } = await import('../src/stores/scanSessionStore.ts');
-const { FRAME_ANALYSIS_INTERVAL_MS, frameCropInFrame } = await import('../src/services/nativeCardScanner.ts');
+const { FRAME_ANALYSIS_INTERVAL_MS, frameCropInFrame, visibleUprightRect } = await import('../src/services/nativeCardScanner.ts');
 const { DEFAULT_FRAME_REGION } = await import('../src/services/autoCapture.ts');
 
 let passed = 0;
@@ -222,15 +222,17 @@ const crop = planNativeCrop(PREVIEW, FRAME, { width: FW, height: FH }).crop;
 const px = (nb) => ({ x: Math.round(crop.x + nb.x * crop.width), y: Math.round(crop.y + nb.y * crop.height), width: Math.round(nb.width * crop.width), height: Math.round(nb.height * crop.height) });
 const STEADY = { x: 0.1, y: 0.86, width: 0.22, height: 0.04 };
 let seq = 0;
-const frame = (text, nb = STEADY, { grouped = false } = {}) => {
-  if (!text) return { seq: ++seq, width: FW, height: FH, blocks: [] };
-  const num = px(nb);
-  const numberLine = { text, boundingBox: num, elements: [{ text, boundingBox: num }] };
-  if (!grouped) return { seq: ++seq, width: FW, height: FH, blocks: [{ text, boundingBox: num, lines: [numberLine] }] };
-  const above = { x: num.x, y: num.y - 4 * num.height, width: Math.round(num.width * 1.1), height: num.height };
-  return { seq: ++seq, width: FW, height: FH, blocks: [{ text: `illustrator text\n${text}`,
-    boundingBox: { x: num.x, y: above.y, width: above.width, height: num.y + num.height - above.y },
-    lines: [{ text: 'illustrator text', boundingBox: above, elements: [] }, numberLine] }] };
+// v44: frames are PIXELS (a luminance grid of the visible frame, as the native view sends):
+// no text → an empty table; text → one card in the scan frame, moved horizontally by how far
+// `nb` sits from STEADY (a moving card); a box in the crop margin → the card outside the
+// crop. The text only picks the card's colour — nothing reads it.
+const { cardInCropFrame } = await import('./lib/card-frames.mjs');
+const COLORS = [[170, 70, 110], [70, 170, 110], [110, 90, 190], [190, 140, 60]];
+const colorOf = (text) => COLORS[[...text].reduce((a, ch) => a + ch.charCodeAt(0), 0) % COLORS.length];
+const frame = (text, nb = STEADY) => {
+  if (!text) return cardInCropFrame({ width: FW, height: FH }, crop, { card: false });
+  const outside = nb.y + nb.height > 0.95;
+  return cardInCropFrame({ width: FW, height: FH }, crop, { dx: nb.x - STEADY.x, dy: outside ? 0.5 : 0, color: colorOf(text) });
 };
 // (A build/screen without the frame scanner never installs these hooks: frames go nowhere.)
 const emit = async (payload, n = 1) => { for (let i = 0; i < n; i++) { await act(async () => { globalThis.__emitFrame?.(payload); await Promise.resolve(); }); await tick(5); } };
@@ -415,13 +417,14 @@ try {
     await emit(frame(''), 3);
   });
 
-  await test('ML Kit grouping the held number with the line above on alternate frames still triggers ONE capture (number element box measured)', async () => {
+  await test('v44: a still, uniform scene (a white sheet filling the view) never triggers, however long it stays', async () => {
+    const { sceneFrame } = await import('./lib/card-frames.mjs');
     const s = stills(), n = bodies.length;
-    for (let i = 0; i < 2; i++) await emit(frame('hBP05-003', STEADY, { grouped: i % 2 === 0 }));
-    await settle(n);
-    assert.equal(stills(), s + 1);
-    assert.equal(bodies.length, n + 1);
-    await click(byTestId('scan-match-retake'));
+    const white = sceneFrame(320, 427, []);
+    for (const px of white.luma.data.keys()) white.luma.data[px] = 235;
+    await emit({ ...white, width: FW, height: FH }, 12);
+    assert.equal(stills(), s);
+    assert.equal(bodies.length, n);
     await emit(frame(''), 3);
   });
 
@@ -607,12 +610,18 @@ try {
     const ev = { width: 960, height: 1280, rotation: 90, bufferWidth: 1280, bufferHeight: 960, cropRect: { x: 100, y: 50, width: 1100, height: 544 } };
     const plan = frameCropInFrame(PREVIEW, FRAME, ev);
     assert.ok(plan.ok);
-    const nb = { x: 0.8, y: 0.86, width: 0.1, height: 0.04 };
-    const num = { x: Math.round(plan.crop.x + nb.x * plan.crop.width), y: Math.round(plan.crop.y + nb.y * plan.crop.height), width: Math.round(nb.width * plan.crop.width), height: Math.round(nb.height * plan.crop.height) };
+    // The card drawn where the on-screen frame lies inside the VISIBLE part of the frame.
+    const visible = visibleUprightRect(ev);
+    const cardFrame = cardInCropFrame({ width: 960, height: 1280 }, plan.crop, { visible, extra: ev });
+    // The old full-frame cover-fit (grid assumed to span the whole frame) does not see a
+    // card in its frame at all.
+    const { detectCardRegion } = await import('../src/utils/cardRegionDetector.ts');
     const old = planNativeCrop(PREVIEW, FRAME, { width: 960, height: 1280 }).crop;
-    const oldRight = (num.x + num.width - old.x) / old.width;
-    assert.ok(oldRight > DEFAULT_FRAME_REGION.x + DEFAULT_FRAME_REGION.width, `old mapping: right edge ${oldRight.toFixed(3)} outside the frame region`);
-    const payload = (seqNo) => ({ ...ev, seq: seqNo, blocks: [{ text: 'hBP05-013', boundingBox: num, lines: [{ text: 'hBP05-013', boundingBox: num, elements: [{ text: 'hBP05-013', boundingBox: num }] }] }] });
+    const g = cardFrame.luma, sx = g.width / 960, sy = g.height / 1280, r = DEFAULT_FRAME_REGION;
+    const oldCrop = { x: old.x * sx, y: old.y * sy, width: old.width * sx, height: old.height * sy };
+    const naive = detectCardRegion(g, oldCrop, { x: oldCrop.x + r.x * oldCrop.width, y: oldCrop.y + r.y * oldCrop.height, width: r.width * oldCrop.width, height: r.height * oldCrop.height });
+    assert.notEqual(naive.status, 'card', `old mapping: ${naive.status}`);
+    const payload = (seqNo) => ({ ...cardFrame, seq: seqNo });
     const s = stills(), n = bodies.length;
     await emit(payload(++seq));
     await emit(payload(++seq));

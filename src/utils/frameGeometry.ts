@@ -18,7 +18,10 @@ export interface FrameTextEvent {
   bufferWidth?: number;
   bufferHeight?: number;
   cropRect?: { x: number; y: number; width: number; height: number };
-  blocks: unknown;
+  /** v44: luminance grid of the visible upright frame (CardFrameLuma.kt) for the card detector. */
+  luma?: { width: number; height: number; data: number[] };
+  /** v42/v43 ML Kit text blocks — no longer sent by the native view (kept optional). */
+  blocks?: unknown;
 }
 
 type Box = { x: number; y: number; width: number; height: number };

@@ -1,0 +1,623 @@
+{
+  "state": "FIXTURES_PREPARED_NOT_PRODUCT_PASS",
+  "actualBaseSource": "247227659ea750c6372494fa0ad6896f5249ffcb",
+  "actualCollisionRows": [
+    {
+      "id": "hBD24-023_ent07",
+      "cardNumber": "hBD24-023",
+      "name": "癒月ちょこ",
+      "type": "OshiHolomen",
+      "color": "colorless",
+      "rarity": "P",
+      "series": "ent07",
+      "sourceProduct": "ent07",
+      "sourceProductName": "",
+      "sourceProductText": "",
+      "sellPrice": 8980,
+      "yuyuName": "癒月ちょこ",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10023.jpg",
+      "prices": [
+        {
+          "name": "癒月ちょこ",
+          "sellPrice": 8980,
+          "rarity": "P",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10023.jpg"
+        }
+      ],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-023_P.png",
+      "localImage": "/images/hBD24-023.jpg",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "",
+      "timestamp": "2026-10-17T12:04:34.162Z",
+      "_rawPricesArchive": [
+        {
+          "name": "癒月ちょこ",
+          "sellPrice": 8980,
+          "rarity": "P",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10023.jpg"
+        }
+      ],
+      "ytStats": {
+        "subscriberCount": 1120000,
+        "totalViewCount": 110366828,
+        "date": "2026-10-03",
+        "channelId": "UC1suqwovbL1kzsoaZgFZLKg",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-10-03T12:03:30.994Z",
+        "subscriberDate": "2026-10-03",
+        "viewChannelId": "UC1suqwovbL1kzsoaZgFZLKg",
+        "viewSource": "youtube_about_ssr",
+        "viewParser": "ytInitialData.aboutChannelViewModel/v1",
+        "viewFetchedAt": "2026-10-03T12:03:30.994Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": 737309,
+        "viewCount_15d": 1512599,
+        "viewCount_30d": 4164191,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0,
+        "growth_1d": null,
+        "growth_7d": null,
+        "growth_15d": null,
+        "growth_30d": null,
+        "viewCount_daily": null,
+        "viewCount_weekly": 737309,
+        "viewCount_monthly": 4164191
+      },
+      "skillsJp": {
+        "cardNumber": "hBD24-023",
+        "name": "癒月ちょこ",
+        "cardType": "推しホロメン",
+        "color": "紫",
+        "oshiSkill": {
+          "name": "パープルエンハンス",
+          "cost": "-2",
+          "effect": "[ターンに1回]このターンの間、自分の紫ホロメン1人のアーツ+20。"
+        },
+        "spOshiSkill": {
+          "name": "Birthday Gift ～Purple～",
+          "cost": "-2",
+          "effect": "[ゲームに1回]自分のデッキから、紫ホロメン1枚を公開し、手札に加える。そしてデッキをシャッフルする。"
+        }
+      },
+      "skillsZh": {
+        "cardNumber": "hBD24-023",
+        "name": "癒月巧可",
+        "cardType": "主推成員",
+        "color": "紫",
+        "oshiSkill": {
+          "name": "紫色強化",
+          "cost": "-2",
+          "effect": "[每回合1次]這個回合內，自己的紫色成員1位招式+20。"
+        },
+        "spOshiSkill": {
+          "name": "Birthday Gift ～Purple～",
+          "cost": "-2",
+          "effect": "[每場遊戲1次]從自己的牌組中，展示1張紫色成員，加入手牌。然後洗牌。"
+        }
+      },
+      "nameZh": "癒月巧可"
+    },
+    {
+      "id": "hBD24-023_hPR_P_hBD24-023_P",
+      "cardNumber": "hBD24-023",
+      "name": "癒月ちょこ",
+      "type": "OshiHolomen",
+      "color": "colorless",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sourceProductName": "PRカード",
+      "sourceProductText": "PRカード",
+      "sellPrice": 9980,
+      "yuyuName": "癒月ちょこ",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10023.jpg",
+      "prices": [
+        {
+          "name": "癒月ちょこ",
+          "sellPrice": 9980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10023.jpg"
+        }
+      ],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-023_P.png",
+      "localImage": "/images/hBD24-023.jpg",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "",
+      "timestamp": "2026-08-25T12:11:18.894Z",
+      "_rawPricesArchive": [
+        {
+          "name": "癒月ちょこ",
+          "sellPrice": 9980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10023.jpg"
+        }
+      ],
+      "ytStats": {
+        "subscriberCount": 1120000,
+        "totalViewCount": 110366828,
+        "date": "2026-10-03",
+        "channelId": "UC1suqwovbL1kzsoaZgFZLKg",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-10-03T12:03:30.994Z",
+        "subscriberDate": "2026-10-03",
+        "viewChannelId": "UC1suqwovbL1kzsoaZgFZLKg",
+        "viewSource": "youtube_about_ssr",
+        "viewParser": "ytInitialData.aboutChannelViewModel/v1",
+        "viewFetchedAt": "2026-10-03T12:03:30.994Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": 737309,
+        "viewCount_15d": 1512599,
+        "viewCount_30d": 4164191,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0,
+        "growth_1d": null,
+        "growth_7d": null,
+        "growth_15d": null,
+        "growth_30d": null,
+        "viewCount_daily": null,
+        "viewCount_weekly": 737309,
+        "viewCount_monthly": 4164191
+      },
+      "skillsJp": {
+        "cardNumber": "hBD24-023",
+        "name": "癒月ちょこ",
+        "cardType": "推しホロメン",
+        "color": "紫",
+        "oshiSkill": {
+          "name": "パープルエンハンス",
+          "cost": "-2",
+          "effect": "[ターンに1回]このターンの間、自分の紫ホロメン1人のアーツ+20。"
+        },
+        "spOshiSkill": {
+          "name": "Birthday Gift ～Purple～",
+          "cost": "-2",
+          "effect": "[ゲームに1回]自分のデッキから、紫ホロメン1枚を公開し、手札に加える。そしてデッキをシャッフルする。"
+        }
+      },
+      "skillsZh": {
+        "cardNumber": "hBD24-023",
+        "name": "癒月巧可",
+        "cardType": "主推成員",
+        "color": "紫",
+        "oshiSkill": {
+          "name": "紫色強化",
+          "cost": "-2",
+          "effect": "[每回合1次]這個回合內，自己的紫色成員1位招式+20。"
+        },
+        "spOshiSkill": {
+          "name": "Birthday Gift ～Purple～",
+          "cost": "-2",
+          "effect": "[每場遊戲1次]從自己的牌組中，展示1張紫色成員，加入手牌。然後洗牌。"
+        }
+      },
+      "nameZh": "癒月巧可"
+    }
+  ],
+  "actualCollisionWarning": "same image/listing URL is evidence for investigation, not a blanket alias authorization; actual language/condition unknown",
+  "cases": [
+    {
+      "name": "proven_same_printing_same_source_listing_latest_quote",
+      "inputRows": [
+        {
+          "cardNumber": "hBP01-010",
+          "language": "ja",
+          "priceType": "sell",
+          "currency": "JPY",
+          "condition": "NM",
+          "source": "fixture-store",
+          "physicalPrinting": "fixture-print-A",
+          "rarity": "C",
+          "artIdentity": "fixture-art-A",
+          "id": "alias-A",
+          "sellPrice": 8980,
+          "quotedAt": "2026-10-17T12:00:00Z",
+          "listingIdentity": "https://fixture.invalid/listing/one",
+          "sourceProduct": "aggregation"
+        },
+        {
+          "cardNumber": "hBP01-010",
+          "language": "ja",
+          "priceType": "sell",
+          "currency": "JPY",
+          "condition": "NM",
+          "source": "fixture-store",
+          "physicalPrinting": "fixture-print-A",
+          "rarity": "C",
+          "artIdentity": "fixture-art-A",
+          "id": "official-A",
+          "sellPrice": 9980,
+          "quotedAt": "2026-08-25T12:00:00Z",
+          "listingIdentity": "https://fixture.invalid/listing/one",
+          "sourceProduct": "official-promo"
+        }
+      ],
+      "expected": {
+        "aliasProof": {
+          "alias-A": "fixture-print-A",
+          "official-A": "fixture-print-A"
+        },
+        "versions": 1,
+        "currentPrice": 8980,
+        "historyMustRetain": [
+          9980,
+          8980
+        ],
+        "rawRowsMustRetain": 2
+      }
+    },
+    {
+      "name": "same_images_but_alias_unproven_no_blind_merge",
+      "inputRows": [
+        {
+          "cardNumber": "hBP01-010",
+          "language": "ja",
+          "priceType": "sell",
+          "currency": "JPY",
+          "condition": "NM",
+          "source": "fixture-store",
+          "physicalPrinting": null,
+          "rarity": "C",
+          "artIdentity": "fixture-art-A",
+          "id": "alias-A",
+          "sellPrice": 8980,
+          "quotedAt": "2026-10-17T12:00:00Z",
+          "listingIdentity": "https://fixture.invalid/listing/one",
+          "sourceProduct": "aggregation"
+        },
+        {
+          "cardNumber": "hBP01-010",
+          "language": "ja",
+          "priceType": "sell",
+          "currency": "JPY",
+          "condition": "NM",
+          "source": "fixture-store",
+          "physicalPrinting": null,
+          "rarity": "C",
+          "artIdentity": "fixture-art-A",
+          "id": "official-A",
+          "sellPrice": 9980,
+          "quotedAt": "2026-08-25T12:00:00Z",
+          "listingIdentity": "https://fixture.invalid/listing/one",
+          "sourceProduct": "official-promo"
+        }
+      ],
+      "expected": {
+        "versions": "unresolved",
+        "keepBothSourceRecords": true,
+        "doNotInventCurrentPrice": true,
+        "showQuoteDatesAndSources": true
+      }
+    },
+    {
+      "name": "same_number_different_rarity_art_remain_separate",
+      "inputRows": [
+        {
+          "cardNumber": "hBP01-010",
+          "language": "ja",
+          "priceType": "sell",
+          "currency": "JPY",
+          "condition": "NM",
+          "source": "fixture-store",
+          "physicalPrinting": "fixture-print-A",
+          "rarity": "C",
+          "artIdentity": "fixture-art-A",
+          "id": "alias-A",
+          "sellPrice": 8980,
+          "quotedAt": "2026-10-17T12:00:00Z",
+          "listingIdentity": "https://fixture.invalid/listing/one",
+          "sourceProduct": "aggregation"
+        },
+        {
+          "cardNumber": "hBP01-010",
+          "language": "ja",
+          "priceType": "sell",
+          "currency": "JPY",
+          "condition": "NM",
+          "source": "fixture-store",
+          "physicalPrinting": "fixture-print-B",
+          "rarity": "SR",
+          "artIdentity": "fixture-art-B",
+          "id": "foil-B",
+          "sellPrice": 40000,
+          "quotedAt": "2026-10-17T12:00:00Z",
+          "listingIdentity": "https://fixture.invalid/listing/one"
+        }
+      ],
+      "expected": {
+        "versions": 2
+      }
+    },
+    {
+      "name": "same_number_same_rarity_different_art_remain_separate",
+      "inputRows": [
+        {
+          "cardNumber": "hBP01-010",
+          "language": "ja",
+          "priceType": "sell",
+          "currency": "JPY",
+          "condition": "NM",
+          "source": "fixture-store",
+          "physicalPrinting": "fixture-print-A",
+          "rarity": "C",
+          "artIdentity": "fixture-art-A",
+          "id": "alias-A",
+          "sellPrice": 8980,
+          "quotedAt": "2026-10-17T12:00:00Z",
+          "listingIdentity": "https://fixture.invalid/listing/one",
+          "sourceProduct": "aggregation"
+        },
+        {
+          "cardNumber": "hBP01-010",
+          "language": "ja",
+          "priceType": "sell",
+          "currency": "JPY",
+          "condition": "NM",
+          "source": "fixture-store",
+          "physicalPrinting": "fixture-print-C",
+          "rarity": "C",
+          "artIdentity": "fixture-art-C",
+          "id": "art-C",
+          "sellPrice": 15000,
+          "quotedAt": "2026-10-17T12:00:00Z",
+          "listingIdentity": "https://fixture.invalid/listing/one"
+        }
+      ],
+      "expected": {
+        "versions": 2
+      }
+    },
+    {
+      "name": "different_language_no_merge",
+      "inputRows": [
+        {
+          "cardNumber": "hBP01-010",
+          "language": "ja",
+          "priceType": "sell",
+          "currency": "JPY",
+          "condition": "NM",
+          "source": "fixture-store",
+          "physicalPrinting": "fixture-print-A",
+          "rarity": "C",
+          "artIdentity": "fixture-art-A",
+          "id": "alias-A",
+          "sellPrice": 8980,
+          "quotedAt": "2026-10-17T12:00:00Z",
+          "listingIdentity": "https://fixture.invalid/listing/one",
+          "sourceProduct": "aggregation"
+        },
+        {
+          "cardNumber": "hBP01-010",
+          "language": "en",
+          "priceType": "sell",
+          "currency": "JPY",
+          "condition": "NM",
+          "source": "fixture-store",
+          "physicalPrinting": "fixture-print-A",
+          "rarity": "C",
+          "artIdentity": "fixture-art-A",
+          "id": "en-A",
+          "sellPrice": 500,
+          "quotedAt": "2026-10-17T12:00:00Z",
+          "listingIdentity": "https://fixture.invalid/listing/one"
+        }
+      ],
+      "expected": {
+        "versions": 2
+      }
+    },
+    {
+      "name": "buy_vs_sell_not_two_versions_or_interchangeable",
+      "inputRows": [
+        {
+          "cardNumber": "hBP01-010",
+          "language": "ja",
+          "priceType": "sell",
+          "currency": "JPY",
+          "condition": "NM",
+          "source": "fixture-store",
+          "physicalPrinting": "fixture-print-A",
+          "rarity": "C",
+          "artIdentity": "fixture-art-A",
+          "id": "alias-A",
+          "sellPrice": 8980,
+          "quotedAt": "2026-10-17T12:00:00Z",
+          "listingIdentity": "https://fixture.invalid/listing/one",
+          "sourceProduct": "aggregation"
+        },
+        {
+          "cardNumber": "hBP01-010",
+          "language": "ja",
+          "priceType": "buy",
+          "currency": "JPY",
+          "condition": "NM",
+          "source": "fixture-store",
+          "physicalPrinting": "fixture-print-A",
+          "rarity": "C",
+          "artIdentity": "fixture-art-A",
+          "id": "buy-A",
+          "sellPrice": 7000,
+          "quotedAt": "2026-10-17T12:00:00Z",
+          "listingIdentity": "https://fixture.invalid/listing/one"
+        }
+      ],
+      "expected": {
+        "versions": 1,
+        "sell": 8980,
+        "buy": 7000,
+        "typedQuotesMustRemainSeparate": true
+      }
+    },
+    {
+      "name": "different_conditions_label_and_preserve",
+      "inputRows": [
+        {
+          "cardNumber": "hBP01-010",
+          "language": "ja",
+          "priceType": "sell",
+          "currency": "JPY",
+          "condition": "NM",
+          "source": "fixture-store",
+          "physicalPrinting": "fixture-print-A",
+          "rarity": "C",
+          "artIdentity": "fixture-art-A",
+          "id": "alias-A",
+          "sellPrice": 8980,
+          "quotedAt": "2026-10-17T12:00:00Z",
+          "listingIdentity": "https://fixture.invalid/listing/one",
+          "sourceProduct": "aggregation"
+        },
+        {
+          "cardNumber": "hBP01-010",
+          "language": "ja",
+          "priceType": "sell",
+          "currency": "JPY",
+          "condition": "played",
+          "source": "fixture-store",
+          "physicalPrinting": "fixture-print-A",
+          "rarity": "C",
+          "artIdentity": "fixture-art-A",
+          "id": "played-A",
+          "sellPrice": 6000,
+          "quotedAt": "2026-10-17T12:00:00Z",
+          "listingIdentity": "https://fixture.invalid/listing/one"
+        }
+      ],
+      "expected": {
+        "versions": 1,
+        "quoteOptions": 2,
+        "conditionsVisible": true
+      }
+    },
+    {
+      "name": "same_timestamp_conflicting_quote_no_arbitrary_max_or_min",
+      "inputRows": [
+        {
+          "cardNumber": "hBP01-010",
+          "language": "ja",
+          "priceType": "sell",
+          "currency": "JPY",
+          "condition": "NM",
+          "source": "fixture-store",
+          "physicalPrinting": "fixture-print-A",
+          "rarity": "C",
+          "artIdentity": "fixture-art-A",
+          "id": "alias-A",
+          "sellPrice": 8980,
+          "quotedAt": "2026-10-17T12:00:00Z",
+          "listingIdentity": "https://fixture.invalid/listing/one",
+          "sourceProduct": "aggregation"
+        },
+        {
+          "cardNumber": "hBP01-010",
+          "language": "ja",
+          "priceType": "sell",
+          "currency": "JPY",
+          "condition": "NM",
+          "source": "fixture-store",
+          "physicalPrinting": "fixture-print-A",
+          "rarity": "C",
+          "artIdentity": "fixture-art-A",
+          "id": "conflict",
+          "sellPrice": 9980,
+          "quotedAt": "2026-10-17T12:00:00Z",
+          "listingIdentity": "https://fixture.invalid/listing/one",
+          "sourceProduct": "aggregation"
+        }
+      ],
+      "expected": {
+        "currentPrice": null,
+        "conflictVisible": true,
+        "historyMustRetain": [
+          8980,
+          9980
+        ]
+      }
+    },
+    {
+      "name": "unknown_language_condition_not_assumed",
+      "inputRows": [
+        {
+          "cardNumber": "hBP01-010",
+          "language": null,
+          "priceType": "sell",
+          "currency": "JPY",
+          "condition": null,
+          "source": "fixture-store",
+          "physicalPrinting": "fixture-print-A",
+          "rarity": "C",
+          "artIdentity": "fixture-art-A",
+          "id": "alias-A",
+          "sellPrice": 8980,
+          "quotedAt": "2026-10-17T12:00:00Z",
+          "listingIdentity": "https://fixture.invalid/listing/one",
+          "sourceProduct": "aggregation"
+        }
+      ],
+      "expected": {
+        "unknownFieldsMustRemainUnknown": true
+      }
+    },
+    {
+      "name": "no_quote_sibling_price_never_borrowed",
+      "inputRows": [
+        {
+          "cardNumber": "hBP01-010",
+          "language": "ja",
+          "priceType": "sell",
+          "currency": "JPY",
+          "condition": "NM",
+          "source": "fixture-store",
+          "physicalPrinting": "fixture-print-A",
+          "rarity": "C",
+          "artIdentity": "fixture-art-A",
+          "id": "alias-A",
+          "sellPrice": null,
+          "quotedAt": "2026-10-17T12:00:00Z",
+          "listingIdentity": "https://fixture.invalid/listing/one",
+          "sourceProduct": "aggregation"
+        },
+        {
+          "cardNumber": "hBP01-010",
+          "language": "ja",
+          "priceType": "sell",
+          "currency": "JPY",
+          "condition": "NM",
+          "source": "fixture-store",
+          "physicalPrinting": "fixture-print-B",
+          "rarity": "C",
+          "artIdentity": "fixture-art-B",
+          "id": "different-art",
+          "sellPrice": 30000,
+          "quotedAt": "2026-10-17T12:00:00Z",
+          "listingIdentity": "https://fixture.invalid/listing/one"
+        }
+      ],
+      "expected": {
+        "versions": 2,
+        "firstVersionPrice": null
+      }
+    }
+  ],
+  "roundTripContracts": [
+    "Local catalog and API mapping must preserve available sourceProduct, sourceProductName, price source, quotedAt, language/condition/price type; never invent missing values",
+    "Display identity or conflict labels must distinguish rows without relying only on different prices",
+    "Raw records/history remain available across canonicalization and rebuild",
+    "Only explicit same physical printing/source listing proof permits alias consolidation; do not flatten by cardNumber alone"
+  ]
+}

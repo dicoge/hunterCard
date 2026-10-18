@@ -1,4 +1,5 @@
 import { normalizeCardIdentity } from '../src/utils/cardNormalization';
+import { provenanceFromRow } from '../src/utils/printingQuotes';
 import { parseCardNumberToken } from '../src/utils/cardNumberToken';
 import { buildRecognitionTrace, isUnknownWord, readExpectedField, receivedCardText, safeCardText, type ExpectedLabel } from '../src/services/scanTrace';
 import {
@@ -205,6 +206,9 @@ function fmt(entry: any, storeMvp = false) {
     prices: entry.prices,
     priceHistory: entry.priceHistory || {},
     ytStats: entry.ytStats ?? null,
+    // v44: product / quote time / shop listing of THIS row's price, so the client can tell
+    // two rows of one card number apart (and prove an aggregation alias). Unknown = null.
+    provenance: provenanceFromRow(entry),
     type: normalized.category || '',
     grade: normalized.stage || '',
     normalized,

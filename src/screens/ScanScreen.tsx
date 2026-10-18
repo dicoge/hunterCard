@@ -21,12 +21,12 @@ import { CameraView, useCameraPermissions, CameraType } from 'expo-camera';
 import WebCamera, { WebCameraHandle } from '../components/WebCamera';
 import CameraPermissionDeniedView from '../components/CameraPermissionDeniedView';
 import ScanSessionPanel from '../components/ScanSessionPanel';
-import { geometryBlocksFromNative, nativeOcrProbe, nativeOcrRecognize } from '../services/nativeOcr';
-import { FRAME_ANALYSIS_INTERVAL_MS, FRAME_SCANNER_STARTUP_TIMEOUT_MS, frameCropInFrame, loadNativeCardScannerView, type FrameTextEvent } from '../services/nativeCardScanner';
+import { nativeOcrProbe, nativeOcrRecognize } from '../services/nativeOcr';
+import { FRAME_ANALYSIS_INTERVAL_MS, FRAME_SCANNER_STARTUP_TIMEOUT_MS, frameCropInFrame, loadNativeCardScannerView, visibleUprightRect, type FrameTextEvent } from '../services/nativeCardScanner';
 import { useScanSessionStore } from '../stores/scanSessionStore';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, convertPrice } from '../constants';
-import { recognizeCard, recognizeCardFromOcr, recognizeCardFromImage, searchCards, candidateEvidence, CardInfo, RecognizedCandidate } from '../services/cardRecognition';
+import { recognizeCard, recognizeCardFromOcr, recognizeCardFromImage, searchCards, candidateEvidence, consolidateCandidates, CardInfo, RecognizedCandidate } from '../services/cardRecognition';
 import { classifyHttpFailure, isRecognitionInfrastructureFailure, RECOGNITION_REQUEST_TIMEOUT_MS, type RecognitionFailureKind } from '../services/recognitionOutcome';
 import { chooseRecognitionPictureSize, validateRecognitionImages } from '../services/recognitionImagePolicy';
 import { ensurePhotoUploadConsent, hasPhotoUploadConsent } from '../services/photoUploadDisclosure';
@@ -61,7 +61,8 @@ import {
 } from '../services/scanPresentation';
 import { CROP_PAD, defaultScanFrameRect, planNativeCrop } from '../utils/scanFrame';
 import { cropProbeToFrame, deleteProbeFiles, nativeAutoCaptureAvailable, prepareNativeScanImages, PROBE_JPEG_QUALITY } from '../services/nativeScanCapture';
-import { AUTO_CAPTURE_PROBE_INTERVAL_MS, createAutoCaptureMachine, observationsFromProbeText, type ProbeObservation } from '../services/autoCapture';
+import { AUTO_CAPTURE_PROBE_INTERVAL_MS, CARD_REGION_AUTO_CAPTURE, CARD_REGION_TOKEN, DEFAULT_FRAME_REGION, createAutoCaptureMachine, observationsFromProbeText, type ProbeObservation } from '../services/autoCapture';
+import { detectCardRegion } from '../utils/cardRegionDetector';
 import { findCardNumberTokens } from '../utils/cardNumberToken';
 import { useScanDiagnosticsStore } from '../store/scanDiagnosticsStore';
 import { diagnosticsFromResult, type ScanOutcome } from '../services/scanDiagnostics';
@@ -333,7 +334,7 @@ export default function ScanScreen({ navigation }: any) {
   const analysisOpenRef = useRef(false);
   // Explicit camera retry after a mount error remounts the native scanner (a fresh bind).
   const [scannerKey, setScannerKey] = useState(0);
-  const autoMachine = useRef(createAutoCaptureMachine()).current;
+  const autoMachine = useRef(createAutoCaptureMachine(FrameScannerView ? CARD_REGION_AUTO_CAPTURE : undefined)).current;
   const probeBusyRef = useRef(false);
   // Bumped whenever a probe in flight must not count any more (background, blur,
   // cancel, close, unmount): its late reading is dropped, never fed to the trigger.
@@ -509,13 +510,15 @@ export default function ScanScreen({ navigation }: any) {
 
   const mapApiCandidates = (raw: any): RecognizedCandidate[] | undefined => {
     if (!Array.isArray(raw) || raw.length === 0) return undefined;
-    return raw
+    const mapped: RecognizedCandidate[] = raw
       .filter((c: any) => c && c.cardNumber)
       .map((c: any) => ({
         card: mapApiCard(c),
         confidence: typeof c.confidence === 'number' ? c.confidence : 0,
         evidence: candidateEvidence(c.reason),
       }));
+    // v44: rows proven to be one printing are one candidate (shared with cardRecognition).
+    return consolidateCandidates(mapped);
   };
 
   const closeCandidateSelector = () =>
@@ -805,9 +808,20 @@ export default function ScanScreen({ navigation }: any) {
     const plan = frameCropInFrame(geometry.preview, geometry.frame, event);
     if (!plan.ok) return;
     const { crop } = plan;
-    const observations = observationsFromProbeText(
-      geometryBlocksFromNative(event.blocks), findCardNumberTokens, crop.width, crop.height, crop.x, crop.y,
-    );
+    // v44: the card itself, found in the preview pixels — no card number has to be readable
+    // first (that is read from the one still). The luminance grid covers the visible frame.
+    const observations: ProbeObservation[] = [];
+    const grid = event.luma;
+    const visible = visibleUprightRect(event);
+    if (grid && grid.width > 0 && grid.height > 0 && visible.width > 0 && visible.height > 0) {
+      const sx = grid.width / visible.width;
+      const sy = grid.height / visible.height;
+      const cropGrid = { x: (crop.x - visible.x) * sx, y: (crop.y - visible.y) * sy, width: crop.width * sx, height: crop.height * sy };
+      const r = DEFAULT_FRAME_REGION;
+      const frameGrid = { x: cropGrid.x + r.x * cropGrid.width, y: cropGrid.y + r.y * cropGrid.height, width: r.width * cropGrid.width, height: r.height * cropGrid.height };
+      const region = detectCardRegion(grid, cropGrid, frameGrid);
+      if (region.status === 'card' && region.box) observations.push({ token: CARD_REGION_TOKEN, box: region.box });
+    }
     const decision = autoMachine.onProbe(observations);
     if (autoMachine.state().paused) setAutoPaused(true);
     if (decision === 'trigger') captureAndRecognize();

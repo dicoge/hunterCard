@@ -144,9 +144,11 @@ await test('tracked native FRAME-SCANNER contract (v42 CR): CameraX preview + Im
   assert.match(view, /AspectRatioStrategy\(AspectRatio\.RATIO_4_3/);
   // backpressure + bounded sampling + active gate, frame closed on every path
   assert.match(view, /setBackpressureStrategy\(ImageAnalysis\.STRATEGY_KEEP_ONLY_LATEST\)/);
-  assert.match(view, /if \(released \|\| (?:failed \|\| )?!analysisActive \|\| inFlight \|\| reader == null \|\| now - lastAnalysedAt < intervalMs\) \{\s*proxy\.close\(\)/);
+  assert.match(view, /if \(released \|\| failed \|\| !analysisActive \|\| inFlight \|\| now - lastAnalysedAt < intervalMs\) \{\s*proxy\.close\(\)/);
   assert.match(view, /coerceIn\(MIN_INTERVAL_MS, MAX_INTERVAL_MS\)/);
-  assert.match(view, /addOnCompleteListener[\s\S]{0,120}inFlight = false\s*proxy\.close\(\)/);
+  // v44: the frame is reduced synchronously and closed on every path; one delivery pending
+  assert.match(view, /CardFrameLuma\.sample\(plane\.buffer, plane\.rowStride, plane\.pixelStride, crop, rotation\)[\s\S]{0,120}\} finally \{\s*proxy\.close\(\)\s*\}/);
+  assert.match(view, /inFlight = true\s*ContextCompat\.getMainExecutor\(context\)\.execute \{\s*inFlight = false/);
   // CR fea33de P2: ownership of an analysis = the session + generation it STARTED in
   assert.match(view, /val startSession = session\s*val startGeneration = generation/);
   assert.match(view, /if \(!released && (?:!failed && )?analysisActive && startSession == session && startGeneration == generation\) \{\s*onFrameText\(/,
@@ -162,10 +164,11 @@ await test('tracked native FRAME-SCANNER contract (v42 CR): CameraX preview + Im
   assert.match(view, /val crop = Rect\(proxy\.cropRect\)/);
   assert.match(view, /crop = Rect\(image\.cropRect\)/, 'the still uses the view-port crop of its own capture');
   assert.match(view, /Bitmap\.createBitmap\(decoded, left, top, cw, ch, matrix, true\)/, 'still cropped to the visible rect and rotated upright');
-  // ML Kit line/element geometry, on the frame itself (no file)
-  assert.match(view, /InputImage\.fromMediaImage\(media, rotation\)/);
-  assert.match(view, /"elements" to line\.elements\.map/);
-  const analyze = view.slice(view.indexOf('private fun analyze'), view.indexOf('private fun mapBlocks'));
+  // v44: preview frames → a luminance grid for the card-region detector; no text reader
+  // on preview frames (the card number is read from the one still only)
+  assert.ok(view.includes('"luma" to mapOf("width" to grid.width, "height" to grid.height, "data" to grid.data.toList())'));
+  assert.ok(!/InputImage|TextRecognition|mapBlocks/.test(view), 'no ML Kit text reading of preview frames');
+  const analyze = view.slice(view.indexOf('private fun analyze'), view.indexOf('fun takePicture'));
   assert.ok(!/takePicture|FileOutputStream/.test(analyze), 'frame analysis never captures a still or writes a file');
   // the still: only through takePicture, flash off (the light is the torch)
   assert.match(view, /setFlashMode\(ImageCapture\.FLASH_MODE_OFF\)/);
@@ -180,7 +183,7 @@ await test('tracked native FRAME-SCANNER contract (v42 CR): CameraX preview + Im
   assert.match(view, /override fun onError\(exception: ImageCaptureException\) \{\s*pending\.reject\(/);
   // deterministic release
   const release = view.slice(view.indexOf('fun release()'));
-  for (const step of ['released = true', 'analysisActive = false', 'generation += 1', 'pending.reject("E_CAMERA_RELEASED"', 'clearAnalyzer()', 'cameraProvider?.unbind(', 'recognizer?.close()', 'analysisExecutor.shutdown()', 'ioExecutor.shutdown()', 'scope.cancel()']) {
+  for (const step of ['released = true', 'analysisActive = false', 'generation += 1', 'pending.reject("E_CAMERA_RELEASED"', 'clearAnalyzer()', 'cameraProvider?.unbind(', 'analysisExecutor.shutdown()', 'ioExecutor.shutdown()', 'scope.cancel()']) {
     assert.ok(release.includes(step), `release: ${step}`);
   }
   assert.ok(release.indexOf('pending.reject') < release.indexOf('scope.cancel()'), 'pending captures settled before the scope is cancelled');
@@ -235,6 +238,22 @@ await test('CR c5acd45 native FAILURE contract: a CRITICAL camera error before O
   assert.match(analyze, /if \(released \|\| failed \|\| !analysisActive/, 'no new analysis');
   assert.match(analyze, /if \(!released && !failed && analysisActive && startSession == session && startGeneration == generation\)/, 'no delivery of one in flight');
   assert.match(view, /if \(released \|\| failed \|\| capture == null\) \{\s*pending\.reject\("E_CAMERA_NOT_READY"/, 'no still');
+});
+
+await test('v44 CardFrameLuma.kt follows the JS reference sampler (lumaGridFromRgba): same grid size rule, 2×2 points per cell, rotation inverse = frameGeometry convention', async () => {
+  const kt = fs.readFileSync(new URL('../modules/holohunter-ocr-geometry/android/src/main/java/com/holohunter/ocrgeometry/CardFrameLuma.kt', import.meta.url), 'utf8');
+  const ts = fs.readFileSync(new URL('../src/utils/cardRegionDetector.ts', import.meta.url), 'utf8');
+  const { LUMA_GRID_LONG_SIDE } = await import('../src/utils/cardRegionDetector.ts');
+  assert.match(kt, new RegExp(`const val LONG_SIDE = ${LUMA_GRID_LONG_SIDE}\\b`));
+  assert.match(kt, /gh = max\(1, \(LONG_SIDE\.toDouble\(\) \* visH \/ visW\)\.roundToInt\(\)\)/);
+  assert.match(ts, /Math\.max\(1, Math\.round\(LUMA_GRID_LONG_SIDE \* visibleHeight \/ visibleWidth\)\)/);
+  assert.match(kt, /\(gx \+ \(sx \+ 0\.5\) \/ 2\.0\) \* visW \/ gw/);
+  assert.match(ts, /\(gx \+ \(sx \+ 0\.5\) \/ 2\) \* width\) \/ gw/);
+  assert.match(kt, /90 -> \{ bx = v; by = ch - 1 - u \}/);
+  assert.match(kt, /180 -> \{ bx = cw - 1 - u; by = ch - 1 - v \}/);
+  assert.match(kt, /270 -> \{ bx = cw - 1 - v; by = u \}/);
+  assert.match(kt, /out\[gy \* gw \+ gx\] = sum shr 2/);
+  assert.match(kt, /val visW = if \(rotation % 180 == 0\) cw else ch/);
 });
 
 if ((process.exitCode ?? 0) === 0) console.log(`\n✅ scan-ocr-geometry: ${passed} checks passed`);

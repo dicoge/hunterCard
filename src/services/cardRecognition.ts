@@ -29,6 +29,8 @@ import { SCAN_RUNTIME } from './scanRuntime';
 import { findCardNumberTokens } from '../utils/cardNumberToken';
 import { matchFromWire, legacyReceivedNumber, verifyLegacyNumberEvidence } from './scanPresentation';
 import { projectTrace, type RecognitionTrace } from './scanTrace';
+import { buildPrintingVersions, provenanceFromRow, type PriceProvenance, type PriceQuote } from '../utils/printingQuotes';
+import { loadDatabaseJson, loadSeriesNamesJson } from '../utils/staticData';
 
 // ── 類型定義 ──
 
@@ -65,6 +67,16 @@ export interface CardInfo {
   priceHistory?: Record<string, number>;
   ytStats?: any;              // YouTube 成員數據（訂閱/成長/觀看）
   normalized?: any;
+  /** v44: where this row's price came from (product, quote time, shop listing). Unknown = null. */
+  provenance?: PriceProvenance | null;
+  /** v44: every catalog row id proven to be this same printing (all stay valid ids). */
+  aliasIds?: string[];
+  /** v44: every quote of those rows — older quotes are kept, never dropped. */
+  priceQuotes?: PriceQuote[];
+  /** v44: quotes at the same latest time disagree — no current price is claimed. */
+  priceConflict?: boolean;
+  /** v44: another printing looks identical but is NOT proven the same — show its source. */
+  lookalike?: boolean;
 }
 
 /** A single ranked candidate returned for mid/low-confidence scans. */
@@ -179,9 +191,9 @@ let seriesNamesCache: Record<string, string> | null = null;
 async function loadSeriesNames(): Promise<Record<string, string>> {
   if (seriesNamesCache) return seriesNamesCache;
   try {
-    const res = await fetch('/data/series-names.json');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    seriesNamesCache = await res.json();
+    // Platform loader (src/utils/staticData): native reads the bundled asset — it has no
+    // page origin for a relative fetch — and web fetches it same-origin.
+    seriesNamesCache = await loadSeriesNamesJson();
     return seriesNamesCache!;
   } catch (e: any) {
     console.error('[cardRecognition] Failed to load series names:', e.message);
@@ -199,9 +211,10 @@ export async function loadAllCards(): Promise<CardInfo[]> {
 
   dbFetchPromise = (async () => {
     try {
-      const res = await fetch('/data/database.json');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const db: DatabaseSchema = await res.json();
+      // Platform loader: native = the bundled sanitized catalog, web = same-origin fetch.
+      // (A relative fetch here failed on native, so a cold scan had no catalog to resolve
+      // proven printing versions against — CR 35faebe.)
+      const db: DatabaseSchema = await loadDatabaseJson();
       const cards = db.cards || {};
 
       // Each compound-key entry (e.g. hBP04-005_hBP04, hBP04-005_ent07) is a separate CardInfo
@@ -229,6 +242,7 @@ export async function loadAllCards(): Promise<CardInfo[]> {
         prices: (entry as any).prices || [],
         priceHistory: (entry as any).priceHistory || {},
         ytStats: (entry as any).ytStats ?? null,
+        provenance: provenanceFromRow(entry as any),
       }, cardFlags));
 
       cachedDb = result;
@@ -283,8 +297,46 @@ export function resolvePrintingByCardNumber(
   void fuzzy;
 
   if (matches.length === 0) return { status: 'none' };
+  // v44: rows proven to be the same physical printing (an aggregation-bucket alias of the
+  // same shop listing) are ONE version with its latest quote; unproven lookalikes stay
+  // separate and say where their price came from.
+  matches = consolidatePrintingCards(matches);
   if (matches.length === 1) return { status: 'unique', card: matches[0] };
   return { status: 'ambiguous', cardNumber: matches[0].cardNumber, printings: matches };
+}
+
+/**
+ * Same-number rows → printing versions (src/utils/printingQuotes). A proven alias group
+ * becomes one card: the representative row's id and identity, the latest same-listing
+ * sell quote as its price (none on a conflict), every quote and every alias id kept.
+ */
+export function consolidatePrintingCards(cards: CardInfo[]): CardInfo[] {
+  return buildPrintingVersions(cards).map((v) => {
+    if (v.members.length === 1) return v.lookalike ? { ...v.primary, lookalike: true } : v.primary;
+    const current = v.currentSell;
+    const currentRow = current ? v.members.find((m) => m.id === current.rowId) : undefined;
+    const history: Record<string, number> = {};
+    for (const m of v.members) Object.assign(history, m.priceHistory || {});
+    Object.assign(history, v.primary.priceHistory || {});
+    return {
+      ...v.primary,
+      sellPrice: current ? current.price : null,
+      buyPrice: v.currentBuy ? v.currentBuy.price : (v.primary.buyPrice ?? null),
+      // The listing prices the session / card page price from. With no current quote (a
+      // same-time conflict, or several conditions) there is NO listing to price from — the
+      // primary row's listing would put a price back on an unpriced version (CR e8f14dc).
+      // Every quote stays in priceQuotes.
+      prices: current ? (currentRow?.prices ?? []) : [],
+      priceHistory: history,
+      provenance: v.primary.provenance
+        ? { ...v.primary.provenance, quotedAt: current?.quotedAt ?? null, listing: current?.listing ?? v.primary.provenance.listing }
+        : null,
+      aliasIds: v.memberIds,
+      priceQuotes: v.quotes,
+      priceConflict: v.sellConflict,
+      lookalike: v.lookalike,
+    };
+  });
 }
 
 /**
@@ -313,6 +365,7 @@ export function ambiguousPrintingCard(printings: CardInfo[]): CardInfo {
  * confidence, because nothing in the evidence prefers one printing.
  */
 export function ambiguousPrintingResult(res: { cardNumber: string; printings: CardInfo[] }): RecognitionResult {
+  res = { ...res, printings: consolidatePrintingCards(res.printings) };
   return {
     success: true,
     card: ambiguousPrintingCard(res.printings),
@@ -437,16 +490,55 @@ function mapApiCard(apiCard: any): CardInfo {
   return stripDisabledCardFields(mapApiCardToCardInfo(apiCard), releaseCardFlags());
 }
 
-/** Map the API's raw candidate list into RecognizedCandidate[]. */
+/** Map the API's raw candidate list into RecognizedCandidate[] (proven versions merged). */
 function mapApiCandidates(raw: any): RecognizedCandidate[] | undefined {
   if (!Array.isArray(raw) || raw.length === 0) return undefined;
-  return raw
+  return consolidateCandidates(raw
     .filter(c => c && c.cardNumber)
     .map(c => ({
       card: mapApiCard(c),
       confidence: typeof c.confidence === 'number' ? c.confidence : 0,
       evidence: candidateEvidence(c.reason),
-    }));
+    })));
+}
+
+/**
+ * v44: candidate rows proven to be one printing (an aggregation alias of the same shop
+ * listing) become ONE candidate — the version with its latest quote — keeping the best
+ * confidence / evidence of its rows. Every recognition entry (API candidates, the API's
+ * own card, the local resolver, ScanScreen) goes through this, so the chooser, the
+ * result and the session see the same version and price.
+ */
+export function consolidateCandidates(cands: RecognizedCandidate[] | undefined): RecognizedCandidate[] | undefined {
+  if (!cands) return cands;
+  return consolidatePrintingCards(cands.map((c) => c.card)).map((card) => {
+    const ids = card.aliasIds ?? [card.id];
+    const best = cands.filter((c) => ids.includes(c.card.id)).sort((a, b) => b.confidence - a.confidence)[0];
+    return { card, confidence: best?.confidence ?? 0, evidence: best?.evidence };
+  });
+}
+
+/**
+ * v44 (CR 14f19ab): the proven printing version a single card row belongs to, with its
+ * current proven quote, aliases and every quote kept. Its same-number siblings come from
+ * `catalog`; the row itself is used AS GIVEN (an API row's own, possibly newer quote is
+ * never replaced by the catalog copy of that id) and the existing rules reconcile the
+ * quote times — a same-time disagreement stays unpriced. No siblings (or an empty catalog
+ * after a load failure) → the row unchanged: nothing is inferred without the catalog.
+ */
+export function provenVersionOf(card: CardInfo, catalog: CardInfo[]): CardInfo {
+  if (!card?.cardNumber || (card.aliasIds?.length ?? 0) > 1) return card;
+  const siblings = catalog.filter((c) => c.cardNumber === card.cardNumber && c.id !== card.id);
+  if (siblings.length === 0) return card;
+  const version = consolidatePrintingCards([card, ...siblings]).find((c) => (c.aliasIds ?? [c.id]).includes(card.id));
+  return version && (version.aliasIds?.length ?? 0) > 1 ? version : card;
+}
+
+/** The API's single card → its proven version (candidates first, else the catalog — loaded, not assumed). */
+async function versionOfCard(card: CardInfo, cands: RecognizedCandidate[] | undefined): Promise<CardInfo> {
+  const merged = cands?.find((c) => (c.card.aliasIds?.length ?? 0) > 1 && c.card.aliasIds!.includes(card.id));
+  if (merged) return merged.card;
+  return provenVersionOf(card, await loadAllCards());
 }
 
 /**
@@ -611,12 +703,13 @@ async function recognizeViaApi(imageUri: string, options: RecognizeImageOptions 
 
     // API returned full card info — use it directly
     if (data.card) {
-      const cardInfo = mapApiCard(data.card);
+      const candidates = data.match ? mapApiCandidates(data.candidates) : verifyLegacyNumberEvidence(mapApiCandidates(data.candidates), legacyReceivedNumber(data));
+      const cardInfo = await versionOfCard(mapApiCard(data.card), candidates);
       return {
         success: true,
         card: cardInfo,
         confidence: typeof data.confidence === 'number' ? data.confidence : undefined,
-        candidates: data.match ? mapApiCandidates(data.candidates) : verifyLegacyNumberEvidence(mapApiCandidates(data.candidates), legacyReceivedNumber(data)),
+        candidates,
         match: mapMatch(data.match),
         debug: diagnosticDebug(data.debug),
         trace: projectTrace(data.trace),
@@ -847,19 +940,20 @@ export async function recognizeCard(searchText: string): Promise<RecognitionResu
   // 1. 精確匹配卡號 (大小寫不敏感)
   const exactIdMatch = allCards.find(c => c.id.toLowerCase() === query.toLowerCase());
   if (exactIdMatch) {
-    return { success: true, card: exactIdMatch };
+    // Any raw id (an alias row included) resolves to its proven version.
+    return { success: true, card: provenVersionOf(exactIdMatch, allCards) };
   }
 
   // 2. 名稱完全匹配
   const exactNameMatch = allCards.find(c => c.name === query);
   if (exactNameMatch) {
-    return { success: true, card: exactNameMatch };
+    return { success: true, card: provenVersionOf(exactNameMatch, allCards) };
   }
 
   // 3. 卡號前綴匹配 (如 "hBP04" 匹配所有 hBP04 系列)
   const idPrefixMatch = allCards.filter(c => c.id.toLowerCase().startsWith(query.toLowerCase()));
   if (idPrefixMatch.length === 1) {
-    return { success: true, card: idPrefixMatch[0] };
+    return { success: true, card: provenVersionOf(idPrefixMatch[0], allCards) };
   }
   if (idPrefixMatch.length > 1) {
     // Reached from the OCR path (Step 2 below calls recognizeCard per line), so
@@ -883,7 +977,7 @@ export async function recognizeCard(searchText: string): Promise<RecognitionResu
   const queryLower = query.toLowerCase();
   const containsMatch = allCards.filter(c => c.name.toLowerCase().includes(queryLower));
   if (containsMatch.length === 1) {
-    return { success: true, card: containsMatch[0] };
+    return { success: true, card: provenVersionOf(containsMatch[0], allCards) };
   }
   if (containsMatch.length > 1) {
     return {
@@ -921,7 +1015,7 @@ export async function recognizeCard(searchText: string): Promise<RecognitionResu
     return queryLower.includes(cardLower);
   }).sort((a, b) => b.name.length - a.name.length); // 最長（最精確）的優先
   if (reversedMatch.length === 1) {
-    return { success: true, card: reversedMatch[0] };
+    return { success: true, card: provenVersionOf(reversedMatch[0], allCards) };
   }
   if (reversedMatch.length > 1) {
     return {
@@ -990,13 +1084,18 @@ export async function searchCards(query: string, limit: number = 10): Promise<Ca
   const allCards = await loadAllCards();
   const queryLower = query.toLowerCase();
 
-  return allCards
-    .filter(card =>
-      card.name.toLowerCase().includes(queryLower) ||
-      card.id.toLowerCase().includes(queryLower) ||
-      card.series.toLowerCase().includes(queryLower),
-    )
-    .slice(0, limit);
+  // Each match becomes its proven version (alias rows of one version → one suggestion).
+  const seen = new Set<string>();
+  const out: CardInfo[] = [];
+  for (const card of allCards) {
+    if (out.length >= limit) break;
+    if (!(card.name.toLowerCase().includes(queryLower) || card.id.toLowerCase().includes(queryLower) || card.series.toLowerCase().includes(queryLower))) continue;
+    const version = provenVersionOf(card, allCards);
+    if (seen.has(version.id)) continue;
+    seen.add(version.id);
+    out.push(version);
+  }
+  return out;
 }
 
 export default {

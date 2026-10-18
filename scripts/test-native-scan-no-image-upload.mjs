@@ -53,7 +53,7 @@ port1.unref();
 register(
   'data:text/javascript,' +
     encodeURIComponent(`
-      import { existsSync } from 'node:fs';
+      import { existsSync, readFileSync } from 'node:fs';
       import { fileURLToPath } from 'node:url';
       import { extname } from 'node:path';
       let port;
@@ -86,6 +86,14 @@ register(
           }
         }
         return next(specifier, context);
+      }
+      // The native catalog loader (src/utils/staticData.ts) imports the bundled JSON with a
+      // plain import, as Metro does; Node needs it loaded as JSON (same as register-ts.mjs).
+      export async function load(url, context, next) {
+        if (url.endsWith('.json')) {
+          return { format: 'json', source: readFileSync(fileURLToPath(url), 'utf8'), shortCircuit: true };
+        }
+        return next(url, context);
       }
     `),
   import.meta.url,

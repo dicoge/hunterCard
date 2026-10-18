@@ -175,6 +175,23 @@ export function createAutoCaptureMachine(options: AutoCaptureOptions = {}): Auto
   };
 }
 
+/**
+ * v44 Android frame scanner: the observation is the CARD REGION found in the preview
+ * pixels (src/utils/cardRegionDetector), not a parsed card number. The detector already
+ * requires the card inside the scan crop, so the whole crop is the region here; the card
+ * box must stay put on `stableHits` consecutive frames. No idle pause: analysing preview
+ * frames takes no photos, and a long empty stretch must never disable a later card.
+ * Re-arming still needs `absentToRearm` frames WITHOUT a card — covering the card number
+ * is not removing the card.
+ */
+export const CARD_REGION_TOKEN = 'card-region';
+export const CARD_REGION_AUTO_CAPTURE: AutoCaptureOptions = {
+  maxIdleProbes: Number.POSITIVE_INFINITY,
+  frameRegion: { x: 0, y: 0, width: 1, height: 1 },
+  maxMove: 0.03,
+  maxSizeChange: 0.15,
+};
+
 /** Minimum time between two probes; a probe also never starts while one is running. */
 export const AUTO_CAPTURE_PROBE_INTERVAL_MS = 1300;
 
