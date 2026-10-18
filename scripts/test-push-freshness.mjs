@@ -151,23 +151,34 @@ const freshDbStaleRowPath = `${tmpDir}/fresh-stale-row.json`;
 const rowStale = { ...DBROWS['hBD24-014_hPR_P_hBD24-014_P'], timestamp: nowIso(24 * 52) };
 fs.writeFileSync(freshDbStaleRowPath, JSON.stringify({ lastUpdated: nowIso(1), cards: { [rowStale.id]: rowStale } }));
 const watchedPrinting = adaptDatabase([rowStale]).priceRecords[0]?.version;
+const freshDbPath = `${tmpDir}/fresh.json`;
+const rowFresh = { ...DBROWS['hBD24-014_hPR_P_hBD24-014_P'], timestamp: nowIso(1) };
+fs.writeFileSync(freshDbPath, JSON.stringify({ lastUpdated: nowIso(1), cards: { [rowFresh.id]: rowFresh } }));
+const validAlert = () => JSON.stringify({ cardNumber: 'hBD24-014', printing: watchedPrinting, lowerPrice: null, upperPrice: 1 });
 
 function mockServer() {
   const hits = [];
+  const posts = [];
+  // Overridable per test: the stored alert hash values (Upstash HGETALL flat array) and a
+  // KV failure switch. Defaults = one valid alert, KV healthy.
+  const kv = { hash: null, fail: false, postFail: false };
   const server = http.createServer((req, res) => {
     let raw = '';
     req.on('data', (d) => { raw += d; });
     req.on('end', () => {
       hits.push(`${req.method} ${decodeURIComponent(req.url)}`);
       const u = decodeURIComponent(req.url);
+      if (u.startsWith('/api/push/')) posts.push(raw);
+      if (kv.fail && !u.startsWith('/api/push/')) { res.writeHead(503); res.end('kv down'); return; }
+      if (kv.postFail && u.startsWith('/api/push/')) { res.writeHead(500); res.end('run failed'); return; }
       let result = [];
       if (u.includes('smembers/push:price-alert-tokens') || u.includes('smembers/push:watchlist-tokens')) result = ['ExponentPushToken[qa]'];
-      else if (u.includes('hgetall/push:price-alerts:')) result = ['k', JSON.stringify({ cardNumber: 'hBD24-014', printing: watchedPrinting, lowerPrice: null, upperPrice: 1 })];
+      else if (u.includes('hgetall/push:price-alerts:')) result = kv.hash ?? ['k', validAlert()];
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify(u.startsWith('/api/push/') ? { ok: true, sent: 0 } : { result }));
     });
   });
-  return new Promise((r) => server.listen(0, '127.0.0.1', () => r({ server, hits, url: `http://127.0.0.1:${server.address().port}` })));
+  return new Promise((r) => server.listen(0, '127.0.0.1', () => r({ server, hits, posts, kv, url: `http://127.0.0.1:${server.address().port}` })));
 }
 function runFeeder(args, env) {
   return new Promise((resolve) => {
@@ -214,6 +225,61 @@ try {
     assert.ok(!mock.hits.some((h) => h.includes('/api/push/price-alert-run')), `no price posted: ${mock.hits.join(', ')}`);
     assert.match(r.out, /none with a current price/);
   });
+  // ── one malformed stored alert must not abort the whole desired-price feed ──
+  const postedPrices = () => mock.posts.map((b) => JSON.parse(b).prices ?? []).flat();
+  await test('malformed alert JSON BEFORE and AFTER a valid one (and non-object / wrong-shape values): the valid exact printing is still fed — one POST with its current price', async () => {
+    mock.hits.length = 0; mock.posts.length = 0;
+    mock.kv.hash = ['bad1', '{"cardNumber":', 'num', '42', 'ok', validAlert(), 'nul', 'null', 'shape', JSON.stringify({ cardNumber: 'hBD24-014' }), 'bad2', 'not json at all'];
+    const r = await runFeeder([...TS, 'scripts/send-price-alerts.mjs'], env(freshDbPath));
+    assert.equal(r.code, 0, r.out);
+    assert.equal(mock.posts.length, 1, `one price POST: ${mock.hits.join(', ')}`);
+    const prices = postedPrices();
+    assert.equal(prices.length, 1, 'exactly the valid printing (malformed ones add nothing)');
+    assert.equal(prices[0].cardNumber, 'hBD24-014');
+    assert.equal(prices[0].printing, watchedPrinting);
+    assert.match(r.out, /skipped 5 malformed alert record/);
+  });
+  await test('duplicate valid alerts around malformed ones still collapse to ONE exact printing', async () => {
+    mock.hits.length = 0; mock.posts.length = 0;
+    mock.kv.hash = ['a', validAlert(), 'bad', '{', 'b', validAlert()];
+    const r = await runFeeder([...TS, 'scripts/send-price-alerts.mjs'], env(freshDbPath));
+    assert.equal(r.code, 0, r.out);
+    assert.equal(postedPrices().length, 1);
+  });
+  await test('only malformed alerts: nothing watched → NO POST, clean exit', async () => {
+    mock.hits.length = 0; mock.posts.length = 0;
+    mock.kv.hash = ['bad1', '{', 'bad2', '[1,'];
+    const r = await runFeeder([...TS, 'scripts/send-price-alerts.mjs'], env(freshDbPath));
+    assert.equal(r.code, 0, r.out);
+    assert.equal(mock.posts.length, 0);
+    assert.match(r.out, /No exact-version price alerts registered/);
+  });
+  await test('KV transport error still fails closed: non-zero exit, NO POST', async () => {
+    mock.hits.length = 0; mock.posts.length = 0;
+    mock.kv.hash = null; mock.kv.fail = true;
+    const r = await runFeeder([...TS, 'scripts/send-price-alerts.mjs'], env(freshDbPath));
+    mock.kv.fail = false;
+    assert.notEqual(r.code, 0);
+    assert.match(r.out, /KV smembers 503/);
+    assert.equal(mock.posts.length, 0);
+  });
+  await test('price-alert-run POST error still fails the run (after skipping a malformed alert)', async () => {
+    mock.hits.length = 0; mock.posts.length = 0;
+    mock.kv.hash = ['bad', '{', 'ok', validAlert()]; mock.kv.postFail = true;
+    const r = await runFeeder([...TS, 'scripts/send-price-alerts.mjs'], env(freshDbPath));
+    mock.kv.postFail = false;
+    assert.notEqual(r.code, 0);
+    assert.match(r.out, /price-alert-run 500/);
+    assert.equal(mock.posts.length, 1, 'the valid printing was posted');
+  });
+  await test('stale database still stops the run before KV even with malformed alerts stored', async () => {
+    mock.hits.length = 0; mock.posts.length = 0;
+    mock.kv.hash = ['bad', '{'];
+    const r = await runFeeder([...TS, 'scripts/send-price-alerts.mjs'], env(staleDbPath));
+    assert.notEqual(r.code, 0);
+    assert.deepEqual(mock.hits, []);
+  });
+  mock.kv.hash = null;
 } finally {
   mock.server.close();
 }
