@@ -377,7 +377,11 @@ try {
     providerDown = true;
     frameText = '';
     await probes(2);
-    frameText = 'hBP05-081';
+    // A valid number that is NOT in the catalog: with the vision service down the scan's
+    // local OCR fallback (scanRecognitionFlow, v39) cannot recover it, so this is a pure
+    // service failure. (A catalogued number is recovered locally into the version sheet —
+    // that only looked like a service failure here while the test catalog never loaded.)
+    frameText = 'hBP05-199';
     for (let i = 0; i < 50 && !byTestId('scan-service-failure'); i++) await tick(100);
     assert.ok(byTestId('scan-service-failure'), 'service panel');
     const t = takes(), n = bodies.length;
