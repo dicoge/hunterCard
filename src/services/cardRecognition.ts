@@ -30,6 +30,7 @@ import { findCardNumberTokens } from '../utils/cardNumberToken';
 import { matchFromWire, legacyReceivedNumber, verifyLegacyNumberEvidence } from './scanPresentation';
 import { projectTrace, type RecognitionTrace } from './scanTrace';
 import { buildPrintingVersions, provenanceFromRow, type PriceProvenance, type PriceQuote } from '../utils/printingQuotes';
+import { loadDatabaseJson, loadSeriesNamesJson } from '../utils/staticData';
 
 // ── 類型定義 ──
 
@@ -190,9 +191,9 @@ let seriesNamesCache: Record<string, string> | null = null;
 async function loadSeriesNames(): Promise<Record<string, string>> {
   if (seriesNamesCache) return seriesNamesCache;
   try {
-    const res = await fetch('/data/series-names.json');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    seriesNamesCache = await res.json();
+    // Platform loader (src/utils/staticData): native reads the bundled asset — it has no
+    // page origin for a relative fetch — and web fetches it same-origin.
+    seriesNamesCache = await loadSeriesNamesJson();
     return seriesNamesCache!;
   } catch (e: any) {
     console.error('[cardRecognition] Failed to load series names:', e.message);
@@ -210,9 +211,10 @@ export async function loadAllCards(): Promise<CardInfo[]> {
 
   dbFetchPromise = (async () => {
     try {
-      const res = await fetch('/data/database.json');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const db: DatabaseSchema = await res.json();
+      // Platform loader: native = the bundled sanitized catalog, web = same-origin fetch.
+      // (A relative fetch here failed on native, so a cold scan had no catalog to resolve
+      // proven printing versions against — CR 35faebe.)
+      const db: DatabaseSchema = await loadDatabaseJson();
       const cards = db.cards || {};
 
       // Each compound-key entry (e.g. hBP04-005_hBP04, hBP04-005_ent07) is a separate CardInfo

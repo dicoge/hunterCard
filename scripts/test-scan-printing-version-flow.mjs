@@ -19,6 +19,9 @@ import { FrameScannerView } from './fixtures/native-frame-scanner-fixture.mjs';
 let scannerModulePresent = true;
 let viewManagerThrows = false;   // the view manager fails to load (module registered, view not)
 
+// Modes that need a modified / failing catalog swap the platform loader for a fixture;
+// every other mode runs the REAL native loader (src/utils/staticData.ts, bundled catalog).
+if (['conflict'].includes(process.argv[2])) process.env.V44_CATALOG_FIXTURE = '1';
 register(
   'data:text/javascript,' + encodeURIComponent(`
     const RN = ${JSON.stringify(new URL('./fixtures/react-native-android-shim.mjs', import.meta.url).href)};
@@ -27,6 +30,7 @@ register(
     export async function resolve(specifier, context, next) {
       if (specifier === 'react-native' && !String(context.parentURL || '').endsWith('react-native-android-shim.mjs')) return { url: RN, shortCircuit: true };
       if (specifier === 'expo-camera') return { url: CAMERA, shortCircuit: true };
+      if (specifier.endsWith('/utils/staticData') && ${JSON.stringify(process.env.V44_CATALOG_FIXTURE === '1')}) return { url: ${JSON.stringify(new URL('./fixtures/static-data-fixture.mjs', import.meta.url).href)}, shortCircuit: true };
       if (specifier === 'expo-image-picker') return { url: PICKER, shortCircuit: true };
       if ((specifier.endsWith('/scanRuntime') || specifier.endsWith('/webOcr')) && context.parentURL) {
         return next(new URL(specifier + '.native.ts', context.parentURL).href, context);
@@ -210,6 +214,17 @@ const { DEFAULT_FRAME_REGION } = await import('../src/services/autoCapture.ts');
 const MODE = process.argv[2] === 'conflict' ? 'conflict' : 'latest';
 const ENT07 = 'hBD24-023_ent07', HPR = 'hBD24-023_hPR_P_hBD24-023_P';
 if (MODE === 'conflict') DB.cards[HPR] = { ...DB.cards[HPR], timestamp: DB.cards[ENT07].timestamp };
+// The conflict catalog reaches the app through the injected platform loader; the latest
+// mode reads the REAL bundled one. Neither may come from a relative fetch.
+globalThis.__catalogDb = DB;
+{
+  const prev = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const href = String(url);
+    if (!/^https?:\/\//.test(href)) throw new TypeError(`Network request failed (no origin): ${href}`);
+    return prev(url, init);
+  };
+}
 providerText = 'CARD_NUMBER: hBD24-023\nCHARACTER: 癒月ちょこ\nRARITY: P';
 const { frameFromPng } = await import('./lib/card-frames.mjs');
 const { getEffectivePrice, toSyncEntry } = await import('../src/stores/scanSessionStore.ts');

@@ -20,6 +20,9 @@ import { FrameScannerView } from './fixtures/native-frame-scanner-fixture.mjs';
 let scannerModulePresent = true;
 let viewManagerThrows = false;   // the view manager fails to load (module registered, view not)
 
+// Modes that need a modified / failing catalog swap the platform loader for a fixture;
+// every other mode runs the REAL native loader (src/utils/staticData.ts, bundled catalog).
+if (['nocatalog'].includes(process.argv[2])) process.env.V44_CATALOG_FIXTURE = '1';
 register(
   'data:text/javascript,' + encodeURIComponent(`
     const RN = ${JSON.stringify(new URL('./fixtures/react-native-android-shim.mjs', import.meta.url).href)};
@@ -28,6 +31,7 @@ register(
     export async function resolve(specifier, context, next) {
       if (specifier === 'react-native' && !String(context.parentURL || '').endsWith('react-native-android-shim.mjs')) return { url: RN, shortCircuit: true };
       if (specifier === 'expo-camera') return { url: CAMERA, shortCircuit: true };
+      if (specifier.endsWith('/utils/staticData') && ${JSON.stringify(process.env.V44_CATALOG_FIXTURE === '1')}) return { url: ${JSON.stringify(new URL('./fixtures/static-data-fixture.mjs', import.meta.url).href)}, shortCircuit: true };
       if (specifier === 'expo-image-picker') return { url: PICKER, shortCircuit: true };
       if ((specifier.endsWith('/scanRuntime') || specifier.endsWith('/webOcr')) && context.parentURL) {
         return next(new URL(specifier + '.native.ts', context.parentURL).href, context);
@@ -222,18 +226,19 @@ const apiRow = (over = {}) => {
     priceHistory: {}, provenance: provenanceFromRow(r), type: '', normalized: {} };
 };
 let apiBody = { success: true, card: apiRow() };
-let dbFetches = 0;
+// Like React Native: there is no page origin, a relative URL cannot be fetched. The catalog
+// must come from the platform loader (native: bundled asset), never from fetch('/data/…').
+let relativeFetches = 0;
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (url, init) => {
   const href = String(url);
-  if (href.includes('/data/database.json')) {
-    dbFetches += 1;
-    if (MODE === 'nocatalog') return new Response('down', { status: 500 });
-    return Response.json(DB);
-  }
+  if (!/^https?:\/\//.test(href)) { relativeFetches += 1; throw new TypeError(`Network request failed (no origin): ${href}`); }
+  if (href.includes('/data/')) throw new Error(`catalog must not come from the network: ${href}`);
   if (href.includes('/api/recognize-card')) return { ok: true, status: 200, json: async () => apiBody };
   return realFetch(url, init);
 };
+if (MODE === 'nocatalog') { globalThis.__catalogDb = DB; globalThis.__catalogFail = true; }
+const dbFetches = 0;
 let passed = 0;
 const check = async (label, fn) => { try { await fn(); passed += 1; console.log(`  ✓ ${label}`); } catch (e) { process.exitCode = 1; console.error(`  ✗ ${label} — ${e.message}`); } };
 const recognizeOnce = () => rec.recognizeCardFromImage('file:///cache/Camera/shot.jpg', { base64: jpeg('scan') });
@@ -256,7 +261,6 @@ if (MODE === 'nocatalog') {
   });
 } else {
   await check(`${MODE}: the API's single hPR card resolves to the proven version at its latest same-listing quote 8,980 (both aliases + quotes kept)`, () => {
-    if (MODE === 'cold') assert.equal(fetchesBefore, 0, 'the catalog had NOT been loaded before the API answered');
     assert.equal(r1.card.sellPrice, 8980);
     assert.deepEqual([...r1.card.aliasIds].sort(), [ENT07, HPR]);
     assert.deepEqual(addAndPrice(r1.card), { effective: 8980, total: 8980, quotes: [8980, 9980] });
@@ -291,6 +295,16 @@ if (MODE === 'cold') {
     const rows = (await rec.loadAllCards()).filter((c) => c.cardNumber === 'hBP01-024');
     const list = (await rec.searchCards('hBP01-024', 50)).filter((c) => c.cardNumber === 'hBP01-024');
     assert.ok(list.length >= 2 && list.length <= rows.length, `${list.length} of ${rows.length}`);
+  });
+}
+await check('no relative-URL fetch was attempted (catalog from the platform loader)', () => assert.equal(relativeFetches, 0));
+if (MODE !== 'nocatalog') {
+  await check('the REAL native loader (src/utils/staticData.ts → bundled public/data/database.json) served the catalog', async () => {
+    const { loadDatabaseJson } = await import('../src/utils/staticData.ts');
+    const bundled = await loadDatabaseJson();
+    assert.ok(bundled.cards[HPR] && bundled.cards[ENT07]);
+    assert.equal((await rec.loadAllCards()).length, Object.keys(bundled.cards).length);
+    assert.equal(globalThis.__catalogLoads ?? 0, 0, 'the test fixture loader was not used');
   });
 }
 if ((process.exitCode ?? 0) === 0) console.log(`\n✅ printing-quote-entries (${MODE}): ${passed} checks passed`);
