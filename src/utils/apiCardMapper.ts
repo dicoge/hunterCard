@@ -40,5 +40,8 @@ export function mapApiCardToCardInfo(raw: any): CardInfo {
     priceHistory: raw.priceHistory || {},
     ytStats: raw.ytStats ?? null,
     normalized: raw.normalized,
+    // v44: the price row's provenance as the API sent it (product, quote time, listing).
+    // Passed through; a field the API did not send stays unknown (null), never invented.
+    provenance: raw.provenance ?? null,
   };
 }

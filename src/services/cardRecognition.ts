@@ -29,6 +29,7 @@ import { SCAN_RUNTIME } from './scanRuntime';
 import { findCardNumberTokens } from '../utils/cardNumberToken';
 import { matchFromWire, legacyReceivedNumber, verifyLegacyNumberEvidence } from './scanPresentation';
 import { projectTrace, type RecognitionTrace } from './scanTrace';
+import { buildPrintingVersions, provenanceFromRow, type PriceProvenance, type PriceQuote } from '../utils/printingQuotes';
 
 // ── 類型定義 ──
 
@@ -65,6 +66,16 @@ export interface CardInfo {
   priceHistory?: Record<string, number>;
   ytStats?: any;              // YouTube 成員數據（訂閱/成長/觀看）
   normalized?: any;
+  /** v44: where this row's price came from (product, quote time, shop listing). Unknown = null. */
+  provenance?: PriceProvenance | null;
+  /** v44: every catalog row id proven to be this same printing (all stay valid ids). */
+  aliasIds?: string[];
+  /** v44: every quote of those rows — older quotes are kept, never dropped. */
+  priceQuotes?: PriceQuote[];
+  /** v44: quotes at the same latest time disagree — no current price is claimed. */
+  priceConflict?: boolean;
+  /** v44: another printing looks identical but is NOT proven the same — show its source. */
+  lookalike?: boolean;
 }
 
 /** A single ranked candidate returned for mid/low-confidence scans. */
@@ -229,6 +240,7 @@ export async function loadAllCards(): Promise<CardInfo[]> {
         prices: (entry as any).prices || [],
         priceHistory: (entry as any).priceHistory || {},
         ytStats: (entry as any).ytStats ?? null,
+        provenance: provenanceFromRow(entry as any),
       }, cardFlags));
 
       cachedDb = result;
@@ -283,8 +295,42 @@ export function resolvePrintingByCardNumber(
   void fuzzy;
 
   if (matches.length === 0) return { status: 'none' };
+  // v44: rows proven to be the same physical printing (an aggregation-bucket alias of the
+  // same shop listing) are ONE version with its latest quote; unproven lookalikes stay
+  // separate and say where their price came from.
+  matches = consolidatePrintingCards(matches);
   if (matches.length === 1) return { status: 'unique', card: matches[0] };
   return { status: 'ambiguous', cardNumber: matches[0].cardNumber, printings: matches };
+}
+
+/**
+ * Same-number rows → printing versions (src/utils/printingQuotes). A proven alias group
+ * becomes one card: the representative row's id and identity, the latest same-listing
+ * sell quote as its price (none on a conflict), every quote and every alias id kept.
+ */
+export function consolidatePrintingCards(cards: CardInfo[]): CardInfo[] {
+  return buildPrintingVersions(cards).map((v) => {
+    if (v.members.length === 1) return v.lookalike ? { ...v.primary, lookalike: true } : v.primary;
+    const current = v.currentSell;
+    const currentRow = current ? v.members.find((m) => m.id === current.rowId) : undefined;
+    const history: Record<string, number> = {};
+    for (const m of v.members) Object.assign(history, m.priceHistory || {});
+    Object.assign(history, v.primary.priceHistory || {});
+    return {
+      ...v.primary,
+      sellPrice: current ? current.price : null,
+      buyPrice: v.currentBuy ? v.currentBuy.price : (v.primary.buyPrice ?? null),
+      prices: currentRow?.prices ?? v.primary.prices,
+      priceHistory: history,
+      provenance: v.primary.provenance
+        ? { ...v.primary.provenance, quotedAt: current?.quotedAt ?? null, listing: current?.listing ?? v.primary.provenance.listing }
+        : null,
+      aliasIds: v.memberIds,
+      priceQuotes: v.quotes,
+      priceConflict: v.sellConflict,
+      lookalike: v.lookalike,
+    };
+  });
 }
 
 /**

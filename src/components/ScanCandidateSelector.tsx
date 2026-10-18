@@ -24,6 +24,7 @@ import { FEATURES } from '../config/releaseFlags';
 import { CardInfo, RecognizedCandidate } from '../services/cardRecognition';
 import { useTranslation } from '../i18n';
 import { resolveCardDisplayName } from '../utils/cardDisplayName';
+import { AGGREGATE_SOURCE_PRODUCTS } from '../utils/printingQuotes';
 
 export interface ScanCandidateSelectorProps {
   visible: boolean;
@@ -57,6 +58,21 @@ export default function ScanCandidateSelector({
     const { value, symbol } = convertPrice(price, preferredCurrency);
     if (value == null) return t('scan_no_trade');
     return `${symbol}${value.toLocaleString()}`;
+  };
+
+  // Product label · quote date (+ "not confirmed the same" / "quotes disagree"). Missing
+  // values are left out, never guessed.
+  const sourceLine = (card: CardInfo): string => {
+    const p = card.provenance;
+    if (!p) return '';
+    const product = p.sourceProductName
+      || (p.sourceProduct && AGGREGATE_SOURCE_PRODUCTS.has(p.sourceProduct) ? t('scan_source_aggregate') : p.sourceProduct)
+      || '';
+    const date = p.quotedAt && /^\d{4}-\d{2}-\d{2}/.test(p.quotedAt) ? t('scan_quote_date', { date: p.quotedAt.slice(0, 10) }) : '';
+    const parts = [product, date];
+    if (card.priceConflict) parts.push(t('scan_quote_conflict'));
+    if (card.lookalike) parts.push(t('scan_version_unconfirmed'));
+    return parts.filter(Boolean).join(' · ');
   };
 
   const title = tier === 'low' ? t('scan_candidate_low_title') : t('scan_candidate_mid_title');
@@ -114,6 +130,13 @@ export default function ScanCandidateSelector({
                         使用者分辨哪張才是手上那一版的依據。 */}
                     {FEATURES.sellPrice ? `  ${formatPrice(card.sellPrice)}` : ''}
                   </Text>
+                  {/* v44: where this version's price came from and when — two rows of one
+                      card number must be told apart by more than their price. */}
+                  {sourceLine(card) ? (
+                    <Text style={styles.itemMeta} numberOfLines={1} testID="scan-candidate-source">
+                      {sourceLine(card)}
+                    </Text>
+                  ) : null}
                 </View>
               </TouchableOpacity>
             );
