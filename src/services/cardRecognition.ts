@@ -320,7 +320,11 @@ export function consolidatePrintingCards(cards: CardInfo[]): CardInfo[] {
       ...v.primary,
       sellPrice: current ? current.price : null,
       buyPrice: v.currentBuy ? v.currentBuy.price : (v.primary.buyPrice ?? null),
-      prices: currentRow?.prices ?? v.primary.prices,
+      // The listing prices the session / card page price from. With no current quote (a
+      // same-time conflict, or several conditions) there is NO listing to price from — the
+      // primary row's listing would put a price back on an unpriced version (CR e8f14dc).
+      // Every quote stays in priceQuotes.
+      prices: current ? (currentRow?.prices ?? []) : [],
       priceHistory: history,
       provenance: v.primary.provenance
         ? { ...v.primary.provenance, quotedAt: current?.quotedAt ?? null, listing: current?.listing ?? v.primary.provenance.listing }
@@ -359,6 +363,7 @@ export function ambiguousPrintingCard(printings: CardInfo[]): CardInfo {
  * confidence, because nothing in the evidence prefers one printing.
  */
 export function ambiguousPrintingResult(res: { cardNumber: string; printings: CardInfo[] }): RecognitionResult {
+  res = { ...res, printings: consolidatePrintingCards(res.printings) };
   return {
     success: true,
     card: ambiguousPrintingCard(res.printings),
@@ -483,16 +488,45 @@ function mapApiCard(apiCard: any): CardInfo {
   return stripDisabledCardFields(mapApiCardToCardInfo(apiCard), releaseCardFlags());
 }
 
-/** Map the API's raw candidate list into RecognizedCandidate[]. */
+/** Map the API's raw candidate list into RecognizedCandidate[] (proven versions merged). */
 function mapApiCandidates(raw: any): RecognizedCandidate[] | undefined {
   if (!Array.isArray(raw) || raw.length === 0) return undefined;
-  return raw
+  return consolidateCandidates(raw
     .filter(c => c && c.cardNumber)
     .map(c => ({
       card: mapApiCard(c),
       confidence: typeof c.confidence === 'number' ? c.confidence : 0,
       evidence: candidateEvidence(c.reason),
-    }));
+    })));
+}
+
+/**
+ * v44: candidate rows proven to be one printing (an aggregation alias of the same shop
+ * listing) become ONE candidate — the version with its latest quote — keeping the best
+ * confidence / evidence of its rows. Every recognition entry (API candidates, the API's
+ * own card, the local resolver, ScanScreen) goes through this, so the chooser, the
+ * result and the session see the same version and price.
+ */
+export function consolidateCandidates(cands: RecognizedCandidate[] | undefined): RecognizedCandidate[] | undefined {
+  if (!cands) return cands;
+  return consolidatePrintingCards(cands.map((c) => c.card)).map((card) => {
+    const ids = card.aliasIds ?? [card.id];
+    const best = cands.filter((c) => ids.includes(c.card.id)).sort((a, b) => b.confidence - a.confidence)[0];
+    return { card, confidence: best?.confidence ?? 0, evidence: best?.evidence };
+  });
+}
+
+/** The API's single card, replaced by its proven version when a candidate merged it. */
+function versionOfCard(card: CardInfo, cands: RecognizedCandidate[] | undefined): CardInfo {
+  const merged = cands?.find((c) => (c.card.aliasIds?.length ?? 0) > 1 && c.card.aliasIds!.includes(card.id));
+  if (merged) return merged.card;
+  // The API sent its card alone: its proven siblings are in the local catalog.
+  if (cachedDb) {
+    const own = consolidatePrintingCards(cachedDb.filter((c) => c.cardNumber === card.cardNumber))
+      .find((c) => (c.aliasIds?.length ?? 0) > 1 && c.aliasIds!.includes(card.id));
+    if (own) return own;
+  }
+  return card;
 }
 
 /**
@@ -657,12 +691,13 @@ async function recognizeViaApi(imageUri: string, options: RecognizeImageOptions 
 
     // API returned full card info — use it directly
     if (data.card) {
-      const cardInfo = mapApiCard(data.card);
+      const candidates = data.match ? mapApiCandidates(data.candidates) : verifyLegacyNumberEvidence(mapApiCandidates(data.candidates), legacyReceivedNumber(data));
+      const cardInfo = versionOfCard(mapApiCard(data.card), candidates);
       return {
         success: true,
         card: cardInfo,
         confidence: typeof data.confidence === 'number' ? data.confidence : undefined,
-        candidates: data.match ? mapApiCandidates(data.candidates) : verifyLegacyNumberEvidence(mapApiCandidates(data.candidates), legacyReceivedNumber(data)),
+        candidates,
         match: mapMatch(data.match),
         debug: diagnosticDebug(data.debug),
         trace: projectTrace(data.trace),

@@ -103,6 +103,23 @@ await test('no quote: never borrows the sibling version\'s price', () => {
   assert.equal(v.find((x) => x.memberIds.includes('alias-A')).currentSell, null);
 });
 
+await test('CR e8f14dc P2 #2: an unknown-rarity aggregation row never bridges a known P and a known SR printing (group-wide consistency)', () => {
+  const common = { cardNumber: 'hBP01-010', imageUrl: 'https://fixture.invalid/art/same.png', sellPrice: 100 };
+  const prov = { sourceProduct: 'hBP01', sourceProductName: 'A', quotedAt: '2026-10-18T12:00:00Z', listing: 'https://card.yuyu-tei.jp/hocg/100_140/hBP01/one.jpg', quoteSource: 'yuyu-tei', language: null, condition: null };
+  const agg = { ...common, id: 'aggregate-unknown', rarity: '', provenance: { ...prov, sourceProduct: 'ent07' } };
+  const p = { ...common, id: 'official-P', rarity: 'P', provenance: prov };
+  const sr = { ...common, id: 'official-SR', rarity: 'SR', provenance: { ...prov, sourceProduct: 'hPR' } };
+  const three = buildPrintingVersions([agg, p, sr]);
+  assert.equal(three.length, 3, JSON.stringify(three.map((v) => v.memberIds)));
+  assert.ok(three.every((v) => v.memberIds.length === 1));
+  // in any order
+  assert.equal(buildPrintingVersions([sr, agg, p]).length, 3);
+  // …while the unambiguous pair still joins
+  const two = buildPrintingVersions([agg, p]);
+  assert.equal(two.length, 1);
+  assert.equal(two[0].proof, 'aggregate-alias-same-listing');
+});
+
 // ── the real shipped collision ──
 const real = CASES.actualCollisionRows;
 await test('real rows hBD24-023: the ent07 aggregation row and the hPR row are proven the SAME listing alias (same yuyu listing + official image + rarity)', () => {

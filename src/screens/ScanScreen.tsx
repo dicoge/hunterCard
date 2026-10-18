@@ -26,7 +26,7 @@ import { FRAME_ANALYSIS_INTERVAL_MS, FRAME_SCANNER_STARTUP_TIMEOUT_MS, frameCrop
 import { useScanSessionStore } from '../stores/scanSessionStore';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, convertPrice } from '../constants';
-import { recognizeCard, recognizeCardFromOcr, recognizeCardFromImage, searchCards, candidateEvidence, consolidatePrintingCards, CardInfo, RecognizedCandidate } from '../services/cardRecognition';
+import { recognizeCard, recognizeCardFromOcr, recognizeCardFromImage, searchCards, candidateEvidence, consolidateCandidates, CardInfo, RecognizedCandidate } from '../services/cardRecognition';
 import { classifyHttpFailure, isRecognitionInfrastructureFailure, RECOGNITION_REQUEST_TIMEOUT_MS, type RecognitionFailureKind } from '../services/recognitionOutcome';
 import { chooseRecognitionPictureSize, validateRecognitionImages } from '../services/recognitionImagePolicy';
 import { ensurePhotoUploadConsent, hasPhotoUploadConsent } from '../services/photoUploadDisclosure';
@@ -517,13 +517,8 @@ export default function ScanScreen({ navigation }: any) {
         confidence: typeof c.confidence === 'number' ? c.confidence : 0,
         evidence: candidateEvidence(c.reason),
       }));
-    // v44: rows proven to be one printing (aggregation alias of the same shop listing) are
-    // one candidate with its latest quote — its best confidence / evidence kept.
-    return consolidatePrintingCards(mapped.map((m) => m.card)).map((card) => {
-      const ids = card.aliasIds ?? [card.id];
-      const best = mapped.filter((m) => ids.includes(m.card.id)).sort((a, b) => b.confidence - a.confidence)[0];
-      return { card, confidence: best?.confidence ?? 0, evidence: best?.evidence };
-    });
+    // v44: rows proven to be one printing are one candidate (shared with cardRecognition).
+    return consolidateCandidates(mapped);
   };
 
   const closeCandidateSelector = () =>

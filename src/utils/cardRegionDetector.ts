@@ -93,8 +93,38 @@ export function detectCardRegion(grid: LumaGrid, crop: GridRect, frame: GridRect
   const bg = median(ring);
   const mad = median(ring.map((v) => Math.abs(v - bg)));
   const threshold = Math.max(MIN_DIFF, 4 * mad);
+  const raw = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i += 1) raw[i] = Math.abs(data[i] - bg) > threshold ? 1 : 0;
+  // A card whose face is close to the table tone still shows its border. Close 1-cell gaps
+  // (a thin border can fall between sample points), then count everything ENCLOSED by an
+  // object as part of it: the background is what is reachable from the grid edge.
   const mask = new Uint8Array(W * H);
-  for (let i = 0; i < W * H; i += 1) mask[i] = Math.abs(data[i] - bg) > threshold ? 1 : 0;
+  for (let y = 0; y < H; y += 1) {
+    for (let x = 0; x < W; x += 1) {
+      let on = 0;
+      for (let dy = -1; dy <= 1 && !on; dy += 1) {
+        for (let dx = -1; dx <= 1 && !on; dx += 1) {
+          const xx = x + dx, yy = y + dy;
+          if (xx >= 0 && yy >= 0 && xx < W && yy < H && raw[yy * W + xx]) on = 1;
+        }
+      }
+      mask[y * W + x] = on;
+    }
+  }
+  const outside = new Uint8Array(W * H);
+  const flood: number[] = [];
+  for (let i = 0; i < W * H; i += 1) {
+    const x = i % W, y = (i - x) / W;
+    if ((x === 0 || y === 0 || x === W - 1 || y === H - 1) && !mask[i]) { outside[i] = 1; flood.push(i); }
+  }
+  while (flood.length) {
+    const i = flood.pop() as number;
+    const x = i % W, y = (i - x) / W;
+    for (const n of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1]) {
+      if (n >= 0 && !mask[n] && !outside[n]) { outside[n] = 1; flood.push(n); }
+    }
+  }
+  for (let i = 0; i < W * H; i += 1) if (!outside[i]) mask[i] = 1;
 
   const frameArea = Math.max(1, frame.width * frame.height);
   const seen = new Uint8Array(W * H);

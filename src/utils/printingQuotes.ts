@@ -16,6 +16,10 @@
  *         non-empty shop listing (yuyu image URL), the same non-empty official image and a
  *         compatible rarity.
  *     Language and condition are never assumed: both known and different → not the same.
+ *     The WHOLE group must stay consistent (CR e8f14dc): a row with unknown metadata never
+ *     bridges two known-different printings — when a row has proofs to partners that
+ *     disagree among themselves (unknown-rarity alias vs a P row and an SR row), it joins
+ *     none of them.
  *   • Equal images WITHOUT that proof stay separate versions, marked `lookalike` so the
  *     picker shows source and quote date instead of two identical labels.
  *   • A version's current SELL price is the latest sell quote of that same listing; two
@@ -160,18 +164,41 @@ function latest(quotes: PriceQuote[]): { quote: PriceQuote | null; conflict: boo
   return { quote: atTop[0], conflict: false };
 }
 
+/** Known identity fields of a set of rows agree (unknown = no claim, never a match). */
+function consistentGroup(rows: PrintingRow[]): boolean {
+  const one = (values: Array<string | null>) => new Set(values.filter((v): v is string => !!v)).size <= 1;
+  return one(rows.map((r) => clean(r.rarity)))
+    && one(rows.map((r) => clean(r.physicalPrinting)))
+    && one(rows.map((r) => art(r)))
+    && one(rows.map((r) => r.provenance?.listing ?? null))
+    && new Set(rows.map((r) => r.provenance?.language ?? null)).size <= 1;
+}
+
 /** Group rows into proven versions (order follows the first member of each version). */
 export function buildPrintingVersions<R extends PrintingRow>(rows: R[]): PrintingVersion<R>[] {
   const parent = rows.map((_, i) => i);
   const proofs: Array<PrintingVersion['proof']> = rows.map(() => null);
   const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const edges: Array<[number, number, NonNullable<PrintingVersion['proof']>]> = [];
   for (let i = 0; i < rows.length; i += 1) {
     for (let j = i + 1; j < rows.length; j += 1) {
       const proof = samePrintingProof(rows[i], rows[j]);
-      if (!proof) continue;
-      const a = find(i), b = find(j);
-      if (a !== b) { parent[b] = a; proofs[a] = proofs[a] ?? proof; }
+      if (proof) edges.push([i, j, proof]);
     }
+  }
+  // A row whose proven partners disagree with each other is ambiguous: it joins nobody.
+  const ambiguous = new Set<number>();
+  rows.forEach((row, i) => {
+    const partners = edges.filter(([a, b]) => a === i || b === i).map(([a, b]) => rows[a === i ? b : a]);
+    if (partners.length > 1 && !consistentGroup([row, ...partners])) ambiguous.add(i);
+  });
+  const membersOf = (root: number) => rows.filter((_, k) => find(k) === root);
+  for (const [i, j, proof] of edges) {
+    if (ambiguous.has(i) || ambiguous.has(j)) continue;
+    const a = find(i), b = find(j);
+    if (a === b || !consistentGroup([...membersOf(a), ...membersOf(b)])) continue;
+    parent[b] = a;
+    proofs[a] = proofs[a] ?? proof;
   }
   const groups = new Map<number, number[]>();
   rows.forEach((_, i) => { const r = find(i); groups.set(r, [...(groups.get(r) ?? []), i]); });

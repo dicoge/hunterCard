@@ -207,6 +207,15 @@ const { DEFAULT_FRAME_REGION } = await import('../src/services/autoCapture.ts');
 const { frameFromPng } = await import('./lib/card-frames.mjs');
 const DIR = new URL('./fixtures/v44-card-frames/', import.meta.url);
 const SPEC = JSON.parse(fs.readFileSync(new URL('auto-frame-traces.json', DIR), 'utf8'));
+// CR e8f14dc P2 #1 (held-out, reviewer): a dark card face that only its white border
+// separates from the table must trigger like the bright control; blank stays blank.
+SPEC.assets.outlinedDarkCard = { path: 'held-out/outlined-dark-card.png', size: [320, 480] };
+SPEC.assets.brightCardControl = { path: 'held-out/bright-card-control.png', size: [320, 480] };
+const four = (image) => Array.from({ length: 4 }, () => ({ image, dtMs: 700 }));
+SPEC.cases.push(
+  { name: 'heldout_outlined_dark_card_triggers_once', events: four('outlinedDarkCard'), expected: { captures: 1, mockRecognitionRequests: 1, quotaCommits: 0 } },
+  { name: 'heldout_bright_card_control_triggers_once', events: four('brightCardControl'), expected: { captures: 1, mockRecognitionRequests: 1, quotaCommits: 0 } },
+);
 const FRAMES = Object.fromEntries(Object.entries(SPEC.assets).map(([k, a]) => [k, frameFromPng(new URL(a.path, DIR))]));
 // What the stubbed provider "recognises" for each card picture (any real, uniquely priced card).
 const PROVIDER_FOR = { cardB: 'CARD_NUMBER: hSD01-003\nCHARACTER: ときのそら\nRARITY: C' };

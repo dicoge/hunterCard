@@ -29,7 +29,7 @@ const regions = (frame, f) => {
 };
 const detect = (frame, f = SPEC.initialState.scanFrame) => detectCardRegion(frame.luma, ...regions(frame, f));
 
-const EXPECT = { blank: 'none', cardA: 'card', cardB: 'card', jitter: 'card', moveLeft: 'card', moveRight: 'card', outside: 'outside', twoCards: 'multiple', wrongAspect: 'shape', small: 'none', landscapePreview: 'card', tallPreview: 'card' };
+const EXPECT = { blank: 'none', cardA: 'card', cardB: 'card', jitter: 'card', moveLeft: 'card', moveRight: 'card', outside: 'outside', twoCards: 'multiple', wrongAspect: 'shape', small: 'small', landscapePreview: 'card', tallPreview: 'card' };
 for (const [name, asset] of Object.entries(SPEC.assets)) {
   test(`fixture ${name} (decoded PNG ${asset.size.join('×')}) → ${EXPECT[name]}`, () => {
     const f = SPEC.frameOverrides[name]?.scanFrame ?? SPEC.initialState.scanFrame;
@@ -70,10 +70,25 @@ test('a small object next to the card (a coin) does not make it ambiguous', () =
   const r = detect(frameFromRgba(sceneRgba(W, H, [{ x: 70, y: 95, w: 180, h: 250 }, { x: 270, y: 440, w: 20, h: 20 }]), W, H));
   assert.equal(r.status, 'card');
 });
-test('known limit: a card the same tone as the table is not detected (no false card either)', () => {
+test('a card whose face is the same tone as the table is still found by its closed border (CR e8f14dc P2 #1)', () => {
   const rgba = sceneRgba(W, H, [{ x: 70, y: 95, w: 180, h: 250, color: [45, 48, 52] }]);
-  // its outline and art panel separate from the body → not ONE solid card region
-  assert.notEqual(detect(frameFromRgba(rgba, W, H)).status, 'card');
+  assert.equal(detect(frameFromRgba(rgba, W, H)).status, 'card');
+});
+const outlineRgba = (sides) => {
+  const rgba = sceneRgba(W, H, []);
+  const x0 = 70, y0 = 95, x1 = 250, y1 = 345;
+  const put = (x, y) => { const i = (y * W + x) * 4; rgba[i] = 240; rgba[i + 1] = 240; rgba[i + 2] = 245; };
+  for (let t = 0; t < 4; t += 1) {
+    for (let x = x0; x <= x1; x += 1) { if (sides.includes('top')) put(x, y0 + t); if (sides.includes('bottom')) put(x, y1 - t); }
+    for (let y = y0; y <= y1; y += 1) { if (sides.includes('left')) put(x0 + t, y); if (sides.includes('right')) put(x1 - t, y); }
+  }
+  return frameFromRgba(rgba, W, H);
+};
+test('held-out shape: a dark card with only a closed white border (card-shaped, in frame) → card', () => {
+  assert.equal(detect(outlineRgba(['top', 'bottom', 'left', 'right'])).status, 'card');
+});
+test('an OPEN outline (three sides, nothing enclosed) is not a card', () => {
+  assert.notEqual(detect(outlineRgba(['top', 'left', 'right'])).status, 'card');
 });
 void F;
 
