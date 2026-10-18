@@ -46,9 +46,15 @@ async function kvGet(command, key) {
   return result;
 }
 
+// One stored alert record → { cardNumber, printing } or null. A malformed record (bad
+// JSON, wrong shape) is skipped on its own: it must not stop every other device's valid
+// alerts from being fed. KV / POST failures are NOT caught here and still fail the run.
 function parseAlert(value) {
-  const alert = typeof value === 'string' ? JSON.parse(value) : value;
-  if (!alert || typeof alert.cardNumber !== 'string' || typeof alert.printing !== 'string') return null;
+  let alert = value;
+  if (typeof value === 'string') {
+    try { alert = JSON.parse(value); } catch { return null; }
+  }
+  if (!alert || typeof alert !== 'object' || typeof alert.cardNumber !== 'string' || typeof alert.printing !== 'string') return null;
   if (!alert.cardNumber.trim() || !alert.printing.trim()) return null;
   return alert;
 }
@@ -70,17 +76,19 @@ async function fetchWatchedPrintings() {
   }
   const tokens = await kvGet('smembers', PRICE_ALERT_TOKENS_KEY);
   const watched = new Map();
+  let skipped = 0;
   for (const token of Array.isArray(tokens) ? tokens : []) {
     if (typeof token !== 'string' || !token) continue;
     for (const value of hashValues(await kvGet('hgetall', `${PRICE_ALERT_PREFIX}${token}`))) {
       const alert = parseAlert(value);
-      if (!alert) continue;
+      if (!alert) { skipped += 1; continue; }
       watched.set(priceAlertKey(alert.cardNumber, alert.printing), {
         cardNumber: alert.cardNumber.trim(),
         printing: alert.printing.trim(),
       });
     }
   }
+  if (skipped > 0) console.warn(`[price-alerts] skipped ${skipped} malformed alert record(s)`);
   return [...watched.values()];
 }
 

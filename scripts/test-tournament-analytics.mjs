@@ -215,6 +215,28 @@ const aug = analyzeMonth(twoMonths, '2026-08', { generatedAt: '2026-09-01T00:00:
 assert.equal(aug.clusters[0].representativeArchetype, 'alpha');
 assert(!stableStringify(aug).includes('BONLY'));
 
+// ── Month artifacts are stable against OTHER months (2026-10-18) ────────────
+// analyzeMonth's automatic generatedAt was the latest generatedAt across ALL input
+// reports: adding September moved July's artifact to 2026-09-29. A month artifact must be
+// byte-identical whether or not unrelated earlier / later months are in the input.
+const withGeneratedAt = (entry, generatedAt) => ({ ...entry, report: { ...entry.report, generatedAt } });
+const julyOnly = withGeneratedAt(report([deck('decklog:J1', 'july', [...shared(), card('main', 'JONLY', 'R', 2)])], '2026-07'), '2026-07-01T00:00:00.000Z');
+const septLater = withGeneratedAt(sepReport, '2026-09-29T00:00:00.000Z');
+const juneEarlier = withGeneratedAt(report([deck('decklog:U1', 'june', shared())], '2026-06'), '2026-06-15T00:00:00.000Z');
+const julyAlone = stableStringify(analyzeMonth([julyOnly], '2026-07'));
+assert.equal(JSON.parse(julyAlone).generatedAt, '2026-07-01T00:00:00.000Z', 'automatic metadata = the month\'s own report');
+assert.equal(stableStringify(analyzeMonth([julyOnly, septLater], '2026-07')), julyAlone, 'July artifact byte-identical after a later month is added');
+assert.equal(stableStringify(analyzeMonth([juneEarlier, julyOnly, septLater], '2026-07')), julyAlone, '… and an earlier one');
+assert.equal(stableStringify(analyzeMonth([septLater, julyOnly], '2026-07')), julyAlone, '… in any input order');
+// The month is taken from report.month, else from the file name ("2026-07.json").
+const julyNoMonthField = { ...julyOnly, report: { ...julyOnly.report, month: undefined } };
+const fromFileName = analyzeMonth([julyNoMonthField, septLater], '2026-07');
+assert.equal(fromFileName.generatedAt, '2026-07-01T00:00:00.000Z', 'file-name month fallback keeps month-local metadata');
+assert.deepEqual(fromFileName.inputReports.map((r) => [r.file, r.month]), [['2026-07.json', '2026-07']]);
+// Explicit override and the global analysis are unchanged.
+assert.equal(analyzeMonth([julyOnly, septLater], '2026-07', { generatedAt: '2030-01-01T00:00:00.000Z' }).generatedAt, '2030-01-01T00:00:00.000Z', 'explicit generatedAt wins');
+assert.equal(analyzeReports([julyOnly, septLater]).generatedAt, '2026-09-29T00:00:00.000Z', 'the GLOBAL analysis still uses the latest report');
+
 // ── Core cards are a definition, not a top-N preview (DIC-1045) ─────────────
 // `coreCards` means "present in every member deck". A silent slice(0, 20)
 // published that definition while omitting valid members of the set, so a
