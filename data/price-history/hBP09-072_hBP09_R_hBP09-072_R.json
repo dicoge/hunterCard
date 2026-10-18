@@ -58,8 +58,16 @@
       "currency": "JPY",
       "cardId": "hBP09-072_hBP09_R_hBP09-072_R",
       "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-10-18",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-072_hBP09_R_hBP09-072_R",
+      "sourceProduct": "hBP09"
     }
   ],
-  "lastUpdated": "2026-10-17T12:05:02.001Z",
+  "lastUpdated": "2026-10-18T12:09:08.417Z",
   "nameZh": "克蕾伊姬·歐莉"
 }

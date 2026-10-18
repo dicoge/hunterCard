@@ -42,8 +42,16 @@
       "currency": "JPY",
       "cardId": "hEB01-031_hEB01_C_hEB01-031_C",
       "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-18",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hEB01-031_hEB01_C_hEB01-031_C",
+      "sourceProduct": "hEB01"
     }
   ],
-  "lastUpdated": "2026-10-17T12:05:02.065Z",
+  "lastUpdated": "2026-10-18T12:09:09.090Z",
   "nameZh": "玩水"
 }

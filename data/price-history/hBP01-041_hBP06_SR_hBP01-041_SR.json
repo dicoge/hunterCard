@@ -66,8 +66,16 @@
       "currency": "JPY",
       "cardId": "hBP01-041_hBP06_SR_hBP01-041_SR",
       "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-10-18",
+      "price": 2480,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-041_hBP06_SR_hBP01-041_SR",
+      "sourceProduct": "hBP06"
     }
   ],
-  "lastUpdated": "2026-10-17T12:05:00.941Z",
+  "lastUpdated": "2026-10-18T12:09:02.405Z",
   "nameZh": "兔田佩克拉"
 }
