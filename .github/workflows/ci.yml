@@ -633,6 +633,18 @@ jobs:
       - name: Verify Android automatic-scan CAMERA STARTUP on the real ScanScreen (permission entry, streaming-preview ready, never-ready → 重試 / 改用手動拍照, resume) (v43)
         run: npm run test:scan-android-camera-startup
 
+      - name: Verify the Android card-region detector on decoded number-free card images (v44)
+        run: npm run test:scan-card-detector
+
+      - name: Verify the 21 prepared card frame traces on the real ScanScreen — pixels → detector → stability → one still → one request → explicit 加入 (v44)
+        run: npm run test:scan-android-card-trace
+
+      - name: Verify printing versions / quote provenance through catalog, API and the chooser (v44)
+        run: npm run test:printing-quote-identity
+
+      - name: Verify the native splash uses the approved new H brand (v44)
+        run: npm run test:native-splash-brand
+
       - name: Verify local scan / sign-in diagnostics — allowlist + redaction on write and export, 100/7-day retention, real clear, never affects scan or quota (2026-10-15)
         run: npm run test:scan-diagnostics
 

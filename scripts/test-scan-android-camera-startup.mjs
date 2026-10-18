@@ -394,11 +394,9 @@ const FW = 960, FH = 1280;
 const crop = planNativeCrop(PREVIEW, FRAME, { width: FW, height: FH }).crop;
 const STEADY = { x: 0.1, y: 0.86, width: 0.22, height: 0.04 };
 let seq = 0;
-const frame = (txt) => {
-  if (!txt) return { seq: ++seq, width: FW, height: FH, blocks: [] };
-  const b = { x: Math.round(crop.x + STEADY.x * crop.width), y: Math.round(crop.y + STEADY.y * crop.height), width: Math.round(STEADY.width * crop.width), height: Math.round(STEADY.height * crop.height) };
-  return { seq: ++seq, width: FW, height: FH, blocks: [{ text: txt, boundingBox: b, lines: [{ text: txt, boundingBox: b, elements: [{ text: txt, boundingBox: b }] }] }] };
-};
+// v44: pixel frames (luminance grid of the visible frame): text → one card in the scan frame.
+const { cardInCropFrame } = await import('./lib/card-frames.mjs');
+const frame = (txt) => cardInCropFrame({ width: FW, height: FH }, crop, { card: !!txt });
 const emit = async (payload, n = 1) => { let r; for (let i = 0; i < n; i++) { await act(async () => { r = globalThis.__emitFrame?.(payload); await Promise.resolve(); }); await tick(5); } return r; };
 const settleRequests = async (n) => { for (let i = 0; i < 60 && bodies.length === n; i++) await tick(20); await tick(150); };
 const failurePanel = (msg) => {

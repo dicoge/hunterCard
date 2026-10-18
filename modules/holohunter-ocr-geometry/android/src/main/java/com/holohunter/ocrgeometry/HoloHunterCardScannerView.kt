@@ -29,11 +29,6 @@ import androidx.camera.lifecycle.awaitInstance
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.Text
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.TextRecognizer
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import expo.modules.kotlin.AppContext
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.viewevent.EventDispatcher
@@ -63,8 +58,11 @@ import java.util.concurrent.atomic.AtomicBoolean
  *    stream's own resolution / aspect fallback / sensor rotation). Frame events carry that
  *    crop rect, the buffer size and the rotation; the still is cropped to it and rotated
  *    upright, so the still IS the visible preview.
- *  - Frames: STRATEGY_KEEP_ONLY_LATEST, at most one frame in ML Kit, at most one analysed
- *    frame per `analysisIntervalMs`; analysis only while `active`. Every analysis is tagged
+ *  - Frames (v44): STRATEGY_KEEP_ONLY_LATEST, at most one analysed frame per
+ *    `analysisIntervalMs` and one delivery pending; analysis only while `active`. Each
+ *    analysed frame is reduced to a small luminance grid of the visible frame
+ *    (CardFrameLuma) — the card-region detector in JS finds the card in it; no text
+ *    reader runs on preview frames any more (a card number is read only from the still). Every analysis is tagged
  *    with the JS `session` and a native `generation` taken when the frame STARTS; a result
  *    is delivered only if both are unchanged and analysis is still on — a completion from
  *    before a deactivate/reactivate (background, blur, a result on screen…) is dropped.
@@ -118,7 +116,6 @@ class HoloHunterCardScannerView(context: Context, appContext: AppContext) : Expo
   private val ioExecutor: ExecutorService = Executors.newSingleThreadExecutor()
   private val pendingCaptures: MutableSet<PendingCapture> =
     Collections.newSetFromMap(ConcurrentHashMap<PendingCapture, Boolean>())
-  private var recognizer: TextRecognizer? = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
   private var cameraProvider: ProcessCameraProvider? = null
   private var camera: Camera? = null
@@ -302,21 +299,13 @@ class HoloHunterCardScannerView(context: Context, appContext: AppContext) : Expo
     onMountError(mapOf("message" to message))
   }
 
-  @SuppressLint("UnsafeOptInUsageError")
   private fun analyze(proxy: ImageProxy) {
     val now = SystemClock.elapsedRealtime()
-    val reader = recognizer
-    if (released || failed || !analysisActive || inFlight || reader == null || now - lastAnalysedAt < intervalMs) {
-      proxy.close()
-      return
-    }
-    val media = proxy.image
-    if (media == null) {
+    if (released || failed || !analysisActive || inFlight || now - lastAnalysedAt < intervalMs) {
       proxy.close()
       return
     }
     lastAnalysedAt = now
-    inFlight = true
     // Ownership of this analysis: the state it STARTED in.
     val startSession = session
     val startGeneration = generation
@@ -327,54 +316,35 @@ class HoloHunterCardScannerView(context: Context, appContext: AppContext) : Expo
     val width = if (rotation % 180 == 0) bufferWidth else bufferHeight
     val height = if (rotation % 180 == 0) bufferHeight else bufferWidth
     val seq = ++frameSeq
+    val grid: CardFrameLuma.Grid
     try {
-      reader.process(InputImage.fromMediaImage(media, rotation))
-        .addOnSuccessListener(ContextCompat.getMainExecutor(context)) { text ->
-          if (!released && !failed && analysisActive && startSession == session && startGeneration == generation) {
-            onFrameText(
-              mapOf(
-                "seq" to seq,
-                "session" to startSession,
-                "width" to width,
-                "height" to height,
-                "rotation" to rotation,
-                "bufferWidth" to bufferWidth,
-                "bufferHeight" to bufferHeight,
-                "cropRect" to mapOf("x" to crop.left, "y" to crop.top, "width" to crop.width(), "height" to crop.height()),
-                "blocks" to mapBlocks(text)
-              )
-            )
-          }
-        }
-        .addOnCompleteListener(ContextCompat.getMainExecutor(context)) {
-          inFlight = false
-          proxy.close()
-        }
+      val plane = proxy.planes[0]
+      grid = CardFrameLuma.sample(plane.buffer, plane.rowStride, plane.pixelStride, crop, rotation)
     } catch (e: Exception) {
-      inFlight = false
+      return
+    } finally {
       proxy.close()
     }
-  }
-
-  private fun mapBlocks(text: Text): List<Map<String, Any>> = text.textBlocks.map { block ->
-    mapOf(
-      "text" to block.text,
-      "boundingBox" to box(block.boundingBox),
-      "lines" to block.lines.map { line ->
-        mapOf(
-          "text" to line.text,
-          "boundingBox" to box(line.boundingBox),
-          "elements" to line.elements.map { element ->
-            mapOf("text" to element.text, "boundingBox" to box(element.boundingBox))
-          }
+    inFlight = true
+    ContextCompat.getMainExecutor(context).execute {
+      inFlight = false
+      if (!released && !failed && analysisActive && startSession == session && startGeneration == generation) {
+        onFrameText(
+          mapOf(
+            "seq" to seq,
+            "session" to startSession,
+            "width" to width,
+            "height" to height,
+            "rotation" to rotation,
+            "bufferWidth" to bufferWidth,
+            "bufferHeight" to bufferHeight,
+            "cropRect" to mapOf("x" to crop.left, "y" to crop.top, "width" to crop.width(), "height" to crop.height()),
+            "luma" to mapOf("width" to grid.width, "height" to grid.height, "data" to grid.data.toList())
+          )
         )
       }
-    )
+    }
   }
-
-  private fun box(rect: Rect?): Map<String, Int> =
-    if (rect == null) mapOf("x" to 0, "y" to 0, "width" to 0, "height" to 0)
-    else mapOf("x" to rect.left, "y" to rect.top, "width" to rect.width(), "height" to rect.height())
 
   fun takePicture(quality: Double, base64: Boolean, promise: Promise) {
     val capture = imageCapture
@@ -476,8 +446,6 @@ class HoloHunterCardScannerView(context: Context, appContext: AppContext) : Expo
     val useCases = listOfNotNull(preview, imageCapture, imageAnalysis)
     if (useCases.isNotEmpty()) cameraProvider?.unbind(*useCases.toTypedArray())
     camera = null
-    recognizer?.close()
-    recognizer = null
     analysisExecutor.shutdown()
     ioExecutor.shutdown()           // queued JPEG work still runs and deletes its file
     scope.cancel()                  // binding only; no capture settlement depends on it
