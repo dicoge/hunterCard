@@ -153,5 +153,47 @@ await test('CardDetail renders the four printings with zh labels, source names a
   }
 });
 
+// CI 2026-10-19 (test:favorites-canonical-payload): a reduced route payload reached
+// CardDetail with a non-string where a listing name belongs, and descriptors() threw
+// "normalize is not a function". A non-string states no printing → unknown (null), never a
+// guessed 一般版/平行版 and never "[object Object]"; string inputs keep their labels.
+await test('label helpers: null / undefined / object / array / number are UNKNOWN, not guessed or stringified', async () => {
+  for (const bad of [null, undefined, { name: 'さくらみこ(パラレル)' }, ['hBP03'], 42, true]) {
+    assert.equal(printingDisplayLabel(bad, 'zh'), null, `zh ${JSON.stringify(bad)}`);
+    assert.equal(printingDisplayLabel(bad, 'ja'), null, `ja ${JSON.stringify(bad)}`);
+    const s = seriesLabel(bad, bad, 'zh');
+    assert.ok(!/object Object/.test(`${s.primary}${s.original}`), 'no stringified object');
+    assert.equal(s.original, null, 'no invented original title');
+  }
+  assert.deepEqual(seriesLabel('hBP03', { title: 'x' }, 'zh'), { primary: '補充包 第 3 彈（hBP03）', original: null }, 'valid code still described');
+  assert.equal(printingDisplayLabel('さくらみこ(パラレル)', 'zh'), '平行版', 'strings unchanged');
+  assert.equal(printingDisplayLabel('さくらみこ', 'zh'), '一般版', 'strings unchanged');
+});
+
+await test('CardDetail renders the reduced favorites-shaped payload (no listings) without crashing', async () => {
+  const rep = rows.find((r) => r.id === 'hBP03-029_hBP03_SR_hBP03-029_SR');
+  const full = toCanonicalCardRecord({ ...rep, prices: listings }, {});
+  const reduced = {
+    id: full.id, cardNumber: full.cardNumber, name: full.name, nameZh: full.nameZh,
+    printing: 'PARALLEL', printingLabel: 'さくらみこ(パラレル)', series: full.series, type: full.type, imageUrl: full.imageUrl,
+  };
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  await act(async () => root.render(React.createElement(CardDetailScreen, {
+    route: { params: { card: reduced } },
+    navigation: { navigate() {}, goBack() {} },
+  })));
+  await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+  try {
+    assert.ok(container.textContent.includes(full.nameZh || full.name), 'the page rendered');
+    assert.ok(!container.textContent.includes('[object Object]'), 'no stringified object');
+    assert.ok(!container.textContent.includes('1,280'), 'no price invented without listings');
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
+
 if ((process.exitCode ?? 0) === 0) console.log(`\n✅ printing-display (hBP03-029 versions): ${passed} checks passed`);
 else console.error('\n❌ printing-display failed');

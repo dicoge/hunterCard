@@ -26,7 +26,7 @@ const SET_CODE = /^h[A-Za-z]+\d*[A-Za-z0-9]*$/;
 
 /** The descriptors inside a listing name's parentheses, in order. */
 function descriptors(listingName: string): string[] {
-  const norm = (listingName ?? '').normalize('NFKC');
+  const norm = listingName.normalize('NFKC');
   return Array.from(norm.matchAll(/[(（]([^)）]*)[)）]/g))
     .flatMap((m) => m[1].split('/'))
     .map((part) => part.trim())
@@ -36,8 +36,14 @@ function descriptors(listingName: string): string[] {
 /**
  * zh: `平行版・hEB01 收錄` / `一般版`; ja: the source's own descriptors
  * (`パラレル/hEB01`, `通常`). Set codes and unknown descriptors are kept verbatim.
+ *
+ * Route payloads are external data (CI 2026-10-19: a reduced favorites payload reached
+ * CardDetail with an array where a listing name belongs). A value that is not a string
+ * states no printing, so the label is UNKNOWN (null) — never 一般版 / 平行版 and never a
+ * stringified object; the caller shows its own unknown state.
  */
-export function printingDisplayLabel(listingName: string, language: DisplayLanguage = 'zh'): string {
+export function printingDisplayLabel(listingName: unknown, language: DisplayLanguage = 'zh'): string | null {
+  if (typeof listingName !== 'string') return null;
   const parts = descriptors(listingName);
   if (language === 'ja') return parts.length ? parts.join('/') : '通常';
   const treatments = parts.filter((p) => !SET_CODE.test(p)).map((p) => ZH_MARKERS[p] ?? p);
@@ -87,12 +93,13 @@ export interface SeriesLabel {
  * ja: the source title as before.
  */
 export function seriesLabel(
-  code: string | null | undefined,
-  sourceTitle: string | null | undefined,
+  code: unknown,
+  sourceTitle: unknown,
   language: DisplayLanguage = 'zh',
 ): SeriesLabel {
-  const c = (code ?? '').trim();
-  const title = (sourceTitle ?? '').trim();
+  // Same external-payload boundary as printingDisplayLabel: a non-string states nothing.
+  const c = typeof code === 'string' ? code.trim() : '';
+  const title = typeof sourceTitle === 'string' ? sourceTitle.trim() : '';
   if (language === 'ja') return { primary: title || c, original: null };
   const typed = ZH_PRODUCT_TYPES.find(([jp]) => title.startsWith(jp));
   let desc: string | null = null;
@@ -142,7 +149,7 @@ export function buildPrintingDisplayRows(
     );
     return {
       printing: p.printing,
-      label: printingDisplayLabel(p.label, language),
+      label: printingDisplayLabel(p.label, language) ?? p.label,
       sourceLabel: p.label,
       rarity: rarities.size === 1 ? Array.from(rarities)[0] : null,
       sellPrice: p.sellPrice,

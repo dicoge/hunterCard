@@ -989,7 +989,11 @@ function MarketDataPanel({ card, section = 'market' }: { card: any; section?: 'm
   const aligned = resolution.confident || override != null;
   const manualPick = override != null && !resolution.confident;
   const sellPrice = aligned ? (selectedVersion?.sellPrice ?? null) : null; // 對齊版本後的遊々亭賣價（買入成本）
-  const versionLabel = selectedVersion?.name ? printingDisplayLabel(selectedVersion.name, language) : (card?.series ?? '');
+  // A version name that is not a string (malformed route payload) states no printing:
+  // no version line, rather than a guessed 一般版 or a stringified object.
+  const versionLabel = selectedVersion?.name
+    ? (printingDisplayLabel(selectedVersion.name, language) ?? '')
+    : (card?.series ?? '');
 
   const displayRarity = card?.sourceRarity ?? card?.rarity ?? '';
   // 店家收購價（賣出可得）：依「選中版本」對齊（DIC-856）。未對齊或此版本對不到收購價 → null，
@@ -1036,7 +1040,7 @@ function MarketDataPanel({ card, section = 'market' }: { card: any; section?: 'm
                 activeOpacity={0.8}
               >
                 <Text style={[styles.versionChipText, active ? styles.versionChipTextActive : null]} numberOfLines={1}>
-                  {printingDisplayLabel(v.name, language)}　¥{(v.sellPrice ?? 0).toLocaleString()}
+                  {printingDisplayLabel(v.name, language) ?? '—'}　¥{(v.sellPrice ?? 0).toLocaleString()}
                 </Text>
               </TouchableOpacity>
             );
