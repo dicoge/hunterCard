@@ -49,60 +49,64 @@ export function printingDisplayLabel(listingName: string, language: DisplayLangu
 
 // Longest first so ライブスタートデッキ is not read as スタートデッキ.
 const ZH_PRODUCT_TYPES: Array<[string, string]> = [
-  ['オフィシャルホロカコレクション', '官方ホロカ收藏集'],
+  ['オフィシャルホロカコレクション', '官方收藏集'],
   ['ライブスタートデッキ', 'Live 起始牌組'],
   ['スタートエールセット', '起始應援組'],
   ['エクストラブースター', '額外補充包'],
   ['ブースターパック', '補充包'],
   ['スタートデッキ', '起始牌組'],
-  ['ツインウエハース', '雙層威化餅'],
-  ['PRカード', 'PR 卡'],
+  ['ツインウエハース', '雙層威化餅贈卡'],
+  ['PRカード', 'PR 宣傳卡'],
 ];
 
-/**
- * zh: the product TYPE is translated, the set title stays the source's original
- * (`ブースターパック「エリートスパーク」` → `補充包「エリートスパーク」`); prefixed with the
- * set code when known so two products are never told apart by Japanese text alone.
- * ja: unchanged.
- */
-export function productDisplayName(
-  productName: string | null | undefined,
-  setCode: string | null | undefined,
-  language: DisplayLanguage = 'zh',
-): string {
-  const name = (productName ?? '').trim();
-  const code = (setCode ?? '').trim();
-  if (language === 'ja') return name || code;
-  let zh = name;
-  for (const [jp, cn] of ZH_PRODUCT_TYPES) {
-    if (zh.startsWith(jp)) { zh = cn + zh.slice(jp.length).replace(/^\s+(?!「)/, ' '); break; }
-  }
-  if (!zh) return code;
-  return code && !zh.includes(code) ? `${code}・${zh}` : zh;
+// What the SET CODE itself states: product family and, for numbered packs, the number
+// (hBP03 = booster pack no. 3). This is a description, not a translated title.
+const ZH_CODE_FAMILY: Array<[RegExp, (n: number) => string]> = [
+  [/^hBP(\d+)$/, (n) => `補充包 第 ${n} 彈`],
+  [/^hEB(\d+)$/, (n) => `額外補充包 第 ${n} 彈`],
+  [/^hSD(\d+)$/, () => '起始牌組'],
+  [/^hYS(\d+)$/, () => '起始應援組'],
+  [/^h(?:CO|PC)(\d+)$/, () => '官方收藏集'],
+  [/^hWF(\d+)$/, () => '雙層威化餅贈卡'],
+  [/^hPR$/, () => 'PR 宣傳卡'],
+];
+
+export interface SeriesLabel {
+  /** the player-facing label: zh = Chinese description + set code; ja = the source title */
+  primary: string;
+  /** the source's own (Japanese) title, shown as 原名; null when there is nothing more to show */
+  original: string | null;
 }
 
-// Set families whose catalog title omits the product type (series-names.json stores
-// only `エリートスパーク` for hBP03).
-const ZH_SERIES_FAMILY: Array<[RegExp, string]> = [
-  [/^hBP\d/, '補充包'],
-  [/^hEB\d/, '額外補充包'],
-];
-
 /**
- * A series code + its catalog title. zh: `hBP03・補充包「エリートスパーク」`; titles that
- * already name their product type go through productDisplayName; any other title is
- * kept verbatim with its code. ja: the title.
+ * zh primary series label for a set code and its source title (2026-10-19, PM acceptance
+ * gap: the Chinese UI must not lead with a Japanese title). No official Chinese set titles
+ * exist in the data, so the primary label describes what the code states —
+ * `補充包 第 3 彈（hBP03）`, `額外補充包 第 1 彈（hEB01）`, `Live 起始牌組（hSD16）` — and the
+ * untranslated title is returned separately as `original`, never presented as a translation.
+ * ja: the source title as before.
  */
-export function seriesDisplayName(
-  code: string,
-  title: string | null | undefined,
+export function seriesLabel(
+  code: string | null | undefined,
+  sourceTitle: string | null | undefined,
   language: DisplayLanguage = 'zh',
-): string {
-  const name = (title ?? '').trim();
-  if (language === 'ja' || !name || name === code) return name || code;
-  if (ZH_PRODUCT_TYPES.some(([jp]) => name.startsWith(jp))) return productDisplayName(name, code, language);
-  const family = ZH_SERIES_FAMILY.find(([re]) => re.test(code));
-  return family ? `${code}・${family[1]}「${name}」` : `${code}・${name}`;
+): SeriesLabel {
+  const c = (code ?? '').trim();
+  const title = (sourceTitle ?? '').trim();
+  if (language === 'ja') return { primary: title || c, original: null };
+  const typed = ZH_PRODUCT_TYPES.find(([jp]) => title.startsWith(jp));
+  let desc: string | null = null;
+  // a Live start deck says so only in its title
+  if (typed && typed[0] === 'ライブスタートデッキ') desc = typed[1];
+  for (const [re, describe] of ZH_CODE_FAMILY) {
+    if (desc) break;
+    const m = c.match(re);
+    if (m) desc = describe(Number(m[1]));
+  }
+  if (!desc && typed) desc = typed[1];
+  const primary = desc ? (c ? `${desc}（${c}）` : desc) : (c ? `${c} 系列` : title);
+  const original = title && title !== c && title !== primary ? title : null;
+  return { primary, original };
 }
 
 export interface PrintingDisplayRow {

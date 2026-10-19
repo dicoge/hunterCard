@@ -483,6 +483,7 @@ export const ja: Record<keyof typeof zh, string> = {
   card_detail_variant_hint_spread: '👇 下の「市場データ」で版を選ぶと、価格差と推移も切り替わります',
   card_detail_variant_hint: '👇 下の「市場データ」で版を選ぶと、販売価格も切り替わります',
   // Store MVP 版：隠されている「市場データ」を指してはいけない (DIC-1319)。
+  card_detail_set_original: '原題：{{title}}',
   card_detail_variant_price_conflict: '価格不一致',
   card_detail_variant_hint_store: 'このカードの各版の販売価格です。お手元の版名とレアリティで見比べてください',
   card_detail_approx_price: '💰 約 {{price}}（{{currency}}）',

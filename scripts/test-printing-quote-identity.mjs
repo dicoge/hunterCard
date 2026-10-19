@@ -204,22 +204,22 @@ const render = (cards) => renderToStaticMarkup(React.createElement(Selector, {
   visible: true, tier: 'mid', candidates: cards.map((card) => ({ card, confidence: 0.5 })),
   onSelect() {}, onRescan() {}, onManualSearch() {}, onDismiss() {}, preferredCurrency: 'JPY', preferredLanguage: 'zh',
 }));
-await test('actual chooser: the proven version is ONE row "#hBD24-023 · P · 一般版 ¥8,980" with "PR 卡 · 2026-10-1x 報價" (zh product type, 2026-10-19)', () => {
+await test('actual chooser: the proven version is ONE row "#hBD24-023 · P · 一般版 ¥8,980" with "PR 宣傳卡（hPR） · 2026-10-1x 報價 · 原名：PRカード" (zh primary, 2026-10-19)', () => {
   const html = render([resolved.card]);
   const meta = metaOf(html, 'scan-candidate-meta');
   const source = metaOf(html, 'scan-candidate-source');
   assert.equal(meta.length, 1);
   assert.match(meta[0], /#hBD24-023 · P · 一般版\s+¥8,980/);
   assert.equal(source.length, 1);
-  assert.match(source[0], /^hPR・PR 卡 · 2026-10-1\d 報價$/);
+  assert.match(source[0], /^PR 宣傳卡（hPR） · 2026-10-1\d 報價 · 原名：PRカード$/);
 });
-await test('actual chooser: hBP03-029 rows carry zh version, zh product type, own picture', () => {
+await test('actual chooser: hBP03-029 rows carry zh version, zh primary series (原名 kept), own picture', () => {
   const html = render(miko.printings);
   const meta = metaOf(html, 'scan-candidate-meta').join('|');
   for (const m of [/· R · 一般版\s+¥180/, /· SR · 平行版\s+¥1,280/, /· R · 一般版・hEB01 收錄\s+¥50/, /· SR · 平行版・hEB01 收錄\s+¥120/]) assert.match(meta, m);
   const source = metaOf(html, 'scan-candidate-source').join('|');
-  assert.match(source, /補充包「エリートスパーク」/);
-  assert.match(source, /額外補充包 サマー・ホログラム/);
+  assert.match(source, /補充包 第 3 彈（hBP03） · [^|]*原名：ブースターパック「エリートスパーク」/);
+  assert.match(source, /額外補充包 第 1 彈（hEB01） · [^|]*原名：エクストラブースター サマー・ホログラム/);
   assert.equal((html.match(/data-testid="scan-candidate-image"/g) || []).length, 4);
   // RN-web's static markup omits the <img> src; the source is the row's own listing picture.
   const pics = miko.printings.map((c) => buildPrintingDisplayRows(c.prices, 'zh')[0].imageUrl).sort();

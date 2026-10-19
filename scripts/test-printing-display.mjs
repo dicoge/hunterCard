@@ -11,7 +11,8 @@
 //   • the two unpriced ent07 alias rows add no phantom version;
 //   • repeated listings of one printing collapse to one row; disagreeing prices stay
 //     visible as a conflict instead of picking one;
-//   • the hero set line translates the product type and keeps the set title + code.
+//   • the zh hero set line LEADS with a Chinese description of the set code
+//     (補充包 第 3 彈（hBP03）); the Japanese title is shown only as 原名, not as a translation.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -39,7 +40,7 @@ const React = (await import('react')).default;
 const { act } = await import('react');
 const { createRoot } = await import('react-dom/client');
 const CardDetailScreen = (await import('../src/screens/CardDetailScreen.tsx')).default;
-const { buildPrintingDisplayRows, printingDisplayLabel, productDisplayName, seriesDisplayName } = await import('../src/utils/printingDisplay.ts');
+const { buildPrintingDisplayRows, printingDisplayLabel, seriesLabel } = await import('../src/utils/printingDisplay.ts');
 const { dedupeListings, toCanonicalCardRecord } = await import('../src/utils/canonicalCardRecord.ts');
 
 let passed = 0;
@@ -104,15 +105,17 @@ await test('repeated listings of ONE printing collapse; disagreeing prices are a
   assert.equal(conflict[0].imageUrl, null, 'disagreeing art shows no picture');
 });
 
-await test('set line: product type in Chinese, set title + code kept', async () => {
-  assert.equal(productDisplayName('ブースターパック「エリートスパーク」', 'hBP03', 'zh'), 'hBP03・補充包「エリートスパーク」');
-  assert.equal(productDisplayName('エクストラブースター サマー・ホログラム', 'hEB01', 'zh'), 'hEB01・額外補充包 サマー・ホログラム');
-  assert.equal(productDisplayName('ライブスタートデッキ さくらみこ', 'hSD16', 'zh'), 'hSD16・Live 起始牌組 さくらみこ');
-  assert.equal(productDisplayName('ブースターパック「エリートスパーク」', 'hBP03', 'ja'), 'ブースターパック「エリートスパーク」');
-  assert.equal(seriesDisplayName('hBP03', 'エリートスパーク', 'zh'), 'hBP03・補充包「エリートスパーク」');
-  assert.equal(seriesDisplayName('hEB01', 'エクストラブースター サマー・ホログラム', 'zh'), 'hEB01・額外補充包 サマー・ホログラム');
-  assert.equal(seriesDisplayName('hY', 'Yokohama Promo', 'zh'), 'hY・Yokohama Promo', 'no invented translation');
-  assert.equal(seriesDisplayName('hBP03', 'エリートスパーク', 'ja'), 'エリートスパーク');
+await test('zh series label: Chinese description of the code leads, Japanese title only as 原名', async () => {
+  assert.deepEqual(seriesLabel('hBP03', 'ブースターパック「エリートスパーク」', 'zh'), { primary: '補充包 第 3 彈（hBP03）', original: 'ブースターパック「エリートスパーク」' });
+  assert.deepEqual(seriesLabel('hBP03', 'エリートスパーク', 'zh'), { primary: '補充包 第 3 彈（hBP03）', original: 'エリートスパーク' });
+  assert.deepEqual(seriesLabel('hEB01', 'エクストラブースター サマー・ホログラム', 'zh'), { primary: '額外補充包 第 1 彈（hEB01）', original: 'エクストラブースター サマー・ホログラム' });
+  assert.deepEqual(seriesLabel('hSD16', 'ライブスタートデッキ さくらみこ', 'zh'), { primary: 'Live 起始牌組（hSD16）', original: 'ライブスタートデッキ さくらみこ' });
+  assert.deepEqual(seriesLabel('hPR', 'PRカード', 'zh'), { primary: 'PR 宣傳卡（hPR）', original: 'PRカード' });
+  assert.deepEqual(seriesLabel('hY', 'Yokohama Promo', 'zh'), { primary: 'hY 系列', original: 'Yokohama Promo' }, 'unknown family: no invented translation');
+  assert.deepEqual(seriesLabel('hBP03', 'ブースターパック「エリートスパーク」', 'ja'), { primary: 'ブースターパック「エリートスパーク」', original: null });
+  for (const l of [seriesLabel('hBP03', 'エリートスパーク'), seriesLabel('hEB01', 'エクストラブースター サマー・ホログラム')]) {
+    assert.doesNotMatch(l.primary, /[\u3040-\u30ff]/, 'zh primary has no kana');
+  }
 });
 
 await test('CardDetail renders the four printings with zh labels, source names and pictures', async () => {
@@ -140,7 +143,10 @@ await test('CardDetail renders the four printings with zh labels, source names a
     const imgs = container.querySelectorAll('[data-testid^="card-detail-variant-image-"]');
     assert.equal(imgs.length, 4, 'every printing shows its own picture');
     const hero = container.querySelector('[data-testid="card-detail-hero"]');
-    assert.ok(hero.textContent.includes('hBP03・補充包「エリートスパーク」'), `zh set line, got ${hero.textContent}`);
+    const set = container.querySelector('[data-testid="card-detail-set"]');
+    assert.equal(set.textContent, '補充包 第 3 彈（hBP03）', 'zh primary set line');
+    assert.equal(container.querySelector('[data-testid="card-detail-set-original"]').textContent, '原名：エリートスパーク', 'source title kept, labelled as original');
+    assert.match(hero.textContent, /櫻巫女/, 'card name is the zh name');
   } finally {
     await act(async () => root.unmount());
     container.remove();

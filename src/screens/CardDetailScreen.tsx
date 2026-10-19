@@ -11,7 +11,7 @@ import { useFavoritesStore } from '../store/favoritesStore';
 import { usePriceAlertStore } from '../stores/priceAlertStore';
 import PriceAlertEditor, { type PriceAlertTarget } from '../components/PriceAlertEditor';
 import { buildSourcePrintings } from '../utils/printingIdentity';
-import { buildPrintingDisplayRows, printingDisplayLabel, productDisplayName, seriesDisplayName } from '../utils/printingDisplay';
+import { buildPrintingDisplayRows, printingDisplayLabel, seriesLabel } from '../utils/printingDisplay';
 import { PRICE_CURRENCY } from '../utils/deckCardData';
 import { formatInterval } from '../utils/priceAlerts';
 import type { PrintingOption } from '../utils/alertMigration';
@@ -328,10 +328,10 @@ export default function CardDetailScreen({ route, navigation }: any) {
   const bloomBadgeLabel = card.normalized?.category === 'holomen'
     ? (card.normalized?.stageLabel || gradeLabels[card.grade] || null)
     : null;
-  // zh: product type in Chinese, set title kept as the source's original (2026-10-19).
-  const setLine = card.sourceProductName
-    ? productDisplayName(card.sourceProductName, cardSeries, preferredLanguage)
-    : (seriesNames.length > 0 ? seriesNames.map((n: string) => seriesDisplayName(cardSeries, n, preferredLanguage)).join(' / ') : cardSeries);
+  // zh: a Chinese description of the set code leads (補充包 第 3 彈（hBP03）); the source's
+  // Japanese title stays visible as 原名, never passed off as a translation (2026-10-19).
+  const setLabel = seriesLabel(cardSeries, card.sourceProductName || seriesNames[0] || '', preferredLanguage);
+  const setLine = setLabel.primary;
   const statHp = card.hp != null && `${card.hp}`.trim() !== '' ? `${card.hp}` : null;
   const statLife = card.life != null && `${card.life}`.trim() !== '' ? `${card.life}` : null;
 
@@ -441,7 +441,12 @@ export default function CardDetailScreen({ route, navigation }: any) {
               <View style={styles.heroInfo}>
                 <Text style={styles.heroName} numberOfLines={2}>{displayName}</Text>
                 {displayNameSub ? <Text style={styles.heroNameSub} numberOfLines={1}>{displayNameSub}</Text> : null}
-                <Text style={styles.heroSet} numberOfLines={2}>{setLine}</Text>
+                <Text style={styles.heroSet} numberOfLines={2} testID="card-detail-set">{setLine}</Text>
+                {setLabel.original ? (
+                  <Text style={styles.heroSetOriginal} numberOfLines={1} testID="card-detail-set-original">
+                    {t('card_detail_set_original', { title: setLabel.original })}
+                  </Text>
+                ) : null}
                 <View style={styles.heroBadges}>
                   {canonicalColorIds.map((colorId, i) => (
                     <View key={`c${colorId}`} style={styles.heroBadge} testID={`card-detail-badge-color-${colorId}`}>
@@ -748,7 +753,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
                     <InfoRow label={t('card_detail_color_label')} value={colorNames.join(' / ')} />
                   )}
                   {seriesNames.length > 0 && (
-                    <InfoRow label={t('card_detail_series_label')} value={seriesNames.map((n: string) => seriesDisplayName(cardSeries, n, preferredLanguage)).join(' / ')} />
+                    <InfoRow label={t('card_detail_series_label')} value={setLabel.original ? `${setLine}　${t('card_detail_set_original', { title: setLabel.original })}` : setLine} />
                   )}
                   {tags.length > 0 && (
                     <InfoRow label="Tag" value={tags.join(' / ')} />
@@ -1238,6 +1243,7 @@ const styles = StyleSheet.create({
   heroName: { fontFamily: Platform.OS === 'web' ? FONTS.body : undefined, fontSize: 21, fontWeight: '800', color: SEMANTIC.onBg },
   heroNameSub: { fontSize: 13, color: SEMANTIC.onBgMuted, marginTop: 2 },
   heroSet: { fontSize: 11.5, color: SEMANTIC.onBgDim, marginTop: 9, lineHeight: 16 },
+  heroSetOriginal: { fontSize: 10.5, color: SEMANTIC.onBgDim, marginTop: 2, lineHeight: 14 },
   heroBadges: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 9 },
   heroBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: PALETTE.appElev, borderRadius: 7, paddingHorizontal: 9, paddingVertical: 4 },
   heroBadgeDot: { width: 8, height: 8, borderRadius: 4 },

@@ -26,7 +26,7 @@ import { CardInfo, RecognizedCandidate } from '../services/cardRecognition';
 import { useTranslation } from '../i18n';
 import { resolveCardDisplayName } from '../utils/cardDisplayName';
 import { AGGREGATE_SOURCE_PRODUCTS } from '../utils/printingQuotes';
-import { buildPrintingDisplayRows, productDisplayName } from '../utils/printingDisplay';
+import { buildPrintingDisplayRows, seriesLabel } from '../utils/printingDisplay';
 
 export interface ScanCandidateSelectorProps {
   visible: boolean;
@@ -68,13 +68,18 @@ export default function ScanCandidateSelector({
   const sourceLine = (card: CardInfo): string => {
     const p = card.provenance;
     if (!p) return '';
-    const product = (p.sourceProductName && productDisplayName(p.sourceProductName, p.sourceProduct, lang))
+    const label = p.sourceProduct && !AGGREGATE_SOURCE_PRODUCTS.has(p.sourceProduct)
+      ? seriesLabel(p.sourceProduct, p.sourceProductName, lang)
+      : null;
+    const product = label?.primary
+      || p.sourceProductName
       || (p.sourceProduct && AGGREGATE_SOURCE_PRODUCTS.has(p.sourceProduct) ? t('scan_source_aggregate') : p.sourceProduct)
       || '';
     const date = p.quotedAt && /^\d{4}-\d{2}-\d{2}/.test(p.quotedAt) ? t('scan_quote_date', { date: p.quotedAt.slice(0, 10) }) : '';
     const parts = [product, date];
     if (card.priceConflict) parts.push(t('scan_quote_conflict'));
     if (card.lookalike) parts.push(t('scan_version_unconfirmed'));
+    if (label?.original) parts.push(t('card_detail_set_original', { title: label.original }));
     return parts.filter(Boolean).join(' · ');
   };
 
