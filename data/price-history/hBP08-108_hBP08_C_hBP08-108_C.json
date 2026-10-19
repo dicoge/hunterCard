@@ -66,8 +66,16 @@
       "currency": "JPY",
       "cardId": "hBP08-108_hBP08_C_hBP08-108_C",
       "sourceProduct": "hBP08"
+    },
+    {
+      "date": "2026-10-19",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-108_hBP08_C_hBP08-108_C",
+      "sourceProduct": "hBP08"
     }
   ],
-  "lastUpdated": "2026-10-18T12:09:07.292Z",
+  "lastUpdated": "2026-10-19T12:08:41.920Z",
   "nameZh": "惡作劇的Ruffians"
 }

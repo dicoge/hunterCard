@@ -66,8 +66,16 @@
       "currency": "JPY",
       "cardId": "hBP07-096_hBP07_U_hBP07-096_U",
       "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-10-19",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-096_hBP07_U_hBP07-096_U",
+      "sourceProduct": "hBP07"
     }
   ],
-  "lastUpdated": "2026-10-18T12:09:05.910Z",
+  "lastUpdated": "2026-10-19T12:08:40.600Z",
   "nameZh": "茶麻旅"
 }

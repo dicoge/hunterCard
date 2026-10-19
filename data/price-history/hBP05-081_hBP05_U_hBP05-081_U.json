@@ -66,8 +66,16 @@
       "currency": "JPY",
       "cardId": "hBP05-081_hBP05_U_hBP05-081_U",
       "sourceProduct": "hBP05"
+    },
+    {
+      "date": "2026-10-19",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-081_hBP05_U_hBP05-081_U",
+      "sourceProduct": "hBP05"
     }
   ],
-  "lastUpdated": "2026-10-18T12:09:05.246Z",
+  "lastUpdated": "2026-10-19T12:08:39.625Z",
   "nameZh": "白銀諾艾爾的釘鎚"
 }
