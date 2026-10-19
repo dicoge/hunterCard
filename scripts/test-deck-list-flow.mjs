@@ -335,8 +335,8 @@ await flow('reload (rehydrate) reopens 牌組 on the deck list, with every deck 
 
 await flow('a v3 store that still carries an open deck migrates to v4 without it (decks kept)', async () => {
   const deck = useDeckStore.getState().decks[0];
+  useDeckStore.setState({ decks: [], activeDeckId: null, collection: {} });   // (writes storage)
   platformStorage.setItem(STORE_KEY, JSON.stringify({ state: { decks: [deck], activeDeckId: deck.id, collection: {} }, version: 3 }));
-  useDeckStore.setState({ decks: [], activeDeckId: null, collection: {} });
   await useDeckStore.persist.rehydrate();
   assert.equal(useDeckStore.getState().activeDeckId, null, 'old persisted open deck dropped');
   assert.equal(useDeckStore.getState().decks.length, 1, 'decks kept');
