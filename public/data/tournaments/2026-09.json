@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "month": "2026-09",
+  "generatedAt": "2026-09-30T23:21:16.926Z",
+  "source": {
+    "name": "hololive OFFICIAL CARD GAME — 公式コラム「イチ推し！デッキ紹介」",
+    "url": "https://hololive-official-cardgame.com/",
+    "disclaimer": "資料僅來自官方專欄公開的精選牌組，非完整賽事結果。官方不公開參賽人數、完整名次或全部牌組；本頁占比僅反映「已觀測樣本」，不代表整體 meta 佔比。台灣／亞洲賽事目前無可驗證的公開來源，維持未知。"
+  },
+  "coverage": {
+    "knownEvents": 0,
+    "totalEvents": null,
+    "observedDecks": 0,
+    "rankedDecks": 0,
+    "note": "本月僅收錄 0 場的公開精選牌組（共 0 副，其中 0 副有公開名次）。賽事總場數未公開，涵蓋率無法計算完整母體。"
+  },
+  "events": [],
+  "archetypeShare": [],
+  "observedSampleSize": 0
+}
