@@ -164,6 +164,44 @@ await test('tab re-entry: open deck → 首頁 tab → 牌組 tab lands on the d
   assert.equal(useDeckStore.getState().decks.length, 1);
 });
 
+await test('drawer re-entry (CR 219dbd8 P2): open deck → MainDrawer Home → MainDrawer DeckEditor WITHOUT nested params lands on the LIST; deck kept', async () => {
+  await click(byTestId(`deck-open-${deckId}`));
+  await waitFor(() => route()?.name === 'DeckDetail');
+  await act(async () => { navRef.navigate('MainDrawer', { screen: 'Home' }); });
+  await settle();
+  assert.equal(route()?.name, 'Home');
+  await act(async () => { navRef.navigate('MainDrawer', { screen: 'DeckEditor' }); });
+  await waitFor(() => route()?.name === 'DeckList');
+  assert.equal(route()?.name, 'DeckList', `expected DeckList, got ${route()?.name}`);
+  assert.deepEqual(deckStackRoutes(), ['DeckList']);
+  assert.equal(useDeckStore.getState().decks.length, 1);
+});
+
+await test('a screen pushed OVER the open editor (card detail) and back returns to the same editor', async () => {
+  await click(byTestId(`deck-open-${deckId}`));
+  await waitFor(() => route()?.name === 'DeckDetail');
+  await act(async () => { navRef.navigate('CardDetail', { cardId: 'hBP01-010' }); });
+  await settle();
+  assert.equal(route()?.name, 'CardDetail');
+  await act(async () => { navRef.goBack(); });
+  await waitFor(() => route()?.name === 'DeckDetail');
+  assert.equal(route()?.name, 'DeckDetail');
+  assert.equal(route()?.params?.deckId, deckId);
+  await act(async () => { navRef.goBack(); });
+  await waitFor(() => route()?.name === 'DeckList');
+});
+
+await test('direct editor handoff (tournament import shape) from Home opens that deck over the list', async () => {
+  await act(async () => { navRef.navigate('MainDrawer', { screen: 'Home' }); });
+  await settle();
+  await act(async () => { navRef.navigate('MainDrawer', { screen: 'DeckEditor', params: { screen: 'DeckDetail', params: { deckId } } }); });
+  await waitFor(() => route()?.name === 'DeckDetail');
+  assert.equal(route()?.params?.deckId, deckId);
+  await act(async () => { navRef.goBack(); });
+  await waitFor(() => route()?.name === 'DeckList');
+  assert.equal(route()?.name, 'DeckList');
+});
+
 await test('card detail 加入牌組 handoff: list carries the card number into the opened deck (picker pre-filtered)', async () => {
   await act(async () => { navRef.navigate('MainDrawer', { screen: 'DeckEditor', params: { screen: 'DeckList', params: { addCardNumber: 'hBP01-010' } } }); });
   await waitFor(() => route()?.name === 'DeckList');

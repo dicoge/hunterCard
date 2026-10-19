@@ -201,6 +201,18 @@ export default function DeckEditorScreen({ route }: any = {}) {
     collapse();
     return navigation.addListener('focus', collapse);
   }, [routeName, navigation, route?.params]);
+  // Leaving 牌組 for another drawer screen (Home, drawer item, tab) closes the open deck,
+  // so ANY later entry — a drawer item navigates to 'DeckEditor' without nested params,
+  // which would restore the kept stack — lands on the list (CR 219dbd8 P2). A screen pushed
+  // over the drawer (e.g. card detail) keeps 牌組 focused in the drawer: back returns here.
+  useEffect(() => {
+    if (routeName !== 'DeckDetail' || typeof navigation?.addListener !== 'function') return undefined;
+    return navigation.addListener('blur', () => {
+      const drawer = navigation.getParent?.()?.getState?.();
+      if (!drawer) return;
+      if (drawer.routes[drawer.index]?.name !== 'DeckEditor') navigation.popToTop?.();
+    });
+  }, [routeName, navigation]);
   // A deck deleted elsewhere (other device sync, account switch) leaves its editor.
   useEffect(() => {
     if (routeName !== 'DeckDetail' || !routeDeckId) return;
