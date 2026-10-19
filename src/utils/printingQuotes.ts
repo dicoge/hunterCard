@@ -14,7 +14,11 @@
  *       – the known aggregation alias: exactly one row comes from an aggregation bucket
  *         (AGGREGATE_SOURCE_PRODUCTS), and both carry the same card number, the same
  *         non-empty shop listing (yuyu image URL), the same non-empty official image and a
- *         compatible rarity.
+ *         compatible rarity, or
+ *       – an UNLISTED alias (2026-10-19, hBP03-029): the aggregation row has no shop listing
+ *         and no price of its own, and carries the same non-empty official image and a
+ *         compatible rarity as the other row. It contributes no quote, so joining it can
+ *         never move a price; it only stops one printing from being listed twice.
  *     Language and condition are never assumed: both known and different → not the same.
  *     The WHOLE group must stay consistent (CR e8f14dc): a row with unknown metadata never
  *     bridges two known-different printings — when a row has proofs to partners that
@@ -82,7 +86,7 @@ export interface PrintingVersion<R extends PrintingRow = PrintingRow> {
   memberIds: string[];
   members: R[];
   /** proof used to join the members, or null for a single row */
-  proof: 'explicit' | 'aggregate-alias-same-listing' | null;
+  proof: 'explicit' | 'aggregate-alias-same-listing' | 'aggregate-alias-unlisted' | null;
   quotes: PriceQuote[];
   /** latest sell quote of the version; null when none or conflicting */
   currentSell: PriceQuote | null;
@@ -128,10 +132,12 @@ export function samePrintingProof(a: PrintingRow, b: PrintingRow): PrintingVersi
     return a.physicalPrinting && a.physicalPrinting === b.physicalPrinting ? 'explicit' : null;
   }
   if (isAggregate(a) === isAggregate(b)) return null;              // exactly one alias row
-  if (!pa?.listing || pa.listing !== pb?.listing) return null;     // the same shop listing
   if (!art(a) || art(a) !== art(b)) return null;                   // the same official image
   if (knownDiffer(clean(a.rarity), clean(b.rarity))) return null;
-  if (knownDiffer(pa.condition, pb?.condition)) return null;
+  if (knownDiffer(pa?.condition, pb?.condition)) return null;
+  const alias = isAggregate(a) ? a : b;
+  if (!alias.provenance?.listing && quotesOf(alias).length === 0) return 'aggregate-alias-unlisted';
+  if (!pa?.listing || pa.listing !== pb?.listing) return null;     // the same shop listing
   return 'aggregate-alias-same-listing';
 }
 

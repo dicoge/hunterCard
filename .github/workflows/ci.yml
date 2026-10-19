@@ -648,6 +648,9 @@ jobs:
       - name: Verify printing versions / quote provenance through catalog, API and the chooser (v44)
         run: npm run test:printing-quote-identity
 
+      - name: Verify hBP03-029 printings show zh version labels, own pictures and zh product names; same printing collapses, SR/R never merged (2026-10-19)
+        run: npm run test:printing-display
+
       - name: Verify the printing version / quote END TO END — native scan → handler → chooser → 加入 → session, latest and same-time conflict (v44)
         run: npm run test:scan-printing-version-flow
 

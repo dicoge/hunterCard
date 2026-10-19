@@ -488,6 +488,7 @@ export const zh = {
   card_detail_variant_hint_spread: '👇 於下方「市場數據」可選擇版本，買賣差價與漲跌會隨選擇更新',
   card_detail_variant_hint: '👇 於下方「市場數據」可選擇版本，售價會隨選擇更新',
   // Store MVP 版本：不得指向被隱藏的「市場數據」區塊 (DIC-1319)。
+  card_detail_variant_price_conflict: '價格不一致',
   card_detail_variant_hint_store: '這張卡各版本的掛牌售價；請對照手上卡片的版本名稱與稀有度',
   card_detail_approx_price: '💰 約 {{price}}（{{currency}}）',
   card_detail_live_price: '🔍 查看遊々亭即時價格 →',
