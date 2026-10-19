@@ -207,6 +207,9 @@ function MainDrawer() {
           ),
         }}
       />
+      {/* 賽事月報 — hidden in the first release (FEATURES.tournamentReport): not registering
+          the route blocks the drawer item, every navigate() and any restored nav state. */}
+      {FEATURES.tournamentReport && (
       <Drawer.Screen
         name="TournamentReport"
         component={TournamentReportScreen}
@@ -219,6 +222,7 @@ function MainDrawer() {
           ),
         }}
       />
+      )}
       {/* 到價提醒 — hidden in Store MVP (DIC-908). Removing the Drawer.Screen
           unregisters the route so nav + deep link are both blocked, not just
           visually hidden. */}

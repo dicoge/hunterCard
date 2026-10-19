@@ -68,10 +68,10 @@ const QUICK_ACTIONS: {
   glyph: string;
   tint: string;
   route: string;
-  gate?: 'watchlist';
+  gate?: 'watchlist' | 'tournamentReport';
 }[] = [
   { key: 'scan', labelKey: 'nav_scan', glyph: '⌖', tint: PALETTE.accent, route: 'Scan' },
-  { key: 'tournament', labelKey: 'nav_tournament_report', glyph: '◍', tint: PALETTE.accent2, route: 'TournamentReport' },
+  { key: 'tournament', labelKey: 'nav_tournament_report', glyph: '◍', tint: PALETTE.accent2, route: 'TournamentReport', gate: 'tournamentReport' },
   { key: 'tutorial', labelKey: 'nav_tutorial', glyph: '✦', tint: PALETTE.accent3, route: 'Tutorial' },
   { key: 'watchlist', labelKey: 'nav_watchlist', glyph: '◔', tint: PALETTE.cYellow, route: 'Watchlist', gate: 'watchlist' },
 ];
@@ -90,7 +90,7 @@ export default function HomeScreen({ navigation }: any) {
   }, []);
 
   const tabs = useMemo(() => buildShellTabs({ navigation }), [navigation]);
-  const quickActions = QUICK_ACTIONS.filter((a) => (a.gate === 'watchlist' ? FEATURES.watchlist : true));
+  const quickActions = QUICK_ACTIONS.filter((a) => (a.gate ? FEATURES[a.gate] : true));
 
   const appBarActions = [
     ...(FEATURES.watchlist

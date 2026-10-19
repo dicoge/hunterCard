@@ -24,6 +24,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import * as pathMod from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execSync } from 'node:child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.join(__dirname, '..');
@@ -121,10 +122,34 @@ check(
   'AppNavigator: Watchlist Drawer.Screen still wrapped in {FEATURES.watchlist && ...} (regression)',
   /\{FEATURES\.watchlist\s*&&[^}]*<Drawer\.Screen[^>]*name="Watchlist"/s.test(nav),
 );
-// Every other drawer entry (Home / Scan / Search / DeckEditor / TournamentReport
-// / Tutorial / Settings) must NOT be wrapped in any FEATURES gate — those are
-// the retained surfaces.
-for (const name of ['Home', 'Scan', 'Search', 'DeckEditor', 'TournamentReport', 'Tutorial', 'Settings']) {
+// 賽事月報 is hidden in the FIRST release (owner 2026-10-19): the route is registered only
+// under FEATURES.tournamentReport, which is the constant false — every profile.
+check(
+  'AppNavigator: TournamentReport Drawer.Screen wrapped in {FEATURES.tournamentReport && ...}',
+  /\{FEATURES\.tournamentReport\s*&&\s*\(\s*<Drawer\.Screen[^>]*name="TournamentReport"/s.test(nav),
+);
+{
+  const flags = fs.readFileSync(path.join(repoRoot, 'src/config/releaseFlags.ts'), 'utf8');
+  check('releaseFlags: tournamentReport is the constant false (hidden in the first release, every profile)',
+    /\n\s*tournamentReport:\s*false,/.test(flags));
+  const home = fs.readFileSync(path.join(repoRoot, 'src/screens/HomeScreen.tsx'), 'utf8');
+  check('HomeScreen: the 賽事月報 quick action carries the tournamentReport gate',
+    /key: 'tournament'[^\n]*route: 'TournamentReport', gate: 'tournamentReport'/.test(home)
+      && /QUICK_ACTIONS\.filter\(\(a\) => \(a\.gate \? FEATURES\[a\.gate\] : true\)\)/.test(home));
+  const callers = execSync("grep -rln \"navigate('TournamentReport'\\|route: 'TournamentReport'\" src || true", { cwd: repoRoot }).toString().trim().split('\n').filter(Boolean);
+  check('only gated entries point at TournamentReport (no other navigate to it)',
+    callers.every((f) => f === 'src/screens/HomeScreen.tsx'), callers.join(', '));
+  const landing = fs.readFileSync(path.join(repoRoot, 'src/screens/LandingScreen.tsx'), 'utf8');
+  const ungated = landing.split('\n').filter((l) => l.includes('賽事月報') && !/TOURNAMENT|^\s*\/\//.test(l) && !/key: 'tournament'|title: '賽事月報'/.test(l));
+  check('LandingScreen: every 賽事月報 mention is conditional on FEATURES.tournamentReport', ungated.length === 0, ungated.join(' | '));
+  check('LandingScreen: the 賽事月報 feature tile is filtered by the flag',
+    /const FEATURES = ALL_FEATURES\.filter\(\(f\) => f\.key !== 'tournament' \|\| TOURNAMENT\)/.test(landing));
+  check('the report data is kept (hidden, not deleted)',
+    fs.existsSync(path.join(repoRoot, 'data/tournaments/2026-07.json')) && fs.existsSync(path.join(repoRoot, 'public/data/tournaments/analytics/index.json')));
+}
+// Every other drawer entry (Home / Scan / Search / DeckEditor / Tutorial / Settings)
+// must NOT be wrapped in any FEATURES gate — those are the retained surfaces.
+for (const name of ['Home', 'Scan', 'Search', 'DeckEditor', 'Tutorial', 'Settings']) {
   const beforeIdx = nav.indexOf(`name="${name}"`);
   assert.notEqual(beforeIdx, -1, `AppNavigator must still declare ${name}`);
   // Look at the ~200 chars preceding the name= to confirm no FEATURES.* gate
