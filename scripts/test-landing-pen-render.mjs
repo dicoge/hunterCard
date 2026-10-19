@@ -159,7 +159,7 @@ for (const [label, viewport] of [['mobile 390', MOBILE], ['desktop 1440', DESKTO
       const text = freePlan.textContent;
       assert.ok(text.includes('50 次') && text.includes('掃描') && !text.includes('100 次'), 'Free plan lists the 50 scans/month quota (not the retired 100)');
       assert.ok(text.includes('全部卡表檢索與篩選'), 'Free plan lists the 全部卡表檢索與篩選 feature');
-      assert.ok(text.includes('賽事月報'), 'Free plan lists 賽事月報');
+      assert.ok(!text.includes('賽事月報') && text.includes('規則教學與模擬戰'), 'Free plan does NOT list the hidden 賽事月報 (first release); 規則教學與模擬戰 stays');
     } finally { await cleanup(); }
   });
 
@@ -317,9 +317,10 @@ for (const [label, viewport] of [['mobile 390', MOBILE], ['desktop 1440', DESKTO
         assert.ok(mockup.textContent.includes(chip), `filter chip ${chip} mounts`);
       }
       // Icon-tile feature cards from the Pen bento
-      for (const title of ['拍照辨識，順便估值', '牌組編輯器', '賽事月報', '規則教學與模擬戰']) {
+      for (const title of ['拍照辨識，順便估值', '牌組編輯器', '規則教學與模擬戰']) {
         assert.ok(byTestId(container, `landing-feature-${title}`), `feature card ${title} mounts`);
       }
+      assert.ok(!byTestId(container, 'landing-feature-賽事月報') && !container.textContent.includes('賽事月報'), 'the hidden 賽事月報 is advertised nowhere on the page (first release)');
     } finally { await cleanup(); }
   });
 }

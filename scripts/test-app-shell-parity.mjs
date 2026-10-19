@@ -137,18 +137,20 @@ await test('Home search field opens Search and carries Pen $app-elev / r14 chrom
   } finally { await cleanup(); }
 });
 
-await test('Home quick actions dispatch Scan / TournamentReport / Tutorial / Watchlist', async () => {
+await test('Home quick actions dispatch Scan / Tutorial / Watchlist — 賽事月報 is hidden in the first release (no tile)', async () => {
   const calls = [];
   const { container, cleanup } = await renderHome((route) => calls.push(route));
   try {
-    for (const key of ['scan', 'tournament', 'tutorial', 'watchlist']) {
+    assert.equal(container.querySelector('[data-testid="home-quick-tournament"]'), null, '賽事月報 quick tile hidden (FEATURES.tournamentReport false)');
+    for (const key of ['scan', 'tutorial', 'watchlist']) {
       const tile = container.querySelector(`[data-testid="home-quick-${key}"]`);
       assert.ok(tile, `quick tile ${key} renders (full profile: EXPO_PUBLIC_STORE_MVP=0)`);
       const style = dom.window.getComputedStyle(tile);
       assert.equal(style.backgroundColor, hexToRgb(PALETTE.appSurface), 'Pen $app-surface tile');
       await act(async () => tile.click());
     }
-    assert.deepEqual(calls, ['Scan', 'TournamentReport', 'Tutorial', 'Watchlist']);
+    assert.deepEqual(calls, ['Scan', 'Tutorial', 'Watchlist']);
+    assert.ok(!calls.includes('TournamentReport'));
   } finally { await cleanup(); }
 });
 

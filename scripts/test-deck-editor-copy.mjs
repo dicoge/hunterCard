@@ -399,6 +399,9 @@ await test('the migrated deck still explains nothing after a reload', async () =
 
   const reloaded = activeDeck();
   assert.ok(reloaded, 'the deck must come back from storage');
+  // 2026-10-19: after a reload 牌組 opens on the deck list; the player opens the deck.
+  assert.equal(useDeckStore.getState().activeDeckId, null, 'reload opens on the deck list');
+  useDeckStore.getState().setActiveDeck(reloaded.id);
   await assertSilentEditor(reloaded, DESKTOP, 'desktop');
   await assertSilentEditor(reloaded, MOBILE, 'mobile');
 });

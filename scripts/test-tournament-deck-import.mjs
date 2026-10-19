@@ -906,7 +906,11 @@ await test('an imported deck survives reload and reopens from 我的牌組', asy
   assert.equal(restored.name, expectedName);
   assert.equal(deckStats(restored).total, 71, 'all 71 cards survive reload');
   assert.equal(restored.origin.decklogCode, 'DUKHN', 'provenance survives reload');
-  assert.equal(store().activeDeckId, id, 'it is still the active deck the editor opens');
+  // 2026-10-19: the open deck is session state — after a reload 牌組 opens on the deck list,
+  // and the imported deck is there to open.
+  assert.equal(store().activeDeckId, null, 'after a reload 牌組 opens on the deck list');
+  store().setActiveDeck(id);
+  assert.equal(store().activeDeckId, id, 'the imported deck opens from the list');
   assert.deepEqual(validateDeck(restored).filter((i) => i.level === 'error'), []);
 });
 
