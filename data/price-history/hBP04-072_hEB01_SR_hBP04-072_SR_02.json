@@ -50,8 +50,16 @@
       "currency": "JPY",
       "cardId": "hBP04-072_hEB01_SR_hBP04-072_SR_02",
       "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-19",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-072_hEB01_SR_hBP04-072_SR_02",
+      "sourceProduct": "hEB01"
     }
   ],
-  "lastUpdated": "2026-10-18T12:09:04.938Z",
+  "lastUpdated": "2026-10-19T12:08:39.041Z",
   "nameZh": "大空昴"
 }

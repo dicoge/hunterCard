@@ -66,8 +66,16 @@
       "currency": "JPY",
       "cardId": "hBP07-014_hBP07_SR_hBP07-014_SR",
       "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-10-19",
+      "price": 680,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-014_hBP07_SR_hBP07-014_SR",
+      "sourceProduct": "hBP07"
     }
   ],
-  "lastUpdated": "2026-10-18T12:09:01.523Z",
+  "lastUpdated": "2026-10-19T12:08:32.385Z",
   "nameZh": "角卷綿芽"
 }

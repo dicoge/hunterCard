@@ -66,8 +66,16 @@
       "currency": "JPY",
       "cardId": "hBP02-073_hBP02_R_hBP02-073_R",
       "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-10-19",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-073_hBP02_R_hBP02-073_R",
+      "sourceProduct": "hBP02"
     }
   ],
-  "lastUpdated": "2026-10-18T12:09:03.434Z",
+  "lastUpdated": "2026-10-19T12:08:35.203Z",
   "nameZh": "魔法少女瑪琳"
 }

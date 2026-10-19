@@ -66,8 +66,16 @@
       "currency": "JPY",
       "cardId": "hBP06-007_hBP06_OSR_hBP06-007_OSR",
       "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-10-19",
+      "price": 280,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-007_hBP06_OSR_hBP06-007_OSR",
+      "sourceProduct": "hBP06"
     }
   ],
-  "lastUpdated": "2026-10-18T12:09:05.327Z",
+  "lastUpdated": "2026-10-19T12:08:39.736Z",
   "nameZh": "蘿蔔子"
 }
