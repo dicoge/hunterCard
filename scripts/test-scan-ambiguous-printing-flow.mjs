@@ -67,6 +67,29 @@ const uniqueRow = Object.values(shippedDb.cards).find((c) => {
   return sib.length === 1 && typeof c.sellPrice === 'number' && c.sellPrice > 0;
 });
 
+// Raw-derived candidate groups (shared TEST oracle, no production imports). Since
+// 2026-10-19 an unlisted, unpriced ent07 alias folds into its one product row, so a
+// picker shows one candidate per physical printing, not one per raw row.
+const { AGGREGATE, expectedGroups, describeGroups, foldsAreProvenAliases, compareCandidates } =
+  await import('./lib/printingCandidateOracle.mjs');
+const EXPECTED = expectedGroups(rows);
+console.log(`  … ${AMBIGUOUS}: ${rows.length} raw rows → ${EXPECTED.size} expected candidates `
+  + JSON.stringify(describeGroups(EXPECTED)));
+check(`${AMBIGUOUS}: raw rows still describe several distinct physical printings`, EXPECTED.size >= 2, `got ${EXPECTED.size}`);
+check(`${AMBIGUOUS}: every folded raw row is an unlisted, unpriced ${AGGREGATE} alias of a product row`,
+  foldsAreProvenAliases(EXPECTED, rows));
+
+function assertCandidateGroups(label, candidates, rawRows) {
+  const cmp = compareCandidates(candidates, rawRows);
+  check(`${label}: offers every distinct printing as a candidate (raw-derived groups)`, cmp.countOk,
+    `got ${cmp.count}, expected ${cmp.expected.size} (from ${rawRows.length} raw rows)`);
+  check(`${label}: every raw row survives exactly once, as a primary id or a proven alias`,
+    cmp.everyRawOnce, `seen=${JSON.stringify(cmp.seen)}`);
+  check(`${label}: candidate groups equal the raw-derived groups (only proven aliases fold)`,
+    cmp.mismatched.length === 0, JSON.stringify(cmp.mismatched[0]));
+  check(`${label}: no candidate joins rows of different art, rarity or product source`, cmp.unmixed);
+}
+
 /** Records every UI callback so "committed" is an observed fact, not an inference. */
 function recordingUi() {
   const calls = [];
@@ -128,7 +151,7 @@ check('found a single-printing control with a price', !!uniqueRow);
     `committed ${JSON.stringify(ui.committed().map((c) => c.name))}`);
   check('native: shows the candidate picker', ui.pickerShown().length === 1);
   const cands = ui.pickerShown()[0]?.args[0] ?? [];
-  check('native: picker offers every printing', cands.length === rows.length, `got ${cands.length}`);
+  assertCandidateGroups('native: picker', cands, rows);
   check('native: candidates keep distinct compound printing ids',
     new Set(cands.map((c) => c.card.id)).size === cands.length,
     `ids=${JSON.stringify(cands.map((c) => c.card.id))}`);
@@ -154,8 +177,7 @@ check('found a single-printing control with a price', !!uniqueRow);
     ui.committed().length === 0,
     `committed ${JSON.stringify(ui.committed().map((c) => c.name))}`);
   check('web: shows the candidate picker', ui.pickerShown().length === 1);
-  check('web: picker offers every printing',
-    (ui.pickerShown()[0]?.args[0] ?? []).length === rows.length);
+  assertCandidateGroups('web: picker', ui.pickerShown()[0]?.args[0] ?? [], rows);
 }
 
 // ── 3. Control: a resolved printing still auto-recognises normally ──────────
@@ -218,10 +240,20 @@ check('found a single-printing control with a price', !!uniqueRow);
     `got success=${galleryResult.success}, lowConfidence=${galleryResult.lowConfidence}`);
   check('client: retains TYPED candidates (RecognizedCandidate[]) — not only CardInfo[] suggestions',
     Array.isArray(galleryResult.candidates)
-      && galleryResult.candidates.length === ranking.candidates.length
+      && galleryResult.candidates.length > 0
       && galleryResult.candidates.every((c) => c && typeof c === 'object' && !!c.card
         && typeof c.confidence === 'number'),
     `got ${JSON.stringify(galleryResult.candidates?.map((c) => ({hasCard: !!c?.card, conf: typeof c?.confidence})))}`);
+  // The client groups the ranked wire candidates into printings (same proven-alias
+  // folding as the catalog path), so its count is the number of raw-derived groups
+  // of exactly the rows the ranker sent — not the wire count.
+  const rankedRaw = ranking.candidates.map((c) => shippedDb.cards[c.id]).filter(Boolean);
+  check('fixture: every ranked wire id is a real catalog row of the number',
+    rankedRaw.length === ranking.candidates.length && rankedRaw.every((r) => r.cardNumber === AMBIGUOUS),
+    `ids=${JSON.stringify(ranking.candidates.map((c) => c.id))}`);
+  console.log(`  … ranked ${ranking.candidates.length} wire rows → expected client groups `
+    + JSON.stringify(describeGroups(expectedGroups(rankedRaw))));
+  assertCandidateGroups('client: typed candidates', galleryResult.candidates, rankedRaw);
   check('client: each candidate.card carries a distinct compound printing id (id !== cardNumber)',
     new Set(galleryResult.candidates.map((c) => c.card.id)).size === galleryResult.candidates.length
       && galleryResult.candidates.every((c) => c.card.id !== AMBIGUOUS),

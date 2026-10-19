@@ -99,6 +99,38 @@ const uniqueRow = Object.values(shippedDb.cards).find((c) => {
 });
 check('found a single-printing control card with a price', !!uniqueRow, 'needed to prove the fix is not a blanket block');
 
+// ── Expected candidate groups, derived INDEPENDENTLY from the raw catalog rows ──
+// A raw row is not always its own physical printing: since 2026-10-19 an `ent07`
+// aggregation row that carries NO shop listing and NO price folds into the one
+// product row it is evidently the same card as (same official art, compatible
+// rarity / condition, same language) — it adds no quote, so it can never move a
+// price, it only stops one printing being offered twice. Everything else stays its
+// own candidate. The oracle re-states that rule from raw fields (not the
+// implementation) and requires: every raw id survives as a candidate's primary id
+// or a proven alias, only such unlisted unpriced aliases fold, and every product
+// row (different art / rarity / source) remains its own candidate.
+// The oracle is shared with test-scan-ambiguous-printing-flow (test-only module,
+// no production imports).
+const { AGGREGATE, expectedGroups, describeGroups, foldsAreProvenAliases, compareCandidates } =
+  await import('./lib/printingCandidateOracle.mjs');
+const EXPECTED = expectedGroups(rows);
+console.log(`  … ${AMBIGUOUS}: ${rows.length} raw rows → ${EXPECTED.size} expected candidates `
+  + JSON.stringify(describeGroups(EXPECTED)));
+check(`${AMBIGUOUS}: raw rows still describe several distinct physical printings`, EXPECTED.size >= 2, `got ${EXPECTED.size}`);
+check(`${AMBIGUOUS}: every folded raw row is an unlisted, unpriced ${AGGREGATE} alias of a product row`,
+  foldsAreProvenAliases(EXPECTED, rows));
+
+function assertCandidateGroups(label, candidates) {
+  const cmp = compareCandidates(candidates, rows);
+  check(`${label}: offers every distinct printing as a candidate (raw-derived groups)`, cmp.countOk,
+    `got ${cmp.count}, expected ${cmp.expected.size} (from ${rows.length} raw rows)`);
+  check(`${label}: every raw row survives exactly once, as a primary id or a proven alias`,
+    cmp.everyRawOnce, `seen=${JSON.stringify(cmp.seen)}`);
+  check(`${label}: candidate groups equal the raw-derived groups (only proven aliases fold)`, cmp.mismatched.length === 0,
+    JSON.stringify(cmp.mismatched[0]));
+  check(`${label}: no candidate joins rows of different art, rarity or product source`, cmp.unmixed);
+}
+
 function assertAmbiguous(label, result) {
   check(`${label}: still returns the card (scan UX preserved, not an error)`, result?.success === true, JSON.stringify(result?.error));
   check(`${label}: carries NO price`, result?.card?.sellPrice == null, `got ${result?.card?.sellPrice}`);
@@ -108,8 +140,7 @@ function assertAmbiguous(label, result) {
     `got ${result?.card?.sellPrice}`,
   );
   check(`${label}: exposes no printing rows to price from`, (result?.card?.prices ?? []).length === 0);
-  check(`${label}: offers every printing as a candidate to resolve`, result?.candidates?.length === rows.length,
-    `got ${result?.candidates?.length}, expected ${rows.length}`);
+  assertCandidateGroups(label, result?.candidates);
   check(`${label}: is flagged low-confidence so the UI asks rather than asserts`, result?.confidence === undefined || result?.lowConfidence === true);
   // Each candidate is a real printing carrying ITS OWN price — that is the
   // resolution step, not a guess. Yen values drift with daily refreshes
