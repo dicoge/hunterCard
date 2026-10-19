@@ -39,6 +39,18 @@ import { useAuthStore } from '../store/authStore';
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const Drawer = createDrawerNavigator<MainDrawerParamList>();
+const DeckStack = createNativeStackNavigator();
+
+// 牌組 (user 2026-10-19): explicit list / editor routes — DeckList (entry) → DeckDetail
+// ({ deckId }). Back from a deck pops to the list; back on the list leaves the feature.
+export function DeckNavigator() {
+  return (
+    <DeckStack.Navigator initialRouteName="DeckList" screenOptions={{ headerShown: false }}>
+      <DeckStack.Screen name="DeckList" component={DeckEditorScreen} />
+      <DeckStack.Screen name="DeckDetail" component={DeckEditorScreen} />
+    </DeckStack.Navigator>
+  );
+}
 
 // Custom Drawer Content
 function CustomDrawerContent(props: DrawerContentComponentProps) {
@@ -196,7 +208,7 @@ function MainDrawer() {
       )}
       <Drawer.Screen
         name="DeckEditor"
-        component={DeckEditorScreen}
+        component={DeckNavigator}
         options={{
           title: t('nav_deck_editor'),
           // DIC-1409 Phase 4: DeckEditor renders the shared Pen v2 shell
@@ -207,6 +219,9 @@ function MainDrawer() {
           ),
         }}
       />
+      {/* 賽事月報 — hidden in the first release (FEATURES.tournamentReport): not registering
+          the route blocks the drawer item, every navigate() and any restored nav state. */}
+      {FEATURES.tournamentReport && (
       <Drawer.Screen
         name="TournamentReport"
         component={TournamentReportScreen}
@@ -219,6 +234,7 @@ function MainDrawer() {
           ),
         }}
       />
+      )}
       {/* 到價提醒 — hidden in Store MVP (DIC-908). Removing the Drawer.Screen
           unregisters the route so nav + deep link are both blocked, not just
           visually hidden. */}

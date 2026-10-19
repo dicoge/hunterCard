@@ -122,7 +122,8 @@ await test('root-stack screen → tab press: TutorialDetail 牌組 tab lands on 
   const deckTab = byTestId('shell-bottom-tab-deck');
   assert.ok(deckTab, 'TutorialDetail shell renders the 牌組 tab');
   await click(deckTab);
-  assert.equal(navRef.getCurrentRoute()?.name, 'DeckEditor', `expected DeckEditor, got ${navRef.getCurrentRoute()?.name}`);
+  // 牌組 is a stack since 2026-10-19: the tab lands on its entry route DeckList.
+  assert.equal(navRef.getCurrentRoute()?.name, 'DeckList', `expected DeckList, got ${navRef.getCurrentRoute()?.name}`);
 });
 
 await act(async () => root.unmount());

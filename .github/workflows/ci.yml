@@ -379,6 +379,12 @@ jobs:
       - name: Verify the deck editor renders no explanatory copy (DIC-1064)
         run: npm run test:deck-editor-copy
 
+      - name: Verify 牌組 opens on the deck list, back returns to it, no phantom deck, open deck not persisted (2026-10-19)
+        run: npm run test:deck-list-flow
+
+      - name: Verify 牌組 list/editor routes through the real navigator (tab, ‹, stack pop, web back, re-entry, handoffs) (2026-10-19)
+        run: npm run test:deck-navigation
+
       - name: Verify the native deck editor renders its card picker grid (DIC-1287)
         run: npm run test:native-deck-editor-grid
 
@@ -641,6 +647,9 @@ jobs:
 
       - name: Verify printing versions / quote provenance through catalog, API and the chooser (v44)
         run: npm run test:printing-quote-identity
+
+      - name: Verify hBP03-029 printings show zh version labels, own pictures and zh product names; same printing collapses, SR/R never merged (2026-10-19)
+        run: npm run test:printing-display
 
       - name: Verify the printing version / quote END TO END — native scan → handler → chooser → 加入 → session, latest and same-time conflict (v44)
         run: npm run test:scan-printing-version-flow

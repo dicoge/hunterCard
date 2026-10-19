@@ -33,6 +33,7 @@ globalThis.fetch = async (url) => {
 const { buildPrintingVersions, provenanceFromRow, samePrintingProof } = await import('../src/utils/printingQuotes.ts');
 const { loadAllCards, resolvePrintingByCardNumber, consolidatePrintingCards } = await import('../src/services/cardRecognition.ts');
 const { mapApiCardToCardInfo } = await import('../src/utils/apiCardMapper.ts');
+const { buildPrintingDisplayRows } = await import('../src/utils/printingDisplay.ts');
 const React = (await import('react')).default;
 const { renderToStaticMarkup } = await import('react-dom/server');
 const { default: Selector } = await import('../src/components/ScanCandidateSelector.tsx');
@@ -165,19 +166,64 @@ await test('other real multi-printing numbers are NOT collapsed by number (hBP01
   assert.ok(res.printings.length >= rows.length - rows.filter((r) => r.provenance?.sourceProduct === 'ent07').length);
 });
 
+// 2026-10-19 user report (hBP03-029 さくらみこ): four real printings (R/SR × hBP03/hEB01)
+// plus two ent07 aggregation rows with no listing and no price whose official image and
+// rarity equal the hBP03 R / SR rows. The unlisted aliases fold into those printings
+// (ids kept, no quote added); the four printings stay four.
+let miko;
+await test('resolver: hBP03-029 = 4 printings; unpriced unlisted ent07 rows fold into hBP03 R/SR, prices untouched', () => {
+  const rows = all.filter((c) => c.cardNumber === 'hBP03-029');
+  assert.equal(rows.length, 6);
+  miko = resolvePrintingByCardNumber(all, 'hBP03-029');
+  assert.equal(miko.status, 'ambiguous');
+  const byId = Object.fromEntries(miko.printings.map((c) => [c.id, c]));
+  assert.deepEqual(Object.keys(byId).sort(), [
+    'hBP03-029_hBP03_R_hBP03-029_R', 'hBP03-029_hBP03_SR_hBP03-029_SR',
+    'hBP03-029_hEB01_R_hBP03-029_R_02', 'hBP03-029_hEB01_SR_hBP03-029_SR_02',
+  ]);
+  assert.deepEqual([...byId['hBP03-029_hBP03_R_hBP03-029_R'].aliasIds].sort(), ['hBP03-029_ent07_R_hBP03-029_R', 'hBP03-029_hBP03_R_hBP03-029_R']);
+  assert.deepEqual([...byId['hBP03-029_hBP03_SR_hBP03-029_SR'].aliasIds].sort(), ['hBP03-029_ent07', 'hBP03-029_hBP03_SR_hBP03-029_SR']);
+  assert.deepEqual(miko.printings.map((c) => c.sellPrice).sort((a, b) => a - b), [50, 120, 180, 1280]);
+  assert.equal(byId['hBP03-029_hBP03_SR_hBP03-029_SR'].provenance.sourceProduct, 'hBP03', 'the real product row is the identity');
+  assert.equal(byId['hBP03-029_hEB01_SR_hBP03-029_SR_02'].aliasIds, undefined, 'the hEB01 reprint is never joined');
+});
+await test('unlisted alias that matches two printings joins neither (no guess)', () => {
+  const base = { cardNumber: 'X-1', rarity: 'SR', imageUrl: 'same.png' };
+  const v = buildPrintingVersions([
+    { ...base, id: 'a', sellPrice: 100, provenance: provenanceFromRow({ sourceProduct: 'hBP01', yuyuImage: 'https://card.yuyu-tei.jp/a.jpg' }) },
+    { ...base, id: 'b', sellPrice: 900, provenance: provenanceFromRow({ sourceProduct: 'hBP02', yuyuImage: 'https://card.yuyu-tei.jp/b.jpg' }) },
+    { ...base, id: 'alias', provenance: provenanceFromRow({ sourceProduct: 'ent07' }) },
+  ]);
+  assert.equal(v.length, 3);
+  const priced = { ...base, id: 'p', sellPrice: 500, provenance: provenanceFromRow({ sourceProduct: 'ent07' }) };
+  assert.equal(samePrintingProof(priced, { ...base, id: 'a', sellPrice: 100, provenance: provenanceFromRow({ sourceProduct: 'hBP01', yuyuImage: 'https://card.yuyu-tei.jp/a.jpg' }) }), null, 'a PRICED alias still needs the same listing');
+});
+
 const metaOf = (html, id) => [...html.matchAll(new RegExp(`data-testid="${id}"[^>]*>(.*?)</div>`, 'gs'))].map((m) => m[1].replace(/<[^>]*>/g, '').replace(/<!--.*?-->/gs, ''));
 const render = (cards) => renderToStaticMarkup(React.createElement(Selector, {
   visible: true, tier: 'mid', candidates: cards.map((card) => ({ card, confidence: 0.5 })),
   onSelect() {}, onRescan() {}, onManualSearch() {}, onDismiss() {}, preferredCurrency: 'JPY', preferredLanguage: 'zh',
 }));
-await test('actual chooser: the proven version is ONE row "#hBD24-023 · P ¥8,980" with "PRカード · 2026-10-1x 報價"', () => {
+await test('actual chooser: the proven version is ONE row "#hBD24-023 · P · 一般版 ¥8,980" with "PR 宣傳卡（hPR） · 2026-10-1x 報價 · 原名：PRカード" (zh primary, 2026-10-19)', () => {
   const html = render([resolved.card]);
   const meta = metaOf(html, 'scan-candidate-meta');
   const source = metaOf(html, 'scan-candidate-source');
   assert.equal(meta.length, 1);
-  assert.match(meta[0], /#hBD24-023 · P\s+¥8,980/);
+  assert.match(meta[0], /#hBD24-023 · P · 一般版\s+¥8,980/);
   assert.equal(source.length, 1);
-  assert.match(source[0], /^PRカード · 2026-10-1\d 報價$/);
+  assert.match(source[0], /^PR 宣傳卡（hPR） · 2026-10-1\d 報價 · 原名：PRカード$/);
+});
+await test('actual chooser: hBP03-029 rows carry zh version, zh primary series (原名 kept), own picture', () => {
+  const html = render(miko.printings);
+  const meta = metaOf(html, 'scan-candidate-meta').join('|');
+  for (const m of [/· R · 一般版\s+¥180/, /· SR · 平行版\s+¥1,280/, /· R · 一般版・hEB01 收錄\s+¥50/, /· SR · 平行版・hEB01 收錄\s+¥120/]) assert.match(meta, m);
+  const source = metaOf(html, 'scan-candidate-source').join('|');
+  assert.match(source, /補充包 第 3 彈（hBP03） · [^|]*原名：ブースターパック「エリートスパーク」/);
+  assert.match(source, /額外補充包 第 1 彈（hEB01） · [^|]*原名：エクストラブースター サマー・ホログラム/);
+  assert.equal((html.match(/data-testid="scan-candidate-image"/g) || []).length, 4);
+  // RN-web's static markup omits the <img> src; the source is the row's own listing picture.
+  const pics = miko.printings.map((c) => buildPrintingDisplayRows(c.prices, 'zh')[0].imageUrl).sort();
+  assert.deepEqual(pics.map((u) => u.replace(/^.*100_140\//, '')), ['hbp03/10062.jpg', 'hbp03/10063.jpg', 'heb01/10135.jpg', 'heb01/10136.jpg']);
 });
 await test('actual chooser: unproven lookalikes are told apart by source + date, marked 版本未確認 (not by price alone)', () => {
   const rows = caseRows('same_images_but_alias_unproven_no_blind_merge').map((r) => ({

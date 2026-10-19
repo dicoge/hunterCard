@@ -18,6 +18,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  Image,
 } from 'react-native';
 import { COLORS, convertPrice } from '../constants';
 import { FEATURES } from '../config/releaseFlags';
@@ -25,6 +26,7 @@ import { CardInfo, RecognizedCandidate } from '../services/cardRecognition';
 import { useTranslation } from '../i18n';
 import { resolveCardDisplayName } from '../utils/cardDisplayName';
 import { AGGREGATE_SOURCE_PRODUCTS } from '../utils/printingQuotes';
+import { buildPrintingDisplayRows, seriesLabel } from '../utils/printingDisplay';
 
 export interface ScanCandidateSelectorProps {
   visible: boolean;
@@ -50,6 +52,7 @@ export default function ScanCandidateSelector({
   preferredLanguage = 'zh',
 }: ScanCandidateSelectorProps) {
   const { t } = useTranslation();
+  const lang = preferredLanguage === 'ja' ? 'ja' : 'zh';
   if (!visible || candidates.length === 0) return null;
 
   const formatPrice = (price: number | null): string => {
@@ -65,14 +68,27 @@ export default function ScanCandidateSelector({
   const sourceLine = (card: CardInfo): string => {
     const p = card.provenance;
     if (!p) return '';
-    const product = p.sourceProductName
+    const label = p.sourceProduct && !AGGREGATE_SOURCE_PRODUCTS.has(p.sourceProduct)
+      ? seriesLabel(p.sourceProduct, p.sourceProductName, lang)
+      : null;
+    const product = label?.primary
+      || p.sourceProductName
       || (p.sourceProduct && AGGREGATE_SOURCE_PRODUCTS.has(p.sourceProduct) ? t('scan_source_aggregate') : p.sourceProduct)
       || '';
     const date = p.quotedAt && /^\d{4}-\d{2}-\d{2}/.test(p.quotedAt) ? t('scan_quote_date', { date: p.quotedAt.slice(0, 10) }) : '';
     const parts = [product, date];
     if (card.priceConflict) parts.push(t('scan_quote_conflict'));
     if (card.lookalike) parts.push(t('scan_version_unconfirmed'));
+    if (label?.original) parts.push(t('card_detail_set_original', { title: label.original }));
     return parts.filter(Boolean).join(' · ');
+  };
+
+  // 2026-10-19 (hBP03-029): SR/R and hBP03/hEB01 candidates were told apart only by a
+  // Japanese product name. Each candidate now names its version and shows its own picture:
+  // the listing's image when the row has exactly one printing, else the row's official image.
+  const versionOf = (card: CardInfo) => {
+    const rows = buildPrintingDisplayRows(card.prices ?? [], lang);
+    return rows.length === 1 ? rows[0] : null;
   };
 
   const title = tier === 'low' ? t('scan_candidate_low_title') : t('scan_candidate_mid_title');
@@ -108,6 +124,8 @@ export default function ScanCandidateSelector({
             const card = cand.card;
             const isBest = i === 0;
             const { primary: displayName } = resolveCardDisplayName(card, preferredLanguage);
+            const version = versionOf(card);
+            const thumb = version?.imageUrl || card.imageUrl || '';
             return (
               <TouchableOpacity
                 key={`${card.cardNumber || card.id}-${i}`}
@@ -118,6 +136,11 @@ export default function ScanCandidateSelector({
                 <View style={styles.rankBadge}>
                   <Text style={styles.rankText}>{i + 1}</Text>
                 </View>
+                {thumb ? (
+                  <Image source={{ uri: thumb }} style={styles.thumb} resizeMode="contain" testID="scan-candidate-image" />
+                ) : (
+                  <View style={[styles.thumb, styles.thumbEmpty]} testID="scan-candidate-noimage" />
+                )}
                 <View style={styles.itemInfo}>
                   <Text style={styles.itemName} numberOfLines={1}>
                     {displayName}
@@ -126,6 +149,7 @@ export default function ScanCandidateSelector({
                   <Text style={styles.itemMeta} numberOfLines={1} testID="scan-candidate-meta">
                     #{card.cardNumber || card.id}
                     {card.rarity ? ` · ${card.rarity}` : ''}
+                    {version ? ` · ${version.label}` : ''}
                     {/* 候選卡的售價 — Store MVP 也顯示 (DIC-1319)：價格常常就是
                         使用者分辨哪張才是手上那一版的依據。 */}
                     {FEATURES.sellPrice ? `  ${formatPrice(card.sellPrice)}` : ''}
@@ -253,6 +277,16 @@ const styles = StyleSheet.create({
   },
   itemInfo: {
     flex: 1,
+  },
+  thumb: {
+    width: 36,
+    height: 50,
+    borderRadius: 4,
+    marginRight: 10,
+  },
+  thumbEmpty: {
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   itemName: {
     color: COLORS.text,

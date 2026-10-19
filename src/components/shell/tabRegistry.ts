@@ -57,7 +57,10 @@ export function buildShellTabs({ navigation, features = {} }: BuildShellTabsInpu
     // nested-navigator form resolves from BOTH contexts: React Navigation
     // walks up to the root stack, finds `MainDrawer`, and applies the
     // nested `screen` param (popping the stack back to the drawer).
-    onPress: () => navigation.navigate('MainDrawer', { screen: SHELL_TAB_ROUTE_MAP[key] }),
+    // 牌組 tab = the deck feature's entry: its list (an open deck's edits are already saved).
+    onPress: () => navigation.navigate('MainDrawer', key === 'deck'
+      ? { screen: SHELL_TAB_ROUTE_MAP[key], params: { screen: 'DeckList' } }
+      : { screen: SHELL_TAB_ROUTE_MAP[key] }),
   })).filter((item) => {
     if (item.key === 'me' && features.favorites === false) return true;
     return true;

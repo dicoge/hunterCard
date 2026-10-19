@@ -22,6 +22,7 @@
  * same pattern the shell uses for `GRADIENTS`.
  */
 import React, { useCallback, useState } from 'react';
+import { FEATURES as RELEASE_FEATURES } from '../config/releaseFlags';
 import {
   View,
   Text,
@@ -98,7 +99,10 @@ const GRAD = {
   ),
 } as const;
 
-const NAV_LINKS = ['卡牌查詢', '掃描估值', '牌組編輯器', '賽事月報', '規則教學'];
+// 賽事月報 is hidden in the first release (FEATURES.tournamentReport): the page must not
+// advertise it anywhere.
+const TOURNAMENT = RELEASE_FEATURES.tournamentReport;
+const NAV_LINKS = TOURNAMENT ? ['卡牌查詢', '掃描估值', '牌組編輯器', '賽事月報', '規則教學'] : ['卡牌查詢', '掃描估值', '牌組編輯器', '規則教學'];
 
 // Pen `vfBpS` (desktop) / `ufjjN` (mobile) Stats Bar — flat columns, no
 // card chrome (the bordered stat cards were a Pen-conformance regression).
@@ -113,7 +117,7 @@ const STATS = [
 // (`hUcaS` first cell) renders the Pen search mockup; the other five map
 // to Pen's icon-tile cards. Glyph-in-tinted-tile follows the shell's
 // established icon treatment (HomeScreen quick actions).
-const FEATURES = [
+const ALL_FEATURES = [
   {
     key: 'scan',
     glyph: '⌖',
@@ -155,6 +159,7 @@ const FEATURES = [
     body: '8 章教學從遊戲簡介講到比賽流程，再跟著 step-by-step 引導打一場簡化對局。',
   },
 ] as const;
+const FEATURES = ALL_FEATURES.filter((f) => f.key !== 'tournament' || TOURNAMENT);
 
 const SEARCH_MOCK_CHIPS: ReadonlyArray<{ label: string; active?: boolean; outlined?: boolean }> = [
   { label: '藍', active: true },
@@ -183,8 +188,8 @@ const DECK_ROWS = [
 const DECK_BULLETS = [
   '主牌組 / エール 張數與同名限制檢查',
   '缺卡預估總額，可切換幣別',
-  '從賽事月報一鍵匯入牌組',
-] as const;
+  ...(TOURNAMENT ? ['從賽事月報一鍵匯入牌組'] : []),
+];
 
 const PRICE_BULLETS = [
   '前 7 日 vs 近 7 日均價比較',
@@ -198,7 +203,7 @@ const FREE_FEATURES = [
   '全部卡表檢索與篩選',
   '市場價格與 7D/30D/90D 歷史',
   '收藏、牌組編輯器與缺卡預估',
-  '賽事月報、規則教學與模擬戰',
+  TOURNAMENT ? '賽事月報、規則教學與模擬戰' : '規則教學與模擬戰',
   '每月 50 次卡片辨識掃描（訪客也可用）',
 ];
 
@@ -222,7 +227,7 @@ const HOW_IT_WORKS = [
 const FAQ = [
   {
     q: '需要付費才能使用嗎？',
-    a: 'HoloHunter 目前所有查詢、收藏、組牌、賽事月報與規則教學都是免費。每月 50 次卡片辨識掃描免費提供，訪客與免費會員共用同一裝置的額度（裝置本機計數，清除資料或重裝會重置）。訂閱與 App 內購目前尚未開放。',
+    a: `HoloHunter 目前所有查詢、收藏、組牌、${TOURNAMENT ? '賽事月報與' : ''}規則教學都是免費。每月 50 次卡片辨識掃描免費提供，訪客與免費會員共用同一裝置的額度（裝置本機計數，清除資料或重裝會重置）。訂閱與 App 內購目前尚未開放。`,
   },
   {
     q: '沒有帳號可以先試用嗎？',
@@ -720,7 +725,7 @@ export default function LandingScreen({ navigation }: any = {}) {
               從查一張卡，{'\n'}到帶一副牌組出門
             </Text>
             <Text style={styles.sectionSubhead}>
-              HoloHunter 把卡表、行情、掃描、組牌與賽事資料接成一條動線，不用在拍賣網站、官方卡表和自己的試算表之間來回切換。
+              {`HoloHunter 把卡表、行情、掃描${TOURNAMENT ? '、組牌與賽事資料' : '與組牌'}接成一條動線，不用在拍賣網站、官方卡表和自己的試算表之間來回切換。`}
             </Text>
           </View>
           <View style={[styles.bento, isDesktop && styles.bentoDesktop]}>
@@ -879,7 +884,7 @@ export default function LandingScreen({ navigation }: any = {}) {
               只有掃描有額度，其他都免費
             </Text>
             <Text style={[styles.sectionSubhead, isDesktop && styles.textCenter]}>
-              查詢、收藏、組牌、賽事月報與規則教學都不收費。卡片辨識掃描每月 50 次（訪客免登入也可用）。訂閱付費暫未開放。
+              {`查詢、收藏、組牌、${TOURNAMENT ? '賽事月報與' : ''}規則教學都不收費。卡片辨識掃描每月 50 次（訪客免登入也可用）。訂閱付費暫未開放。`}
             </Text>
           </View>
           <View style={[styles.plansGrid, isDesktop && styles.plansGridDesktop]}>
@@ -1028,7 +1033,7 @@ export default function LandingScreen({ navigation }: any = {}) {
                 <Text style={styles.brandText}>HoloHunter</Text>
               </View>
               <Text style={styles.footerDesc}>
-                hololive OFFICIAL CARD GAME 的非官方查詢工具。卡表檢索、市場行情、掃描估值、牌組構築與賽事月報。與官方無隸屬關係。
+                {`hololive OFFICIAL CARD GAME 的非官方查詢工具。卡表檢索、市場行情、掃描估值${TOURNAMENT ? '、牌組構築與賽事月報' : '與牌組構築'}。與官方無隸屬關係。`}
               </Text>
             </View>
             <View style={[styles.footerCols, isDesktop && styles.footerColsDesktop]}>

@@ -11,6 +11,7 @@ import { useFavoritesStore } from '../store/favoritesStore';
 import { usePriceAlertStore } from '../stores/priceAlertStore';
 import PriceAlertEditor, { type PriceAlertTarget } from '../components/PriceAlertEditor';
 import { buildSourcePrintings } from '../utils/printingIdentity';
+import { buildPrintingDisplayRows, printingDisplayLabel, seriesLabel } from '../utils/printingDisplay';
 import { PRICE_CURRENCY } from '../utils/deckCardData';
 import { formatInterval } from '../utils/priceAlerts';
 import type { PrintingOption } from '../utils/alertMigration';
@@ -213,6 +214,12 @@ export default function CardDetailScreen({ route, navigation }: any) {
   // Handle multiple price variants (signed vs unsigned)
   const priceVariants = card.prices || [];
   const hasMultipleVariants = priceVariants.length > 1;
+  // One row per printing with a zh label, its own listing picture and the shop's
+  // original name; repeated listings of one printing collapse, SR/R and reprints never do.
+  const printingRows = useMemo(
+    () => buildPrintingDisplayRows(priceVariants, preferredLanguage),
+    [priceVariants, preferredLanguage],
+  );
   const detailVersions = buildPriceVersions(card);
   const detailPriceTrend = detailVersions.length === 1
     ? computeValidatedPriceTrend({
@@ -314,12 +321,17 @@ export default function CardDetailScreen({ route, navigation }: any) {
 
   // Pen j8ywIo 加入牌組: hand the card number to the real deck editor, whose
   // picker opens pre-filtered on this exact number (route param, no new UI).
-  const onAddToDeck = () => navigation?.navigate?.('DeckEditor', { addCardNumber: id });
+  // 加入牌組: open the deck list carrying the card number; the deck the player opens (or
+  // creates) shows the picker pre-filtered on it.
+  const onAddToDeck = () => navigation?.navigate?.('DeckEditor', { screen: 'DeckList', params: { addCardNumber: id } });
 
   const bloomBadgeLabel = card.normalized?.category === 'holomen'
     ? (card.normalized?.stageLabel || gradeLabels[card.grade] || null)
     : null;
-  const setLine = card.sourceProductName || (seriesNames.length > 0 ? `${seriesNames.join(' / ')} ${cardSeries}` : cardSeries);
+  // zh: a Chinese description of the set code leads (補充包 第 3 彈（hBP03）); the source's
+  // Japanese title stays visible as 原名, never passed off as a translation (2026-10-19).
+  const setLabel = seriesLabel(cardSeries, card.sourceProductName || seriesNames[0] || '', preferredLanguage);
+  const setLine = setLabel.primary;
   const statHp = card.hp != null && `${card.hp}`.trim() !== '' ? `${card.hp}` : null;
   const statLife = card.life != null && `${card.life}`.trim() !== '' ? `${card.life}` : null;
 
@@ -429,7 +441,12 @@ export default function CardDetailScreen({ route, navigation }: any) {
               <View style={styles.heroInfo}>
                 <Text style={styles.heroName} numberOfLines={2}>{displayName}</Text>
                 {displayNameSub ? <Text style={styles.heroNameSub} numberOfLines={1}>{displayNameSub}</Text> : null}
-                <Text style={styles.heroSet} numberOfLines={2}>{setLine}</Text>
+                <Text style={styles.heroSet} numberOfLines={2} testID="card-detail-set">{setLine}</Text>
+                {setLabel.original ? (
+                  <Text style={styles.heroSetOriginal} numberOfLines={1} testID="card-detail-set-original">
+                    {t('card_detail_set_original', { title: setLabel.original })}
+                  </Text>
+                ) : null}
                 <View style={styles.heroBadges}>
                   {canonicalColorIds.map((colorId, i) => (
                     <View key={`c${colorId}`} style={styles.heroBadge} testID={`card-detail-badge-color-${colorId}`}>
@@ -510,12 +527,20 @@ export default function CardDetailScreen({ route, navigation }: any) {
                     </View>
                     {hasActualPrice && hasMultipleVariants ? (
                       <View style={styles.variantList}>
-                        {[...priceVariants].sort((a, b) => (a.sellPrice || 0) - (b.sellPrice || 0)).filter((p: any) => p.sellPrice != null && p.sellPrice > 0).map((v: any, i: number) => {
-                          const converted = convertPrice(v.sellPrice, preferredCurrency);
+                        {[...printingRows].sort((a, b) => (a.sellPrice ?? Infinity) - (b.sellPrice ?? Infinity)).filter((v) => v.ambiguous || (v.sellPrice != null && v.sellPrice > 0)).map((v) => {
+                          const converted = v.sellPrice != null ? convertPrice(v.sellPrice, preferredCurrency) : null;
                           return (
-                          <View key={i} style={styles.variantRow}>
-                            <Text style={styles.variantName} numberOfLines={1}>{v.rarity ? `[${v.rarity}] ` : ''}{v.name}</Text>
-                            <Text style={styles.variantPrice}>{converted.symbol}{converted.value?.toLocaleString()}</Text>
+                          <View key={v.printing} style={styles.variantRow} testID={`card-detail-variant-${v.printing}`}>
+                            {v.imageUrl ? (
+                              <Image source={{ uri: v.imageUrl }} style={styles.variantThumb} resizeMode="contain" testID={`card-detail-variant-image-${v.printing}`} />
+                            ) : (
+                              <View style={[styles.variantThumb, styles.variantThumbEmpty]} testID={`card-detail-variant-noimage-${v.printing}`} />
+                            )}
+                            <View style={styles.variantText}>
+                              <Text style={styles.variantName} numberOfLines={1}>{v.rarity ? `[${v.rarity}] ` : ''}{v.label}</Text>
+                              <Text style={styles.variantSource} numberOfLines={1}>{v.sourceLabel}</Text>
+                            </View>
+                            <Text style={styles.variantPrice}>{converted ? `${converted.symbol}${converted.value?.toLocaleString()}` : t('card_detail_variant_price_conflict')}</Text>
                           </View>
                           );
                         })}
@@ -728,7 +753,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
                     <InfoRow label={t('card_detail_color_label')} value={colorNames.join(' / ')} />
                   )}
                   {seriesNames.length > 0 && (
-                    <InfoRow label={t('card_detail_series_label')} value={seriesNames.join(' / ')} />
+                    <InfoRow label={t('card_detail_series_label')} value={setLabel.original ? `${setLine}　${t('card_detail_set_original', { title: setLabel.original })}` : setLine} />
                   )}
                   {tags.length > 0 && (
                     <InfoRow label="Tag" value={tags.join(' / ')} />
@@ -964,7 +989,11 @@ function MarketDataPanel({ card, section = 'market' }: { card: any; section?: 'm
   const aligned = resolution.confident || override != null;
   const manualPick = override != null && !resolution.confident;
   const sellPrice = aligned ? (selectedVersion?.sellPrice ?? null) : null; // 對齊版本後的遊々亭賣價（買入成本）
-  const versionLabel = selectedVersion?.name ?? card?.series ?? '';
+  // A version name that is not a string (malformed route payload) states no printing:
+  // no version line, rather than a guessed 一般版 or a stringified object.
+  const versionLabel = selectedVersion?.name
+    ? (printingDisplayLabel(selectedVersion.name, language) ?? '')
+    : (card?.series ?? '');
 
   const displayRarity = card?.sourceRarity ?? card?.rarity ?? '';
   // 店家收購價（賣出可得）：依「選中版本」對齊（DIC-856）。未對齊或此版本對不到收購價 → null，
@@ -1011,7 +1040,7 @@ function MarketDataPanel({ card, section = 'market' }: { card: any; section?: 'm
                 activeOpacity={0.8}
               >
                 <Text style={[styles.versionChipText, active ? styles.versionChipTextActive : null]} numberOfLines={1}>
-                  {v.name}　¥{(v.sellPrice ?? 0).toLocaleString()}
+                  {printingDisplayLabel(v.name, language) ?? '—'}　¥{(v.sellPrice ?? 0).toLocaleString()}
                 </Text>
               </TouchableOpacity>
             );
@@ -1218,6 +1247,7 @@ const styles = StyleSheet.create({
   heroName: { fontFamily: Platform.OS === 'web' ? FONTS.body : undefined, fontSize: 21, fontWeight: '800', color: SEMANTIC.onBg },
   heroNameSub: { fontSize: 13, color: SEMANTIC.onBgMuted, marginTop: 2 },
   heroSet: { fontSize: 11.5, color: SEMANTIC.onBgDim, marginTop: 9, lineHeight: 16 },
+  heroSetOriginal: { fontSize: 10.5, color: SEMANTIC.onBgDim, marginTop: 2, lineHeight: 14 },
   heroBadges: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 9 },
   heroBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: PALETTE.appElev, borderRadius: 7, paddingHorizontal: 9, paddingVertical: 4 },
   heroBadgeDot: { width: 8, height: 8, borderRadius: 4 },
@@ -1255,7 +1285,11 @@ const styles = StyleSheet.create({
   noPriceText: { fontSize: 20, fontWeight: '600', color: COLORS.textSecondary + '99', paddingVertical: 8 },
   variantList: { marginBottom: 4 },
   variantRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 10, backgroundColor: PALETTE.appElev, borderRadius: 8, marginBottom: 6 },
-  variantName: { color: COLORS.text, fontSize: 13, fontWeight: '600', flex: 1, marginRight: 8 },
+  variantName: { color: COLORS.text, fontSize: 13, fontWeight: '600' },
+  variantText: { flex: 1, marginRight: 8 },
+  variantSource: { color: PALETTE.textSecondary, fontSize: 11, marginTop: 2 },
+  variantThumb: { width: 36, height: 50, borderRadius: 4, marginRight: 10, backgroundColor: PALETTE.appBg },
+  variantThumbEmpty: { borderWidth: 1, borderColor: PALETTE.appElev },
   variantPrice: { color: PALETTE.accent2, fontSize: 14, fontWeight: '700' },
   variantHint: { color: COLORS.textSecondary, fontSize: 11, marginTop: 2, paddingHorizontal: 4 },
 

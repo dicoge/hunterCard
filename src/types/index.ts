@@ -72,7 +72,8 @@ export type MainDrawerParamList = {
   Collection: undefined;
   // DIC-1427: Pen App/07 我的 collection hub (frame siVsa).
   Me: undefined;
-  DeckEditor: undefined;
+  // 牌組 stack (DeckList → DeckDetail); a nested target / params may be given.
+  DeckEditor: undefined | { screen: 'DeckList' | 'DeckDetail'; params?: { deckId?: string; addCardNumber?: string } };
   TournamentReport: undefined;
   Watchlist: undefined;
   Settings: undefined;

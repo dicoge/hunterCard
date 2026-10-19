@@ -257,7 +257,9 @@ await test('Action Bar (Pen Mst3p): 加入收藏 round-trips the favorites store
     await act(async () => addDeck.click());
     assert.equal(events.length, 1, 'one navigation dispatched');
     assert.equal(events[0][0], 'DeckEditor', 'navigates to the real DeckEditor route');
-    assert.equal(events[0][1]?.addCardNumber, 'hBP01-081', 'carries the card number for the picker');
+    // 2026-10-19: 牌組 is a DeckList → DeckDetail stack; the handoff enters the list.
+    assert.equal(events[0][1]?.screen, 'DeckList', 'enters the deck list route');
+    assert.equal(events[0][1]?.params?.addCardNumber, 'hBP01-081', 'carries the card number for the picker');
   } finally { await cleanup(); }
 });
 

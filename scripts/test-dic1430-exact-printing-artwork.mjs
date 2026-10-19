@@ -93,25 +93,88 @@ async function render(element) {
 const imgSrcs = (container) =>
   [...container.querySelectorAll('img')].map((img) => img.getAttribute('src') || '');
 
+/** Each printing's own proven listing art, derived from the payload's raw
+ * listings with the rule this file pins: exactly one listing image → that
+ * image; none or disagreeing → '' (no picture). */
+function ownArtByPrinting(card) {
+  const byPrinting = new Map();
+  for (const listing of card?.prices ?? []) {
+    if (!listing || typeof listing.name !== 'string') continue;
+    const printing = printingFromLabel(listing.name.trim());
+    const images = byPrinting.get(printing) ?? new Set();
+    const image = (listing.imageUrl ?? '').trim();
+    if (image) images.add(image);
+    byPrinting.set(printing, images);
+  }
+  return new Map([...byPrinting].map(([p, images]) => [p, images.size === 1 ? [...images][0] : '']));
+}
+
 /** Render an exact-printing payload and assert nothing depicts it but its own
- * proven art. `expectedImage` empty means the honest unavailable state. */
+ * proven art. `expectedImage` empty means the honest unavailable state.
+ *
+ * Since 2026-10-19 CardDetail also lists every version of the card number as a
+ * labeled row with that version's OWN thumbnail. The opened printing is
+ * depicted by the HERO, so the printing-identity assertions (forbidden sibling
+ * art, expected art, unavailable state) are scoped to the hero. The rows are
+ * checked separately: each row shows exactly its own printing's proven art (or
+ * no picture), and nothing else on the page may show an image. Card-number URLs
+ * and representative art stay forbidden page-wide. */
 async function assertRenderedArt(card, expectedImage, forbidden, label) {
   const { container, cleanup } = await render(React.createElement(CardDetailScreen, {
     route: { params: { card } },
     navigation: { navigate() {}, goBack() {}, setOptions() {} },
   }));
   try {
-    const srcs = imgSrcs(container);
+    const heroArt = container.querySelector('[data-testid="card-detail-hero-art"]');
+    assert.ok(heroArt, `${label}: must render the selected printing hero`);
+    const srcs = imgSrcs(heroArt);
+    const pageSrcs = imgSrcs(container);
     for (const bad of forbidden) {
       if (!bad) continue;
       assert.ok(!srcs.includes(bad), `${label}: must not render ${bad}`);
     }
     // `buildImageUrl` reconstructs art from the CARD NUMBER — the same picture
-    // for every printing. It must never run for an exact-printing payload.
+    // for every printing. It must never run for an exact-printing payload —
+    // anywhere on the page, version rows included.
     assert.ok(
-      !srcs.some((src) => src.includes('hololive-official-cardgame.com')),
-      `${label}: must not reconstruct a card-number image URL (saw: ${srcs.join(', ') || 'none'})`,
+      !pageSrcs.some((src) => src.includes('hololive-official-cardgame.com')),
+      `${label}: must not reconstruct a card-number image URL (saw: ${pageSrcs.join(', ') || 'none'})`,
     );
+
+    // Version rows: each thumbnail is its OWN printing's proven art; a printing
+    // with missing or conflicting art shows no picture.
+    const own = ownArtByPrinting(card);
+    const thumbs = [...container.querySelectorAll('[data-testid^="card-detail-variant-image-"]')];
+    const noImages = [...container.querySelectorAll('[data-testid^="card-detail-variant-noimage-"]')];
+    let thumbSrcCount = 0;
+    for (const thumb of thumbs) {
+      const printing = thumb.getAttribute('data-testid').slice('card-detail-variant-image-'.length);
+      const want = own.get(printing);
+      assert.ok(want, `${label}: version row ${printing} shows a picture only with its own proven art`);
+      const rowSrcs = imgSrcs(thumb);
+      assert.ok(rowSrcs.length > 0, `${label}: version row ${printing} renders its picture`);
+      for (const src of rowSrcs) {
+        assert.equal(src, want, `${label}: version row ${printing} shows its OWN art, not ${src}`);
+      }
+      thumbSrcCount += rowSrcs.length;
+    }
+    for (const row of noImages) {
+      const printing = row.getAttribute('data-testid').slice('card-detail-variant-noimage-'.length);
+      assert.ok(own.has(printing), `${label}: no-picture row ${printing} is a real printing`);
+      assert.equal(own.get(printing), '', `${label}: ${printing} has proven art yet shows no picture`);
+      assert.equal(imgSrcs(row).length, 0, `${label}: no-picture row ${printing} renders no image`);
+    }
+    assert.equal(
+      pageSrcs.length, srcs.length + thumbSrcCount,
+      `${label}: every image on the page is the hero or a version row (saw: ${pageSrcs.join(', ')})`,
+    );
+    // Art that is no printing's own proven art (representative / card-level)
+    // may not appear anywhere on the page.
+    const ownArt = new Set([...own.values()].filter(Boolean));
+    for (const bad of forbidden) {
+      if (!bad || ownArt.has(bad)) continue;
+      assert.ok(!pageSrcs.includes(bad), `${label}: must not render ${bad} anywhere on the page`);
+    }
     if (expectedImage) {
       assert.ok(srcs.includes(expectedImage), `${label}: renders its own proven art`);
     } else {

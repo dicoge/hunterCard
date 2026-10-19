@@ -101,6 +101,13 @@ export const FEATURES = {
   pushAlerts: !STORE_MVP,
   // 訂閱 / 付費 / premium / paywall
   premium: !STORE_MVP,
+  // 賽事月報 / tournament monthly report (owner decision 2026-10-19: hidden in the FIRST
+  // release, in every profile). false unregisters the TournamentReport route and removes
+  // every entry — Home quick action, drawer item, Landing copy — so neither navigation nor
+  // a direct route can open it. The report data and its pipeline are kept untouched;
+  // restoring data is NOT a reason to re-expose it. Constant on purpose (one named
+  // contract point, pinned by test:store-mvp-ui-gates).
+  tournamentReport: false,
 } as const;
 
 export type FeatureKey = keyof typeof FEATURES;

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView,
-  SafeAreaView, ActivityIndicator, Modal, Image,
+  SafeAreaView, ActivityIndicator, Modal, Image, Platform,
 } from 'react-native';
 import { useNavigation, NavigationContext } from '@react-navigation/native';
 import { COLORS } from '../constants';
@@ -129,10 +129,98 @@ export default function DeckEditorScreen({ route }: any = {}) {
   const migrateLegacyPrintings = useDeckStore((s) => s.migrateLegacyPrintings);
   const migrateTournamentDefaults = useDeckStore((s) => s.migrateTournamentDefaults);
 
+  // Route semantics (user 2026-10-19): in the app the deck feature is a stack —
+  // DeckList (entry) → DeckDetail (one deck, `deckId` param) — so opening a deck pushes a
+  // route and back (app bar, Android, web) pops to the list; back on the list leaves the
+  // feature. Outside a navigator (render harness) the store's open deck drives the view.
+  const routeName: string | undefined = route?.name;
+  const routeDriven = routeName === 'DeckList' || routeName === 'DeckDetail';
+  const routeDeckId: string | null = routeName === 'DeckDetail' ? (route?.params?.deckId ?? null) : null;
+  const viewDeckId = routeDriven ? routeDeckId : activeDeckId;
   const activeDeck = useMemo(
-    () => decks.find((d) => d.id === activeDeckId) || null,
-    [decks, activeDeckId],
+    () => decks.find((d) => d.id === viewDeckId) || null,
+    [decks, viewDeckId],
   );
+  // Store actions edit the store's open deck: keep it equal to the FOCUSED route's deck
+  // (DeckList and DeckDetail are both mounted in the stack; only the visible one owns it).
+  useEffect(() => {
+    if (!routeDriven) return undefined;
+    const sync = () => {
+      if (navigation?.isFocused?.() === false) return;
+      if (useDeckStore.getState().activeDeckId !== viewDeckId) setActiveDeck(viewDeckId);
+    };
+    sync();
+    const off = navigation?.addListener?.('focus', sync);
+    return () => { if (typeof off === 'function') off(); };
+  }, [routeDriven, viewDeckId, navigation, setActiveDeck]);
+  const isWeb = Platform.OS === 'web' && typeof window !== 'undefined' && !!window.history;
+  const openDeck = (id: string) => {
+    if (!routeDriven) { setActiveDeck(id); return; }
+    // carry a card-detail 加入牌組 handoff from the list into the opened deck
+    navigation?.navigate?.('DeckDetail', { deckId: id, addCardNumber: route?.params?.addCardNumber });
+  };
+  const closeDeck = () => {
+    if (!routeDriven) { setActiveDeck(null); return; }
+    // web: the deck pushed its own history entry — going back through the browser history
+    // keeps the browser's back button and the app in step (popstate pops the route).
+    if (isWeb && window.history.state?.hhDeckDetail === routeDeckId) { window.history.back(); return; }
+    if (navigation?.canGoBack?.()) navigation.goBack();
+    else navigation?.navigate?.('DeckList');
+  };
+  // Web browser back: an open deck owns one history entry; popping it returns to the list.
+  useEffect(() => {
+    if (!isWeb || routeName !== 'DeckDetail' || !routeDeckId) return undefined;
+    if (window.history.state?.hhDeckDetail !== routeDeckId) {
+      window.history.pushState({ ...(window.history.state || {}), hhDeckDetail: routeDeckId }, '');
+    }
+    let poppedByBrowser = false;
+    const onPop = () => {
+      if (window.history.state?.hhDeckDetail === routeDeckId) return;
+      poppedByBrowser = true;
+      if (navigation?.canGoBack?.()) navigation.goBack();
+      else navigation?.navigate?.('DeckList');
+    };
+    window.addEventListener('popstate', onPop);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      // Closed some other way (tab, stack pop): drop its now-stale history entry.
+      if (!poppedByBrowser && window.history.state?.hhDeckDetail === routeDeckId) window.history.back();
+    };
+  }, [isWeb, routeName, routeDeckId, navigation]);
+  // The list is the feature's ENTRY: whenever DeckList gains focus (tab re-entry, card-detail
+  // handoff, back) it is the only route of the deck stack — so back on it leaves 牌組 and an
+  // older editor never lingers underneath (React Navigation 7 navigate() pushes a new route).
+  useEffect(() => {
+    if (routeName !== 'DeckList' || typeof navigation?.addListener !== 'function') return undefined;
+    const collapse = () => {
+      const state = navigation.getState?.();
+      if (state && state.routes.length > 1) {
+        navigation.reset({ index: 0, routes: [{ name: 'DeckList', params: route?.params }] });
+      }
+    };
+    collapse();
+    return navigation.addListener('focus', collapse);
+  }, [routeName, navigation, route?.params]);
+  // Leaving 牌組 for another drawer screen (Home, drawer item, tab) closes the open deck,
+  // so ANY later entry — a drawer item navigates to 'DeckEditor' without nested params,
+  // which would restore the kept stack — lands on the list (CR 219dbd8 P2). A screen pushed
+  // over the drawer (e.g. card detail) keeps 牌組 focused in the drawer: back returns here.
+  useEffect(() => {
+    if (routeName !== 'DeckDetail' || typeof navigation?.addListener !== 'function') return undefined;
+    return navigation.addListener('blur', () => {
+      const drawer = navigation.getParent?.()?.getState?.();
+      if (!drawer) return;
+      if (drawer.routes[drawer.index]?.name !== 'DeckEditor') navigation.popToTop?.();
+    });
+  }, [routeName, navigation]);
+  // A deck deleted elsewhere (other device sync, account switch) leaves its editor.
+  useEffect(() => {
+    if (routeName !== 'DeckDetail' || !routeDeckId) return;
+    if (navigation?.isFocused?.() === false) return;
+    if (!useDeckStore.persist?.hasHydrated?.()) return;
+    if (!decks.some((d) => d.id === routeDeckId)) closeDeck();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeName, routeDeckId, decks]);
   const menuDeck = decks.find((deck) => deck.id === menuDeckId) || null;
   const deleteCandidate = decks.find((deck) => deck.id === deleteDeckId) || null;
 
@@ -143,17 +231,13 @@ export default function DeckEditorScreen({ route }: any = {}) {
       .finally(() => setLoading(false));
   }, []);
 
-  // DIC-1427 QA P0 (Pen uXuqo): a first visit with zero decks used to land on
-  // a bare create form over a giant blank region. The Pen frame is the FULL
-  // functional editor, so seed one starter deck and open it directly — the
-  // player gets the zone tabs, real card-picker grid, warning banner and cost
-  // footer immediately. Gated on `db` so the persisted deck store has long
-  // finished rehydrating (the catalog load is orders of magnitude slower);
-  // players who already have decks keep the library flow untouched.
-  useEffect(() => {
-    if (!db) return;
-    if (decks.length === 0) createDeck('');
-  }, [db, decks.length, createDeck]);
+  // User 2026-10-19: the deck feature is a LIST first — 牌組 list → open / create → edit →
+  // back to the list → leave. An empty list shows the create form; no deck is created
+  // behind the player's back (the former auto-created starter deck was a phantom deck
+  // that also synced to the account).
+
+  // Android hardware back on DeckDetail pops the deck stack (native-stack) to DeckList; on
+  // DeckList it leaves the deck feature through the drawer as before.
 
   // DIC-1427 Pen o7WO3r 加入牌組: CardDetail hands over its card number and
   // the picker opens pre-filtered on that exact number (mode 'number'), so the
@@ -316,7 +400,7 @@ export default function DeckEditorScreen({ route }: any = {}) {
               style={styles.actionMenuItem}
               onPress={() => {
                 if (!menuDeck) return;
-                setActiveDeck(menuDeck.id);
+                openDeck(menuDeck.id);
                 setMenuDeckId(null);
               }}
               testID="deck-menu-open"
@@ -343,7 +427,7 @@ export default function DeckEditorScreen({ route }: any = {}) {
               <TouchableOpacity
                 style={styles.actionMenuItem}
                 onPress={() => {
-                  setActiveDeck(null);
+                  closeDeck();
                   setMenuDeckId(null);
                 }}
                 testID="deck-menu-library"
@@ -445,7 +529,7 @@ export default function DeckEditorScreen({ route }: any = {}) {
             />
             <TouchableOpacity
               style={styles.primaryBtn}
-              onPress={() => { createDeck(newDeckName); setNewDeckName(''); }}
+              onPress={() => { const id = createDeck(newDeckName); setNewDeckName(''); if (routeDriven) openDeck(id); }}
             >
               <Text style={styles.primaryBtnText}>{t('deck_create')}</Text>
             </TouchableOpacity>
@@ -458,7 +542,7 @@ export default function DeckEditorScreen({ route }: any = {}) {
                 key={deck.id}
                 deck={deck}
                 desktop={isDesktop}
-                onOpen={() => setActiveDeck(deck.id)}
+                onOpen={() => openDeck(deck.id)}
                 onMenu={() => setMenuDeckId(deck.id)}
               />
             ))}
@@ -1002,7 +1086,8 @@ export default function DeckEditorScreen({ route }: any = {}) {
     <View style={styles.phoneAppBar} testID="deck-mobile-appbar">
       <TouchableOpacity
         style={styles.phoneAppBarBtn}
-        onPress={() => { try { navigation?.goBack?.(); } catch { /* no-op outside container */ } }}
+        // Back from an open deck = back to the deck list (edits are already saved).
+        onPress={closeDeck}
         accessibilityRole="button"
         accessibilityLabel={t('deck_appbar_back_a11y')}
         testID="deck-mobile-appbar-back"

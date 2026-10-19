@@ -192,7 +192,9 @@ await test('buildShellTabs emits five ordered items and nested MainDrawer onPres
   items.forEach((item) => item.onPress?.());
   assert.deepEqual(
     calls,
-    ['Home', 'Search', 'Scan', 'DeckEditor', 'Me'].map((screen) => ['MainDrawer', { screen }]),
+    // 2026-10-19: the 牌組 tab enters its stack at the deck list.
+    ['Home', 'Search', 'Scan', 'DeckEditor', 'Me'].map((screen) => ['MainDrawer',
+      screen === 'DeckEditor' ? { screen, params: { screen: 'DeckList' } } : { screen }]),
   );
 });
 
