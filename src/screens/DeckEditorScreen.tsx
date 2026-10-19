@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView,
-  SafeAreaView, ActivityIndicator, Modal, Image,
+  SafeAreaView, ActivityIndicator, Modal, Image, BackHandler,
 } from 'react-native';
 import { useNavigation, NavigationContext } from '@react-navigation/native';
 import { COLORS } from '../constants';
@@ -143,17 +143,23 @@ export default function DeckEditorScreen({ route }: any = {}) {
       .finally(() => setLoading(false));
   }, []);
 
-  // DIC-1427 QA P0 (Pen uXuqo): a first visit with zero decks used to land on
-  // a bare create form over a giant blank region. The Pen frame is the FULL
-  // functional editor, so seed one starter deck and open it directly — the
-  // player gets the zone tabs, real card-picker grid, warning banner and cost
-  // footer immediately. Gated on `db` so the persisted deck store has long
-  // finished rehydrating (the catalog load is orders of magnitude slower);
-  // players who already have decks keep the library flow untouched.
+  // User 2026-10-19: the deck feature is a LIST first — 牌組 list → open / create → edit →
+  // back to the list → leave. An empty list shows the create form; no deck is created
+  // behind the player's back (the former auto-created starter deck was a phantom deck
+  // that also synced to the account).
+
+  // Back while a deck is open (Android hardware back) returns to the deck list instead of
+  // leaving the deck feature; on the list, back leaves as usual. Modals handle their own
+  // back first (onRequestClose).
   useEffect(() => {
-    if (!db) return;
-    if (decks.length === 0) createDeck('');
-  }, [db, decks.length, createDeck]);
+    if (!activeDeckId) return undefined;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (typeof navigation?.isFocused === 'function' && !navigation.isFocused()) return false;
+      setActiveDeck(null);
+      return true;
+    });
+    return () => sub.remove();
+  }, [activeDeckId, navigation, setActiveDeck]);
 
   // DIC-1427 Pen o7WO3r 加入牌組: CardDetail hands over its card number and
   // the picker opens pre-filtered on that exact number (mode 'number'), so the
@@ -1002,7 +1008,8 @@ export default function DeckEditorScreen({ route }: any = {}) {
     <View style={styles.phoneAppBar} testID="deck-mobile-appbar">
       <TouchableOpacity
         style={styles.phoneAppBarBtn}
-        onPress={() => { try { navigation?.goBack?.(); } catch { /* no-op outside container */ } }}
+        // Back from an open deck = back to the deck list (edits are already saved).
+        onPress={() => setActiveDeck(null)}
         accessibilityRole="button"
         accessibilityLabel={t('deck_appbar_back_a11y')}
         testID="deck-mobile-appbar-back"

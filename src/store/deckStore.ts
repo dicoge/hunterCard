@@ -280,11 +280,13 @@ export const useDeckStore = create<DeckState>()(
       // the account-sync 409 merge can honor local deletions and inventory
       // decreases across a reload — the tracker is worthless if it evaporates
       // on the very restart that separates the local write from the sync.
-      version: 3,
+      version: 4,
       storage: createJSONStorage(() => platformStorage),
+      // v4 (user 2026-10-19): the open deck is SESSION state. Persisting it made every
+      // return to 牌組 skip the deck list and land inside the last deck. Decks, collection
+      // and the sync trackers are persisted exactly as before.
       partialize: (s) => ({
         decks: s.decks,
-        activeDeckId: s.activeDeckId,
         collection: s.collection,
         deletedDeckIds: s.deletedDeckIds,
         collectionChangedKeys: s.collectionChangedKeys,
@@ -299,6 +301,10 @@ export const useDeckStore = create<DeckState>()(
         if (version < 3) {
           state.deletedDeckIds = {};
           state.collectionChangedKeys = {};
+        }
+        if (version < 4) {
+          // drop a previously persisted open deck (decks themselves untouched)
+          delete (state as Partial<DeckState> & { activeDeckId?: unknown }).activeDeckId;
         }
         if (!state.deletedDeckIds || typeof state.deletedDeckIds !== 'object') {
           state.deletedDeckIds = {};
