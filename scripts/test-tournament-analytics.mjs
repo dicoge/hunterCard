@@ -289,6 +289,43 @@ assert.deepEqual(
   'index lists every generated month',
 );
 
+// ── The actual CLI keeps each month artifact's automatic metadata month-local (2026-10-19) ──
+// analyzeMonth's own default was fixed (PR253), but the CLI passed the GLOBAL generatedAt
+// into every month: adding an unrelated September moved July's artifact to 2026-09-29.
+{
+  const JULY_AT = '2026-07-01T00:00:00.000Z';
+  const SEPT_AT = '2026-09-29T00:00:00.000Z';
+  const JUNE_AT = '2026-06-15T00:00:00.000Z';
+  const julyReport = { ...report(decks6, '2026-07').report, generatedAt: JULY_AT };
+  const septReport = { ...sepReport.report, generatedAt: SEPT_AT };
+  const juneReport = { ...report(decks6.slice(0, 3), '2026-06').report, generatedAt: JUNE_AT };
+  const runCli = (files, extraArgs = []) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hocg-cli-month-'));
+    fs.mkdirSync(path.join(dir, 'in'));
+    for (const [name, body] of Object.entries(files)) fs.writeFileSync(path.join(dir, 'in', name), JSON.stringify(body, null, 2));
+    execFileSync(process.execPath, [script, '--tournaments-dir', path.join(dir, 'in'), '--out-dir', path.join(dir, 'out'), ...extraArgs], { cwd: process.cwd(), stdio: 'pipe' });
+    const read = (f) => fs.readFileSync(path.join(dir, 'out', f), 'utf8');
+    return { july: read('2026-07.json'), index: JSON.parse(read('index.json')) };
+  };
+  const alone = runCli({ '2026-07.json': julyReport });
+  assert.equal(JSON.parse(alone.july).generatedAt, JULY_AT, 'CLI: July artifact carries July\'s own report time');
+  const withLater = runCli({ '2026-07.json': julyReport, '2026-09.json': septReport });
+  assert.equal(withLater.july, alone.july, 'CLI: the July artifact is byte-identical after an unrelated later month is added');
+  const withBoth = runCli({ '2026-06.json': juneReport, '2026-07.json': julyReport, '2026-09.json': septReport });
+  assert.equal(withBoth.july, alone.july, 'CLI: … and after an earlier month too');
+  assert.equal(withLater.index.generatedAt, SEPT_AT, 'CLI: the index keeps the global (latest) time');
+  // month from the file name when the report has no `month` field
+  const { month: _drop, ...noMonth } = julyReport;
+  const fallback = JSON.parse(runCli({ '2026-07.json': noMonth, '2026-09.json': septReport }).july);
+  assert.equal(fallback.month, '2026-07', 'CLI: file-name month fallback');
+  assert.equal(fallback.generatedAt, JULY_AT, 'CLI: file-name month keeps month-local time');
+  // an explicit --generated-at still applies to every artifact and the index
+  const OVERRIDE = '2030-01-01T00:00:00.000Z';
+  const forced = runCli({ '2026-07.json': julyReport, '2026-09.json': septReport }, ['--generated-at', OVERRIDE]);
+  assert.equal(JSON.parse(forced.july).generatedAt, OVERRIDE, 'CLI: explicit override on the month artifact');
+  assert.equal(forced.index.generatedAt, OVERRIDE, 'CLI: explicit override on the index');
+}
+
 // ── Committed-artifact consistency (DIC-1065 / CR fix) ──────────────────────
 // The analytics file must record the live content SHA-256 of every report it
 // consumed.  If someone re-runs the collector (changing the report) but forgets
