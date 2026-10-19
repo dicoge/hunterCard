@@ -13,6 +13,7 @@
     "test:app47-shell": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-web-render.mjs scripts/test-app47-shell-parity.mjs",
     "test:app812-shell": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-web-render.mjs scripts/test-app812-shell-parity.mjs",
     "test:app1316-shell": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-web-render.mjs scripts/test-app1316-shell-parity.mjs",
+    "test:deck-navigation": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-web-render.mjs scripts/test-deck-navigation.mjs",
     "test:shell-tab-navigation": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-web-render.mjs scripts/test-shell-tab-navigation.mjs",
     "test:scan-search-shell": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-web-render.mjs scripts/test-scan-search-shell.mjs",
     "test:collection-nav": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-web-render.mjs scripts/test-dic1430-me-collection-nav.mjs",

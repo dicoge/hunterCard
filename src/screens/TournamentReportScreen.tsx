@@ -217,9 +217,9 @@ export default function TournamentReportScreen() {
         new Date().toISOString(),
       );
       if (!draft) return;
-      importDeck(draft);
+      const deckId = importDeck(draft);
       setImported(draft.name);
-      navigation.navigate('DeckEditor');
+      navigation.navigate('DeckEditor', { screen: 'DeckDetail', params: { deckId } });
     },
     [catalog, priceRecords, importDeck, navigation],
   );

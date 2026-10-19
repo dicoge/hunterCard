@@ -314,7 +314,9 @@ export default function CardDetailScreen({ route, navigation }: any) {
 
   // Pen j8ywIo 加入牌組: hand the card number to the real deck editor, whose
   // picker opens pre-filtered on this exact number (route param, no new UI).
-  const onAddToDeck = () => navigation?.navigate?.('DeckEditor', { addCardNumber: id });
+  // 加入牌組: open the deck list carrying the card number; the deck the player opens (or
+  // creates) shows the picker pre-filtered on it.
+  const onAddToDeck = () => navigation?.navigate?.('DeckEditor', { screen: 'DeckList', params: { addCardNumber: id } });
 
   const bloomBadgeLabel = card.normalized?.category === 'holomen'
     ? (card.normalized?.stageLabel || gradeLabels[card.grade] || null)
