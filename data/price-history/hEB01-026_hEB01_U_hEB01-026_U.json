@@ -50,8 +50,16 @@
       "currency": "JPY",
       "cardId": "hEB01-026_hEB01_U_hEB01-026_U",
       "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-22",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hEB01-026_hEB01_U_hEB01-026_U",
+      "sourceProduct": "hEB01"
     }
   ],
-  "lastUpdated": "2026-10-18T12:09:09.075Z",
+  "lastUpdated": "2026-10-22T12:10:56.275Z",
   "nameZh": "熊琳"
 }

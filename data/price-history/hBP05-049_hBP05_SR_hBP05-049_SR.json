@@ -66,8 +66,16 @@
       "currency": "JPY",
       "cardId": "hBP05-049_hBP05_SR_hBP05-049_SR",
       "sourceProduct": "hBP05"
+    },
+    {
+      "date": "2026-10-22",
+      "price": 320,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-049_hBP05_SR_hBP05-049_SR",
+      "sourceProduct": "hBP05"
     }
   ],
-  "lastUpdated": "2026-10-18T12:09:01.180Z",
+  "lastUpdated": "2026-10-22T12:10:43.727Z",
   "nameZh": "小焰·奏"
 }
