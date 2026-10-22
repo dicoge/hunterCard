@@ -66,8 +66,16 @@
       "currency": "JPY",
       "cardId": "hBP09-099_hBP09_S_hBP09-099_S",
       "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-10-22",
+      "price": 580,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-099_hBP09_S_hBP09-099_S",
+      "sourceProduct": "hBP09"
     }
   ],
-  "lastUpdated": "2026-10-18T12:09:08.583Z",
+  "lastUpdated": "2026-10-22T12:10:55.587Z",
   "nameZh": "超速違規"
 }

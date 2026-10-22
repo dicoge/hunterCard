@@ -66,8 +66,16 @@
       "currency": "JPY",
       "cardId": "hBP04-095_hBP04_U_hBP04-095_U",
       "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-10-22",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-095_hBP04_U_hBP04-095_U",
+      "sourceProduct": "hBP04"
     }
   ],
-  "lastUpdated": "2026-10-18T12:09:04.973Z",
+  "lastUpdated": "2026-10-22T12:10:49.856Z",
   "nameZh": "吉祥物抓抓機"
 }

@@ -50,8 +50,16 @@
       "currency": "JPY",
       "cardId": "hEB01-033_hEB01_C_hEB01-033_C",
       "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-22",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hEB01-033_hEB01_C_hEB01-033_C",
+      "sourceProduct": "hEB01"
     }
   ],
-  "lastUpdated": "2026-10-18T12:09:09.094Z",
+  "lastUpdated": "2026-10-22T12:10:56.408Z",
   "nameZh": "沙灘球"
 }
