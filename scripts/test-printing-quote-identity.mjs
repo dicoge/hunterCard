@@ -123,6 +123,26 @@ await test('CR e8f14dc P2 #2: an unknown-rarity aggregation row never bridges a 
 
 // ── the real shipped collision ──
 const real = CASES.actualCollisionRows;
+
+// The daily scrape re-quotes the ent07 row (2026-10-17 when investigated, 2026-10-22 in
+// CI run 39776779489), so its date is never hardcoded. Expected quote / date come from the
+// RAW catalog rows directly — not provenanceFromRow / buildPrintingVersions, which are
+// under test: the newest priced row on the investigated listing, its day in UTC.
+const RAW = JSON.parse(DB_BYTES).cards;
+const LISTING = real[0].yuyuImage;
+const latestListingQuote = (rows) => {
+  const quoted = rows.filter((r) => r.yuyuImage === LISTING && r.sellPrice > 0 && Number.isFinite(Date.parse(r.timestamp)));
+  const top = Math.max(...quoted.map((r) => Date.parse(r.timestamp)));
+  const atTop = quoted.filter((r) => Date.parse(r.timestamp) === top);
+  assert.equal(new Set(atTop.map((r) => r.sellPrice)).size, 1, 'oracle: no same-time conflict');
+  return atTop[0];
+};
+const utcDay = (iso) => {
+  assert.match(iso, /^\d{4}-\d{2}-\d{2}T[^Z]*Z$/, `catalog quote time is a UTC stamp: ${iso}`);
+  return new Date(Date.parse(iso)).toISOString().slice(0, 10);
+};
+const hbdRaw = Object.values(RAW).filter((r) => r.cardNumber === 'hBD24-023');
+const HBD_LATEST = latestListingQuote(hbdRaw);
 await test('real rows hBD24-023: the ent07 aggregation row and the hPR row are proven the SAME listing alias (same yuyu listing + official image + rarity)', () => {
   const rows = real.map((r) => ({ id: r.id, cardNumber: r.cardNumber, rarity: r.rarity, sellPrice: r.sellPrice, imageUrl: r.officialImage, provenance: provenanceFromRow(r) }));
   assert.equal(samePrintingProof(rows[0], rows[1]), 'aggregate-alias-same-listing');
@@ -138,7 +158,10 @@ await test('local catalog keeps provenance of every row (product, quote time, li
   assert.ok(ent07 && hpr, 'both raw rows still load (ids valid)');
   assert.equal(ent07.provenance.sourceProduct, 'ent07');
   assert.equal(hpr.provenance.sourceProductName, 'PRカード');
-  assert.match(ent07.provenance.quotedAt, /^2026-10-1/);
+  assert.equal(ent07.provenance.quotedAt, RAW['hBD24-023_ent07'].timestamp, 'the row\'s own raw quote time');
+  assert.equal(hpr.provenance.quotedAt, RAW['hBD24-023_hPR_P_hBD24-023_P'].timestamp, 'the row\'s own raw quote time');
+  assert.ok(Date.parse(ent07.provenance.quotedAt) >= Date.parse(real[0].timestamp), `ent07 quote ${ent07.provenance.quotedAt} not older than the investigated ${real[0].timestamp}`);
+  assert.ok(Date.parse(ent07.provenance.quotedAt) > Date.parse(hpr.provenance.quotedAt), 'the ent07 quote is the newer one');
   assert.match(hpr.provenance.quotedAt, /^2026-08-25/);
   assert.equal(ent07.provenance.listing, hpr.provenance.listing);
   assert.equal(ent07.provenance.quoteSource, 'yuyu-tei');
@@ -155,7 +178,10 @@ await test('resolver: hBD24-023 is ONE proven version (hPR identity) at its late
   assert.equal(card.sellPrice, 8980);
   assert.deepEqual([...card.aliasIds].sort(), ['hBD24-023_ent07', 'hBD24-023_hPR_P_hBD24-023_P']);
   assert.deepEqual(card.priceQuotes.map((q) => q.price).sort(), [8980, 9980]);
-  assert.match(card.provenance.quotedAt, /^2026-10-1/);
+  assert.equal(HBD_LATEST.id, 'hBD24-023_ent07', 'oracle: the ent07 row holds the latest same-listing quote');
+  assert.equal(card.sellPrice, HBD_LATEST.sellPrice);
+  assert.equal(card.provenance.quotedAt, HBD_LATEST.timestamp, 'quote time of the latest same-listing quote');
+  assert.equal(card.provenance.listing, LISTING);
   assert.equal(card.provenance.sourceProductName, 'PRカード');
 });
 await test('other real multi-printing numbers are NOT collapsed by number (hBP01-024 keeps its printings)', () => {
@@ -204,14 +230,37 @@ const render = (cards) => renderToStaticMarkup(React.createElement(Selector, {
   visible: true, tier: 'mid', candidates: cards.map((card) => ({ card, confidence: 0.5 })),
   onSelect() {}, onRescan() {}, onManualSearch() {}, onDismiss() {}, preferredCurrency: 'JPY', preferredLanguage: 'zh',
 }));
-await test('actual chooser: the proven version is ONE row "#hBD24-023 · P · 一般版 ¥8,980" with "PR 宣傳卡（hPR） · 2026-10-1x 報價 · 原名：PRカード" (zh primary, 2026-10-19)', () => {
+await test('actual chooser: the proven version is ONE row "#hBD24-023 · P · 一般版 ¥8,980" with "PR 宣傳卡（hPR） · <latest quote day> 報價 · 原名：PRカード" (zh primary, 2026-10-19)', () => {
   const html = render([resolved.card]);
   const meta = metaOf(html, 'scan-candidate-meta');
   const source = metaOf(html, 'scan-candidate-source');
   assert.equal(meta.length, 1);
   assert.match(meta[0], /#hBD24-023 · P · 一般版\s+¥8,980/);
-  assert.equal(source.length, 1);
-  assert.match(source[0], /^PR 宣傳卡（hPR） · 2026-10-1\d 報價 · 原名：PRカード$/);
+  assert.deepEqual(source, [`PR 宣傳卡（hPR） · ${utcDay(HBD_LATEST.timestamp)} 報價 · 原名：PRカード`]);
+});
+await test('actual chooser across re-quotes: the 2026-10-22 CI quote and month / year rollovers show that quote\'s own day; an older ent07 quote never takes over from hPR', () => {
+  // [ent07 quote time, chooser day, current price] — written out by hand, then cross-checked
+  // against the raw-row oracle on the same in-memory variant (the catalog file is not touched).
+  for (const [at, day, price] of [
+    ['2026-10-22T12:10:01.865Z', '2026-10-22', 8980],
+    ['2026-10-31T23:59:59.999Z', '2026-10-31', 8980],
+    ['2026-11-01T00:00:00.000Z', '2026-11-01', 8980],
+    ['2027-01-01T00:00:00.000Z', '2027-01-01', 8980],
+    ['2026-08-01T00:00:00.000Z', '2026-08-25', 9980],
+  ]) {
+    const want = latestListingQuote(hbdRaw.map((r) => (r.id === 'hBD24-023_ent07' ? { ...r, timestamp: at } : r)));
+    assert.deepEqual([utcDay(want.timestamp), want.sellPrice], [day, price], `oracle @ ${at}`);
+    const cards = all.map((c) => (c.id === 'hBD24-023_ent07' ? { ...c, provenance: { ...c.provenance, quotedAt: at } } : c));
+    const res = resolvePrintingByCardNumber(cards, 'hBD24-023');
+    assert.equal(res.status, 'unique', at);
+    assert.equal(res.card.sellPrice, price, at);
+    assert.equal(res.card.provenance.quotedAt, want.timestamp, at);
+    assert.deepEqual([...res.card.aliasIds].sort(), ['hBD24-023_ent07', 'hBD24-023_hPR_P_hBD24-023_P'], at);
+    const html = render([res.card]);
+    assert.match(metaOf(html, 'scan-candidate-meta')[0], new RegExp(`#hBD24-023 · P · 一般版\\s+¥${price.toLocaleString('en-US')}`), at);
+    assert.deepEqual(metaOf(html, 'scan-candidate-source'), [`PR 宣傳卡（hPR） · ${day} 報價 · 原名：PRカード`], at);
+  }
+  assert.equal(all.find((c) => c.id === 'hBD24-023_ent07').provenance.quotedAt, RAW['hBD24-023_ent07'].timestamp, 'variants never leak into the loaded catalog');
 });
 await test('actual chooser: hBP03-029 rows carry zh version, zh primary series (原名 kept), own picture', () => {
   const html = render(miko.printings);
