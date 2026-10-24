@@ -511,6 +511,8 @@ export const zh = {
   card_detail_skills_title: '🎯 技能說明',
   card_detail_no_skills: '此卡無技能資料',
   card_detail_damage: '傷害 {{value}}',
+  card_detail_tokkou: '特攻 {{value}}',
+  card_detail_stage_skill: '主推舞台技能',
   card_detail_market_data: '📊 市場數據',
   card_detail_price_version: '價格對應版本：{{version}}{{manual}}',
   card_detail_manual_selected: '（已手動選擇）',

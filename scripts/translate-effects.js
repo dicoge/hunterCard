@@ -144,7 +144,7 @@ function collectStrings(data) {
   const add = (s) => { if (s && typeof s === 'string' && s.trim()) set.add(s); };
   for (const k in data) {
     const c = data[k];
-    for (const sk of ['oshiSkill', 'spOshiSkill']) if (c[sk]) { add(c[sk].name); add(c[sk].effect); }
+    for (const sk of ['stageSkill', 'oshiSkill', 'spOshiSkill']) if (c[sk]) { add(c[sk].name); add(c[sk].effect); }
     if (c.arts) for (const a of c.arts) { add(a.name); add(a.effect); }
     if (c.keywords) for (const kw of c.keywords) { add(kw.label); add(kw.effect); }
     add(c.abilityText);
@@ -161,10 +161,15 @@ function reconstruct(data, cache) {
   for (const k in data) {
     const c = data[k];
     const z = { cardNumber: c.cardNumber, name: trName(c.name), cardType: canonicalizeTerms(c.cardType), color: c.color };
+    // 推しステージスキル has no cost.
+    if (c.stageSkill) z.stageSkill = { name: tr(c.stageSkill.name), effect: tr(c.stageSkill.effect) };
     for (const sk of ['oshiSkill', 'spOshiSkill']) {
       if (c[sk]) z[sk] = { name: tr(c[sk].name), cost: c[sk].cost, effect: tr(c[sk].effect) };
     }
-    if (c.arts) z.arts = c.arts.map((a) => ({ name: tr(a.name), cost: a.cost, damage: a.damage, effect: tr(a.effect) }));
+    // tokkou (e.g. "緑+50") is copied verbatim like cost.
+    if (c.arts) z.arts = c.arts.map((a) => (a.tokkou
+      ? { name: tr(a.name), cost: a.cost, damage: a.damage, tokkou: a.tokkou, effect: tr(a.effect) }
+      : { name: tr(a.name), cost: a.cost, damage: a.damage, effect: tr(a.effect) }));
     if (c.keywords) z.keywords = c.keywords.map((kw) => ({ label: tr(kw.label), effect: tr(kw.effect) }));
     if (c.abilityText) z.abilityText = tr(c.abilityText);
     out[k] = z;

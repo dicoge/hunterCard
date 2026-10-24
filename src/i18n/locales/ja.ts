@@ -506,6 +506,8 @@ export const ja: Record<keyof typeof zh, string> = {
   card_detail_skills_title: '🎯 スキル説明',
   card_detail_no_skills: 'スキルデータはありません',
   card_detail_damage: 'ダメージ {{value}}',
+  card_detail_tokkou: '特攻 {{value}}',
+  card_detail_stage_skill: '推しステージスキル',
   card_detail_market_data: '📊 市場データ',
   card_detail_price_version: '価格の対象版：{{version}}{{manual}}',
   card_detail_manual_selected: '（手動選択）',
