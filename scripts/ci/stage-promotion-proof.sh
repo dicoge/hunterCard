@@ -11,8 +11,9 @@
 #         no feature or bot branch straight into main);
 #       * the head SHA is the live origin/staging tip (no stale head);
 #       * origin/main is contained in that SHA (nothing on main is dropped);
-#       * ci.yml has a completed, successful `push` run of that exact SHA on
-#         staging (code AND data pushes to staging run CI).
+#       * ci.yml has a completed, successful run of that exact SHA on staging,
+#         either a `push` run or a staging validation `workflow_dispatch`
+#         (whose preflight refuses any deploy request).
 #   - any other event: fail closed.
 # This proves the PR content; it only blocks a merge once the check is made
 # required on main by branch protection (a platform setting).
@@ -70,10 +71,15 @@ git fetch --no-tags --quiet origin +main:refs/remotes/origin/main +staging:refs/
 git merge-base --is-ancestor refs/remotes/origin/main "$SHA" ||
   fail "origin/main is not contained in staging @ $SHA. Merge main into staging (normal merge) and let staging CI pass before promoting."
 
-SUCCESSFUL_RUNS="$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$SHA&branch=staging&event=push&per_page=100" \
-  --jq "[.workflow_runs[] | select(.head_sha == \"$SHA\" and .head_branch == \"staging\" and .event == \"push\" and .status == \"completed\" and .conclusion == \"success\" and .path == \".github/workflows/ci.yml\")] | length")" ||
+# A staging `push` run counts, and so does a staging `workflow_dispatch` run of
+# ci.yml: its preflight only succeeds for the exact live staging tip that
+# contains main with deploy_production=false, so it is a validation run that
+# can never deploy. Bot pushes made with GITHUB_TOKEN start no push run; a
+# maintainer dispatches that validation run instead.
+SUCCESSFUL_RUNS="$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$SHA&branch=staging&per_page=100" \
+  --jq "[.workflow_runs[] | select(.head_sha == \"$SHA\" and .head_branch == \"staging\" and (.event == \"push\" or .event == \"workflow_dispatch\") and .status == \"completed\" and .conclusion == \"success\" and .path == \".github/workflows/ci.yml\")] | length")" ||
   fail "Unable to read CI runs for $SHA — refusing without proof that staging CI passed."
 [[ "$SUCCESSFUL_RUNS" =~ ^[0-9]+$ ]] && [ "$SUCCESSFUL_RUNS" -ge 1 ] ||
-  fail "No completed successful ci.yml push run on staging for $SHA (found '$SUCCESSFUL_RUNS'). Wait for staging CI to pass on this exact commit, then re-run this check."
+  fail "No completed successful ci.yml run (push or staging validation dispatch) on staging for $SHA (found '$SUCCESSFUL_RUNS'). Wait for staging CI, or dispatch ci.yml on staging with this expected_sha and deploy_production=false, then re-run this check."
 
 echo "stage promotion proof OK: staging @ $SHA (live tip, contains main, staging push CI passed)"

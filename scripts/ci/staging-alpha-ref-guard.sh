@@ -52,10 +52,13 @@ git merge-base --is-ancestor refs/remotes/origin/main "$SHA" ||
 # Only a completed, successful ci.yml run triggered by a push of this exact
 # commit to staging counts. A PR run, a run of another commit, a failed or
 # cancelled run, or a run of a different workflow does not.
-SUCCESSFUL_RUNS="$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$SHA&branch=staging&event=push&per_page=100" \
-  --jq "[.workflow_runs[] | select(.head_sha == \"$SHA\" and .head_branch == \"staging\" and .event == \"push\" and .status == \"completed\" and .conclusion == \"success\" and .path == \".github/workflows/ci.yml\")] | length")" ||
+# A staging validation `workflow_dispatch` of ci.yml counts too: its preflight
+# only passes for the exact live staging tip containing main with
+# deploy_production=false, so it never deploys (bot pushes start no push run).
+SUCCESSFUL_RUNS="$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$SHA&branch=staging&per_page=100" \
+  --jq "[.workflow_runs[] | select(.head_sha == \"$SHA\" and .head_branch == \"staging\" and (.event == \"push\" or .event == \"workflow_dispatch\") and .status == \"completed\" and .conclusion == \"success\" and .path == \".github/workflows/ci.yml\")] | length")" ||
   fail "Unable to read CI runs for $SHA — refusing without proof that CI passed."
 [[ "$SUCCESSFUL_RUNS" =~ ^[0-9]+$ ]] && [ "$SUCCESSFUL_RUNS" -ge 1 ] ||
-  fail "No successful ci.yml push run on staging for $SHA (found '$SUCCESSFUL_RUNS'). Wait for CI to pass on this exact commit."
+  fail "No successful ci.yml run (push or staging validation dispatch) on staging for $SHA (found '$SUCCESSFUL_RUNS'). Wait for CI to pass on this exact commit."
 
 echo "ref OK: staging @ $SHA (origin/staging tip, contains origin/main, CI passed)"

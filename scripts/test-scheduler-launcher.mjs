@@ -26,10 +26,10 @@
  *  I  (CR 11164f31) a HUNTERCARD_REMOTE_REF override naming an older tag,
  *     branch or SHA that still carries this exact launcher → fail closed,
  *     its stale scheduler never runs.
- *  J  a local tag / branch named origin/main pointing at that stale commit
+ *  J  a local tag / branch named origin/staging pointing at that stale commit
  *     cannot shadow the fetched remote-tracking ref.
  *  K  a resident whose remote.origin.fetch is missing (so a plain fetch would
- *     not move origin/main) and whose origin/main is stale still runs the
+ *     not move origin/staging) and whose origin/staging is stale still runs the
  *     commit the fetch returned.
  *
  * Run: node scripts/test-scheduler-launcher.mjs
@@ -83,21 +83,21 @@ function makeSandbox({ launcherOnOrigin = true, anchors = true } = {}) {
   const origin = path.join(root, 'origin.git');
   const seed = path.join(root, 'seed');
   const resident = path.join(root, 'resident');
-  git(root, 'init', '-q', '--bare', '-b', 'main', origin);
+  git(root, 'init', '-q', '--bare', '-b', 'staging', origin);
   git(root, 'clone', '-q', origin, seed);
-  git(seed, 'checkout', '-q', '-b', 'main');
+  git(seed, 'checkout', '-q', '-b', 'staging');
   fs.mkdirSync(path.join(seed, 'scripts'));
   fs.mkdirSync(path.join(seed, 'node_modules/expo-camera'), { recursive: true });
   fs.writeFileSync(path.join(seed, 'node_modules/expo-camera/shell.js'), '// tracked shell\n');
   fs.writeFileSync(path.join(seed, 'scripts/local-scrape-and-push.sh'), stubScheduler('stale-origin'), { mode: 0o755 });
   commitAll(seed, 'v1');
-  git(seed, 'push', '-q', 'origin', 'main');
+  git(seed, 'push', '-q', 'origin', 'staging');
   git(root, 'clone', '-q', origin, resident);
-  // Origin advances past the resident (v2 = current main).
+  // Origin advances past the resident (v2 = current staging).
   fs.writeFileSync(path.join(seed, 'scripts/local-scrape-and-push.sh'), stubScheduler('origin'), { mode: 0o755 });
   if (launcherOnOrigin) fs.copyFileSync(REAL_LAUNCHER, path.join(seed, 'scripts/scheduler-launch.sh'));
   commitAll(seed, 'v2');
-  git(seed, 'push', '-q', 'origin', 'main');
+  git(seed, 'push', '-q', 'origin', 'staging');
   const v2 = git(seed, 'rev-parse', 'HEAD');
   // An older side commit that carries the CURRENT launcher bytes (so every blob
   // proof passes against it) but a stale scheduler — published as a branch and
@@ -109,7 +109,7 @@ function makeSandbox({ launcherOnOrigin = true, anchors = true } = {}) {
   const stale = git(seed, 'rev-parse', 'HEAD');
   git(seed, 'tag', 'stale-tag');
   git(seed, 'push', '-q', 'origin', 'stale', 'stale-tag');
-  git(seed, 'checkout', '-q', 'main');
+  git(seed, 'checkout', '-q', 'staging');
   git(resident, 'fetch', '-q', '--tags', origin, '+refs/heads/stale:refs/remotes/origin/stale');
   // The resident is dirty: locally modified scheduler + untracked residue.
   fs.writeFileSync(path.join(resident, 'scripts/local-scrape-and-push.sh'), stubScheduler('resident'), { mode: 0o755 });
@@ -187,7 +187,7 @@ test('A: origin committed scheduler runs from a fresh bootstrap; resident untouc
   const before = residentFingerprint(sb.resident);
   const r = run(sb, { env: { HUNTERCARD_FORCE_ISOLATED_STAGE2: '1', HUNTERCARD_STAGE2_NONCE: 'leaked', HUNTERCARD_LAUNCHER_REEXEC: '1' } });
   assert.equal(r.status, 0, r.stderr + r.log);
-  assert.equal(r.kv.who, 'origin', 'must run origin/main\'s committed scheduler, not the resident copy');
+  assert.equal(r.kv.who, 'origin', 'must run origin/staging\'s committed scheduler, not the resident copy');
   assert.equal(r.kv.head, sb.v2);
   assert.equal(r.kv.blob, git(sb.origin, 'rev-parse', `${sb.v2}:scripts/local-scrape-and-push.sh`));
   assert.ok(r.kv.pwd.startsWith(path.join(sb.home, '.hermes/scheduler/huntercard-bootstrap.')), r.kv.pwd);
@@ -195,13 +195,13 @@ test('A: origin committed scheduler runs from a fresh bootstrap; resident untouc
   assert.equal(r.kv.stage2, '');
   assert.equal(r.kv.nonce, '');
   assert.equal(r.kv.reexec, '');
-  assert.equal(r.kv.remote_ref, 'refs/remotes/origin/main', 'the scheduler resolves the unambiguous fetched ref');
+  assert.equal(r.kv.remote_ref, 'refs/remotes/origin/staging', 'the scheduler resolves the unambiguous fetched ref');
   assert.equal(r.kv.anchors, 'ok');
   assert.equal(r.kv.nm, fs.realpathSync(path.join(sb.resident, 'node_modules')));
   assert.equal(residentFingerprint(sb.resident), before, 'resident HEAD/index/working tree must be byte-identical');
   assert.deepEqual(bootstraps(sb), [], 'bootstrap removed after the run');
   assert.ok(!git(sb.resident, 'worktree', 'list').includes('huntercard-bootstrap.'), 'bootstrap registration pruned');
-  assert.match(r.log, new RegExp(`origin/main ${sb.v2}`));
+  assert.match(r.log, new RegExp(`origin/staging ${sb.v2}`));
   assert.match(r.log, /not executed/);
 });
 
@@ -239,7 +239,7 @@ test('E: fetch failure fails closed', () => {
   fs.renameSync(sb.origin, `${sb.origin}.gone`);
   const r = run(sb);
   assertNothingRan(r, sb, 'fetch failure');
-  assert.match(r.log, /git fetch origin main failed/);
+  assert.match(r.log, /git fetch origin staging failed/);
 });
 
 test('F: missing resident dependency anchor fails closed and removes the bootstrap', () => {
@@ -282,7 +282,8 @@ test('H: a bootstrap leaked over a day ago is removed, a fresh one kept', () => 
 });
 
 test('I: a stale HUNTERCARD_REMOTE_REF override fails closed and never runs the stale scheduler', () => {
-  for (const ref of ['stale-tag', 'origin/stale', 'stale-sha']) {
+  // Test-first flow: naming formal main is refused like any other stale ref.
+  for (const ref of ['stale-tag', 'origin/stale', 'stale-sha', 'origin/main', 'refs/remotes/origin/main']) {
     const sb = makeSandbox();
     const before = residentFingerprint(sb.resident);
     const r = run(sb, { env: { HUNTERCARD_REMOTE_REF: ref === 'stale-sha' ? sb.stale : ref } });
@@ -293,8 +294,8 @@ test('I: a stale HUNTERCARD_REMOTE_REF override fails closed and never runs the 
   }
 });
 
-test('J: a local tag or branch named origin/main cannot shadow the fetched ref', () => {
-  for (const shadow of ['refs/tags/origin/main', 'refs/heads/origin/main']) {
+test('J: a local tag or branch named origin/staging cannot shadow the fetched ref', () => {
+  for (const shadow of ['refs/tags/origin/staging', 'refs/heads/origin/staging']) {
     const sb = makeSandbox();
     git(sb.resident, 'update-ref', shadow, sb.stale);
     const r = run(sb);
@@ -304,15 +305,15 @@ test('J: a local tag or branch named origin/main cannot shadow the fetched ref',
   }
 });
 
-test('K: a missing fetch refspec and a stale origin/main still run the commit the fetch returned', () => {
+test('K: a missing fetch refspec and a stale origin/staging still run the commit the fetch returned', () => {
   const sb = makeSandbox();
   git(sb.resident, 'config', '--unset-all', 'remote.origin.fetch');
-  git(sb.resident, 'update-ref', 'refs/remotes/origin/main', sb.stale);
+  git(sb.resident, 'update-ref', 'refs/remotes/origin/staging', sb.stale);
   const r = run(sb);
   assert.equal(r.status, 0, r.stderr + r.log);
   assert.equal(r.kv.who, 'origin');
   assert.equal(r.kv.head, sb.v2);
-  assert.equal(git(sb.resident, 'rev-parse', 'refs/remotes/origin/main'), sb.v2);
+  assert.equal(git(sb.resident, 'rev-parse', 'refs/remotes/origin/staging'), sb.v2);
 });
 
 let failed = 0;

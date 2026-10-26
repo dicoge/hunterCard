@@ -1076,9 +1076,9 @@ exit 0
     // git: intercept only network / commit subcommands; everything else
     // passes to real git so `git status --porcelain` really classifies.
     // DIC-1461: `fetch` is mocked (exit 0, or exit 1 under FAIL_FETCH) so the
-    // scheduler's fail-closed pre-mutation `git fetch origin main` guard is
+    // scheduler's fail-closed pre-mutation `git fetch origin staging` guard is
     // exercised hermetically — no network, no real remote required. The
-    // remote head it then resolves comes from a real refs/remotes/origin/main
+    // remote head it then resolves comes from a real refs/remotes/origin/staging
     // ref seeded below.
     fs.writeFileSync(
       path.join(bin, 'git'),
@@ -1089,7 +1089,7 @@ case "$1" in
     if [ -n "$FAIL_FETCH" ]; then exit 1; fi
     # A real fetch writes FETCH_HEAD; the scheduler requires the tracking ref
     # to be the commit the fetch returned (CR 504e8fb5).
-    ${REAL_GIT} rev-parse refs/remotes/origin/main > "$(${REAL_GIT} rev-parse --git-dir)/FETCH_HEAD"
+    ${REAL_GIT} rev-parse refs/remotes/origin/staging > "$(${REAL_GIT} rev-parse --git-dir)/FETCH_HEAD"
     exit 0 ;;
   pull|push|commit) exit 0 ;;
 esac
@@ -1099,7 +1099,7 @@ exec ${REAL_GIT} "$@"
     );
 
     // ── Git init + initial commit ───────────────────────────────────────
-    execSync(`${REAL_GIT} init -q -b main`, { cwd: repo });
+    execSync(`${REAL_GIT} init -q -b staging`, { cwd: repo });
     execSync(`${REAL_GIT} config user.email test@example.com`, { cwd: repo });
     execSync(`${REAL_GIT} config user.name test`, { cwd: repo });
     execSync(`${REAL_GIT} -c core.symlinks=true add .`, { cwd: repo });
@@ -1130,16 +1130,16 @@ exec ${REAL_GIT} "$@"
     execSync(`${REAL_GIT} -c commit.gpgsign=false commit -q -m "seed poisoned durable"`, { cwd: repo });
 
     // ── DIC-1461: seed the remote-tracking ref the fetch guard resolves ──
-    // The scheduler now runs a fail-closed `git fetch origin main` (mocked in
-    // the git shim above) and then resolves `origin/main`. Seed a real
+    // The scheduler now runs a fail-closed `git fetch origin staging` (mocked in
+    // the git shim above) and then resolves `origin/staging`. Seed a real
     // remote-tracking ref at HEAD so the resolution succeeds without any
     // network or bare remote, keeping the sandbox hermetic.
-    execSync(`${REAL_GIT} update-ref refs/remotes/origin/main HEAD`, { cwd: repo });
+    execSync(`${REAL_GIT} update-ref refs/remotes/origin/staging HEAD`, { cwd: repo });
 
     // ── Scenario F (DIC-1461): the pre-mutation fetch guard fails closed ──
-    // A failed `git fetch origin main` must abort BEFORE the official
+    // A failed `git fetch origin staging` must abort BEFORE the official
     // scraper, the build, and any commit/push — never fall through to a
-    // stale cached origin/main. Isolated HOME/trace/lock so its log lines
+    // stale cached origin/staging. Isolated HOME/trace/lock so its log lines
     // cannot contaminate Scenario S's assertions below.
     {
       const fetchFailHome = path.join(sandbox, 'fetchfail-home');
@@ -1171,11 +1171,11 @@ exec ${REAL_GIT} "$@"
       );
       assert.match(
         fetchFailLog,
-        /git fetch origin main failed before scheduler mutation/,
+        /git fetch origin staging failed before scheduler mutation/,
         `Scheduler: fetch-failure guard message must be logged. log:\n${fetchFailLog.slice(-2000)}`,
       );
       assert.ok(
-        fetchFailLines.some((l) => l.includes('[shim git] fetch --write-fetch-head origin +refs/heads/main:refs/remotes/origin/main')),
+        fetchFailLines.some((l) => l.includes('[shim git] fetch --write-fetch-head origin +refs/heads/staging:refs/remotes/origin/staging')),
         `Scheduler: the fetch must have been attempted. trace:\n${fetchFailLines.join('\n')}`,
       );
       for (const forbidden of ['scrape-official-cards.js', '[shim git] commit', '[shim git] push']) {
@@ -1224,18 +1224,18 @@ exec ${REAL_GIT} "$@"
     // SUCCEEDED, and it must have run BEFORE the official scraper mutated
     // anything — otherwise the non-zero exit above could be a masked fetch
     // failure rather than the DIC-1229 audit this scenario exists to prove.
-    const fetchIdx = traceLines.findIndex((l) => l.includes('[shim git] fetch --write-fetch-head origin +refs/heads/main:refs/remotes/origin/main'));
+    const fetchIdx = traceLines.findIndex((l) => l.includes('[shim git] fetch --write-fetch-head origin +refs/heads/staging:refs/remotes/origin/staging'));
     const officialIdx = traceLines.findIndex((l) => l.includes('scrape-official-cards.js'));
     assert.ok(
       fetchIdx !== -1,
-      `Scheduler: the pre-mutation origin main refresh must be exercised. trace:\n${traceLines.join('\n')}`,
+      `Scheduler: the pre-mutation origin staging refresh must be exercised. trace:\n${traceLines.join('\n')}`,
     );
     assert.ok(
       officialIdx !== -1 && fetchIdx < officialIdx,
       `Scheduler: the origin refresh must precede official mutation (fetch@${fetchIdx}, official@${officialIdx}). trace:\n${traceLines.join('\n')}`,
     );
     assert.equal(
-      schedulerLog.includes('git fetch origin main failed before scheduler mutation'),
+      schedulerLog.includes('git fetch origin staging failed before scheduler mutation'),
       false,
       `Scheduler: the origin fetch must SUCCEED here so the failure below is the DIC-1229 audit, not a masked fetch failure. log tail:\n${schedulerLog.slice(-3000)}`,
     );

@@ -109,10 +109,10 @@ function makeSandbox() {
   fs.mkdirSync(path.join(repo, 'data'), { recursive: true });
   fs.writeFileSync(trace, '');
 
-  // Real bare remote + committed baseline so `git worktree add origin/main`
+  // Real bare remote + committed baseline so `git worktree add origin/staging`
   // and push-to-branch both work realistically.
-  execSync(`${REAL_GIT} init -q --bare -b main ${remote}`);
-  execSync(`${REAL_GIT} init -q -b main ${repo}`);
+  execSync(`${REAL_GIT} init -q --bare -b staging ${remote}`);
+  execSync(`${REAL_GIT} init -q -b staging ${repo}`);
   execSync(`${REAL_GIT} config user.email test@example.com`, { cwd: repo });
   execSync(`${REAL_GIT} config user.name test`, { cwd: repo });
   fs.writeFileSync(path.join(repo, '.gitkeep'), '');
@@ -179,7 +179,7 @@ function makeSandbox() {
   execSync(`${REAL_GIT} add -f node_modules/expo-camera`, { cwd: repo });
   execSync(`${REAL_GIT} -c commit.gpgsign=false commit -q -m baseline`, { cwd: repo });
   execSync(`${REAL_GIT} remote add origin ${remote}`, { cwd: repo });
-  execSync(`${REAL_GIT} push -q origin main`, { cwd: repo });
+  execSync(`${REAL_GIT} push -q origin staging`, { cwd: repo });
 
   // DIC-1472: the RESIDENT checkout has a real (untracked, gitignored) npm
   // install; the readiness anchors the scheduler verifies live here.
@@ -487,15 +487,15 @@ function assertNoNodeModulesStagedOrCommitted(sandbox, lines) {
     // repo, and no node scraper may run in the resident tree.
     assert.equal(someTraced(lines, 'git pull'), false, 'dirty resident must not run git pull');
     // The isolated path calls git worktree add (traced) and pushes ONLY the
-    // auditable bot/scrape/<date> artifact branch — it must never push HEAD:main
+    // auditable bot/scrape/<date> artifact branch — it must never push HEAD:staging
     // from dirty-tree isolation (Mac-Codex CR DIC-1326: exact refspec, not a
     // generic "some push occurred").
     assert.ok(someTraced(lines, 'git worktree'), 'dirty path must create an isolated worktree');
     assert.ok(someTraced(lines, 'HEAD:refs/heads/bot/scrape'), 'isolated handoff must push the bot/scrape artifact branch');
     assert.equal(
-      someTraced(lines, 'HEAD:main'),
+      someTraced(lines, 'HEAD:staging'),
       false,
-      'dirty-tree isolated path must NEVER push HEAD:main',
+      'dirty-tree isolated path must NEVER push HEAD:staging',
     );
     // The residue file must still exist untouched.
     assert.ok(fs.existsSync(residue), 'residue file must remain untouched on-disk');
@@ -578,9 +578,9 @@ exit 0
       `a failed isolated handoff push must fail the scheduler (fail-closed), not exit 0; got ${status}`,
     );
     assert.equal(
-      someTraced(lines, 'HEAD:main'),
+      someTraced(lines, 'HEAD:staging'),
       false,
-      'isolated path must never fall back to pushing HEAD:main even when the handoff fails',
+      'isolated path must never fall back to pushing HEAD:staging even when the handoff fails',
     );
     assert.ok(
       someTraced(lines, 'HEAD:refs/heads/bot/scrape'),
@@ -595,7 +595,7 @@ exit 0
 //        where the pipeline produces IDENTICAL data to the baseline (no data
 //        change → runPipeline skips commit → isolated worktree HEAD is unchanged
 //        from the starting SHA). The scheduler MUST exit 1, report FAILED, and
-//        NEVER push the unchanged origin/main baseline to bot/scrape/<date>.
+//        NEVER push the unchanged origin/staging baseline to bot/scrape/<date>.
 {
   const sandbox = makeSandbox();
   const residue = path.join(sandbox.repo, 'data', 'price-history', 'hFOO-003_hBAR_C.json');
@@ -639,16 +639,16 @@ exit 0
       /HUNTERCARD_SCRAPE_STATUS=FAILED/,
       'no-op dirty-worktree pipeline must record HUNTERCARD_SCRAPE_STATUS=FAILED in the scheduler log, not report success',
     );
-    // Must NEVER push to bot/scrape or HEAD:main when there is no artifact.
+    // Must NEVER push to bot/scrape or HEAD:staging when there is no artifact.
     assert.equal(
       someTraced(lines, 'HEAD:refs/heads/bot/scrape'),
       false,
       'no-op pipeline must not push an unchanged baseline to bot/scrape',
     );
     assert.equal(
-      someTraced(lines, 'HEAD:main'),
+      someTraced(lines, 'HEAD:staging'),
       false,
-      'no-op pipeline must never push HEAD:main',
+      'no-op pipeline must never push HEAD:staging',
     );
   } finally {
     cleanup(sandbox);
@@ -684,7 +684,7 @@ exit 0
     assert.ok(someTraced(lines, 'git worktree prune'), 'scheduler must prune stale worktree registrations before retrying add');
     assert.ok(someTraced(lines, 'git worktree add'), 'scheduler must still create a fresh isolated worktree after pruning');
     assert.ok(someTraced(lines, 'HEAD:refs/heads/bot/scrape'), 'recovered isolated handoff must push the bot/scrape artifact branch');
-    assert.equal(someTraced(lines, 'HEAD:main'), false, 'recovered isolated path must never push HEAD:main');
+    assert.equal(someTraced(lines, 'HEAD:staging'), false, 'recovered isolated path must never push HEAD:staging');
   } finally {
     cleanup(sandbox);
   }
@@ -717,7 +717,7 @@ exit 0
   // this case targets the parity gate, not the dirty-worktree handoff.
   execSync(`${REAL_GIT} add public/data/database.json`, { cwd: sandbox.repo });
   execSync(`${REAL_GIT} -c commit.gpgsign=false commit -q -m "stale native drift"`, { cwd: sandbox.repo });
-  execSync(`${REAL_GIT} push -q origin main`, { cwd: sandbox.repo });
+  execSync(`${REAL_GIT} push -q origin staging`, { cwd: sandbox.repo });
   try {
     const { status, lines, log } = runSandbox(sandbox);
     assert.equal(
@@ -730,7 +730,7 @@ exit 0
       /canonical\/native parity gate FAILED/,
       'divergent parity must record the parity-gate FAILED reason in the scheduler log',
     );
-    assert.equal(someTraced(lines, 'HEAD:main'), false, 'divergent parity must never push HEAD:main');
+    assert.equal(someTraced(lines, 'HEAD:staging'), false, 'divergent parity must never push HEAD:staging');
     assert.equal(someTraced(lines, 'HEAD:refs/heads/bot/scrape'), false, 'divergent parity must never push an isolated artifact branch either');
   } finally {
     cleanup(sandbox);
@@ -742,14 +742,14 @@ exit 0
 // TRACKED node_modules shell, so directory existence is a lie; the scheduler
 // must replace only that disposable shell with an absolute symlink to the
 // resident install, run stage 2 inside the worktree pinned to the CURRENT
-// origin/main SHA, and hand off via the fully-qualified dated refspec.
+// origin/staging SHA, and hand off via the fully-qualified dated refspec.
 // Mutation sensor: the build shim exits 1 unless both anchors resolve in its
 // cwd, so reverting ensureIsolatedDeps() turns this red with the same
 // module-not-found shape as the real 2026-09-18 forced-isolated failure.
 {
   const sandbox = makeSandbox();
   const isoDir = path.join(sandbox.dir, 'iso');
-  const remoteHead = execSync(`${REAL_GIT} rev-parse origin/main`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim();
+  const remoteHead = execSync(`${REAL_GIT} rev-parse origin/staging`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim();
   const snapshot = takeResidentSnapshot(sandbox);
   try {
     const { status, lines, log } = runSandbox(sandbox, { HUNTERCARD_FORCE_ISOLATED: '1' });
@@ -757,7 +757,7 @@ exit 0
     // Stage 1 pinned the ephemeral worktree to the freshly fetched origin SHA.
     assert.ok(
       someTraced(lines, `git worktree add --detach ${isoDir} ${remoteHead}`),
-      'stage 1 must create the ephemeral worktree at the CURRENT origin/main SHA',
+      'stage 1 must create the ephemeral worktree at the CURRENT origin/staging SHA',
     );
     // The incomplete tracked shell was replaced with the resident symlink and
     // the resulting target re-verified.
@@ -772,13 +772,13 @@ exit 0
       `stage 2 build must execute inside the ephemeral worktree; got: ${buildLine}`,
     );
     assert.match(log, /Done \(forced-isolated bootstrap\)/, 'stage 1 must only report Done after stage 2 succeeded');
-    // Fully-qualified dated handoff refspec; never HEAD:main.
+    // Fully-qualified dated handoff refspec; never HEAD:staging.
     const today = execSync('date +%Y-%m-%d', { encoding: 'utf-8' }).trim();
     assert.ok(
       someTraced(lines, `push origin HEAD:refs/heads/bot/scrape/${today}`),
       'forced-isolated handoff must push the fully-qualified dated bot/scrape refspec',
     );
-    assert.equal(someTraced(lines, 'HEAD:main'), false, 'forced-isolated path must never push HEAD:main');
+    assert.equal(someTraced(lines, 'HEAD:staging'), false, 'forced-isolated path must never push HEAD:staging');
     assertNoNodeModulesStagedOrCommitted(sandbox, lines);
     assertResidentUntouched(sandbox, snapshot);
   } finally {
@@ -813,7 +813,7 @@ exit 0
       someTraced(lines, `push origin HEAD:refs/heads/bot/scrape/${today}`),
       'dirty-isolated handoff must push the fully-qualified dated bot/scrape refspec',
     );
-    assert.equal(someTraced(lines, 'HEAD:main'), false, 'dirty-isolated path must never push HEAD:main');
+    assert.equal(someTraced(lines, 'HEAD:staging'), false, 'dirty-isolated path must never push HEAD:staging');
     assertNoNodeModulesStagedOrCommitted(sandbox, lines);
     assertResidentUntouched(sandbox, snapshot);
     assert.equal(fs.readFileSync(residue, 'utf-8'), '{"cardId":"user-private"}', 'residue must stay byte-identical');
@@ -835,7 +835,7 @@ exit 0
     { cwd: sandbox.repo },
   );
   execSync(`${REAL_GIT} -c commit.gpgsign=false commit -q -m "tracked complete deps"`, { cwd: sandbox.repo });
-  execSync(`${REAL_GIT} push -q origin main`, { cwd: sandbox.repo });
+  execSync(`${REAL_GIT} push -q origin staging`, { cwd: sandbox.repo });
   const residue = path.join(sandbox.repo, 'data', 'price-history', 'hDIC1472-002_hFOO_C.json');
   fs.mkdirSync(path.dirname(residue), { recursive: true });
   fs.writeFileSync(residue, '{}');
@@ -1094,16 +1094,16 @@ exit 0
 }
 
 // ─── DIC-1167 (CR 028f6a19) clean-path / origin-freshness fail-closed ──────
-// The in-place clean route builds from, commits on and pushes HEAD:main from
+// The in-place clean route builds from, commits on and pushes HEAD:staging from
 // the RESIDENT HEAD. Cases Q–V drive the real script against the real sandbox
 // remote (fetch / pull are real git; only push + commit are shimmed) to prove:
-// a failed fast-forward, a resident HEAD that is not the fetched origin/main,
+// a failed fast-forward, a resident HEAD that is not the fetched origin/staging,
 // a rejected in-place push and a failed pre-mutation fetch all exit 1 with the
 // FAILED marker before (or instead of) publication, and that both routes use
-// the freshly fetched origin/main rather than a stale local cache.
+// the freshly fetched origin/staging rather than a stale local cache.
 
 // Advance the sandbox remote from an independent clone, leaving the resident's
-// cached origin/main stale. Returns the new remote main SHA.
+// cached origin/staging stale. Returns the new remote main SHA.
 function advanceRemote(sandbox, label) {
   const other = path.join(sandbox.dir, `other-${label}`);
   execSync(`${REAL_GIT} clone -q ${sandbox.remote} ${other}`);
@@ -1112,7 +1112,7 @@ function advanceRemote(sandbox, label) {
   fs.writeFileSync(path.join(other, `remote-${label}.txt`), `${label}\n`);
   execSync(`${REAL_GIT} add remote-${label}.txt`, { cwd: other });
   execSync(`${REAL_GIT} -c commit.gpgsign=false commit -q -m "remote ${label}"`, { cwd: other });
-  execSync(`${REAL_GIT} push -q origin main`, { cwd: other });
+  execSync(`${REAL_GIT} push -q origin staging`, { cwd: other });
   return execSync(`${REAL_GIT} rev-parse HEAD`, { cwd: other, encoding: 'utf-8' }).trim();
 }
 
@@ -1131,7 +1131,7 @@ function assertCleanPathFailedClosed(route, result, reasonRe) {
   assert.doesNotMatch(result.log, /non-fatal\); continuing with current HEAD/, `${route}: ff failure must not be downgraded to non-fatal`);
 }
 
-// ─── Case Q: clean resident DIVERGED from origin/main — ff-only fails ───────
+// ─── Case Q: clean resident DIVERGED from origin/staging — ff-only fails ───────
 {
   const sandbox = makeSandbox();
   try {
@@ -1141,7 +1141,7 @@ function assertCleanPathFailedClosed(route, result, reasonRe) {
     assertCleanPathFailedClosed(
       'Q diverged clean resident',
       result,
-      /git pull --ff-only origin main failed on the clean resident checkout; refusing to build\/push/,
+      /git pull --ff-only origin staging failed on the clean resident checkout; refusing to build\/push/,
     );
     const headAfter = execSync(`${REAL_GIT} rev-parse HEAD`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim();
     assert.equal(headAfter, localSha, 'Q: resident HEAD must stay at its own commit (no merge, no reset)');
@@ -1150,32 +1150,32 @@ function assertCleanPathFailedClosed(route, result, reasonRe) {
   }
 }
 
-// ─── Case R: clean resident AHEAD of origin/main (unpushed local commit).
-// --ff-only succeeds ("Already up to date"), but building + pushing HEAD:main
+// ─── Case R: clean resident AHEAD of origin/staging (unpushed local commit).
+// --ff-only succeeds ("Already up to date"), but building + pushing HEAD:staging
 // would publish an unreviewed local commit — must fail closed.
 {
   const sandbox = makeSandbox();
   try {
     commitLocalOnly(sandbox, 'r');
     const result = runSandbox(sandbox);
-    assert.ok(someTraced(result.lines, 'git pull --ff-only origin main'), 'R: sanity — the fast-forward was attempted');
+    assert.ok(someTraced(result.lines, 'git pull --ff-only origin staging'), 'R: sanity — the fast-forward was attempted');
     assertCleanPathFailedClosed(
       'R ahead clean resident',
       result,
-      /resident HEAD \([0-9a-f]{40}\) is not the fetched origin\/main \([0-9a-f]{40}\) after fast-forward/,
+      /resident HEAD \([0-9a-f]{40}\) is not the fetched origin\/staging \([0-9a-f]{40}\) after fast-forward/,
     );
   } finally {
     cleanup(sandbox);
   }
 }
 
-// ─── Case S: clean resident with a STALE origin/main cache (remote advanced).
+// ─── Case S: clean resident with a STALE origin/staging cache (remote advanced).
 // The real fetch + ff-only must move the resident to the NEW remote head
 // before the build, and the run then publishes normally.
 {
   const sandbox = makeSandbox();
   try {
-    const staleCached = execSync(`${REAL_GIT} rev-parse origin/main`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim();
+    const staleCached = execSync(`${REAL_GIT} rev-parse origin/staging`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim();
     const newRemote = advanceRemote(sandbox, 's');
     assert.notEqual(newRemote, staleCached, 'S: sanity — remote advanced past the resident cache');
     const { status, lines, log } = runSandbox(sandbox);
@@ -1183,26 +1183,26 @@ function assertCleanPathFailedClosed(route, result, reasonRe) {
     // The artifact commit (`git -c … commit` reaches real git) must sit
     // directly on the freshly fetched remote head, not the stale cache.
     const artifactParent = execSync(`${REAL_GIT} rev-parse HEAD^`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim();
-    assert.equal(artifactParent, newRemote, 'S: artifact must be built on the fast-forwarded origin/main, not the stale cache');
-    const pull = lines.findIndex((l) => l.includes('git pull --ff-only origin main'));
+    assert.equal(artifactParent, newRemote, 'S: artifact must be built on the fast-forwarded origin/staging, not the stale cache');
+    const pull = lines.findIndex((l) => l.includes('git pull --ff-only origin staging'));
     const build = lines.findIndex((l) => l.includes('build-database.js'));
     assert.ok(pull !== -1 && build !== -1 && pull < build, 'S: fast-forward must precede the build');
-    assert.ok(someTraced(lines, 'push origin HEAD:main'), 'S: in-place route publishes HEAD:main');
+    assert.ok(someTraced(lines, 'push origin HEAD:staging'), 'S: in-place route publishes HEAD:staging');
     assert.match(log, /✅ Done/, 'S: healthy run reports Done');
   } finally {
     cleanup(sandbox);
   }
 }
 
-// ─── Case T: in-place HEAD:main push REJECTED — must fail, never "Pushed". ──
-// Previously `push HEAD:main || push HEAD` then unconditionally "✅ Pushed" +
+// ─── Case T: in-place HEAD:staging push REJECTED — must fail, never "Pushed". ──
+// Previously `push HEAD:staging || push HEAD` then unconditionally "✅ Pushed" +
 // "✅ Done": a rejected publication was reported as success.
 {
   const sandbox = makeSandbox();
   try {
-    const { status, lines, log } = runSandbox(sandbox, { FAIL_PUSH: 'HEAD:main' });
+    const { status, lines, log } = runSandbox(sandbox, { FAIL_PUSH: 'HEAD:staging' });
     assert.equal(status, 1, `T: rejected in-place push must fail the scheduler; got ${status}\n${log}`);
-    assert.match(log, /git push origin HEAD:main FAILED; artifact not published/, 'T: exact push-failure reason');
+    assert.match(log, /git push origin HEAD:staging FAILED; artifact not published/, 'T: exact push-failure reason');
     assert.match(log, /HUNTERCARD_SCRAPE_STATUS=FAILED/, 'T: cron must observe the FAILED marker');
     assert.doesNotMatch(log, /✅ Pushed|✅ Done/, 'T: must never report Pushed/Done after a rejected push');
     assert.equal(
@@ -1215,7 +1215,7 @@ function assertCleanPathFailedClosed(route, result, reasonRe) {
   }
 }
 
-// ─── Case U: dirty route with a STALE origin/main cache — the isolated
+// ─── Case U: dirty route with a STALE origin/staging cache — the isolated
 // worktree must be pinned to the freshly FETCHED remote head, not the cache. ─
 {
   const sandbox = makeSandbox();
@@ -1224,21 +1224,21 @@ function assertCleanPathFailedClosed(route, result, reasonRe) {
   fs.mkdirSync(path.dirname(residue), { recursive: true });
   fs.writeFileSync(residue, '{}');
   try {
-    const staleCached = execSync(`${REAL_GIT} rev-parse origin/main`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim();
+    const staleCached = execSync(`${REAL_GIT} rev-parse origin/staging`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim();
     const newRemote = advanceRemote(sandbox, 'u');
     const { status, lines, log } = runSandbox(sandbox);
     assert.equal(status, 0, `U: dirty isolated handoff must complete; got ${status}\n${log}`);
-    const fetch = lines.findIndex((l) => l.includes('git fetch --write-fetch-head origin +refs/heads/main:refs/remotes/origin/main'));
+    const fetch = lines.findIndex((l) => l.includes('git fetch --write-fetch-head origin +refs/heads/staging:refs/remotes/origin/staging'));
     const add = lines.findIndex((l) => l.includes(`git worktree add --detach ${isoDir} `));
     assert.ok(fetch !== -1 && add !== -1 && fetch < add, 'U: fetch must precede the isolated worktree creation');
     assert.ok(
       someTraced(lines, `git worktree add --detach ${isoDir} ${newRemote}`),
-      'U: isolated worktree must be created at the freshly fetched origin/main',
+      'U: isolated worktree must be created at the freshly fetched origin/staging',
     );
     assert.equal(
       someTraced(lines, `git worktree add --detach ${isoDir} ${staleCached}`),
       false,
-      'U: isolated worktree must NEVER be created at the stale cached origin/main',
+      'U: isolated worktree must NEVER be created at the stale cached origin/staging',
     );
     assert.equal(someTraced(lines, 'git pull'), false, 'U: dirty resident must not be pulled');
   } finally {
@@ -1259,7 +1259,7 @@ for (const dirty of [false, true]) {
   execSync(`${REAL_GIT} remote set-url origin ${path.join(sandbox.dir, 'missing-remote.git')}`, { cwd: sandbox.repo });
   try {
     const result = runSandbox(sandbox);
-    assertCleanPathFailedClosed(route, result, /git fetch origin main failed before scheduler mutation/);
+    assertCleanPathFailedClosed(route, result, /git fetch origin staging failed before scheduler mutation/);
     assert.equal(someTraced(result.lines, 'git worktree add'), false, `${route}: no worktree from a stale cache`);
     assert.equal(someTraced(result.lines, 'git pull'), false, `${route}: no pull after a failed fetch`);
   } finally {
@@ -1270,7 +1270,7 @@ for (const dirty of [false, true]) {
 // ─── DIC-1167 (2026-09-30) stale resident orchestration ─────────────────────
 // The cron invokes the RESIDENT script, and bash keeps the function
 // definitions it parsed from that file for the whole run. On 09-30 a
-// 225-commit-stale resident built origin/main's data through its OWN
+// 225-commit-stale resident built origin/staging's data through its OWN
 // runPipeline (no run budget, no fail-closed push). These cases mark each
 // copy of the script's runPipeline with a trace so the harness can see WHOSE
 // orchestration actually ran.
@@ -1295,7 +1295,7 @@ function commitScriptOnResident(sandbox, label) {
   fs.writeFileSync(residentScriptPath(sandbox), markedScript(label));
   execSync(`${REAL_GIT} add scripts/local-scrape-and-push.sh`, { cwd: sandbox.repo });
   execSync(`${REAL_GIT} -c commit.gpgsign=false commit -q -m "script ${label}"`, { cwd: sandbox.repo });
-  execSync(`${REAL_GIT} push -q origin main`, { cwd: sandbox.repo });
+  execSync(`${REAL_GIT} push -q origin staging`, { cwd: sandbox.repo });
 }
 
 // Advance origin with a script variant from an independent clone, leaving the
@@ -1308,7 +1308,7 @@ function advanceRemoteScript(sandbox, label) {
   fs.writeFileSync(path.join(other, 'scripts', 'local-scrape-and-push.sh'), markedScript(label));
   execSync(`${REAL_GIT} add scripts/local-scrape-and-push.sh`, { cwd: other });
   execSync(`${REAL_GIT} -c commit.gpgsign=false commit -q -m "remote script ${label}"`, { cwd: other });
-  execSync(`${REAL_GIT} push -q origin main`, { cwd: other });
+  execSync(`${REAL_GIT} push -q origin staging`, { cwd: other });
   return execSync(`${REAL_GIT} rev-parse HEAD`, { cwd: other, encoding: 'utf-8' }).trim();
 }
 
@@ -1332,13 +1332,13 @@ const pipelineOwners = (lines) =>
     const { status, lines, log } = runSandbox(sandbox);
     assert.equal(status, 0, `W: dirty isolated handoff must complete; got ${status}\n${log}`);
     assert.deepEqual(pipelineOwners(lines), ['ORIGIN'], `W: exactly origin's runPipeline must run, never the resident's\n${lines.join('\n')}`);
-    assert.match(log, /resident script .* differs from origin\/main .*the pipeline runs origin's copy/, 'W: the stale resident must be reported');
+    assert.match(log, /resident script .* differs from origin\/staging .*the pipeline runs origin's copy/, 'W: the stale resident must be reported');
     assert.ok(
       lines.some((l) => l.includes('build-database.js') && l.includes(`[cwd=${isoDir}]`)),
       'W: the build must run inside the isolated worktree',
     );
     assert.ok(someTraced(lines, 'HEAD:refs/heads/bot/scrape/'), 'W: handoff goes to bot/scrape/<date>');
-    assert.equal(someTraced(lines, 'HEAD:main'), false, 'W: dirty route must never push HEAD:main');
+    assert.equal(someTraced(lines, 'HEAD:staging'), false, 'W: dirty route must never push HEAD:staging');
     assert.match(log, /✅ Done \(isolated handoff\)/, 'W: stage 2 reports the isolated handoff');
     assert.match(log, /✅ Done \(isolated bootstrap\)/, 'W: stage 1 reports Done only after stage 2');
     assert.equal(fs.readFileSync(residue, 'utf-8'), '{}', 'W: resident residue must stay untouched');
@@ -1359,10 +1359,10 @@ const pipelineOwners = (lines) =>
     const { status, lines, log } = runSandbox(sandbox);
     assert.equal(status, 0, `X: fast-forwarded in-place run must complete via the updated script; got ${status}\n${log}`);
     assert.deepEqual(pipelineOwners(lines), ['NEW'], `X: only the pulled script's runPipeline may run\n${lines.join('\n')}`);
-    assert.match(log, /fast-forward updated scripts\/local-scrape-and-push\.sh .*re-executing origin\/main's copy/, 'X: the re-exec must be logged');
-    assert.equal(lines.filter((l) => l.includes('push origin HEAD:main')).length, 1, 'X: the artifact is published exactly once');
+    assert.match(log, /fast-forward updated scripts\/local-scrape-and-push\.sh .*re-executing origin\/staging's copy/, 'X: the re-exec must be logged');
+    assert.equal(lines.filter((l) => l.includes('push origin HEAD:staging')).length, 1, 'X: the artifact is published exactly once');
     const artifactParent = execSync(`${REAL_GIT} rev-parse HEAD^`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim();
-    assert.equal(artifactParent, newRemote, 'X: artifact sits on the fetched origin/main');
+    assert.equal(artifactParent, newRemote, 'X: artifact sits on the fetched origin/staging');
   } finally {
     cleanup(sandbox);
   }
@@ -1379,7 +1379,7 @@ const pipelineOwners = (lines) =>
     assertCleanPathFailedClosed(
       'Y locally modified resident script',
       result,
-      /is not origin\/main's committed scripts\/local-scrape-and-push\.sh .*refusing in-place build\/push with stale or locally modified orchestration/,
+      /is not origin\/staging's committed scripts\/local-scrape-and-push\.sh .*refusing in-place build\/push with stale or locally modified orchestration/,
     );
     assert.deepEqual(pipelineOwners(result.lines), [], 'Y: no runPipeline may run');
   } finally {
@@ -1401,7 +1401,7 @@ const pipelineOwners = (lines) =>
       /refusing in-place build\/push with stale or locally modified orchestration/,
     );
     assert.deepEqual(pipelineOwners(result.lines), [], 'Z: no runPipeline may run');
-    assert.doesNotMatch(result.log, /re-executing origin\/main's copy/, 'Z: must not re-execute a second time');
+    assert.doesNotMatch(result.log, /re-executing origin\/staging's copy/, 'Z: must not re-execute a second time');
   } finally {
     cleanup(sandbox);
   }
@@ -1427,7 +1427,7 @@ const pipelineOwners = (lines) =>
 
 // ─── DIC-1167 (CR bced44d5): a stage-2 process whose script DOES match its
 // own HEAD must still prove it is stage 1's ephemeral worktree at the freshly
-// fetched origin/main. A clean (even current) resident, a linked worktree on
+// fetched origin/staging. A clean (even current) resident, a linked worktree on
 // a branch, or a detached linked worktree without stage 1's one-time
 // attestation must all refuse before any scrape/build/commit/push. ─────────
 
@@ -1460,7 +1460,7 @@ function assertStage2Refused(route, sandbox, snapshot, result, reasonRe) {
     try {
       commitScriptOnResident(sandbox, 'RESIDENT');
       const head = execSync(`${REAL_GIT} rev-parse HEAD`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim();
-      assert.equal(head, execSync(`${REAL_GIT} rev-parse origin/main`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim(), `${route}: sanity — resident is current`);
+      assert.equal(head, execSync(`${REAL_GIT} rev-parse origin/staging`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim(), `${route}: sanity — resident is current`);
       const snapshot = takeResidentSnapshot(sandbox);
       const result = runSandbox(sandbox, { HUNTERCARD_FORCE_ISOLATED_STAGE2: '1', ...env(sandbox, head) });
       assert.doesNotMatch(result.log, /is not the committed scripts\/local-scrape-and-push\.sh/, `${route}: sanity — the script check passes`);
@@ -1473,7 +1473,7 @@ function assertStage2Refused(route, sandbox, snapshot, result, reasonRe) {
 }
 
 // ─── Case BB (linked worktrees): a checkout that IS a linked worktree at
-// origin/main but was not created+attested by THIS stage 1 — on a branch, or
+// origin/staging but was not created+attested by THIS stage 1 — on a branch, or
 // detached with a missing or foreign attestation — must refuse. ────────────
 {
   const variants = [
@@ -1525,7 +1525,7 @@ function assertStage2Refused(route, sandbox, snapshot, result, reasonRe) {
   }
 }
 
-// ─── Case CC: origin/main ADVANCES between the stage-1 fetch (worktree
+// ─── Case CC: origin/staging ADVANCES between the stage-1 fetch (worktree
 // pinned) and the stage-2 fetch — stage 2 must refuse the stale snapshot,
 // never build or hand it off, and stage 1 must report failure. ────────────
 for (const [route, extraEnv, residue] of [
@@ -1546,7 +1546,7 @@ for (const [route, extraEnv, residue] of [
     execSync(`${REAL_GIT} -c user.email=o@example.com -c user.name=o -c commit.gpgsign=false commit -q -m "remote cc"`, { cwd: other });
     const advanced = execSync(`${REAL_GIT} rev-parse HEAD`, { cwd: other, encoding: 'utf-8' }).trim();
     const hook = path.join(sandbox.dir, 'advance-hook.sh');
-    fs.writeFileSync(hook, `${REAL_GIT} -C ${other} push -q origin main\n`);
+    fs.writeFileSync(hook, `${REAL_GIT} -C ${other} push -q origin staging\n`);
     const snapshot = takeResidentSnapshot(sandbox);
     const result = runSandbox(sandbox, {
       ...extraEnv,
@@ -1558,10 +1558,10 @@ for (const [route, extraEnv, residue] of [
     assertFailedClosedNoMutation(
       route,
       result,
-      new RegExp(`${label} stage 2: worktree HEAD ${pinned} is not the freshly fetched origin/main ${advanced} \\(stage 1 pinned ${pinned}\\); refusing stale orchestration`),
+      new RegExp(`${label} stage 2: worktree HEAD ${pinned} is not the freshly fetched origin/staging ${advanced} \\(stage 1 pinned ${pinned}\\); refusing stale orchestration`),
     );
     assert.ok(someTraced(result.lines, `git worktree add --detach ${isoDir} ${pinned}`), `${route}: stage 1 pinned the pre-advance head`);
-    assert.equal(result.lines.filter((l) => l.startsWith('git fetch --write-fetch-head origin +refs/heads/main:refs/remotes/origin/main')).length, 2, `${route}: both stages fetched`);
+    assert.equal(result.lines.filter((l) => l.startsWith('git fetch --write-fetch-head origin +refs/heads/staging:refs/remotes/origin/staging')).length, 2, `${route}: both stages fetched`);
     assert.deepEqual(pipelineOwners(result.lines), [], `${route}: no runPipeline may run`);
     assert.equal(someTraced(result.lines, 'bot/scrape/'), false, `${route}: no bot/scrape handoff`);
     assert.match(result.log, new RegExp(`${label} stage 2 failed — cron reports failure`), `${route}: stage 1 propagates the refusal`);
@@ -1574,14 +1574,14 @@ for (const [route, extraEnv, residue] of [
 }
 
 // ─── Case CC-norefspec (CR 504e8fb5): the same mid-run advance on a resident
-// whose remote.origin.fetch is MISSING. A plain `git fetch origin main` then
+// whose remote.origin.fetch is MISSING. A plain `git fetch origin staging` then
 // writes FETCH_HEAD only, the tracking ref keeps stage 1's commit, and stage 2
 // compared the pinned snapshot against that same stale value — it built and
 // handed off the stale snapshot. Every fetch must move the explicit tracking
 // ref, so stage 2 still sees the advance and refuses. Run with and without the
 // launcher's fully qualified HUNTERCARD_REMOTE_REF. ─────────────────────────
 for (const [route, extraEnv, residue] of [
-  ['CC-norefspec forced route (launcher ref)', { HUNTERCARD_FORCE_ISOLATED: '1', HUNTERCARD_REMOTE_REF: 'refs/remotes/origin/main' }, false],
+  ['CC-norefspec forced route (launcher ref)', { HUNTERCARD_FORCE_ISOLATED: '1', HUNTERCARD_REMOTE_REF: 'refs/remotes/origin/staging' }, false],
   ['CC-norefspec forced route (default ref)', { HUNTERCARD_FORCE_ISOLATED: '1' }, false],
   ['CC-norefspec dirty route', {}, true],
 ]) {
@@ -1600,7 +1600,7 @@ for (const [route, extraEnv, residue] of [
     execSync(`${REAL_GIT} -c user.email=o@example.com -c user.name=o -c commit.gpgsign=false commit -q -m "remote cn"`, { cwd: other });
     const advanced = execSync(`${REAL_GIT} rev-parse HEAD`, { cwd: other, encoding: 'utf-8' }).trim();
     const hook = path.join(sandbox.dir, 'advance-hook.sh');
-    fs.writeFileSync(hook, `${REAL_GIT} -C ${other} push -q origin main\n`);
+    fs.writeFileSync(hook, `${REAL_GIT} -C ${other} push -q origin staging\n`);
     const snapshot = takeResidentSnapshot(sandbox);
     const result = runSandbox(sandbox, {
       ...extraEnv,
@@ -1612,16 +1612,16 @@ for (const [route, extraEnv, residue] of [
     assertFailedClosedNoMutation(
       route,
       result,
-      new RegExp(`${label} stage 2: worktree HEAD ${pinned} is not the freshly fetched origin/main ${advanced} \\(stage 1 pinned ${pinned}\\); refusing stale orchestration`),
+      new RegExp(`${label} stage 2: worktree HEAD ${pinned} is not the freshly fetched origin/staging ${advanced} \\(stage 1 pinned ${pinned}\\); refusing stale orchestration`),
     );
     assert.ok(someTraced(result.lines, `git worktree add --detach ${isoDir} ${pinned}`), `${route}: stage 1 pinned the pre-advance head`);
-    assert.equal(result.lines.filter((l) => l.startsWith('git fetch --write-fetch-head origin +refs/heads/main:refs/remotes/origin/main')).length, 2, `${route}: both stages fetched the explicit tracking ref`);
+    assert.equal(result.lines.filter((l) => l.startsWith('git fetch --write-fetch-head origin +refs/heads/staging:refs/remotes/origin/staging')).length, 2, `${route}: both stages fetched the explicit tracking ref`);
     assert.deepEqual(pipelineOwners(result.lines), [], `${route}: no runPipeline may run`);
     assert.equal(someTraced(result.lines, 'bot/scrape/'), false, `${route}: no bot/scrape handoff`);
     assert.match(result.log, new RegExp(`${label} stage 2 failed — cron reports failure`), `${route}: stage 1 propagates the refusal`);
     assert.doesNotMatch(result.log, /✅ Done/, `${route}: must never report Done`);
     assert.equal(
-      execSync(`${REAL_GIT} rev-parse refs/remotes/origin/main`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim(),
+      execSync(`${REAL_GIT} rev-parse refs/remotes/origin/staging`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim(),
       advanced,
       `${route}: the tracking ref moved to the advanced commit despite the missing refspec`,
     );
@@ -1637,12 +1637,15 @@ for (const [route, extraEnv, residue] of [
   }
 }
 
-// ─── Case CC-override (CR 504e8fb5): the scheduler resolves only origin/main.
+// ─── Case CC-override (CR 504e8fb5): the scheduler resolves only origin/staging.
 // A HUNTERCARD_REMOTE_REF naming anything else (an older SHA, a tag) is
 // refused before any fetch, worktree or pipeline. ──────────────────────────
 for (const [route, ref] of [
   ['CC-override stale sha', 'sha'],
   ['CC-override tag', 'refs/tags/stale'],
+  // Test-first flow: the scheduler builds staging only; naming main is refused.
+  ['CC-override formal main', 'origin/main'],
+  ['CC-override formal main ref', 'refs/remotes/origin/main'],
 ]) {
   const sandbox = makeSandbox();
   try {
@@ -1650,7 +1653,7 @@ for (const [route, ref] of [
     execSync(`${REAL_GIT} tag stale ${head}`, { cwd: sandbox.repo });
     const snapshot = takeResidentSnapshot(sandbox);
     const result = runSandbox(sandbox, { HUNTERCARD_FORCE_ISOLATED: '1', HUNTERCARD_REMOTE_REF: ref === 'sha' ? head : ref });
-    assertFailedClosedNoMutation(route, result, /HUNTERCARD_REMOTE_REF=\S+ is refused: the scheduler only runs the freshly fetched origin\/main/);
+    assertFailedClosedNoMutation(route, result, /HUNTERCARD_REMOTE_REF=\S+ is refused: the scheduler only runs the freshly fetched origin\/staging/);
     assert.equal(someTraced(result.lines, 'git fetch'), false, `${route}: refused before fetching`);
     assert.equal(someTraced(result.lines, 'git worktree add'), false, `${route}: no worktree`);
     assert.deepEqual(pipelineOwners(result.lines), [], `${route}: no runPipeline may run`);
@@ -1872,7 +1875,7 @@ function advanceRemoteWith(sandbox, tag, content) {
   fs.writeFileSync(path.join(other, 'scripts', 'local-scrape-and-push.sh'), content);
   execSync(`${REAL_GIT} add scripts/local-scrape-and-push.sh`, { cwd: other });
   execSync(`${REAL_GIT} -c user.email=o@example.com -c user.name=o -c commit.gpgsign=false commit -q -m "remote dd ${tag}"`, { cwd: other });
-  execSync(`${REAL_GIT} push -q origin main`, { cwd: other });
+  execSync(`${REAL_GIT} push -q origin staging`, { cwd: other });
 }
 for (const [route, extraEnv, anchor, failRe] of [
   [
@@ -1885,7 +1888,7 @@ for (const [route, extraEnv, anchor, failRe] of [
     'DD(e) in-place re-exec exits 0 without a receipt',
     {},
     '# In-place clean path.',
-    /re-executed origin\/main script exited 0 without this run's completion receipt; never Done on a bare exit status \(cron fails\)/,
+    /re-executed origin\/staging script exited 0 without this run's completion receipt; never Done on a bare exit status \(cron fails\)/,
   ],
 ]) {
   const sandbox = makeSandbox();
@@ -1915,7 +1918,7 @@ for (const [route, extraEnv, anchor, failRe] of [
 // the stale, locally modified resident copy and origin's fixes (e.g. the
 // CR 4d3610a7 child-lock preflight) were never the scheduled artifact.
 // scripts/scheduler-launch.sh, installed OUTSIDE the resident, must run
-// origin/main's committed script for BOTH stages — from a fresh bootstrap
+// origin/staging's committed script for BOTH stages — from a fresh bootstrap
 // worktree, forced-isolated, resident untouched — end to end with the real
 // scheduler. Every process of a marked script traces SCRIPT_FROM <label>, so
 // a single resident-parsed stage is visible.
@@ -1932,9 +1935,9 @@ for (const [route, extraEnv, anchor, failRe] of [
     fs.writeFileSync(residentScriptPath(sandbox), stagesMarked('STALE'));
     execSync(`${REAL_GIT} add scripts`, { cwd: sandbox.repo });
     execSync(`${REAL_GIT} -c commit.gpgsign=false commit -q -m "launcher + stale script"`, { cwd: sandbox.repo });
-    execSync(`${REAL_GIT} push -q origin main`, { cwd: sandbox.repo });
+    execSync(`${REAL_GIT} push -q origin staging`, { cwd: sandbox.repo });
     advanceRemoteWith(sandbox, 'ee', stagesMarked('ORIGIN'));
-    const originHead = execSync(`${REAL_GIT} ls-remote ${sandbox.remote} refs/heads/main`, { encoding: 'utf-8' }).split('\t')[0];
+    const originHead = execSync(`${REAL_GIT} ls-remote ${sandbox.remote} refs/heads/staging`, { encoding: 'utf-8' }).split('\t')[0];
     // The resident is behind origin AND carries a locally modified script.
     fs.writeFileSync(residentScriptPath(sandbox), stagesMarked('RESIDENT'));
     const installed = path.join(sandbox.dir, 'installed-launcher.sh');
@@ -1945,14 +1948,14 @@ for (const [route, extraEnv, anchor, failRe] of [
     const stages = lines.filter((l) => l.startsWith('SCRIPT_FROM ')).map((l) => l.slice('SCRIPT_FROM '.length));
     assert.deepEqual(stages, ['ORIGIN', 'ORIGIN'], `EE: stage 1 AND stage 2 must both be origin's committed script\n${lines.join('\n')}`);
     assert.deepEqual(pipelineOwners(lines), ['ORIGIN'], 'EE: exactly origin\'s runPipeline runs');
-    assert.match(log, new RegExp(`origin/main ${originHead}`), 'EE: launcher logs the origin SHA it runs');
+    assert.match(log, new RegExp(`origin/staging ${originHead}`), 'EE: launcher logs the origin SHA it runs');
     assert.match(log, /⚙️ HUNTERCARD_FORCE_ISOLATED=1/, 'EE: the bootstrap takes the forced-isolated route');
-    assert.doesNotMatch(log, /resident script .* differs from origin\/main/, 'EE: stage 1 is no longer the resident copy');
+    assert.doesNotMatch(log, /resident script .* differs from origin\/staging/, 'EE: stage 1 is no longer the resident copy');
     assert.ok(pipelineOwnersOrBuild(lines, isoDir), 'EE: the build runs inside the ephemeral worktree');
     assert.match(log, /✅ Done \(forced-isolated bootstrap\)/);
     assert.match(log, /launcher: scheduler exited 0/);
     assert.ok(someTraced(lines, 'HEAD:refs/heads/bot/scrape/'), 'EE: handoff goes to bot/scrape/<date>');
-    assert.equal(someTraced(lines, 'HEAD:main'), false, 'EE: never pushes HEAD:main');
+    assert.equal(someTraced(lines, 'HEAD:staging'), false, 'EE: never pushes HEAD:staging');
     assert.equal(fs.readFileSync(residentScriptPath(sandbox), 'utf-8'), stagesMarked('RESIDENT'), 'EE: resident script untouched');
     assertResidentUntouched(sandbox, snapshot);
     const bootParent = path.join(sandbox.dir, '.hermes', 'scheduler');

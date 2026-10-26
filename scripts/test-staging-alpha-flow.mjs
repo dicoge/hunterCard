@@ -6,7 +6,8 @@
  *   1. Ref/profile isolation. `staging-alpha` is the only profile that may
  *      build a store AAB off main, and scripts/ci/staging-alpha-ref-guard.sh
  *      admits it only at the freshly fetched staging tip that contains main,
- *      has a successful ci.yml push run, and is not submitted. The production
+ *      has a successful ci.yml staging run (push, or the staging validation
+ *      dispatch that can never deploy), and is not submitted. The production
  *      guard still refuses staging. Exercised against a local bare git remote
  *      and a fake `gh`; nothing leaves the machine.
  *   2. Stage -> production API leak controls. A staging build resolves every
@@ -173,7 +174,12 @@ try {
     fs.rmSync(ghLog, { force: true });
     expectExit('happy path', ok, 0);
     const args = fs.readFileSync(ghLog, 'utf8');
-    assert.match(args, new RegExp(`head_sha=${stagingTip}&branch=staging&event=push`));
+    assert.match(args, new RegExp(`head_sha=${stagingTip}&branch=staging&per_page=100`));
+    // Only a push run or the staging validation dispatch of ci.yml counts.
+    assert.ok(args.includes('(.event == "push" or .event == "workflow_dispatch")'), 'run filter must accept only push / staging validation dispatch');
+    assert.ok(args.includes(`.head_sha == "${stagingTip}"`) && args.includes('.head_branch == "staging"'));
+    assert.ok(args.includes('.conclusion == "success"') && args.includes('.path == ".github/workflows/ci.yml"'));
+    assert.ok(!args.includes('pull_request'), 'PR runs must never count as staging CI proof');
     assert.match(args, /actions\/workflows\/ci\.yml\/runs/);
   });
 

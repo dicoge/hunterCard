@@ -171,7 +171,7 @@ if [ "$cmd" = "rev-parse" ] && [ "\${args[1]}" = "--absolute-git-dir" ]; then
   gd="$FAKE_GIT_DIR"; [ -n "$inWorktree" ] && gd="$FAKE_GIT_DIR/worktrees/forced"
   mkdir -p "$gd"; echo "$gd"; exit 0
 fi
-if [ "$cmd" = "symbolic-ref" ]; then [ -n "$inWorktree" ] && exit 1; echo refs/heads/main; exit 0; fi
+if [ "$cmd" = "symbolic-ref" ]; then [ -n "$inWorktree" ] && exit 1; echo refs/heads/staging; exit 0; fi
 if [ "$cmd" = "rev-parse" ]; then
   if [ -f "$COMMIT_MARKER" ]; then echo "feedfeedfeedfeedfeedfeedfeedfeedfeedfeed"; else echo "0123456789abcdef0123456789abcdef01234567"; fi
   exit 0
@@ -353,25 +353,25 @@ exit 0
 {
   const { status, lines } = runPipeline();
   assert.strictEqual(status, 0, 'pipeline must succeed when every step succeeds');
-  const fetch = indexOfCall(lines, 'git fetch --write-fetch-head origin +refs/heads/main:refs/remotes/origin/main');
-  const pull = indexOfCall(lines, 'git pull --ff-only origin main');
+  const fetch = indexOfCall(lines, 'git fetch --write-fetch-head origin +refs/heads/staging:refs/remotes/origin/staging');
+  const pull = indexOfCall(lines, 'git pull --ff-only origin staging');
   const official = indexOfCall(lines, 'scrape-official-cards.js');
-  assert.ok(fetch !== -1, 'pipeline must refresh origin/main before resolving the isolated-worktree baseline');
+  assert.ok(fetch !== -1, 'pipeline must refresh origin/staging before resolving the isolated-worktree baseline');
   assert.ok(pull !== -1, 'pipeline must ff-only pull from main before mutating tracked data');
   assert.ok(official !== -1, 'sanity: pipeline must still run official scraper');
   assert.ok(
     fetch < official && pull < official,
     'stale durable checkout convergence (fetch + pull) must happen before scrape-official-cards.js writes data/official artifacts',
   );
-  const revParse = indexOfCall(lines, 'git rev-parse --verify --quiet refs/remotes/origin/main^{commit}');
+  const revParse = indexOfCall(lines, 'git rev-parse --verify --quiet refs/remotes/origin/staging^{commit}');
   assert.ok(revParse !== -1 && fetch < revParse, 'remote head must be resolved AFTER the refresh fetch');
 }
 
-// ── 0aa. Fail-fast: a fetch failure must not fall through to a stale origin/main ──
+// ── 0aa. Fail-fast: a fetch failure must not fall through to a stale origin/staging ──
 {
   const { status, lines } = runPipeline({ env: { FAIL_FETCH: '1' } });
-  assert.notStrictEqual(status, 0, 'pipeline must exit non-zero when the pre-mutation origin/main refresh fails');
-  assert.ok(indexOfCall(lines, 'git fetch --write-fetch-head origin +refs/heads/main:refs/remotes/origin/main') !== -1, 'sanity: pipeline must attempt the pre-mutation fetch');
+  assert.notStrictEqual(status, 0, 'pipeline must exit non-zero when the pre-mutation origin/staging refresh fails');
+  assert.ok(indexOfCall(lines, 'git fetch --write-fetch-head origin +refs/heads/staging:refs/remotes/origin/staging') !== -1, 'sanity: pipeline must attempt the pre-mutation fetch');
   for (const forbidden of ['scrape-official-cards.js', 'git worktree add', 'git add', 'commit -m', 'git push']) {
     assert.strictEqual(
       indexOfCall(lines, forbidden),
@@ -385,11 +385,11 @@ exit 0
 {
   const { status, lines } = runPipeline({ env: { HUNTERCARD_FORCE_ISOLATED: '1' } });
   assert.strictEqual(status, 0, `forced-isolated bootstrap must succeed when every step succeeds\ntrace:\n${lines.join('\n')}`);
-  const fetch = indexOfCall(lines, 'git fetch --write-fetch-head origin +refs/heads/main:refs/remotes/origin/main');
+  const fetch = indexOfCall(lines, 'git fetch --write-fetch-head origin +refs/heads/staging:refs/remotes/origin/staging');
   const worktreeAdd = indexOfCall(lines, 'git worktree add --detach');
   const official = indexOfCall(lines, 'scrape-official-cards.js');
   const handoffPush = lines.findIndex((l) => l.includes('git push origin HEAD:refs/heads/bot/scrape/'));
-  assert.ok(fetch !== -1, 'stage 1 must refresh origin/main first');
+  assert.ok(fetch !== -1, 'stage 1 must refresh origin/staging first');
   assert.ok(worktreeAdd !== -1, 'stage 1 must create the ephemeral worktree');
   assert.ok(official !== -1, 'stage 2 must run the pipeline (official scraper reached)');
   assert.ok(handoffPush !== -1, 'stage 2 must push the artifact to the auditable bot/scrape/<date> handoff branch');
@@ -397,10 +397,10 @@ exit 0
     fetch < worktreeAdd && worktreeAdd < official && official < handoffPush,
     'forced-isolated ordering must be fetch → worktree → pipeline → handoff push',
   );
-  // The cardinal rule: a forced-isolated run must NEVER push HEAD:main and
+  // The cardinal rule: a forced-isolated run must NEVER push HEAD:staging and
   // must never ff-pull the resident checkout.
-  assert.strictEqual(indexOfCall(lines, 'push origin HEAD:main'), -1, 'forced-isolated must never push HEAD:main');
-  assert.strictEqual(indexOfCall(lines, 'git pull --ff-only origin main'), -1, 'forced-isolated must never pull the resident checkout');
+  assert.strictEqual(indexOfCall(lines, 'push origin HEAD:staging'), -1, 'forced-isolated must never push HEAD:staging');
+  assert.strictEqual(indexOfCall(lines, 'git pull --ff-only origin staging'), -1, 'forced-isolated must never pull the resident checkout');
 }
 
 // ── 0g. DIC-1461 forced-isolated: fetch failure fails closed before any worktree ──

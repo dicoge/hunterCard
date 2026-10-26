@@ -1,12 +1,14 @@
 # Test-first release flow (staging → Closed Alpha → production)
 
 **Target flow:**
-- New features and data land on `staging` first, where every push runs CI.
+- New features and data land on `staging` first, where every commit is validated by CI.
 - A CI-verified staging commit may become a Play closed-testing (Alpha) build.
 - `main`, production app builds and the formal website change only through an explicit, normal promotion PR from `staging` to `main`.
 - Production releases still build only from the main tip or a `v*` tag contained in main.
 
-This document separates **code-flow readiness** (what the repo enforces once this branch is merged) from **platform/data readiness** (settings only platform owners can apply). The repo cannot prove that a staging backend's storage is separate from production; it can only refuse to run when the proof is missing.
+This document separates **code-flow readiness** (what the repo enforces once these files are on the right branch) from **platform/data readiness** (settings only platform owners can apply).
+
+**Isolation:** the repo does **not** provide or claim a separate staging backend or full isolation. It only refuses to run when the configuration it can check is missing or conflicting.
 
 ## Branch history
 
@@ -19,56 +21,59 @@ This document separates **code-flow readiness** (what the repo enforces once thi
 
 | Piece | Where | Effect |
 |---|---|---|
-| CI on every staging push | `ci.yml` `on.push.branches: [main, staging]`, **no `paths-ignore`** | Code and data commits on staging (and main) run Validate and the APK guard. `deploy-production` is unchanged: `workflow_dispatch` + `deploy_production` only, and the callee re-proves the live main tip. |
-| Stage promotion proof | `ci.yml` job `stage-promotion-proof` ("Stage promotion proof") → `scripts/ci/stage-promotion-proof.sh` | Runs in every CI run with no job-level `if:`, so it is never skipped. Push, dispatch and PRs into anything other than `main`: explicit no-op. **PRs into `main`:** the head must be this repo's `staging` branch at its **live tip**, `origin/main` must be contained in it, and ci.yml must have a completed successful **push** run of that exact SHA on staging. Unknown events fail closed. Read-only token (`contents: read`, `actions: read`). |
-| Data bots target staging | `official-catalog-sync.yml`, `refresh-yt-stats.yml`, `collect-tournament-reports.yml` (`BASE_BRANCH: staging`); `scrape-yuyu-prices.yml` | Sync PRs are built from and opened against `staging`. The manual yuyu build checks out and pushes `staging`, and **no longer fires the Vercel deploy hook**. The existing source, provenance and completeness gates in those workflows are unchanged. |
-| `staging-alpha` EAS profile | `eas.json` | Store AAB extending `production` (remote signing, shared versionCode, inherited Node 22.23.4), `environment: preview`, `EXPO_PUBLIC_APP_STAGE=staging`, `EXPO_PUBLIC_APP_ENV=staging`, `EXPO_PUBLIC_STORE_MVP=1`. No submit profile. |
-| Staging Alpha guard | `scripts/ci/staging-alpha-ref-guard.sh` in `eas-build.yml` | `staging-alpha` only with `submit=false`, `refs/heads/staging` at the fresh tip, main contained, and a successful ci.yml staging push run for that SHA. |
-| Production guards | `release-ref-guard.sh`, `release-apk-usage-guard.sh`, `submit.production` | Unchanged. Production profiles build only from the main tip or a contained `v*` tag. |
-| Stage flags | `src/config/apiOrigin.ts` `resolveClientStage`, `app.config.js` `resolveBuildStage`, `src/config/appEnv.ts` | Client: `EXPO_PUBLIC_APP_STAGE` or `EXPO_PUBLIC_APP_ENV` = `staging` makes a staging build. Build time additionally checks the server `APP_ENV`. **An unknown value, or `staging` next to an explicit `production`, fails closed**: the build fails, and at runtime `nativeApiOrigin()` throws. Staging builds require `EXPO_PUBLIC_STAGING_API_ORIGIN` (a non-production https origin); there is no production API fallback. Server: the strict `resolveAppEnvStrict()` from DIC-1189 still throws on an unset or unknown `APP_ENV`. |
-| Server lane guards (DIC-1189, kept) | `api/_lib/kv-namespace.ts`, `env-guard.ts`, `session.ts`, `internal-auth.ts`, `push-staging-guard.ts` | Every KV key goes through `nsKey()`; staging keys are prefixed `staging:`. Payment credentials must match the lane. Staging sessions and the internal secret use separate `*_STAGING` secrets with no production fallback. Staging push can only reach allow-listed test tokens. |
-| Staging store binding (new) | `kv-namespace.ts` `assertStagingStoreBinding` | On `APP_ENV=staging` with a KV store configured, every KV access **refuses** unless the store URL host equals `STAGING_KV_STORE_HOST` **and** differs from `PRODUCTION_KV_STORE_HOST`. Both are non-secret hostnames recorded by the owner. A key prefix alone is not treated as a separate backend. With no store configured, the KV client cannot connect at all. |
-| Stage identifier | `StagingBanner` (DIC-1189) | Shown on staging web (`EXPO_PUBLIC_APP_ENV=staging`) and now on `staging-alpha` builds, with the staging SHA when available. It is compiled out of production bundles. |
-| Offline tests | `test:staging-first-isolation`, `test:staging-alpha-flow`, `test:dic1189-staging-isolation` (all in CI Validate) | Promotion proof and Alpha guard against a local bare git remote and a fake `gh`; workflow wiring; store binding; stage-flag conflicts; mocked-fetch leak control. |
+| CI on every staging push | `ci.yml` `on.push.branches: [main, staging]`, **no `paths-ignore`** | Code and data commits pushed by a person or an authorized app run Validate and the APK guard. `deploy-production` is unchanged. |
+| Staging validation dispatch | `ci.yml` `workflow_dispatch` on ref `staging` (preflight) | For staging tips with no push run (see "Automation limits" below). The **preflight** admits it only when `deploy_production` is exactly `false`, `expected_sha` is a 40-hex SHA equal to the dispatched commit and to the **live** `origin/staging` tip (re-fetched), and `origin/main` is contained. The run then executes the full Validate + APK guard and never deploys. `deploy-production` needs the preflight, its gate is unchanged, and its callee re-proves the main tip. The `main` recovery path is unchanged: exact live main tip only. |
+| Stage promotion proof | `ci.yml` job "Stage promotion proof" → `scripts/ci/stage-promotion-proof.sh` | Never skipped. A **PR into `main`** passes only if its head is this repo's `staging` at the live tip, contains `origin/main`, and has a completed successful `ci.yml` run of that exact SHA on staging: a **push** run or a **staging validation dispatch**. PR runs never count. Other events are a no-op; unknown events fail. Read-only token. |
+| Staging Alpha guard | `scripts/ci/staging-alpha-ref-guard.sh` | `staging-alpha` only with `submit=false`, at the fresh staging tip, with main contained and the same successful push-or-validation run. |
+| Data bots | `official-catalog-sync.yml`, `refresh-yt-stats.yml`, `collect-tournament-reports.yml` (`BASE_BRANCH: staging`); `scrape-yuyu-prices.yml` | Sync PRs are built from and opened against `staging`. The manual yuyu build pushes `staging` and no longer fires the deploy hook. Gates are unchanged. |
+| Local scheduler | `scripts/local-scrape-and-push.sh`, `scripts/scheduler-launch.sh` | Fetch, worktree baseline, in-place pull and push, self-attestation and the launcher's code source are now `origin/staging`. The in-place route pushes `HEAD:staging`; the dirty and forced routes hand off on `bot/scrape/<date>`. A `HUNTERCARD_REMOTE_REF` naming `main` is refused. It **no longer runs `send-push-alerts.js` or `send:price-alerts`**, and unsets production-lane variables (`KV_REST_API_*`, `KV_URL`, `PUSH_NOTIFY_*`, `EXPO_ACCESS_TOKEN`, `VERCEL_DEPLOY_HOOK`, `VERCEL_TOKEN`) before any step. Data, provenance, freshness and coverage gates and the dirty-tree isolation are unchanged. |
+| `staging-alpha` EAS profile | `eas.json` | Store AAB extending `production` (inherits Node 22.23.4), `environment: preview`, `EXPO_PUBLIC_APP_STAGE=staging`, `EXPO_PUBLIC_APP_ENV=staging`, Store MVP on, no submit profile. |
+| Production guards | `release-ref-guard.sh`, `release-apk-usage-guard.sh`, `submit.production` | Unchanged. |
+| Stage flags | `apiOrigin.ts` `resolveClientStage`, `app.config.js` `resolveBuildStage`, `appEnv.ts` | An unknown value, or `staging` next to an explicit `production` in `EXPO_PUBLIC_APP_STAGE` / `EXPO_PUBLIC_APP_ENV` / `APP_ENV`, fails closed. Staging builds need a non-production `EXPO_PUBLIC_STAGING_API_ORIGIN`. Server: `resolveAppEnvStrict()` throws on an unset or unknown `APP_ENV`. |
+| Server lane guards (DIC-1189) and store binding | `kv-namespace.ts`, `env-guard.ts`, `session.ts`, `internal-auth.ts`, `push-staging-guard.ts` | `nsKey()` on every key. Staging requires the recorded `STAGING_KV_STORE_HOST` ≠ `PRODUCTION_KV_STORE_HOST` when a store is configured. Staging-only secrets have no production fallback. The payment env must match the lane. |
+| Offline tests | `test:staging-first-isolation`, `test:staging-alpha-flow`, `test:dic1189-staging-isolation`, scheduler suites | All in CI Validate. |
 
-## Operator flow (after the platform steps below)
+## Automation limits (factual)
 
-1. **Land work on staging.** Open PRs into `staging` for features and code; the data bots open their PRs there automatically. CI runs on the PR and again on the push to staging.
-2. **Keep staging current.** Merge `main` into `staging` with a normal merge whenever main moves. Both the Alpha guard and the promotion proof refuse a staging tip that lacks main.
-3. **Build the Alpha (optional).** Dispatch **EAS Build** on `staging` with `profile=staging-alpha`, `platform=android`, `submit=false`, then upload the AAB to Closed testing by hand.
-4. **Promote.** Open a PR `staging → main`. "Stage promotion proof" passes only for the live staging tip whose staging push CI already passed. If staging moved, wait for its CI and re-run the check.
-5. **After merge.** Production app builds (`production` from the main tip or a tag) and the formal website deploy follow the existing exact-SHA flow.
+- **`GITHUB_TOKEN` pushes start no workflow.** The manual yuyu build's push to `staging`, or a bot auto-merge, produces **no push CI run**. Such a tip has no proof until a maintainer dispatches **CI** on `staging` with `expected_sha=<that tip>` and `deploy_production=false`, using existing maintainer `gh`/UI access (no new token or permission). Bot PRs into staging merged by a person do trigger push CI.
+- **Schedules use the default branch.** GitHub runs `schedule:` workflows from the **default branch's** files. Until these files are on the default branch, the scheduled bots keep their current `main` targets.
+- **The local scheduler runs the installed launcher.** That launcher re-executes the committed launcher of the ref it fetches, and the installed copy today fetches `main`. The staging retarget becomes active only after the launcher from this change is installed (`git show origin/staging:scripts/scheduler-launch.sh > ~/.hermes/bin/huntercard-scheduler-launch.sh`), or once main carries it. Until then the old timer behaves as before and should be paused if main must stop receiving direct data. The coordinator inspects that. The resident checkout must track `staging` for the in-place route; otherwise it fails closed.
+- **Production price and push alerts stop.** They are no longer sent from the scheduler. Restoring them needs a separate production-lane job that reads promoted production data; that is a product decision.
 
-## Platform and data readiness: NOT done, needs explicit approval
+## Operator flow
 
-None of these steps was performed. No secret was read, created or copied.
+1. **Land work on staging.** Use PRs into `staging`; bots open theirs there. CI runs on PR and push. For a bot-pushed tip with no run, dispatch CI on staging (validation only).
+2. **Keep staging current.** Merge `main` into `staging` normally whenever main moves.
+3. **Alpha (optional).** Dispatch EAS Build on `staging` with `profile=staging-alpha`, `submit=false`, then upload to Closed testing by hand.
+4. **Promote.** Open a PR `staging → main`; "Stage promotion proof" must pass.
+5. **After merge.** Production builds and the formal website follow the existing exact-SHA flow.
 
-1. **Require the check on main.**
-   - **Needed:** GitHub → Settings → Branches → rule for `main` → require status check **"Stage promotion proof"** (ideally alongside Validate), and disallow direct pushes and admin bypass.
-   - **Who:** a repo admin.
-   - **Until then:** the job only reports. It does **not** block a merge, and direct pushes to `main` bypass it.
-2. **Production `APP_ENV`.**
-   - **Why:** DIC-1189's strict server resolver throws when `APP_ENV` is unset, so promoting this code requires `APP_ENV=production` on the production Vercel project (`holocard-hunter`) **before** the promotion deploys. Otherwise production auth, sync and push KV calls fail closed.
-   - **Who:** a non-secret env var set by a Vercel project admin.
-3. **Staging Vercel project.** Holohunter-staging → Settings → Git → Production Branch **`staging`**. The formal project stays on **`main`**. Read back the branch and deployed SHA on both projects. Then set these non-secret vars on staging:
-   - `APP_ENV=staging`
-   - `EXPO_PUBLIC_APP_ENV=staging`
-   - `EXPO_PUBLIC_STAGING_API_ORIGIN=https://holohunter-staging.vercel.app` (or its real staging domain)
-   - `EXPO_PUBLIC_STORE_MVP` as desired
-4. **Separate staging store.**
-   - **Needed:** a separate KV/Redis resource attached **only** to the staging project. The owner confirms that the production store is not connected to the staging project, then records `STAGING_KV_STORE_HOST` and `PRODUCTION_KV_STORE_HOST` (hostnames only) on staging.
-   - **Approval:** a new resource may involve billing and needs owner approval.
-   - **Until then:** staging KV access refuses (binding not proven) or cannot connect.
-5. **Staging credentials.** `AUTH_SESSION_SECRET_STAGING`, `PUSH_NOTIFY_SECRET_STAGING`, staging OAuth clients and redirect URIs, and staging recognition credentials. Each needs its owner's approval, and production values must never be copied. Until then, those staging features fail closed.
-6. **EAS `preview` environment.** `EXPO_PUBLIC_STAGING_API_ORIGIN` and the public Google client IDs, set by an Expo admin. Until then, `staging-alpha` fails at config time by design.
-7. **Scheduled workflows.**
-   - **Scheduled bots:** GitHub runs schedules from the default branch's workflow files, so the bots keep targeting `main` until this change is merged to the default branch.
-   - **Local scheduler:** the local cron script `scripts/local-scrape-and-push.sh` is **not** retargeted and still builds and pushes against `main`. It needs a separate reviewed change, or must be paused before the bots move to staging.
-8. **Existing staging setup workflow.** `dic1189-staging-vercel-setup.yml` (already on main) can mutate Vercel and DNS when dispatched with `apply=true`. Do not dispatch it without explicit approval.
+## Platform and data readiness
+
+| Status | Item |
+|---|---|
+| **Saved by the coordinator via normal UI, not yet active** | On Vercel `holohunter-staging` (Production environment), these non-secret vars: `APP_ENV=staging`, `EXPO_PUBLIC_APP_ENV=staging`, `EXPO_PUBLIC_APP_STAGE=staging`, `EXPO_PUBLIC_STAGING_API_ORIGIN`, `SITE_URL` and `EXPO_PUBLIC_SITE_URL` = `https://holohunter-staging.vercel.app`. **Not redeployed; Production Branch not switched; no store or secrets connected.** |
+
+Remaining steps, none performed by the author:
+1. **P2: require the check on main.** Require "Stage promotion proof" on `main` and restrict direct pushes and admin bypass (repo admin). Until then **nothing is enforced**.
+2. **P1: production lane, before any promotion.**
+   - **`APP_ENV`:** set `APP_ENV=production` on `holocard-hunter`.
+   - **Payment variables, checked by name and class only (never by value):** with `APP_ENV=production`, every KV-touching endpoint runs `assertPaymentEnv()` at import. Every set Stripe/RevenueCat credential must be a **live-class** key; any test-class or unknown prefix throws. The vars are `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `REVENUECAT_SECRET_KEY`, `EXPO_PUBLIC_REVENUECAT_IOS_KEY` and `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY`. The sentinels must be `STRIPE_MODE=live`, `REVENUECAT_ENVIRONMENT=production` and `STRIPE_WEBHOOK_LIVEMODE=true`, or unset.
+   - **Consequence:** a mismatch fails auth, sync and push closed for every user.
+   - **Optional (F4):** a post-promotion production smoke of one session verify and one push register.
+3. **P4: staging project order.**
+   - Keep the stage vars and an explicit `SITE_URL`/`EXPO_PUBLIC_SITE_URL` set (already saved) **before** switching Production Branch `main → staging`. Otherwise staging serves an unattributed build: no banner, no noindex. Without an explicit site URL, the default `test.holohunter.dicoge.com` depends on DNS from the do-not-run setup workflow.
+   - The formal project stays on `main`.
+   - Read back the branch and deployed SHA of both projects.
+4. **Separate staging store** (owner approval, possible billing). Attach it only to staging, confirm the production store is not connected, and record both store hosts. Until then staging KV access refuses or cannot connect.
+5. **Staging-only credentials** (session, push-notify, OAuth and redirects, recognition), each with owner approval. Never copy production values.
+6. **EAS `preview` env** for `staging-alpha` (staging origin, public Google client IDs).
+7. **Scheduler activation:** install the staging launcher and point the resident checkout at `staging`, or pause the old timer (coordinator).
+8. **Never dispatch** `dic1189-staging-vercel-setup.yml` or `dic910-vercel-setup.yml`. They probe or write production KV, DNS and secrets.
 
 ## Known limits
 
-- The promotion proof shows that a PR's content is the CI-green staging tip. It does not enforce anything until branch protection requires it.
-- The store binding relies on owner-recorded hostnames. It catches a staging project wired to the recorded production store, but cannot detect a wrong record.
-- `scripts/send-price-alerts.mjs` and `scripts/send-push-alerts.js` talk to KV over raw REST without `nsKey()`. They run only from the production scheduler and must never be pointed at a staging store without being namespaced first.
-- `test:bundle-cleanness-full` performs a real `expo export` (via `npx --yes expo`), using local dependencies in CI.
+- **Proof reports only:** the promotion proof enforces nothing until it is required on main.
+- **Store binding trusts its record:** it relies on owner-recorded hostnames and cannot detect a wrong record.
+- **Raw KV scripts:** `send-price-alerts.mjs` and `send-push-alerts.js` use raw production KV REST without `nsKey()`. They are production-lane only and are no longer invoked by the staging scheduler.
+- **Real export test:** `test:bundle-cleanness-full` performs a real `expo export` with local dependencies.

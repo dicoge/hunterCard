@@ -4,7 +4,7 @@
 # The cron used to run `bash <resident>/scripts/local-scrape-and-push.sh`, so
 # the bytes that orchestrated every run were whatever sat in the resident
 # checkout. That checkout is a personal, dirty worktree (local edits, a revert
-# in progress, 231 commits behind origin/main on 2026-10-02) which the
+# in progress, 231 commits behind origin/staging on 2026-10-02) which the
 # scheduler must never pull, reset or overwrite — so it never got PR #233's
 # fixes, and every "fixed on main" scheduler change stayed undeployed: bash
 # runs the stage-1 bootstrap it parsed from the resident file, and only
@@ -13,15 +13,15 @@
 #
 # This launcher is location-independent and only reads the resident's git
 # objects and node_modules. Every run it:
-#   1. fetches origin/main into the resident repo (refs only — the resident
+#   1. fetches origin/staging into the resident repo (refs only — the resident
 #      working tree, index and HEAD are never touched) and fails closed if the
 #      fetch or the ref fails. The run is pinned to the commit THIS fetch
-#      returned (CR 11164f31): refs/remotes/origin/main is force-updated by an
+#      returned (CR 11164f31): refs/remotes/origin/staging is force-updated by an
 #      explicit refspec and must equal FETCH_HEAD, and a caller-supplied
 #      HUNTERCARD_REMOTE_REF naming anything else (an older tag, branch or SHA)
 #      is refused — otherwise a stale ref that still carries a launcher passes
 #      every blob proof below and runs its old scheduler;
-#   2. proves its OWN bytes are origin/main's committed scripts/scheduler-launch.sh;
+#   2. proves its OWN bytes are origin/staging's committed scripts/scheduler-launch.sh;
 #      a drifted installed copy re-executes origin's copy once instead, so the
 #      launcher itself cannot go stale either;
 #   3. materialises a fresh, private bootstrap worktree detached at that exact
@@ -29,11 +29,11 @@
 #      its tracked node_modules shell to the resident install (DIC-1472
 #      anchors);
 #   4. runs THAT copy of local-scrape-and-push.sh with HUNTERCARD_FORCE_ISOLATED=1,
-#      so stage 1 and stage 2 are both origin/main's code and the artifact is
+#      so stage 1 and stage 2 are both origin/staging's code and the artifact is
 #      still the auditable bot/scrape/<date> handoff (resident untouched);
 #   5. propagates the scheduler's exit status and removes the bootstrap.
 # Install (or reinstall) with:
-#   git -C ~/hunterCard show origin/main:scripts/scheduler-launch.sh > ~/.hermes/bin/huntercard-scheduler-launch.sh
+#   git -C ~/hunterCard show origin/staging:scripts/scheduler-launch.sh > ~/.hermes/bin/huntercard-scheduler-launch.sh
 # and point the cron at `bash ~/.hermes/bin/huntercard-scheduler-launch.sh`.
 set -u
 
@@ -46,8 +46,8 @@ unset HUNTERCARD_FORCE_ISOLATED_STAGE2 HUNTERCARD_SELF_REEXEC HUNTERCARD_ISOLATI
 SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 SELF_BLOB=$(git hash-object --no-filters "$SELF" 2>/dev/null || true)
 RESIDENT_DIR="${HUNTERCARD_RESIDENT_DIR:-$HOME/hunterCard}"
-# Fully qualified so a local tag/branch named origin/main cannot shadow it.
-REMOTE_REF='refs/remotes/origin/main'
+# Fully qualified so a local tag/branch named origin/staging cannot shadow it.
+REMOTE_REF='refs/remotes/origin/staging'
 BOOTSTRAP_PARENT="${HUNTERCARD_BOOTSTRAP_PARENT:-$HOME/.hermes/scheduler}"
 LAUNCHER_REL='scripts/scheduler-launch.sh'
 SCHEDULER_REL='scripts/local-scrape-and-push.sh'
@@ -67,15 +67,15 @@ rgit() { git -C "$RESIDENT_DIR" "$@"; }
 [ -n "$SELF_BLOB" ] || fail "cannot hash the running launcher $SELF"
 rgit rev-parse --git-dir >/dev/null 2>&1 || fail "resident $RESIDENT_DIR is not a git checkout"
 
-case "${HUNTERCARD_REMOTE_REF:-origin/main}" in
-  origin/main|"$REMOTE_REF") ;;
-  *) fail "HUNTERCARD_REMOTE_REF=${HUNTERCARD_REMOTE_REF} is refused: the launcher only runs the freshly fetched origin/main" ;;
+case "${HUNTERCARD_REMOTE_REF:-origin/staging}" in
+  origin/staging|"$REMOTE_REF") ;;
+  *) fail "HUNTERCARD_REMOTE_REF=${HUNTERCARD_REMOTE_REF} is refused: the launcher only runs the freshly fetched origin/staging" ;;
 esac
 
 # An explicit force refspec: the tracking ref is updated even if the resident's
 # remote.origin.fetch is missing or narrowed, and FETCH_HEAD is always written.
-if ! rgit fetch --write-fetch-head origin "+refs/heads/main:$REMOTE_REF" >> "$LOG_FILE" 2>&1; then
-  fail "git fetch origin main failed in $RESIDENT_DIR"
+if ! rgit fetch --write-fetch-head origin "+refs/heads/staging:$REMOTE_REF" >> "$LOG_FILE" 2>&1; then
+  fail "git fetch origin staging failed in $RESIDENT_DIR"
 fi
 FETCHED_HEAD=$(rgit rev-parse --verify --quiet 'FETCH_HEAD^{commit}' 2>/dev/null || true)
 REMOTE_HEAD=$(rgit rev-parse --verify --quiet "${REMOTE_REF}^{commit}" 2>/dev/null || true)

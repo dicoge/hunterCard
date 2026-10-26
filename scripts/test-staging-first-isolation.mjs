@@ -191,7 +191,12 @@ try {
     expectExit('pull_request', ok, 0);
     expectExit('pull_request_target', { ...ok, EVENT_NAME: 'pull_request_target' }, 0);
     const args = fs.readFileSync(ghLog, 'utf8');
-    assert.match(args, new RegExp(`actions/workflows/ci\\.yml/runs\\?head_sha=${stagingTip}&branch=staging&event=push`));
+    assert.match(args, new RegExp(`actions/workflows/ci\\.yml/runs\\?head_sha=${stagingTip}&branch=staging&per_page=100`));
+    assert.ok(args.includes('(.event == "push" or .event == "workflow_dispatch")'), 'run filter must accept only push / staging validation dispatch');
+    assert.ok(args.includes(`.head_sha == "${stagingTip}"`) && args.includes('.head_branch == "staging"'));
+    assert.ok(args.includes('.status == "completed"') && args.includes('.conclusion == "success"'));
+    assert.ok(args.includes('.path == ".github/workflows/ci.yml"'));
+    assert.ok(!args.includes('pull_request'), 'PR runs must never count as staging CI proof');
   });
 
   await check('proof is an explicit no-op for pushes, dispatches and PRs not into main (no CI lookup)', () => {
@@ -322,6 +327,125 @@ await check('app.config.js: all three stage flags must agree; staging needs a no
   ]) {
     assert.throws(() => ok(env), JSON.stringify(env));
   }
+});
+
+// ── 5. ci.yml preflight: staging validation dispatch + unchanged main recovery ─
+// Executes the preflight step's own `run:` text from ci.yml against a local
+// bare remote, so the tested logic is exactly what the workflow runs.
+const preflightStep = ci.jobs.preflight.steps.find((s) => typeof s.run === 'string' && s.run.includes('workflow_dispatch'));
+const ptmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ci-preflight-'));
+try {
+  assert.ok(preflightStep, 'ci.yml preflight must keep its dispatch gate step');
+  assert.equal(preflightStep.env.DEPLOY_PRODUCTION, '${{ inputs.deploy_production }}');
+  assert.equal(Number(ci.jobs.preflight.steps.find((s) => String(s.uses).startsWith('actions/checkout@')).with?.['fetch-depth']), 0);
+  const gitEnv = {
+    ...process.env,
+    GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.invalid',
+    GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.invalid',
+    GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1',
+  };
+  const git = (cwd, ...args) => {
+    const r = spawnSync('git', args, { cwd, env: gitEnv, encoding: 'utf8' });
+    assert.equal(r.status, 0, `git ${args.join(' ')}: ${r.stderr}`);
+    return r.stdout.trim();
+  };
+  const origin = path.join(ptmp, 'origin.git');
+  const work = path.join(ptmp, 'work');
+  git(ptmp, 'init', '--quiet', '--bare', '-b', 'main', origin);
+  git(ptmp, 'init', '--quiet', '-b', 'main', work);
+  git(work, 'remote', 'add', 'origin', origin);
+  const commit = (msg) => { git(work, 'commit', '--quiet', '--allow-empty', '-m', msg); return git(work, 'rev-parse', 'HEAD'); };
+  const mainTip = commit('main 1');
+  git(work, 'push', '--quiet', 'origin', 'main');
+  git(work, 'checkout', '--quiet', '-b', 'staging');
+  const stagingOld = commit('staging bot data push');
+  const stagingTip = commit('staging bot data push 2');
+  git(work, 'push', '--quiet', 'origin', 'staging');
+
+  const runPreflight = (env) => spawnSync('bash', ['-c', preflightStep.run], { cwd: work, env: { ...gitEnv, ...env }, encoding: 'utf8' });
+  const stagingOk = {
+    EVENT_NAME: 'workflow_dispatch', DISPATCH_REF: 'refs/heads/staging',
+    DISPATCH_SHA: stagingTip, EXPECTED_SHA: stagingTip, DEPLOY_PRODUCTION: 'false',
+  };
+  const expectExit = (label, env, code) => {
+    const r = runPreflight(env);
+    assert.equal(r.status, code, `${label}: expected exit ${code}, got ${r.status}\n${r.stdout}${r.stderr}`);
+    return r;
+  };
+
+  await check('preflight admits a validation-only dispatch of the exact live staging tip that contains main', () => {
+    const r = expectExit('staging validation', stagingOk, 0);
+    assert.match(r.stdout, /validation only; never deployed/);
+  });
+
+  await check('preflight refuses any staging dispatch that does not say deploy_production=false exactly', () => {
+    for (const v of ['true', '', 'False', 'TRUE', '0']) expectExit(`deploy=${v}`, { ...stagingOk, DEPLOY_PRODUCTION: v }, 1);
+  });
+
+  await check('preflight refuses missing, malformed, mismatched and stale staging SHAs', () => {
+    expectExit('missing sha', { ...stagingOk, EXPECTED_SHA: '' }, 1);
+    expectExit('short sha', { ...stagingOk, EXPECTED_SHA: stagingTip.slice(0, 12) }, 1);
+    expectExit('uppercase sha', { ...stagingOk, EXPECTED_SHA: stagingTip.toUpperCase() }, 1);
+    expectExit('expected != dispatched', { ...stagingOk, DISPATCH_SHA: stagingOld }, 1);
+    expectExit('stale staging commit', { ...stagingOk, EXPECTED_SHA: stagingOld, DISPATCH_SHA: stagingOld }, 1);
+  });
+
+  await check('preflight refuses dispatches from any other ref', () => {
+    for (const ref of ['refs/heads/feature/x', 'refs/heads/bot/official-catalog-sync', 'refs/tags/v1.0.0', 'refs/heads/staging2', '']) {
+      expectExit(`ref ${ref}`, { ...stagingOk, DISPATCH_REF: ref }, 1);
+    }
+  });
+
+  await check('preflight main recovery path is unchanged: exact live main tip only, deploy intent allowed there', () => {
+    expectExit('main recovery', { EVENT_NAME: 'workflow_dispatch', DISPATCH_REF: 'refs/heads/main', DISPATCH_SHA: mainTip, EXPECTED_SHA: mainTip, DEPLOY_PRODUCTION: 'true' }, 0);
+    expectExit('main with staging sha', { EVENT_NAME: 'workflow_dispatch', DISPATCH_REF: 'refs/heads/main', DISPATCH_SHA: stagingTip, EXPECTED_SHA: stagingTip, DEPLOY_PRODUCTION: 'false' }, 1);
+    expectExit('push no-op', { EVENT_NAME: 'push', DISPATCH_REF: 'refs/heads/staging' }, 0);
+  });
+
+  await check('preflight refuses a staging tip that does not contain the latest main', () => {
+    git(work, 'checkout', '--quiet', 'main');
+    commit('main hotfix not on staging');
+    git(work, 'push', '--quiet', 'origin', 'main');
+    git(work, 'checkout', '--quiet', 'staging');
+    expectExit('main ahead', stagingOk, 1);
+  });
+} finally {
+  fs.rmSync(ptmp, { recursive: true, force: true });
+}
+
+// ── 6. Local scheduler: staging only, no production side effects ───────────
+const codeLines = (rel) => read(rel).split('\n').map((l, i) => [i + 1, l]).filter(([, l]) => !/^\s*#/.test(l));
+
+await check('local scheduler and launcher never fetch, pull, push or attest against main', () => {
+  for (const rel of ['scripts/local-scrape-and-push.sh', 'scripts/scheduler-launch.sh']) {
+    const offenders = codeLines(rel).filter(([, l]) => /origin\/main|refs\/heads\/main|HEAD:main|origin main\b/.test(l));
+    assert.deepEqual(offenders, [], `${rel} still references main: ${JSON.stringify(offenders)}`);
+  }
+  const pushes = codeLines('scripts/local-scrape-and-push.sh').filter(([, l]) => /\bgit push\b/.test(l));
+  assert.ok(pushes.length >= 2, 'sanity: the scheduler still publishes its artifact');
+  for (const [n, l] of pushes) {
+    assert.match(l, /git push origin (HEAD:staging|"HEAD:refs\/heads\/\$ISOLATED_BRANCH")/, `push at line ${n} must target staging or the bot/scrape handoff: ${l.trim()}`);
+  }
+  for (const rel of ['scripts/local-scrape-and-push.sh', 'scripts/scheduler-launch.sh']) {
+    const body = read(rel);
+    assert.match(body, /case "\$\{HUNTERCARD_REMOTE_REF:-origin\/staging\}" in/);
+    assert.match(body, /fetch --write-fetch-head origin "\+refs\/heads\/staging:/);
+  }
+});
+
+await check('local scheduler sends no production alerts and drops production-lane credentials first', () => {
+  const lines = codeLines('scripts/local-scrape-and-push.sh');
+  const calls = lines.filter(([, l]) => /send-push-alerts|send:price-alerts|send-price-alerts|VERCEL_DEPLOY_HOOK.*curl|curl .*deploy/.test(l) && !/^\s*(unset|echo)/.test(l.trim()));
+  assert.deepEqual(calls, [], `production alert/deploy calls remain: ${JSON.stringify(calls)}`);
+  const body = read('scripts/local-scrape-and-push.sh');
+  const unsetAt = body.search(/^unset KV_REST_API_URL /m);
+  assert.ok(unsetAt > 0, 'the scheduler must unset production-lane credentials');
+  const unsetBlock = body.slice(unsetAt, body.indexOf('\n\n', unsetAt));
+  for (const name of ['KV_REST_API_URL', 'KV_REST_API_TOKEN', 'KV_REST_API_READ_ONLY_TOKEN', 'KV_URL', 'PUSH_NOTIFY_SECRET', 'PUSH_NOTIFY_URL', 'EXPO_ACCESS_TOKEN', 'VERCEL_DEPLOY_HOOK', 'VERCEL_TOKEN']) {
+    assert.ok(new RegExp(`\\b${name}\\b`).test(unsetBlock), `${name} must be unset`);
+  }
+  const firstAction = body.search(/^(LOCK_FILE=|git |node |npm )/m);
+  assert.ok(firstAction === -1 || unsetAt < firstAction, 'credentials must be dropped before any git/node step');
 });
 
 console.log(`✓ staging-first isolation: ${checks} checks passed`);

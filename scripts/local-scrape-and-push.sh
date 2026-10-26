@@ -7,7 +7,7 @@
 # oscillation / 1,885→1,547 shrinking-count class). Two behaviours were added:
 #   1. A dirty in-place worktree no longer permanently aborts. If the resident
 #      checkout has residue in scraper-managed paths, the pipeline re-runs the
-#      SAME build in an isolated throwaway git worktree pinned to origin/main
+#      SAME build in an isolated throwaway git worktree pinned to origin/staging
 #      and pushes the artifact to a dedicated `bot/scrape/<YYYY-MM-DD>` branch
 #      — it never touches, deletes or overwrites the user's dirty local files.
 #   2. After the build, hard coverage / change-budget floors are enforced. If
@@ -18,11 +18,18 @@
 #      printed "Done").
 
 set -e
+# Test-first flow: this scheduler builds and publishes STAGING data only (fetch,
+# worktree baseline, in-place pull/push and self-attestation all use
+# origin/staging; nothing here pushes main). Production-lane credentials a cron
+# environment may carry are dropped up front so no child step can write
+# production KV, send production pushes or fire a deploy hook.
+unset KV_REST_API_URL KV_REST_API_TOKEN KV_REST_API_READ_ONLY_TOKEN KV_URL \
+  PUSH_NOTIFY_SECRET PUSH_NOTIFY_URL EXPO_ACCESS_TOKEN VERCEL_DEPLOY_HOOK VERCEL_TOKEN
 # DIC-1167 (2026-09-30 P0): the cron invokes this script by the RESIDENT path,
 # and bash keeps executing the function definitions it parsed from that file
 # for the whole run — a fetch, fast-forward or fresh isolated worktree never
 # reloads them. On 09-30 the resident copy was 225 commits stale, so the
-# dirty-isolated route built origin/main's DATA with the resident's
+# dirty-isolated route built origin/staging's DATA with the resident's
 # ORCHESTRATION (no run budget, no fail-closed push). Record the identity of
 # the bytes this process is running so every route can prove it runs the
 # committed origin version before it mutates anything (see
@@ -546,10 +553,10 @@ joinSignals() {
 # gates.
 #
 #   <push-mode> = inplace (default) | isolated.
-#   - inplace  — the resident checkout IS the working main cron path: commit then
-#     push HEAD:main, exactly as before.
+#   - inplace  — the resident checkout IS the working staging cron path: commit then
+#     push HEAD:staging, exactly as before.
 #   - isolated — the caller runs a throwaway worktree for a dirty-tree handoff.
-#     This mode NEVER pushes HEAD:main under any circumstance (mutating main
+#     This mode NEVER pushes HEAD:staging under any circumstance (mutating staging
 #     from isolation is forbidden — a dirty resident tree's artifact must go
 #     only to an explicit auditable handoff ref). It only COMMITS the artifact;
 #     the caller performs the explicit bot/scrape/<date> push and is
@@ -633,11 +640,11 @@ runPipeline() {
       echo "[$(date)] Running trend analysis..." >> "$LOG_FILE"
       node scripts/trend-analysis.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Trend analysis failed (non-fatal)" >> "$LOG_FILE"
 
-      echo "[$(date)] 📣 Sending push alerts..." >> "$LOG_FILE"
-      node scripts/send-push-alerts.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Push alerts failed (non-fatal)" >> "$LOG_FILE"
-
-      echo "[$(date)] 🎯 Evaluating desired-price alerts..." >> "$LOG_FILE"
-      npm run --silent send:price-alerts >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Price alerts failed (non-fatal)" >> "$LOG_FILE"
+      # Test-first flow: this scheduler builds STAGING data, so it must not
+      # notify production users or touch production KV. send-push-alerts.js and
+      # send:price-alerts (raw production KV REST + production push) are not
+      # run here; they belong to a production-lane job that reads promoted data.
+      echo "[$(date)] ℹ️ Production push/price alerts are not sent from the staging data scheduler" >> "$LOG_FILE"
 
       echo "[$(date)] Scraping buy prices into database.json (torecolo + fullahead + merge)..." >> "$LOG_FILE"
       node scripts/scrape-torecolo-buy.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Torecolo buy scrape failed (non-fatal)" >> "$LOG_FILE"
@@ -712,19 +719,19 @@ runPipeline() {
       git -c user.name="hunterCard Scraper" -c user.email="bot@huntercard.app" \
         commit -m "$commit_msg" >> "$LOG_FILE" 2>&1
       # DIC-1321 (Mac-Codex CR DIC-1326): on the ISOLATED path the gathered
-      # commit must never be pushed to main from the throwaway worktree. Only an
-      # inplace (clean resident) run pushes HEAD:main. The isolated caller
+      # commit must never be pushed to staging from the throwaway worktree. Only an
+      # inplace (clean resident) run pushes HEAD:staging. The isolated caller
       # performs the explicit auditable bot/scrape/<date> handoff push AFTER this
       # function returns and fails closed if that handoff push fails.
       if [ "$push_mode" = "isolated" ]; then
-        echo "[$(date)] (isolated) artifact committed in worktree; push deferred to explicit $ISOLATED_BRANCH_PREFIX/<date> handoff (never HEAD:main)" >> "$LOG_FILE"
+        echo "[$(date)] (isolated) artifact committed in worktree; push deferred to explicit $ISOLATED_BRANCH_PREFIX/<date> handoff (never HEAD:staging)" >> "$LOG_FILE"
       else
         # DIC-1167 (CR 028f6a19): the in-place push is the ONLY publication of
         # this run's artifact, so a rejected push (non-fast-forward, auth,
         # network) must fail the run — never fall back to pushing some other
-        # ref and never report "Pushed"/"Done" for an artifact main never got.
-        if ! git push origin HEAD:main >> "$LOG_FILE" 2>&1; then
-          echo "[$(date)] ❌ git push origin HEAD:main FAILED; artifact not published, cron must fail" >> "$LOG_FILE"
+        # ref and never report "Pushed"/"Done" for an artifact staging never got.
+        if ! git push origin HEAD:staging >> "$LOG_FILE" 2>&1; then
+          echo "[$(date)] ❌ git push origin HEAD:staging FAILED; artifact not published, cron must fail" >> "$LOG_FILE"
           return 1
         fi
         echo "[$(date)] ✅ Pushed to GitHub" >> "$LOG_FILE"
@@ -754,29 +761,29 @@ done
 
 # DIC-1461: verify AND refresh origin before mutating anything. Both the
 # dirty-worktree route and the forced-isolated bootstrap create their isolated
-# worktree from REMOTE_HEAD; resolving it from a stale local origin/main cache
-# reproduces yesterday's catalog even when GitHub main has already advanced
+# worktree from REMOTE_HEAD; resolving it from a stale local origin/staging cache
+# reproduces yesterday's catalog even when GitHub staging has already advanced
 # (the 2026-09-17 run built detached at the previous day's merge). A failed
 # fetch must fail closed BEFORE any official mutation, never fall through to
 # the stale ref.
-# DIC-1167 (CR 504e8fb5): a plain `git fetch origin main` only moves the
+# DIC-1167 (CR 504e8fb5): a plain `git fetch origin staging` only moves the
 # tracking ref through remote.origin.fetch. With that config missing it writes
 # FETCH_HEAD alone, the tracking ref keeps the launcher's (or stage 1's)
 # earlier commit, and stage 2's freshness check compares the pinned snapshot
 # against that same stale value — a remote advance went undetected. Fetch with
 # an explicit force refspec into the fully qualified tracking ref (a local
-# tag/branch named origin/main cannot shadow it), then require it to BE the
-# commit this fetch returned. Only origin/main is ever accepted.
-case "${HUNTERCARD_REMOTE_REF:-origin/main}" in
-  origin/main|refs/remotes/origin/main) SCHED_REMOTE_REF='refs/remotes/origin/main' ;;
+# tag/branch named origin/staging cannot shadow it), then require it to BE the
+# commit this fetch returned. Only origin/staging is ever accepted.
+case "${HUNTERCARD_REMOTE_REF:-origin/staging}" in
+  origin/staging|refs/remotes/origin/staging) SCHED_REMOTE_REF='refs/remotes/origin/staging' ;;
   *)
-    echo "[$(date)] ❌ HUNTERCARD_REMOTE_REF=${HUNTERCARD_REMOTE_REF} is refused: the scheduler only runs the freshly fetched origin/main (cron fails)" >> "$LOG_FILE"
+    echo "[$(date)] ❌ HUNTERCARD_REMOTE_REF=${HUNTERCARD_REMOTE_REF} is refused: the scheduler only runs the freshly fetched origin/staging (cron fails)" >> "$LOG_FILE"
     echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
     exit 1
     ;;
 esac
-if ! git fetch --write-fetch-head origin "+refs/heads/main:$SCHED_REMOTE_REF" >> "$LOG_FILE" 2>&1; then
-  echo "[$(date)] ❌ git fetch origin main failed before scheduler mutation; abandoning (cron fails)" >> "$LOG_FILE"
+if ! git fetch --write-fetch-head origin "+refs/heads/staging:$SCHED_REMOTE_REF" >> "$LOG_FILE" 2>&1; then
+  echo "[$(date)] ❌ git fetch origin staging failed before scheduler mutation; abandoning (cron fails)" >> "$LOG_FILE"
   echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
   exit 1
 fi
@@ -798,15 +805,15 @@ fi
 # parsed from the RESIDENT script at startup — fetching or creating a new
 # worktree never reloads them. Every isolated run therefore goes through a
 # two-stage path whose only trusted resident code is this small bootstrap:
-#   Stage 1 (resident code): fetch origin/main (fail-closed, above), create a
+#   Stage 1 (resident code): fetch origin/staging (fail-closed, above), create a
 #   clean ephemeral worktree at the CURRENT origin SHA, then re-execute THAT
 #   worktree's copy of this script — the current origin version, not resident
 #   function definitions — as a child process with
 #   HUNTERCARD_FORCE_ISOLATED_STAGE2=1.
 #   Stage 2 (origin code): prove it is the worktree's committed script,
 #   running in stage 1's attested ephemeral worktree at the freshly fetched
-#   origin/main (CR bced44d5), run the pipeline in the worktree in ISOLATED
-#   push mode — it never pushes HEAD:main and never stages/touches resident
+#   origin/staging (CR bced44d5), run the pipeline in the worktree in ISOLATED
+#   push mode — it never pushes HEAD:staging and never stages/touches resident
 #   files — then perform the explicit auditable bot/scrape/<date> handoff
 #   push, failing closed on no-op or push failure.
 # Two triggers take this path:
@@ -814,7 +821,7 @@ fi
 #   - residue in scraper-managed paths of the resident checkout (DIC-1321,
 #     route "dirty"). DIC-1167 (2026-09-30): the dirty route used to run the
 #     pipeline IN-PROCESS with the resident's function definitions — the
-#     09-30 run built origin/main's data with 225-commit-stale orchestration
+#     09-30 run built origin/staging's data with 225-commit-stale orchestration
 #     (no run budget, no fail-closed push). It now re-executes origin's copy
 #     exactly like the forced route; the user's dirty files stay untouched.
 # Any fetch/worktree/dependency/pipeline/handoff failure exits non-zero and
@@ -869,13 +876,13 @@ if [ "${HUNTERCARD_FORCE_ISOLATED_STAGE2:-}" = "1" ]; then
     echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
     exit 1
   fi
-  # DIC-1167 (CR bced44d5): the worktree must still be the origin/main this
+  # DIC-1167 (CR bced44d5): the worktree must still be the origin/staging this
   # process just fetched (REMOTE_HEAD, above) AND the SHA stage 1 pinned. If
   # origin advanced between the stage-1 and stage-2 fetches, this snapshot's
   # orchestration/data are already stale — fail closed; the next run builds
   # the new head.
   if [ "$STAGE2_START_SHA" != "$REMOTE_HEAD" ] || [ "$STAGE2_START_SHA" != "${HUNTERCARD_STAGE2_EXPECTED_HEAD:-}" ]; then
-    echo "[$(date)] ❌ $ROUTE_LABEL stage 2: worktree HEAD $STAGE2_START_SHA is not the freshly fetched origin/main $REMOTE_HEAD (stage 1 pinned ${HUNTERCARD_STAGE2_EXPECTED_HEAD:-unset}); refusing stale orchestration (cron fails)" >> "$LOG_FILE"
+    echo "[$(date)] ❌ $ROUTE_LABEL stage 2: worktree HEAD $STAGE2_START_SHA is not the freshly fetched origin/staging $REMOTE_HEAD (stage 1 pinned ${HUNTERCARD_STAGE2_EXPECTED_HEAD:-unset}); refusing stale orchestration (cron fails)" >> "$LOG_FILE"
     echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
     exit 1
   fi
@@ -899,7 +906,7 @@ if [ "${HUNTERCARD_FORCE_ISOLATED_STAGE2:-}" = "1" ]; then
     echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
     exit 1
   fi
-  # DIC-1321 (Mac-Codex CR DIC-1328): pushing the unchanged origin/main
+  # DIC-1321 (Mac-Codex CR DIC-1328): pushing the unchanged origin/staging
   # baseline to bot/scrape/<date> is NOT a valid handoff.
   if [ "$STAGE2_START_SHA" = "$STAGE2_END_SHA" ]; then
     echo "[$(date)] ❌ $ROUTE_LABEL handoff: pipeline was a no-op (HEAD unchanged at $STAGE2_END_SHA); cron fails — must never push unchanged baseline" >> "$LOG_FILE"
@@ -929,10 +936,10 @@ DIRTY_STATUS=$(git status --porcelain --ignore-submodules -- "${SCRAPER_MANAGED_
 ISOLATION_ROUTE=""
 if [ "${HUNTERCARD_FORCE_ISOLATED:-}" = "1" ]; then
   ISOLATION_ROUTE="forced"
-  echo "[$(date)] ⚙️ HUNTERCARD_FORCE_ISOLATED=1 — bootstrapping clean ephemeral worktree at current origin/main ($REMOTE_HEAD)" >> "$LOG_FILE"
+  echo "[$(date)] ⚙️ HUNTERCARD_FORCE_ISOLATED=1 — bootstrapping clean ephemeral worktree at current origin/staging ($REMOTE_HEAD)" >> "$LOG_FILE"
 elif [ -n "$DIRTY_STATUS" ]; then
   ISOLATION_ROUTE="dirty"
-  echo "[$(date)] ⚠️ Worktree has residue in scraper-managed paths; switching to isolated clean-worktree handoff (DIC-1321) — bootstrapping origin/main ($REMOTE_HEAD)'s script in a clean ephemeral worktree." >> "$LOG_FILE"
+  echo "[$(date)] ⚠️ Worktree has residue in scraper-managed paths; switching to isolated clean-worktree handoff (DIC-1321) — bootstrapping origin/staging ($REMOTE_HEAD)'s script in a clean ephemeral worktree." >> "$LOG_FILE"
   echo "$DIRTY_STATUS" >> "$LOG_FILE"
 fi
 
@@ -964,14 +971,14 @@ if [ -n "$ISOLATION_ROUTE" ]; then
   fi
   # The origin version we are about to execute must actually support the
   # stage-2 contract; an older origin script would fall through to its
-  # in-place path and push HEAD:main from the worktree. Refuse instead.
+  # in-place path and push HEAD:staging from the worktree. Refuse instead.
   if ! grep -q "HUNTERCARD_FORCE_ISOLATED_STAGE2" "$ISOLATED_DIR/scripts/local-scrape-and-push.sh" 2>/dev/null; then
     echo "[$(date)] ❌ origin script at $REMOTE_HEAD does not support forced-isolated stage 2; refusing to bootstrap (cron fails)" >> "$LOG_FILE"
     echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
     exit 1
   fi
   if ! selfScriptIsCommittedAt "$REMOTE_HEAD"; then
-    echo "[$(date)] ⚠️ resident script ${SELF_SCRIPT} (blob ${SELF_SCRIPT_BLOB:-unresolved}) differs from origin/main ($REMOTE_HEAD); only this bootstrap runs from it — the pipeline runs origin's copy" >> "$LOG_FILE"
+    echo "[$(date)] ⚠️ resident script ${SELF_SCRIPT} (blob ${SELF_SCRIPT_BLOB:-unresolved}) differs from origin/staging ($REMOTE_HEAD); only this bootstrap runs from it — the pipeline runs origin's copy" >> "$LOG_FILE"
   fi
   # DIC-1167 (CR bced44d5): attest the worktree just created — a one-time
   # nonce in ITS private git dir — so stage 2 can prove where it runs.
@@ -1011,7 +1018,7 @@ if [ -n "$ISOLATION_ROUTE" ]; then
     exit 1
   fi
   # The receipt must name the handoff commit stage 2 left in THIS worktree,
-  # and that commit must be new on top of the pinned origin/main.
+  # and that commit must be new on top of the pinned origin/staging.
   STAGE2_HANDOFF_SHA=$(childReceiptDetail "$STAGE2_RECEIPT" "$STAGE2_RECEIPT_NONCE" || true)
   STAGE2_WORKTREE_SHA=$(cd "$ISOLATED_DIR" 2>/dev/null && git rev-parse --verify HEAD 2>/dev/null || true)
   if [ -z "$STAGE2_HANDOFF_SHA" ] || [ "$STAGE2_HANDOFF_SHA" != "$STAGE2_WORKTREE_SHA" ] || [ "$STAGE2_HANDOFF_SHA" = "$REMOTE_HEAD" ]; then
@@ -1027,28 +1034,28 @@ fi
 
 # In-place clean path.
 # DIC-1167 (CR 028f6a19): the in-place run builds from, commits on and pushes
-# HEAD:main from the resident HEAD, so that HEAD must BE the freshly fetched
-# origin/main. A failed --ff-only (diverged history, remote unreachable) used
+# HEAD:staging from the resident HEAD, so that HEAD must BE the freshly fetched
+# origin/staging. A failed --ff-only (diverged history, remote unreachable) used
 # to be logged as "non-fatal" and the stale/diverged HEAD was scraped, built,
 # pushed and reported "Done". Both a failed fast-forward and a resident HEAD
-# that still differs from origin/main afterwards (e.g. unpushed local commits,
+# that still differs from origin/staging afterwards (e.g. unpushed local commits,
 # which --ff-only reports as "Already up to date") must fail closed BEFORE any
 # official mutation.
-if ! git pull --ff-only origin main >> "$LOG_FILE" 2>&1; then
-  echo "[$(date)] ❌ git pull --ff-only origin main failed on the clean resident checkout; refusing to build/push from a stale or diverged HEAD (cron fails)" >> "$LOG_FILE"
+if ! git pull --ff-only origin staging >> "$LOG_FILE" 2>&1; then
+  echo "[$(date)] ❌ git pull --ff-only origin staging failed on the clean resident checkout; refusing to build/push from a stale or diverged HEAD (cron fails)" >> "$LOG_FILE"
   echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
   exit 1
 fi
 INPLACE_HEAD=$(git rev-parse --verify HEAD 2>/dev/null || true)
-INPLACE_ORIGIN=$(git rev-parse --verify origin/main 2>/dev/null || true)
+INPLACE_ORIGIN=$(git rev-parse --verify origin/staging 2>/dev/null || true)
 if [ -z "$INPLACE_HEAD" ] || [ -z "$INPLACE_ORIGIN" ] || [ "$INPLACE_HEAD" != "$INPLACE_ORIGIN" ]; then
-  echo "[$(date)] ❌ resident HEAD (${INPLACE_HEAD:-unresolved}) is not the fetched origin/main (${INPLACE_ORIGIN:-unresolved}) after fast-forward; refusing in-place build/push (cron fails)" >> "$LOG_FILE"
+  echo "[$(date)] ❌ resident HEAD (${INPLACE_HEAD:-unresolved}) is not the fetched origin/staging (${INPLACE_ORIGIN:-unresolved}) after fast-forward; refusing in-place build/push (cron fails)" >> "$LOG_FILE"
   echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
   exit 1
 fi
 # DIC-1167 (2026-09-30): the fast-forward above may have just replaced this
 # script on disk, but this process keeps running the function definitions it
-# parsed before the pull. The in-place pipeline must run origin/main's
+# parsed before the pull. The in-place pipeline must run origin/staging's
 # committed orchestration:
 #   - running bytes == committed copy at HEAD → proceed;
 #   - otherwise, if the on-disk copy IS the committed one (the pull updated
@@ -1060,11 +1067,11 @@ if ! selfScriptIsCommittedAt HEAD; then
   DISK_SCRIPT_BLOB=$(git hash-object --no-filters "$SELF_SCRIPT_REL" 2>/dev/null || true)
   COMMITTED_SCRIPT_BLOB=$(git rev-parse --verify --quiet "HEAD:$SELF_SCRIPT_REL" 2>/dev/null || true)
   if [ "${HUNTERCARD_SELF_REEXEC:-}" = "1" ] || [ -z "$COMMITTED_SCRIPT_BLOB" ] || [ "$DISK_SCRIPT_BLOB" != "$COMMITTED_SCRIPT_BLOB" ]; then
-    echo "[$(date)] ❌ running script ${SELF_SCRIPT} (blob ${SELF_SCRIPT_BLOB:-unresolved}) is not origin/main's committed $SELF_SCRIPT_REL (blob ${COMMITTED_SCRIPT_BLOB:-unresolved}, on-disk ${DISK_SCRIPT_BLOB:-unresolved}); refusing in-place build/push with stale or locally modified orchestration (cron fails)" >> "$LOG_FILE"
+    echo "[$(date)] ❌ running script ${SELF_SCRIPT} (blob ${SELF_SCRIPT_BLOB:-unresolved}) is not origin/staging's committed $SELF_SCRIPT_REL (blob ${COMMITTED_SCRIPT_BLOB:-unresolved}, on-disk ${DISK_SCRIPT_BLOB:-unresolved}); refusing in-place build/push with stale or locally modified orchestration (cron fails)" >> "$LOG_FILE"
     echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
     exit 1
   fi
-  echo "[$(date)] ⚙️ fast-forward updated $SELF_SCRIPT_REL (running blob ${SELF_SCRIPT_BLOB:-unresolved} → committed $COMMITTED_SCRIPT_BLOB); re-executing origin/main's copy" >> "$LOG_FILE"
+  echo "[$(date)] ⚙️ fast-forward updated $SELF_SCRIPT_REL (running blob ${SELF_SCRIPT_BLOB:-unresolved} → committed $COMMITTED_SCRIPT_BLOB); re-executing origin/staging's copy" >> "$LOG_FILE"
   # CR cb2b3b13: same child contract as stage 2 — orphaned lock cleared,
   # success only on this run's completion receipt.
   if ! clearOrphanChildLock "${LOCK_FILE}.reexec"; then
@@ -1082,12 +1089,12 @@ if ! selfScriptIsCommittedAt HEAD; then
   if ! HUNTERCARD_SELF_REEXEC=1 HUNTERCARD_LOCK_FILE="${LOCK_FILE}.reexec" \
     HUNTERCARD_CHILD_RECEIPT="$REEXEC_RECEIPT" HUNTERCARD_CHILD_RECEIPT_NONCE="$REEXEC_RECEIPT_NONCE" \
     bash "$(pwd)/$SELF_SCRIPT_REL"; then
-    echo "[$(date)] ❌ re-executed origin/main script failed — cron reports failure" >> "$LOG_FILE"
+    echo "[$(date)] ❌ re-executed origin/staging script failed — cron reports failure" >> "$LOG_FILE"
     echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
     exit 1
   fi
   if ! REEXEC_DETAIL=$(childReceiptDetail "$REEXEC_RECEIPT" "$REEXEC_RECEIPT_NONCE"); then
-    echo "[$(date)] ❌ re-executed origin/main script exited 0 without this run's completion receipt; never Done on a bare exit status (cron fails)" >> "$LOG_FILE"
+    echo "[$(date)] ❌ re-executed origin/staging script exited 0 without this run's completion receipt; never Done on a bare exit status (cron fails)" >> "$LOG_FILE"
     echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
     exit 1
   fi
