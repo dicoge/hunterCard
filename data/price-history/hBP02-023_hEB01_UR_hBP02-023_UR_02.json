@@ -50,8 +50,16 @@
       "currency": "JPY",
       "cardId": "hBP02-023_hEB01_UR_hBP02-023_UR_02",
       "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-26",
+      "price": 1280,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-023_hEB01_UR_hBP02-023_UR_02",
+      "sourceProduct": "hEB01"
     }
   ],
-  "lastUpdated": "2026-10-18T12:09:03.104Z",
+  "lastUpdated": "2026-10-26T02:45:59.795Z",
   "nameZh": "帕沃莉亞·蕾內"
 }

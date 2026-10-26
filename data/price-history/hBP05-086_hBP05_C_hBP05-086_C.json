@@ -66,8 +66,16 @@
       "currency": "JPY",
       "cardId": "hBP05-086_hBP05_C_hBP05-086_C",
       "sourceProduct": "hBP05"
+    },
+    {
+      "date": "2026-10-26",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-086_hBP05_C_hBP05-086_C",
+      "sourceProduct": "hBP05"
     }
   ],
-  "lastUpdated": "2026-10-18T12:09:05.276Z",
+  "lastUpdated": "2026-10-26T02:45:59.952Z",
   "nameZh": "Cilus"
 }

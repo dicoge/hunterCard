@@ -497,7 +497,15 @@
       "currency": "JPY",
       "cardId": "hBP06-018_hBP06_S_hBP06-018_S",
       "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-10-26",
+      "price": 220,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-018_hBP06_S_hBP06-018_S",
+      "sourceProduct": "hBP06"
     }
   ],
-  "lastUpdated": "2026-10-18T12:09:05.389Z"
+  "lastUpdated": "2026-10-26T02:45:59.960Z"
 }
