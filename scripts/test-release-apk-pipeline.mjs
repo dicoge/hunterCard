@@ -604,6 +604,7 @@ const GATED_WORKFLOW = '.github/workflows/eas-build.yml';
 //   round 2 (DIC-1266): 9/10 → 10/11 (release-apk-size-optim inserted)
 //   round 3 (DIC-1266 CR blocker 1/2): 10/11 → 11/12 (prebuild-effective inserted)
 //   round 7 (DIC-1266 CR round-6):     11/12 → 12/13 (postpackage-mutations inserted)
+//   test-first flow:                    12/13 → 13/14 (staging Alpha guard inserted)
 // The invocations themselves — file, job, name, if, and command — are unchanged;
 // only the position moved, and the position is intentional. Any additional
 // build step or any change to name/if/command still fails this assertion.
@@ -611,7 +612,7 @@ const ALLOWED_BUILD_INVOCATIONS = [
   {
     file: GATED_WORKFLOW,
     job: 'build',
-    index: 12,
+    index: 13,
     name: 'EAS Build',
     if: "${{ inputs.profile != 'production-apk' }}",
     command: [
@@ -625,7 +626,7 @@ const ALLOWED_BUILD_INVOCATIONS = [
   {
     file: GATED_WORKFLOW,
     job: 'build',
-    index: 13,
+    index: 14,
     name: 'EAS Build (production APK, wait for artifact)',
     if: "${{ inputs.profile == 'production-apk' }}",
     command: [
@@ -716,6 +717,7 @@ function testEveryBuildInvocationRunsAfterTheGuards() {
   const guards = [
     'Checkout code',
     'Guard release builds to main or a release tag',
+    'Guard staging Alpha builds to the CI-verified staging tip',
     'Guard production-apk usage',
   ].map((name) => ({ name, index: stepIndex(name) }));
 
@@ -777,6 +779,7 @@ function testGuardsRunBeforeAnythingIsBuilt() {
   const index = (name) => easBuildSteps.findIndex((s) => s.name === name);
   const lastGuard = Math.max(
     index('Guard release builds to main or a release tag'),
+    index('Guard staging Alpha builds to the CI-verified staging tip'),
     index('Guard production-apk usage'),
   );
   const firstBuild = Math.min(
@@ -786,7 +789,7 @@ function testGuardsRunBeforeAnythingIsBuilt() {
   );
   assert.ok(
     lastGuard >= 0 && lastGuard < firstBuild,
-    'both release guards must run before any EAS setup/build step, so a bad ref fails immediately instead of after a build',
+    'every release guard must run before any EAS setup/build step, so a bad ref fails immediately instead of after a build',
   );
 
   const chain = [

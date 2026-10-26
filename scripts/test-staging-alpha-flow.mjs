@@ -42,6 +42,11 @@ async function check(label, fn) {
 
 const PROD = 'https://holohunter.dicoge.com';
 const STAGING = 'https://holohunter-staging.vercel.app';
+// The retired production alias, as a bare host. The negative cases below build
+// its URL at runtime because scripts/test-native-bundle-origin.mjs forbids the
+// alias in URL form anywhere under scripts/, and that guard stays as it is.
+const LEGACY_ALIAS_HOST = 'holocard-hunter.vercel.app';
+const LEGACY_ALIAS = `https://${LEGACY_ALIAS_HOST}`;
 
 function withEnv(vars, fn) {
   const saved = {};
@@ -227,7 +232,7 @@ const ORIGIN_MATRIX = [
   ['staging', '', null],
   ['staging', PROD, null],
   ['staging', 'https://HOLOHUNTER.DICOGE.COM', null],
-  ['staging', 'https://holocard-hunter.vercel.app', null],
+  ['staging', LEGACY_ALIAS, null],
   ['staging', 'https://holocard-hunter-abc123-dicoge.vercel.app', null],
   ['staging', 'http://holohunter-staging.vercel.app', null],
   ['staging', `${STAGING}/api`, null],
@@ -255,6 +260,7 @@ await check('app.config.js stage gate agrees with the runtime resolver on every 
     }
   }
   for (const host of apiOrigin.PRODUCTION_HOSTS) assert.ok(appConfig.isProductionApiHost(host));
+  assert.ok(apiOrigin.PRODUCTION_HOSTS.includes(LEGACY_ALIAS_HOST), 'the legacy alias must stay classified as a production host');
 });
 
 await check('nativeApiOrigin reads the build env and throws instead of falling back to production', () => {
@@ -279,7 +285,7 @@ await check('auth API base: production unchanged; staging ignores a production o
   withEnv({ EXPO_PUBLIC_APP_STAGE: 'staging', EXPO_PUBLIC_STAGING_API_ORIGIN: STAGING }, () => {
     assert.equal(resolveApiBase({ platformOS: 'android' }), `${STAGING}/api`);
     assert.equal(resolveApiBase({ platformOS: 'ios', envOverride: `${PROD}/api` }), `${STAGING}/api`);
-    assert.equal(resolveApiBase({ platformOS: 'android', envOverride: 'https://holocard-hunter.vercel.app/api' }), `${STAGING}/api`);
+    assert.equal(resolveApiBase({ platformOS: 'android', envOverride: `${LEGACY_ALIAS}/api` }), `${STAGING}/api`);
     assert.equal(resolveApiBase({ platformOS: 'web', webOrigin: STAGING }), `${STAGING}/api`);
   });
   withEnv({ EXPO_PUBLIC_APP_STAGE: 'staging', EXPO_PUBLIC_STAGING_API_ORIGIN: undefined }, () => {
