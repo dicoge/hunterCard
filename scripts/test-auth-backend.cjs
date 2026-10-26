@@ -235,6 +235,12 @@ function compileTs(relPath) {
   fs.writeFileSync(output, compiled.outputText);
 }
 
+// DIC-1189 boot deps: identity-store now imports kv-namespace (which itself
+// imports env-guard + appEnv). Compile them so the CommonJS resolver finds
+// each transitive dependency in the temp outDir.
+compileTs('src/config/appEnv.ts');
+compileTs('api/_lib/env-guard.ts');
+compileTs('api/_lib/kv-namespace.ts');
 compileTs('api/_lib/identity-store.ts');
 const store = require(path.join(outDir, 'api/_lib/identity-store.js'));
 

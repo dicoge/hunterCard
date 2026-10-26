@@ -15,8 +15,16 @@
  */
 import { kv as defaultKv } from '@vercel/kv';
 import { verifyCodeChallenge } from './apple-web-oauth';
+// DIC-1189: exchange codes must be namespaced per APP_ENV so a staging
+// callback can never redeem a code stored by a production callback (or vice
+// versa). nsKey() throws on missing/unknown APP_ENV — fail closed.
+import { nsKey } from './kv-namespace';
 
 const EXCHANGE_PREFIX = 'apple:exchange:';
+
+function exchangeKey(code: string): string {
+  return nsKey(EXCHANGE_PREFIX + code);
+}
 // A redemption round-trip (return page → app → POST redeem) completes in
 // seconds; keep the window tight so an intercepted code is near-worthless even
 // before its single-use consumption.
@@ -47,7 +55,7 @@ export async function storeAppleExchange(
   payload: AppleExchangePayload,
   kvClient: ExchangeKv = defaultKv as unknown as ExchangeKv,
 ): Promise<void> {
-  const result = await kvClient.set(EXCHANGE_PREFIX + code, payload, {
+  const result = await kvClient.set(exchangeKey(code), payload, {
     nx: true,
     ex: EXCHANGE_TTL_SECONDS,
   });
@@ -70,7 +78,7 @@ export async function redeemAppleExchange(
   kvClient: ExchangeKv = defaultKv as unknown as ExchangeKv,
 ): Promise<{ session: string; isNew: boolean } | null> {
   if (!code || !verifier) return null;
-  const raw = await kvClient.getdel(EXCHANGE_PREFIX + code);
+  const raw = await kvClient.getdel(exchangeKey(code));
   if (!raw) return null;
   let payload: AppleExchangePayload;
   try {

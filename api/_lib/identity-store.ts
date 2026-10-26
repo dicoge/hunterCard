@@ -28,6 +28,10 @@
  */
 import { kv } from '@vercel/kv';
 import crypto from 'crypto';
+// DIC-1189: every KV key in the identity store must be namespaced per
+// APP_ENV so a staging login/link/unlink can never touch a production user
+// record. nsKey() throws on missing/unknown APP_ENV — fail closed.
+import { nsKey } from './kv-namespace';
 
 export type Provider = 'google' | 'apple';
 
@@ -130,11 +134,11 @@ export class IdentityStoreError extends Error {
   }
 }
 
-const USER_KEY = (id: string) => `auth:user:${id}`;
-const IDX_KEY = (p: Provider, sub: string) => `auth:idx:${p}:${sub}`;
-const DETAIL_KEY = (id: string, p: Provider, sub: string) => `auth:idetail:${id}:${p}:${sub}`;
-const IDENTITIES_KEY = (id: string) => `auth:user:${id}:identities`;
-const LOCK_KEY = (id: string) => `auth:lock:${id}`;
+const USER_KEY = (id: string) => nsKey(`auth:user:${id}`);
+const IDX_KEY = (p: Provider, sub: string) => nsKey(`auth:idx:${p}:${sub}`);
+const DETAIL_KEY = (id: string, p: Provider, sub: string) => nsKey(`auth:idetail:${id}:${p}:${sub}`);
+const IDENTITIES_KEY = (id: string) => nsKey(`auth:user:${id}:identities`);
+const LOCK_KEY = (id: string) => nsKey(`auth:lock:${id}`);
 const member = (p: Provider, sub: string) => `${p}:${sub}`;
 const splitMember = (m: string): { provider: Provider; subject: string } => {
   const i = m.indexOf(':');

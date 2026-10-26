@@ -106,6 +106,12 @@ function compileTs(relPath) {
 }
 
 for (const rel of [
+  // DIC-1189: appEnv is imported by kv-namespace / env-guard /
+  // push-staging-guard / internal-auth — must be compiled first.
+  'src/config/appEnv.ts',
+  'api/_lib/env-guard.ts',
+  'api/_lib/kv-namespace.ts',
+  'api/_lib/push-staging-guard.ts',
   'api/_lib/kv-storage.ts',
   'api/_lib/internal-auth.ts',
   'api/_lib/node-adapter.ts',

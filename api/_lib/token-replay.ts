@@ -18,13 +18,17 @@
 import { kv } from '@vercel/kv';
 import crypto from 'crypto';
 import { IdentityStoreError } from './identity-store';
+// DIC-1189: replay markers must be namespaced per APP_ENV so a staging login
+// attempt can never consume a production token's replay slot (or vice versa).
+// nsKey() throws on missing/unknown APP_ENV — fail closed.
+import { nsKey } from './kv-namespace';
 
 const REPLAY_PREFIX = 'idtoken:replay:';
 
 function replayKey(idToken: string): string {
   // Hash the token so we never persist the raw credential, and so the key length
   // is bounded regardless of token size.
-  return REPLAY_PREFIX + crypto.createHash('sha256').update(idToken).digest('hex');
+  return nsKey(REPLAY_PREFIX + crypto.createHash('sha256').update(idToken).digest('hex'));
 }
 
 /**
