@@ -176,7 +176,14 @@ function compileTs(relPath) {
   fs.writeFileSync(output, compiled.outputText);
 }
 
+// Full runtime import graph of the handlers below. DIC-1189 made session,
+// identity-store, token-replay, apple-exchange-store and account-sync-store
+// import the lane guards (appEnv -> env-guard -> kv-namespace), so those
+// are compiled too; type-only imports are elided by transpileModule.
 for (const rel of [
+  'src/config/appEnv.ts',
+  'api/_lib/env-guard.ts',
+  'api/_lib/kv-namespace.ts',
   'api/_lib/session.ts',
   'api/_lib/identity-store.ts',
   'api/_lib/token-replay.ts',
@@ -195,6 +202,10 @@ for (const rel of [
 
 
 
+// The production lane, explicitly: the real lane guards (strict APP_ENV,
+// payment boot guard, nsKey identity) run unmodified. Same pattern as the other
+// DIC-1189 suites; `npm run test:account-sync-two-device` also sets it.
+if (!process.env.APP_ENV) process.env.APP_ENV = 'production';
 process.env.KV_REST_API_URL = 'https://kv.example';
 process.env.KV_REST_API_TOKEN = 'kv-token';
 process.env.AUTH_SESSION_SECRET = 'two-device-test-secret';

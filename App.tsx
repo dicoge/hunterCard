@@ -20,10 +20,17 @@ import './src/store/scanDiagnosticsStore';
 // would end up in the production bundle even though it never rendered. The
 // require, inside an `if (build-constant)` block, is elided at bundle time
 // on production.
+//
+// Typing: the module type comes from a type-only `typeof import(...)`, which
+// is erased at compile time (no static runtime import, so the elimination
+// above still holds). The `unknown` step is needed because typecheck infers
+// the global `require`'s return type from the `globalThis.require = …` stubs
+// in scripts/test-*.mjs, an unrelated union.
+type StagingBannerModule = typeof import('./src/components/StagingBanner');
 const IS_STAGING_BUILD = process.env.EXPO_PUBLIC_APP_ENV === 'staging';
 const StagingBanner: React.ComponentType | null = IS_STAGING_BUILD
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-  ? (require('./src/components/StagingBanner').StagingBanner as React.ComponentType)
+  ? (require('./src/components/StagingBanner') as unknown as StagingBannerModule).StagingBanner
   : null;
 
 export default function App() {

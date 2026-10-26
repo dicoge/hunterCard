@@ -46,6 +46,29 @@ function test(name, fn) {
   console.log(`  ✓ ${name}`);
 }
 
+// The staging project's saved non-secret origin. app.config.js refuses a
+// staging build without a non-production EXPO_PUBLIC_STAGING_API_ORIGIN, so
+// the staging export carries the same stage flags the staging project sets;
+// the production export carries none of them (as on the production project).
+const STAGING_ORIGIN = 'https://holohunter-staging.vercel.app';
+
+function laneEnv(appEnv, extraEnv = {}) {
+  const env = {
+    ...process.env,
+    APP_ENV: appEnv,
+    EXPO_PUBLIC_APP_ENV: appEnv,
+    VERCEL_GIT_COMMIT_SHA: extraEnv.VERCEL_GIT_COMMIT_SHA || 'testsha01234',
+  };
+  if (appEnv === 'staging') {
+    env.EXPO_PUBLIC_APP_STAGE = 'staging';
+    env.EXPO_PUBLIC_STAGING_API_ORIGIN = STAGING_ORIGIN;
+  } else {
+    delete env.EXPO_PUBLIC_APP_STAGE;
+    delete env.EXPO_PUBLIC_STAGING_API_ORIGIN;
+  }
+  return { ...env, ...extraEnv };
+}
+
 function runExport(appEnv, extraEnv = {}) {
   console.log(`\n── expo export APP_ENV=${appEnv} ──`);
   // Match vercel.json buildCommand exactly: `expo export --platform web
@@ -54,23 +77,12 @@ function runExport(appEnv, extraEnv = {}) {
   execSync('npx --yes expo export --platform web --clear', {
     cwd: ROOT,
     stdio: 'inherit',
-    env: {
-      ...process.env,
-      APP_ENV: appEnv,
-      EXPO_PUBLIC_APP_ENV: appEnv,
-      VERCEL_GIT_COMMIT_SHA: extraEnv.VERCEL_GIT_COMMIT_SHA || 'testsha01234',
-      ...extraEnv,
-    },
+    env: laneEnv(appEnv, extraEnv),
   });
   execSync('node scripts/fix-html.js', {
     cwd: ROOT,
     stdio: 'inherit',
-    env: {
-      ...process.env,
-      APP_ENV: appEnv,
-      EXPO_PUBLIC_APP_ENV: appEnv,
-      VERCEL_GIT_COMMIT_SHA: extraEnv.VERCEL_GIT_COMMIT_SHA || 'testsha01234',
-    },
+    env: laneEnv(appEnv),
   });
 }
 
@@ -183,6 +195,9 @@ try {
     const hit = bundleContains('TEST · 測試環境');
     assert.ok(hit, 'expected staging bundle to include "TEST · 測試環境" (banner text)');
   });
+  test('staging bundle inlines the staging API origin', () => {
+    assert.ok(bundleContains(STAGING_ORIGIN), `expected staging bundle to include ${STAGING_ORIGIN}`);
+  });
 
   // ── Step 2: production build immediately following staging ──────────────
   // Vercel gives each build a fresh dist/ but reuses the workspace; we
@@ -204,6 +219,10 @@ try {
   test('production JS bundle DOES NOT contain "TEST · 測試環境" (Metro DCE working; covers raw + \\u + \\x + fromCharCode)', () => {
     const hit = bundleContains('TEST · 測試環境');
     assert.ok(!hit, `staging banner text found in production bundle: ${JSON.stringify(hit)}`);
+  });
+  test('production bundle DOES NOT contain the staging API origin', () => {
+    const hit = bundleContains(STAGING_ORIGIN);
+    assert.ok(!hit, `staging origin found in production bundle: ${JSON.stringify(hit)}`);
   });
   test('production JS bundle DOES NOT contain "app-env"/staging-sha marker names', () => {
     for (const marker of ['name="app-env"', 'name="staging-sha"']) {
