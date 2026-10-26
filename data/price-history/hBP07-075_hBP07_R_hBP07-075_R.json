@@ -66,8 +66,16 @@
       "currency": "JPY",
       "cardId": "hBP07-075_hBP07_R_hBP07-075_R",
       "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-10-26",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-075_hBP07_R_hBP07-075_R",
+      "sourceProduct": "hBP07"
     }
   ],
-  "lastUpdated": "2026-10-18T12:09:01.929Z",
+  "lastUpdated": "2026-10-26T02:45:59.732Z",
   "nameZh": "古石比珠"
 }

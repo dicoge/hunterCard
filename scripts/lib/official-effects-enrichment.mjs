@@ -48,6 +48,7 @@ const KANA_RE = /[぀-ゟァ-ヺー-ヿ]/u;
 // Every field that can carry rules text in the data/effects-jp.json schema.
 // A card with ANY of them populated is out of scope for derivation.
 export const RULES_TEXT_FIELDS = Object.freeze([
+  'stageSkill',
   'oshiSkill',
   'spOshiSkill',
   'arts',
@@ -78,7 +79,7 @@ export function hasRulesText(entry) {
       if (value.trim()) return true;
       continue;
     }
-    // An object (oshiSkill/spOshiSkill) or anything unexpected: rules-bearing.
+    // An object (stageSkill/oshiSkill/spOshiSkill) or anything unexpected: rules-bearing.
     return true;
   }
   return false;

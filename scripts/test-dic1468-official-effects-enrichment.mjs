@@ -122,6 +122,7 @@ const yell = { cardNumber: 'hY01-015', name: '白エール', cardType: 'エー�
 
   // 4a. ANY rules text disqualifies the card — nothing may be translated.
   const rulesBearing = {
+    stageSkill: { name: 'x', effect: 'y' },
     oshiSkill: { name: 'x', effect: 'y' },
     spOshiSkill: { name: 'x', effect: 'y' },
     arts: [{ name: 'x', effect: 'y' }],

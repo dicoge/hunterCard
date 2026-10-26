@@ -17,7 +17,9 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # Security floor (Render eMudhra advisory, Node 22.23.4 NSS root update):
+          # semver range = >=22.23.4 <23, so a stale cached 22.x is never used.
+          node-version: '22.23.4 - 22'
 
       - name: Install dependencies
         working-directory: scripts

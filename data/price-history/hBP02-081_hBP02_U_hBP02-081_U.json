@@ -66,8 +66,16 @@
       "currency": "JPY",
       "cardId": "hBP02-081_hBP02_U_hBP02-081_U",
       "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-10-26",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-081_hBP02_U_hBP02-081_U",
+      "sourceProduct": "hBP02"
     }
   ],
-  "lastUpdated": "2026-10-18T12:09:03.470Z",
+  "lastUpdated": "2026-10-26T02:45:59.823Z",
   "nameZh": "hololive Indonesia 2期生"
 }

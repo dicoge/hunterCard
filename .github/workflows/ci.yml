@@ -106,7 +106,9 @@ jobs:
           # Node 22.6+ is required for `node --experimental-strip-types`, used by the
           # mapper I/O regression in test:market-fields (and test:scan-dedup). Node 20
           # rejects the flag with "bad option", so the Validate job must run on 22.
-          node-version: '22'
+          # Security floor (Render eMudhra advisory, Node 22.23.4 NSS root update):
+          # semver range = >=22.23.4 <23, so a stale cached 22.x is never used.
+          node-version: '22.23.4 - 22'
           cache: 'npm'
       
       - name: Install dependencies
@@ -716,7 +718,9 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          # Security floor (Render eMudhra advisory, Node 22.23.4 NSS root update):
+          # semver range = >=22.23.4 <23, so a stale cached 22.x is never used.
+          node-version: '22.23.4 - 22'
           cache: 'npm'
 
       - name: Setup Java 17 (Temurin — matches EAS build image)

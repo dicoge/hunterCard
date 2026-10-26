@@ -13,9 +13,10 @@
  *       "name": "博衣こより",
  *       "cardType": "推しホロメン",
  *       "color": "白",
+ *       "stageSkill":  { "name": "...", "effect": "..." },   // 推しステージスキル, no cost
  *       "oshiSkill":   { "name": "...", "cost": "-2", "effect": "..." },
  *       "spOshiSkill": { "name": "...", "cost": "-2", "effect": "..." },
- *       "arts":     [ { "name": "...", "cost": "◇", "damage": "30", "effect": "" } ],
+ *       "arts":     [ { "name": "...", "cost": "◇", "damage": "30", "tokkou": "緑+50", "effect": "" } ],
  *       "keywords": [ { "label": "エクストラ", "effect": "..." } ],
  *       "abilityText": "..."   // support cards
  *     }
@@ -177,11 +178,14 @@ function parseArts(html) {
     if (!body) continue;
     const span = firstSpanInner(body);
     const headHtml = span ? span.inner : body;
-    const cost = imgAlts(headHtml).join('');
+    // The tokkou span (special-attack bonus, e.g. alt "緑+50") is not part of
+    // the cost: it gets its own field.
+    const tokkouRe = /<span[^>]*class="tokkou"[^>]*>([\s\S]*?)<\/span>/g;
+    const tokkou = [...headHtml.matchAll(tokkouRe)].flatMap((t) => imgAlts(t[1])).join('');
+    const headNoTokkou = headHtml.replace(tokkouRe, '');
+    const cost = imgAlts(headNoTokkou).join('');
     // Remove imgs + nested tokkou span, keep "name　damage".
-    let headText = cleanText(stripTags(
-      headHtml.replace(/<span[^>]*class="tokkou"[^>]*>[\s\S]*?<\/span>/g, '')
-    ));
+    let headText = cleanText(stripTags(headNoTokkou));
     let name = headText;
     let damage = '';
     const dmgMatch = headText.match(/[　\s]+(\+?\d+\+?)\s*$/);
@@ -190,7 +194,7 @@ function parseArts(html) {
       name = headText.slice(0, dmgMatch.index).trim();
     }
     const effect = span ? cleanText(stripTags(body.slice(span.end))) : '';
-    if (name || damage || effect) arts.push({ name, cost, damage, effect });
+    if (name || damage || effect) arts.push(tokkou ? { name, cost, damage, tokkou, effect } : { name, cost, damage, effect });
   }
   return arts;
 }
@@ -243,6 +247,9 @@ function parseCardPage(html, card) {
     color: parseColor(html),
   };
 
+  // 推しステージスキル: same markup as the oshi skill but never has a holo-power cost.
+  const stage = parseSkillDiv(html, 'stage skill');
+  if (stage) result.stageSkill = { name: stage.name, effect: stage.effect };
   const oshi = parseSkillDiv(html, 'oshi skill');
   if (oshi) result.oshiSkill = oshi;
   const sp = parseSkillDiv(html, 'sp skill');
@@ -261,7 +268,7 @@ function parseCardPage(html, card) {
 }
 
 function hasContent(parsed) {
-  return !!(parsed.oshiSkill || parsed.spOshiSkill ||
+  return !!(parsed.stageSkill || parsed.oshiSkill || parsed.spOshiSkill ||
     (parsed.arts && parsed.arts.length) ||
     (parsed.keywords && parsed.keywords.length) ||
     parsed.abilityText);

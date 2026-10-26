@@ -878,9 +878,10 @@ export default function CardDetailScreen({ route, navigation }: any) {
 
 // ─── Skills panel ─────────────────────────────────────
 type Skill = { name?: string; cost?: string; effect?: string };
-type Art = { name?: string; cost?: string; damage?: string; effect?: string };
+type Art = { name?: string; cost?: string; damage?: string; tokkou?: string; effect?: string };
 type Keyword = { label?: string; effect?: string };
 type Skills = {
+  stageSkill?: { name?: string; effect?: string };
   oshiSkill?: Skill;
   spOshiSkill?: Skill;
   arts?: Art[];
@@ -906,7 +907,7 @@ function SkillCard({ badge, badgeColor, meta, name, effect }: {
 function SkillsPanel({ skills, fallbackNote }: { skills?: Skills; fallbackNote?: string }) {
   const { t } = useTranslation();
   const hasAny = skills && (
-    skills.oshiSkill || skills.spOshiSkill ||
+    skills.stageSkill || skills.oshiSkill || skills.spOshiSkill ||
     (skills.arts && skills.arts.length) ||
     (skills.keywords && skills.keywords.length) ||
     skills.abilityText
@@ -919,6 +920,14 @@ function SkillsPanel({ skills, fallbackNote }: { skills?: Skills; fallbackNote?:
         <Text style={styles.noSkillText}>{t('card_detail_no_skills')}</Text>
       ) : (
         <>
+          {skills!.stageSkill && (
+            <SkillCard
+              badge={t('card_detail_stage_skill')}
+              badgeColor="#8b5cf6"
+              name={skills!.stageSkill.name}
+              effect={skills!.stageSkill.effect}
+            />
+          )}
           {skills!.oshiSkill && (
             <SkillCard
               badge="推しスキル"
@@ -942,7 +951,11 @@ function SkillsPanel({ skills, fallbackNote }: { skills?: Skills; fallbackNote?:
               key={`art${i}`}
               badge={t('card_detail_art')}
               badgeColor="#3b82f6"
-              meta={[art.cost ? `${art.cost}` : '', art.damage ? t('card_detail_damage', { value: art.damage }) : ''].filter(Boolean).join('　')}
+              meta={[
+                art.cost ? `${art.cost}` : '',
+                art.damage ? t('card_detail_damage', { value: art.damage }) : '',
+                art.tokkou ? t('card_detail_tokkou', { value: art.tokkou }) : '',
+              ].filter(Boolean).join('　')}
               name={art.name}
               effect={art.effect}
             />
