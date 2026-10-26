@@ -275,6 +275,60 @@ function testReleaseApkDiffersFromStoreOnlyInContainer() {
   );
 }
 
+// Render eMudhra advisory: patched Node is 22.23.4 / 24.22.1 / 26.12.1 or newer
+// within the same major. The EAS SDK 54 default image ships Node 20.19.4, so a
+// release profile without an explicit `node` builds on an unpatched runtime.
+const PATCHED_NODE_FLOORS = { 22: [22, 23, 4], 24: [24, 22, 1], 26: [26, 12, 1] };
+
+function nodeMeetsSecurityFloor(version) {
+  const m = typeof version === 'string' ? version.match(/^(\d+)\.(\d+)\.(\d+)$/) : null;
+  if (!m) return false;
+  const v = m.slice(1).map(Number);
+  const floor = PATCHED_NODE_FLOORS[v[0]];
+  if (!floor) return false;
+  for (let i = 1; i < 3; i += 1) {
+    if (v[i] !== floor[i]) return v[i] > floor[i];
+  }
+  return true;
+}
+
+function testReleaseProfilesPinPatchedNode() {
+  for (const [version, ok] of [
+    ['22.23.4', true], ['22.23.5', true], ['22.24.0', true], ['24.22.1', true], ['26.12.1', true],
+    ['20.19.4', false], ['22.23.3', false], ['22.22.9', false], ['24.22.0', false], ['23.0.0', false],
+    ['25.9.9', false], ['22', false], ['22.23', false], ['>=22.23.4', false], [undefined, false],
+  ]) {
+    assert.equal(nodeMeetsSecurityFloor(version), ok, `floor predicate on ${JSON.stringify(version)}`);
+  }
+
+  const storeNode = easJson.build?.production?.node;
+  assert.ok(
+    nodeMeetsSecurityFloor(storeNode),
+    `eas.json build.production.node must be an exact patched Node version (>= 22.23.4 on 22.x, 24.22.1 on 24.x, 26.12.1 on 26.x); got ${JSON.stringify(storeNode)}. Without it EAS uses the image default Node 20.19.4`,
+  );
+
+  // Every profile built on production inherits the same pinned runtime, so the
+  // store AAB, the sideload APK and their release variants cannot drift apart.
+  const extendsProduction = (name, seen = new Set()) => {
+    if (name === 'production') return true;
+    if (seen.has(name)) return false;
+    seen.add(name);
+    const parent = easJson.build?.[name]?.extends;
+    return parent ? extendsProduction(parent, seen) : false;
+  };
+  const releaseProfiles = Object.keys(easJson.build ?? {}).filter((name) => extendsProduction(name));
+  for (const name of ['production', 'production-apk', 'production-release', 'production-apk-release']) {
+    assert.ok(releaseProfiles.includes(name), `"${name}" must be built on the production profile`);
+  }
+  for (const name of releaseProfiles) {
+    assert.equal(
+      resolveProfile(name).node,
+      storeNode,
+      `"${name}" must resolve to the production profile's Node ${storeNode}; a per-profile override would let one release artifact build on a different runtime`,
+    );
+  }
+}
+
 // ------------------------------------------------------- layer 2: wiring
 
 function testWorkflowOffersTheReleaseApkProfile() {
@@ -1265,6 +1319,7 @@ const tests = [
   testReleaseApkProfileExists,
   testReleaseApkUsesManagedReleaseSigning,
   testReleaseApkDiffersFromStoreOnlyInContainer,
+  testReleaseProfilesPinPatchedNode,
   testWorkflowOffersTheReleaseApkProfile,
   testGateStepsAreEnabledAndInvokeTheirGuards,
   testWorkflowStructureCannotBypassGates,
