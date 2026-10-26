@@ -4,6 +4,9 @@ name: EAS Build (Test Tracks)
 #   iOS            -> TestFlight (submit with the `production` profile)
 #   Android        -> Google Play Internal testing (AAB, `production` profile)
 #   preview        -> internal-distribution build (ad-hoc APK / iOS internal) for direct installs
+#   staging-alpha  -> store AAB for the Play closed-testing (Alpha) track, built from
+#                     the CI-verified staging tip only, never submitted by this
+#                     workflow (see docs/release-test-first-flow.md).
 #   production-apk -> production-content, release-SIGNED APK for direct sideload (DIC-1193).
 #                     Same environment/env as `production`; only the artifact
 #                     container differs (APK instead of AAB). This is the ONLY
@@ -45,6 +48,7 @@ on:
           - preview
           - production
           - production-apk
+          - staging-alpha
       submit:
         description: "Submit to store after build (production -> TestFlight / Play internal)"
         type: boolean
@@ -55,6 +59,11 @@ jobs:
   build:
     name: EAS ${{ inputs.profile }} build (${{ inputs.platform }})
     runs-on: ubuntu-latest
+    # Explicit and read-only. actions: read lets the staging-alpha guard confirm
+    # that CI passed for the exact staging commit; nothing here writes to the repo.
+    permissions:
+      contents: read
+      actions: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -70,6 +79,18 @@ jobs:
         env:
           PROFILE: ${{ inputs.profile }}
         run: bash scripts/ci/release-ref-guard.sh
+
+      # Test-first flow: a closed-testing (Alpha) AAB may come from staging, but
+      # only from the exact current staging tip that contains main and has a
+      # green CI push run, and never with submit. Production profiles are not
+      # affected: they still pass only through the guard above.
+      - name: Guard staging Alpha builds to the CI-verified staging tip
+        if: ${{ inputs.profile == 'staging-alpha' }}
+        env:
+          PROFILE: ${{ inputs.profile }}
+          SUBMIT: ${{ inputs.submit }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/staging-alpha-ref-guard.sh
 
       # A production-content APK is a sideload artifact. Google Play accepts an
       # AAB for this app (`production` profile) — never route an APK at a store.

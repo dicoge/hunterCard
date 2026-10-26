@@ -11,7 +11,7 @@ import { preprocessCardImage } from './imagePreprocessor';
 import { mapApiCardToCardInfo } from '../utils/apiCardMapper';
 import { stripDisabledCardFields } from '../utils/cardReleaseFilter';
 import { releaseCardFlags, STORE_MVP } from '../config/releaseFlags';
-import { PRODUCTION_ORIGIN } from '../config/apiOrigin';
+import { nativeApiOrigin } from '../config/apiOrigin';
 import {
   classifyHttpFailure,
   isRecognitionInfrastructureFailure,
@@ -644,7 +644,7 @@ async function recognizeViaApi(imageUri: string, options: RecognizeImageOptions 
     // recognition surfaces, so recognition would silently fail.
     const apiBase = typeof window !== 'undefined' && window.location?.origin
       ? window.location.origin
-      : PRODUCTION_ORIGIN;
+      : nativeApiOrigin();
     const apiUrl = apiBase + '/api/recognize-card';
     const apiResponse = await fetch(apiUrl, {
       method: 'POST',

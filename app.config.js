@@ -156,7 +156,50 @@ function mergedAndroidBlockedPermissions(baseBlocked) {
   return [...startingSet];
 }
 
+// Build stage (test-first release flow). Mirrors resolveNativeApiOrigin in
+// src/config/apiOrigin.ts (app.config.js cannot import TypeScript;
+// scripts/test-staging-alpha-flow.mjs checks the two agree). Unset or
+// 'production' changes nothing. 'staging' must name a non-production https
+// origin or the build fails here, before anything is compiled, instead of
+// producing a bundle that would refuse every API call at runtime. Any other
+// value is a typo and fails the build.
+const PRODUCTION_API_HOSTS = ['holohunter.dicoge.com', 'holocard-hunter.vercel.app'];
+
+function isProductionApiHost(host) {
+  const h = String(host).toLowerCase().replace(/\.$/, '');
+  return PRODUCTION_API_HOSTS.includes(h) || /^holocard-hunter-[a-z0-9-]+\.vercel\.app$/.test(h);
+}
+
+function resolveBuildStage(env = process.env) {
+  const raw = typeof env.EXPO_PUBLIC_APP_STAGE === 'string' ? env.EXPO_PUBLIC_APP_STAGE.trim().toLowerCase() : '';
+  if (raw === '' || raw === 'production') return { stage: 'production', apiOrigin: 'https://holohunter.dicoge.com' };
+  if (raw !== 'staging') {
+    throw new Error(`EXPO_PUBLIC_APP_STAGE="${env.EXPO_PUBLIC_APP_STAGE}" is not a known stage (expected unset, "production" or "staging").`);
+  }
+  const origin = env.EXPO_PUBLIC_STAGING_API_ORIGIN;
+  let url = null;
+  try {
+    url = typeof origin === 'string' && origin === origin.trim() ? new URL(origin) : null;
+  } catch {
+    url = null;
+  }
+  const ok = url
+    && url.protocol === 'https:'
+    && !url.username && !url.password
+    && url.pathname === '/' && !url.search && !url.hash
+    && origin.replace(/\/$/, '') === url.origin
+    && !isProductionApiHost(url.hostname);
+  if (!ok) {
+    throw new Error(
+      'EXPO_PUBLIC_APP_STAGE=staging requires EXPO_PUBLIC_STAGING_API_ORIGIN to be a bare https origin that is not a production host ' +
+      `(got ${origin === undefined ? 'unset' : JSON.stringify(origin)}). A staging build must never fall back to the production API.`,
+    );
+  }
+  return { stage: 'staging', apiOrigin: url.origin };
+}
+
 module.exports = () => {
+  resolveBuildStage();
   assertAndroidGoogleClientConfigured();
   assertIosGoogleClientConfigured();
   const expo = { ...base.expo };
@@ -215,3 +258,5 @@ module.exports.isStoreMvpBuild = isStoreMvpBuild;
 module.exports.mergedAndroidBlockedPermissions = mergedAndroidBlockedPermissions;
 module.exports.STORE_MVP_ADDITIONAL_BLOCKED_ANDROID_PERMISSIONS =
   STORE_MVP_ADDITIONAL_BLOCKED_ANDROID_PERMISSIONS;
+module.exports.resolveBuildStage = resolveBuildStage;
+module.exports.isProductionApiHost = isProductionApiHost;

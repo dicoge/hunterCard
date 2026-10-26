@@ -2,7 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # Test-first flow: pushes to staging run the same gates, so a staging
+    # commit can be proven green before a staging-alpha build. Deploying stays
+    # unreachable from push (deploy-production is workflow_dispatch + main only).
+    branches: [main, staging]
     paths-ignore:
       - "data/**"
   pull_request:
@@ -218,6 +221,9 @@ jobs:
 
       - name: Verify deployment freshness gate exercises Production branch across every flag value (DIC-1380 W4)
         run: npm run test:deployment-freshness-gate
+
+      - name: Verify staging Alpha ref isolation and stage-to-production API leak controls
+        run: npm run test:staging-alpha-flow
 
       - name: Verify official-catalog-sync workflow hands off through a PR (DIC-1291)
         run: npm run test:official-catalog-sync-workflow

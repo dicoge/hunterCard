@@ -34,7 +34,7 @@
  * client-side type drift silently loosen a server-side gate.
  */
 import type { SyncScanSession } from '../utils/scanSessionSync';
-import { PRODUCTION_ORIGIN } from '../config/apiOrigin';
+import { nativeApiOrigin } from '../config/apiOrigin';
 
 // Same resolution rule as `getApiBase` in `pushNotificationService.ts`, but
 // re-declared here so this module stays free of `react-native` imports and can
@@ -47,7 +47,7 @@ function getSyncApiBase(): string {
   if (typeof window !== 'undefined' && window?.location?.origin) {
     return window.location.origin;
   }
-  return PRODUCTION_ORIGIN;
+  return nativeApiOrigin();
 }
 
 export const ACCOUNT_SYNC_CLIENT_SCHEMA_VERSION = 1;

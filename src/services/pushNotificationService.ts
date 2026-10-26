@@ -11,7 +11,7 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 
-import { PRODUCTION_ORIGIN } from '../config/apiOrigin';
+import { nativeApiOrigin } from '../config/apiOrigin';
 
 // 後端 base URL：web 用當前 origin，native 用 canonical production origin
 // (DIC-1245)。舊 holocard-hunter.vercel.app 未部署當前的 push register / notify
@@ -21,7 +21,7 @@ export function getApiBase(): string {
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
     return window.location.origin;
   }
-  return PRODUCTION_ORIGIN;
+  return nativeApiOrigin();
 }
 
 function getProjectId(): string | undefined {

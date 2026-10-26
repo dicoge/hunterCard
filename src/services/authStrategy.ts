@@ -6,7 +6,7 @@
 // consumes these to dispatch; identity is always resolved server-side regardless
 // of which surface produced the provider ID token.
 
-import { PRODUCTION_ORIGIN } from '../config/apiOrigin';
+import { PRODUCTION_ORIGIN, isProductionHost, nativeApiOrigin, resolveAppStage } from '../config/apiOrigin';
 
 export type GoogleLoginSurface = 'native-ios' | 'native-android' | 'web';
 export type AppleLoginSurface = 'native-ios' | 'web' | 'android-web' | 'disabled';
@@ -115,11 +115,14 @@ export function resolveApiBase(params: {
 }): string {
   const { platformOS, webOrigin, envOverride } = params;
   const override = absoluteHttpOverride(envOverride ?? '');
-  if (override) return override;
+  // A staging build must not be pointed back at production through the
+  // override; it falls through to the stage-checked native origin instead.
+  const stagingBuild = resolveAppStage(process.env.EXPO_PUBLIC_APP_STAGE) !== 'production';
+  if (override && !(stagingBuild && isProductionHost(new URL(override).hostname))) return override;
   if (platformOS === 'web' && webOrigin) {
     return `${webOrigin.replace(/\/+$/, '')}/api`;
   }
-  return DEFAULT_NATIVE_API_BASE;
+  return stagingBuild ? `${nativeApiOrigin()}/api` : DEFAULT_NATIVE_API_BASE;
 }
 
 // Deterministic Web Google OAuth redirect URI (DIC-922).

@@ -7,7 +7,7 @@
 import { Platform } from 'react-native';
 
 import type { AuthSession } from '../../types/auth';
-import { PRODUCTION_ORIGIN } from '../../config/apiOrigin';
+import { nativeApiOrigin } from '../../config/apiOrigin';
 
 export {
   isAppleAuthAvailable,
@@ -30,7 +30,7 @@ function getApiBase(): string {
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
     return window.location.origin;
   }
-  return PRODUCTION_ORIGIN;
+  return nativeApiOrigin();
 }
 
 /**

@@ -60,6 +60,14 @@
     "production-apk-release": {
       "extends": "production-apk",
       "autoIncrement": false
+    },
+    "staging-alpha": {
+      "extends": "production",
+      "environment": "preview",
+      "env": {
+        "EXPO_PUBLIC_STORE_MVP": "1",
+        "EXPO_PUBLIC_APP_STAGE": "staging"
+      }
     }
   },
   "submit": {
