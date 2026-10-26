@@ -1,29 +1,96 @@
 #!/usr/bin/env node
+// Hermetic: the sync and build steps run inside a disposable workspace, never
+// against the repo's own data. The workspace gets a copy of scripts/ and the
+// data inputs they read, the repo's existing node_modules (symlinked, nothing
+// installed), and a controlled baseline. Every printing of the fixture
+// cardNumbers is reset to the unpriced shape, and price-history starts empty,
+// so neither the committed live prices nor durable history can restore a price
+// the synthetic listings below did not prove. data/images holds placeholder
+// files for exactly the fixture cardNumbers, so the builder's image step skips
+// them instead of making a network request. The repo's data files are hashed
+// before and after and must be byte-identical.
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const repo = process.cwd();
-const dbPath = path.join(repo, 'data/database.json');
-const publicDbPath = path.join(repo, 'public/data/database.json');
-const scrapeLogPath = path.join(repo, 'data/scrape-log.txt');
-const priceHistoryIndexPath = path.join(repo, 'data/price-history/index.json');
-const fixtureHistoryPath = path.join(repo, 'data/price-history/hBP01-021_hEB01_C_hBP01-021_C_02.json');
-const uFixtureHistoryPath = path.join(repo, 'data/price-history/hBP01-026_hEB01_U_hBP01-026_U_02.json');
-const originalDb = fs.readFileSync(dbPath, 'utf8');
-const originalPublicDb = fs.readFileSync(publicDbPath, 'utf8');
-const originalScrapeLog = fs.existsSync(scrapeLogPath) ? fs.readFileSync(scrapeLogPath, 'utf8') : null;
-const originalPriceHistoryIndex = fs.existsSync(priceHistoryIndexPath) ? fs.readFileSync(priceHistoryIndexPath, 'utf8') : null;
-const originalFixtureHistory = fs.existsSync(fixtureHistoryPath) ? fs.readFileSync(fixtureHistoryPath, 'utf8') : null;
-const originalUFixtureHistory = fs.existsSync(uFixtureHistoryPath) ? fs.readFileSync(uFixtureHistoryPath, 'utf8') : null;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dic1176-yuyu-'));
 const fixture = path.join(tmp, 'yuyu-fixture.json');
+const work = path.join(tmp, 'work');
+const dbPath = path.join(work, 'data/database.json');
+
+const FIXTURE_CARD_NUMBERS = ['hBP01-021', 'hBP01-026', 'hEB01-031', 'hEB01-032'];
+// Not read by the sync/build steps; large, so not copied.
+const SKIPPED_DATA_DIRS = new Set(['images', 'price-history', 'price-history-quarantined-DIC-1219', 'trends', 'news-sentiment']);
+
+function sha256(file) {
+  return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+}
+
+// Everything the old in-place version of this test wrote to, plus the whole
+// durable price-history and image directories.
+function sourceSnapshot() {
+  const snap = {};
+  for (const rel of ['data/database.json', 'public/data/database.json', 'data/scrape-log.txt', 'data/price-rejections.json']) {
+    const file = path.join(repo, rel);
+    snap[rel] = fs.existsSync(file) ? sha256(file) : null;
+  }
+  for (const rel of ['data/price-history', 'data/images']) {
+    const dir = path.join(repo, rel);
+    const h = crypto.createHash('sha256');
+    if (fs.existsSync(dir)) {
+      for (const name of fs.readdirSync(dir).sort()) h.update(`${name}\0${sha256(path.join(dir, name))}\0`);
+    }
+    snap[rel] = h.digest('hex');
+  }
+  return snap;
+}
+
+function buildWorkspace() {
+  fs.mkdirSync(work);
+  fs.cpSync(path.join(repo, 'scripts'), path.join(work, 'scripts'), { recursive: true });
+  fs.copyFileSync(path.join(repo, 'package.json'), path.join(work, 'package.json'));
+  fs.mkdirSync(path.join(work, 'data'));
+  for (const entry of fs.readdirSync(path.join(repo, 'data'))) {
+    if (SKIPPED_DATA_DIRS.has(entry)) continue;
+    fs.cpSync(path.join(repo, 'data', entry), path.join(work, 'data', entry), { recursive: true });
+  }
+  fs.mkdirSync(path.join(work, 'data/price-history'));
+  fs.mkdirSync(path.join(work, 'data/images'));
+  for (const cardNumber of FIXTURE_CARD_NUMBERS) {
+    fs.writeFileSync(path.join(work, 'data/images', `${cardNumber}.jpg`), 'dic1176 placeholder\n');
+  }
+  fs.mkdirSync(path.join(work, 'public/data'), { recursive: true });
+  const modules = path.join(repo, 'node_modules');
+  if (fs.existsSync(modules)) fs.symlinkSync(fs.realpathSync(modules), path.join(work, 'node_modules'), 'dir');
+}
+
+// Unpriced shape, as on a printing yuyu has never proven (e.g. hBP01-021_hPR_P).
+function seedUnproven(card) {
+  card.sellPrice = null;
+  card.prices = [];
+  card._rawPricesArchive = [];
+  card.timestamp = '';
+  card.yuyuName = '';
+  card.yuyuImage = '';
+  delete card.priceHistory;
+  delete card.buyPrice;
+  delete card.buyPriceHistory;
+}
+
+const sourceBefore = sourceSnapshot();
 
 try {
-  const baseline = JSON.parse(originalDb);
+  buildWorkspace();
+  const baseline = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
   const cards = baseline.cards || {};
+  for (const card of Object.values(cards)) {
+    if (FIXTURE_CARD_NUMBERS.includes(card.cardNumber)) seedUnproven(card);
+  }
+  fs.writeFileSync(dbPath, `${JSON.stringify(baseline, null, 2)}\n`);
   const cId = 'hBP01-021_hEB01_C_hBP01-021_C_02';
   const hrId = 'hBP01-021_hEB01_HR_hBP01-021_HR';
   const uId = 'hBP01-026_hEB01_U_hBP01-026_U_02';
@@ -111,7 +178,7 @@ try {
   }, null, 2));
 
   const syncResult = spawnSync(process.execPath, ['scripts/sync-official-catalog-to-database.mjs'], {
-    cwd: repo,
+    cwd: work,
     encoding: 'utf8',
   });
   assert.equal(syncResult.status, 0, `official-sync fixture pre-step failed\nSTDOUT:\n${syncResult.stdout}\nSTDERR:\n${syncResult.stderr}`);
@@ -121,16 +188,15 @@ try {
   assert.deepEqual(afterSync[hrId].prices, [], 'official-sync pre-step keeps unproven hEB01 HR prices empty');
 
   const result = spawnSync(process.execPath, ['scripts/build-database.js'], {
-    cwd: repo,
+    cwd: work,
     env: {
       ...process.env,
       HUNTERCARD_YUYU_FIXTURE_PATH: fixture,
-      // keep the fixture small and deterministic; image download failures are non-fatal.
-      HUNTERCARD_SKIP_IMAGE_DOWNLOADS: '1',
     },
     encoding: 'utf8',
   });
   assert.equal(result.status, 0, `build-database fixture run failed\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`);
+  assert.match(result.stdout, /\[images\] Downloaded: 0, Skipped: 4, Errors: 0/, 'image step must skip every fixture cardNumber without a request');
 
   const rebuilt = JSON.parse(fs.readFileSync(dbPath, 'utf8')).cards;
   const c = rebuilt[cId];
@@ -172,17 +238,8 @@ try {
     .map(([id]) => id);
   assert.deepEqual(offenders, [], 'synthetic base-rarity listings must not populate any other same-number printing');
 } finally {
-  fs.writeFileSync(dbPath, originalDb);
-  fs.writeFileSync(publicDbPath, originalPublicDb);
-  if (originalScrapeLog === null) fs.rmSync(scrapeLogPath, { force: true });
-  else fs.writeFileSync(scrapeLogPath, originalScrapeLog);
-  if (originalPriceHistoryIndex === null) fs.rmSync(priceHistoryIndexPath, { force: true });
-  else fs.writeFileSync(priceHistoryIndexPath, originalPriceHistoryIndex);
-  if (originalFixtureHistory === null) fs.rmSync(fixtureHistoryPath, { force: true });
-  else fs.writeFileSync(fixtureHistoryPath, originalFixtureHistory);
-  if (originalUFixtureHistory === null) fs.rmSync(uFixtureHistoryPath, { force: true });
-  else fs.writeFileSync(uFixtureHistoryPath, originalUFixtureHistory);
   fs.rmSync(tmp, { recursive: true, force: true });
+  assert.deepEqual(sourceSnapshot(), sourceBefore, 'repo data, public DB, price-history and images must be byte-identical after the run');
 }
 
 console.log('✓ yuyu exact-printing sell match regression passed');
