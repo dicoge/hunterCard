@@ -1,6 +1,6 @@
 {
   "lastUpdated": "2026-10-18T12:08:52.438Z",
-  "totalCards": 3920,
+  "totalCards": 3960,
   "source": "hunterCard unified database",
   "cards": {
     "hBD24-007_ent07": {
@@ -440106,6 +440106,2150 @@
         "2026-10-18": 50
       },
       "buyPrice": 50
+    },
+    "hBP01-104_hSD20_C_hBP01-104_C": {
+      "id": "hBP01-104_hSD20_C_hBP01-104_C",
+      "cardNumber": "hBP01-104",
+      "name": "ふつうのパソコン",
+      "type": "SupportItem",
+      "color": "colorless",
+      "rarity": "C",
+      "series": "hSD20",
+      "sourceProduct": "hSD20",
+      "sourceProductName": "ブースターパック「ブルーミングレディアンス」",
+      "sourceProductText": "ブースターパック「ブルーミングレディアンス」\nスタートデッキ 赤 百鬼あやめ\nスタートデッキ 紫 癒月ちょこ\nスタートデッキ 白 轟はじめ\nスタートデッキ 緑 風真いろは\nスタートデッキ 黄 不知火フレア\nスタートデッキ FLOW GLOW 推し 輪堂千速\nスタートデッキ FLOW GLOW 推し 虎金妃笑虎\nスタートデッキ 推し Advent\nスタートデッキ 推し Justice\nエクストラブースター サマー・ホログラム\nスタートデッキ アソビ★まわり隊！推し 百灯キョーコ\nスタートデッキ アソビ★まわり隊！推し 熱千めら\n【使用可能カード】セレクションカップ",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP01/hBP01-104_C.png",
+      "localImage": "/images/hBP01-104.jpg",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hBP01-104",
+        "name": "ふつうのパソコン",
+        "cardType": "サポート・アイテム",
+        "color": "",
+        "abilityText": "自分のデッキから、Debutホロメン1枚を公開し、ステージに出す。そしてデッキをシャッフルする。"
+      },
+      "skillsZh": {
+        "cardNumber": "hBP01-104",
+        "name": "普通電腦",
+        "cardType": "支援·道具",
+        "color": "",
+        "abilityText": "從自己的牌組，展示Debut成員1張，出場到場上。然後洗牌。"
+      },
+      "nameZh": "普通電腦"
+    },
+    "hBP05-074_hSD20_C_hBP05-074_C": {
+      "id": "hBP05-074_hSD20_C_hBP05-074_C",
+      "cardNumber": "hBP05-074",
+      "name": "フレンドリーパソコン",
+      "type": "SupportItem",
+      "color": "colorless",
+      "rarity": "C",
+      "series": "hSD20",
+      "sourceProduct": "hSD20",
+      "sourceProductName": "ブースターパック「エンチャントレガリア」",
+      "sourceProductText": "ブースターパック「エンチャントレガリア」\nスタートデッキ アソビ★まわり隊！推し 百灯キョーコ\nスタートデッキ アソビ★まわり隊！推し 熱千めら\n【使用可能カード】セレクションカップ",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP05/hBP05-074_C.png",
+      "localImage": "/images/hBP05-074.jpg",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hBP05-074",
+        "name": "フレンドリーパソコン",
+        "cardType": "サポート・アイテム",
+        "color": "",
+        "abilityText": "自分のデッキから、エクストラ「このホロメンはデッキに何枚でも入れられる」を持つDebutホロメン1～2枚を公開し、ステージに出す。そしてデッキをシャッフルする。Debutホロメンを2枚出したなら、さらに、自分の手札1枚をデッキの下に戻す。"
+      },
+      "skillsZh": {
+        "cardNumber": "hBP05-074",
+        "name": "友善電腦",
+        "cardType": "支援·道具",
+        "color": "",
+        "abilityText": "從自己的牌組中，公開1～2張持有額外「此成員可在牌組中放入任意張數」之Debut成員，放置於場上。然後洗牌牌組。若Debut成員出了2張，則再將自己1張手牌放回牌組下方。"
+      },
+      "nameZh": "友善電腦"
+    },
+    "hSD01-017_hSD20_C_hSD01-017_C": {
+      "id": "hSD01-017_hSD20_C_hSD01-017_C",
+      "cardNumber": "hSD01-017",
+      "name": "マネちゃん",
+      "type": "サポート・スタッフ・LIMITED",
+      "color": "colorless",
+      "rarity": "C",
+      "series": "hSD20",
+      "sourceProduct": "hSD20",
+      "sourceProductName": "スタートデッキ「ときのそら＆AZKi」",
+      "sourceProductText": "スタートデッキ「ときのそら＆AZKi」\nスタートデッキ 赤 百鬼あやめ\nスタートデッキ 青 猫又おかゆ\nスタートデッキ 紫 癒月ちょこ\nスタートデッキ 白 轟はじめ\nスタートデッキ 緑 風真いろは\nスタートデッキ 黄 不知火フレア\nスタートデッキ 白 天音かなた\nスタートデッキ 赤 宝鐘マリン\nスタートデッキ FLOW GLOW 推し 輪堂千速\nスタートデッキ FLOW GLOW 推し 虎金妃笑虎\nライブスタートデッキ 白上フブキ\nライブスタートデッキ 儒烏風亭らでん\nライブスタートデッキ さくらみこ\nライブスタートデッキ 星街すいせい\nライブスタートデッキ 森カリオペ\nライブスタートデッキ 大空スバル\nスタートデッキ アソビ★まわり隊！推し 百灯キョーコ\nスタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD01/hSD01-017_C.png",
+      "localImage": "/images/hSD01-017.jpg",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD01-017",
+        "name": "マネちゃん",
+        "cardType": "サポート・スタッフ・LIMITED",
+        "color": "",
+        "abilityText": "このカードは、自分の手札がこのカードを含まずに1枚以上なければ使えない。\n\n自分の手札すべてをデッキに戻してシャッフルする。そして自分のデッキを5枚引く。\n\nLIMITED:ターンに1枚しか使えない。"
+      },
+      "skillsZh": {
+        "cardNumber": "hSD01-017",
+        "name": "小經",
+        "cardType": "支援·工作人員·LIMITED",
+        "color": "",
+        "abilityText": "此卡只能在自己的手牌不包含此卡且至少有1張時才能使用。\n\n將自己的所有手牌返回牌組並洗牌。然後抽自己牌組5張。\n\nLIMITED：每回合只能使用1張。"
+      },
+      "nameZh": "小經"
+    },
+    "hSD14-010_hSD20_C_hSD14-010_C_03": {
+      "id": "hSD14-010_hSD20_C_hSD14-010_C_03",
+      "cardNumber": "hSD14-010",
+      "name": "holoAN",
+      "type": "サポート・スタッフ・LIMITED",
+      "color": "colorless",
+      "rarity": "C",
+      "series": "hSD20",
+      "sourceProduct": "hSD20",
+      "sourceProductName": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sourceProductText": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ\nスタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD20/hSD14-010_C_03.png",
+      "localImage": "/images/hSD14-010.jpg",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD14-010",
+        "name": "holoAN",
+        "cardType": "サポート・スタッフ・LIMITED",
+        "color": "",
+        "abilityText": "自分のデッキを３枚引く。\n\nLIMITED：ターンに1枚しか使えない。"
+      },
+      "skillsZh": {
+        "cardNumber": "hSD14-010",
+        "name": "holoAN",
+        "cardType": "支援·工作人員·LIMITED",
+        "color": "",
+        "abilityText": "自己抽3張牌。\n\nLIMITED：每回合只能使用1張。"
+      },
+      "nameZh": "holoAN"
+    },
+    "hSD20-001_hSD20_OSR_hSD20-001_OSR": {
+      "id": "hSD20-001_hSD20_OSR_hSD20-001_OSR",
+      "cardNumber": "hSD20-001",
+      "name": "百灯キョーコ",
+      "type": "OshiHolomen",
+      "color": "colorless",
+      "rarity": "OSR",
+      "series": "hSD20",
+      "sourceProduct": "hSD20",
+      "sourceProductName": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sourceProductText": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD20/hSD20-001_OSR.png",
+      "localImage": "",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD20-001",
+        "name": "百灯キョーコ",
+        "cardType": "推しホロメン",
+        "color": "赤",
+        "stageSkill": {
+          "name": "広がる情熱",
+          "effect": "自分のホロメンがコラボした時、自分のセンターが〈百灯キョーコ〉なら、自分のエールデッキの上から1枚を自分のコラボホロメンに送る。"
+        },
+        "oshiSkill": {
+          "name": "ヒーローポリス疾走！",
+          "cost": "-3",
+          "effect": "[ターンに1回]相手のDebut以外の[センターホロメンとコラボホロメン]に、自分のステージのエール1枚につき、特殊ダメージ10を与える。"
+        }
+      },
+      "skillsZh": {
+        "cardNumber": "hSD20-001",
+        "name": "百燈京子",
+        "cardType": "主推成員",
+        "color": "赤",
+        "stageSkill": {
+          "name": "擴散的熱情",
+          "effect": "當自己的成員進行協力時，若自己的中央成員是〈百燈京子〉，則將自己應援牌組最上方1張送到自己的協力成員。"
+        },
+        "oshiSkill": {
+          "name": "英雄警察疾馳！",
+          "cost": "-3",
+          "effect": "[每回合1次]自己場上的應援每有1張，對對手的Debut以外的[中央成員與協力成員]造成特殊傷害10。"
+        }
+      },
+      "nameZh": "百燈京子"
+    },
+    "hSD20-002_hSD20_C_hSD20-002_C": {
+      "id": "hSD20-002_hSD20_C_hSD20-002_C",
+      "cardNumber": "hSD20-002",
+      "name": "百灯キョーコ",
+      "type": "Holomen",
+      "color": "red",
+      "rarity": "C",
+      "series": "hSD20",
+      "sourceProduct": "hSD20",
+      "sourceProductName": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sourceProductText": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD20/hSD20-002_C.png",
+      "localImage": "",
+      "hp": "130",
+      "life": "",
+      "arts": "アーツ 赤笑顔にさせちゃっていいですか！？？　20+ \n[センターポジション限定]自分のステージにエールが2枚以上あるなら、このアーツ+20。",
+      "bloomLevel": "Debut",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD20-002",
+        "name": "百灯キョーコ",
+        "cardType": "ホロメン",
+        "color": "赤",
+        "arts": [
+          {
+            "name": "笑顔にさせちゃっていいですか！？？",
+            "cost": "赤",
+            "damage": "20+",
+            "effect": "[センターポジション限定]自分のステージにエールが2枚以上あるなら、このアーツ+20。"
+          }
+        ],
+        "keywords": [
+          {
+            "label": "エクストラ",
+            "effect": "このホロメンはデッキに何枚でも入れられる"
+          }
+        ]
+      },
+      "skillsZh": {
+        "cardNumber": "hSD20-002",
+        "name": "百燈京子",
+        "cardType": "成員",
+        "color": "赤",
+        "arts": [
+          {
+            "name": "可以讓你露出笑容嗎！？？",
+            "cost": "赤",
+            "damage": "20+",
+            "effect": "[中央位置限定]如果自己場上有2張以上應援，此招式+20。"
+          }
+        ],
+        "keywords": [
+          {
+            "label": "額外",
+            "effect": "這個成員可以在牌組中放入任意張數"
+          }
+        ]
+      },
+      "nameZh": "百燈京子"
+    },
+    "hSD20-003_hSD20_U_hSD20-003_U": {
+      "id": "hSD20-003_hSD20_U_hSD20-003_U",
+      "cardNumber": "hSD20-003",
+      "name": "百灯キョーコ",
+      "type": "Holomen",
+      "color": "red",
+      "rarity": "U",
+      "series": "hSD20",
+      "sourceProduct": "hSD20",
+      "sourceProductName": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sourceProductText": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD20/hSD20-003_U.png",
+      "localImage": "",
+      "hp": "130",
+      "life": "",
+      "arts": "アーツ ◇ドンチャン大騒ぎの始まり　20",
+      "bloomLevel": "Debut",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD20-003",
+        "name": "百灯キョーコ",
+        "cardType": "ホロメン",
+        "color": "赤",
+        "arts": [
+          {
+            "name": "ドンチャン大騒ぎの始まり",
+            "cost": "◇",
+            "damage": "20",
+            "effect": ""
+          }
+        ],
+        "keywords": [
+          {
+            "label": "キーワード",
+            "effect": "即集合！\n自分が後攻で最初のターンなら、自分のデッキから、[#アソビ★まわり隊！を持つDebutホロメンと1st〈百灯キョーコ〉]1枚ずつを公開し、手札に加える。そしてデッキをシャッフルする。"
+          }
+        ]
+      },
+      "skillsZh": {
+        "cardNumber": "hSD20-003",
+        "name": "百燈京子",
+        "cardType": "成員",
+        "color": "赤",
+        "arts": [
+          {
+            "name": "喧鬧大騷動的開始",
+            "cost": "◇",
+            "damage": "20",
+            "effect": ""
+          }
+        ],
+        "keywords": [
+          {
+            "label": "關鍵字",
+            "effect": "立即集合！\n如果自己是後攻且為第一個回合，從自己的牌組，各公開[持有#遊玩★巡遊隊！的Debut成員與1st〈百燈京子〉]1張，加入手牌。然後洗牌。"
+          }
+        ]
+      },
+      "nameZh": "百燈京子"
+    },
+    "hSD20-004_hSD20_C_hSD20-004_C": {
+      "id": "hSD20-004_hSD20_C_hSD20-004_C",
+      "cardNumber": "hSD20-004",
+      "name": "百灯キョーコ",
+      "type": "Holomen",
+      "color": "red",
+      "rarity": "C",
+      "series": "hSD20",
+      "sourceProduct": "hSD20",
+      "sourceProductName": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sourceProductText": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD20/hSD20-004_C.png",
+      "localImage": "",
+      "hp": "180",
+      "life": "",
+      "arts": "アーツ 赤◇出勤準備完了！　60\nアーツ 赤◇◇◇拡声器いらずのビッグボイス　140",
+      "bloomLevel": "1st",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD20-004",
+        "name": "百灯キョーコ",
+        "cardType": "ホロメン",
+        "color": "赤",
+        "arts": [
+          {
+            "name": "出勤準備完了！",
+            "cost": "赤◇",
+            "damage": "60",
+            "effect": ""
+          },
+          {
+            "name": "拡声器いらずのビッグボイス",
+            "cost": "赤◇◇◇",
+            "damage": "140",
+            "effect": ""
+          }
+        ]
+      },
+      "skillsZh": {
+        "cardNumber": "hSD20-004",
+        "name": "百燈京子",
+        "cardType": "成員",
+        "color": "赤",
+        "arts": [
+          {
+            "name": "出勤準備完成！",
+            "cost": "赤◇",
+            "damage": "60",
+            "effect": ""
+          },
+          {
+            "name": "不需擴音器的大嗓門",
+            "cost": "赤◇◇◇",
+            "damage": "140",
+            "effect": ""
+          }
+        ]
+      },
+      "nameZh": "百燈京子"
+    },
+    "hSD20-005_hSD20_U_hSD20-005_U": {
+      "id": "hSD20-005_hSD20_U_hSD20-005_U",
+      "cardNumber": "hSD20-005",
+      "name": "百灯キョーコ",
+      "type": "Holomen",
+      "color": "red",
+      "rarity": "U",
+      "series": "hSD20",
+      "sourceProduct": "hSD20",
+      "sourceProductName": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sourceProductText": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD20/hSD20-005_U.png",
+      "localImage": "",
+      "hp": "150",
+      "life": "",
+      "arts": "アーツ ◇考えるより先に動く　30",
+      "bloomLevel": "1st",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD20-005",
+        "name": "百灯キョーコ",
+        "cardType": "ホロメン",
+        "color": "赤",
+        "arts": [
+          {
+            "name": "考えるより先に動く",
+            "cost": "◇",
+            "damage": "30",
+            "effect": ""
+          }
+        ],
+        "keywords": [
+          {
+            "label": "キーワード",
+            "effect": "差し伸べる手\n自分のステージの#アソビ★まわり隊！を持つホロメン1人を選ぶ。このターンの間、選んだホロメンのアーツ+20。"
+          }
+        ]
+      },
+      "skillsZh": {
+        "cardNumber": "hSD20-005",
+        "name": "百燈京子",
+        "cardType": "成員",
+        "color": "赤",
+        "arts": [
+          {
+            "name": "比起思考先行動",
+            "cost": "◇",
+            "damage": "30",
+            "effect": ""
+          }
+        ],
+        "keywords": [
+          {
+            "label": "關鍵字",
+            "effect": "伸出援手\n選擇1位自己場上持有#遊玩★巡遊隊！的成員。此回合內，所選成員的招式+20。"
+          }
+        ]
+      },
+      "nameZh": "百燈京子"
+    },
+    "hSD20-006_hSD20_R_hSD20-006_R": {
+      "id": "hSD20-006_hSD20_R_hSD20-006_R",
+      "cardNumber": "hSD20-006",
+      "name": "百灯キョーコ",
+      "type": "Holomen",
+      "color": "red",
+      "rarity": "R",
+      "series": "hSD20",
+      "sourceProduct": "hSD20",
+      "sourceProductName": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sourceProductText": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD20/hSD20-006_R.png",
+      "localImage": "",
+      "hp": "160",
+      "life": "",
+      "arts": "アーツ 赤◇渦巻くハイテンション　50+ \n自分のステージにエールが6枚以上あるなら、このアーツ+20。",
+      "bloomLevel": "1st",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD20-006",
+        "name": "百灯キョーコ",
+        "cardType": "ホロメン",
+        "color": "赤",
+        "arts": [
+          {
+            "name": "渦巻くハイテンション",
+            "cost": "赤◇",
+            "damage": "50+",
+            "effect": "自分のステージにエールが6枚以上あるなら、このアーツ+20。"
+          }
+        ],
+        "keywords": [
+          {
+            "label": "キーワード",
+            "effect": "誰にだって手を伸ばす！\n自分のステージのエール1枚をアーカイブできる:自分のアーカイブの#アソビ★まわり隊！を持つホロメン1枚を手札に戻す。"
+          }
+        ]
+      },
+      "skillsZh": {
+        "cardNumber": "hSD20-006",
+        "name": "百燈京子",
+        "cardType": "成員",
+        "color": "赤",
+        "arts": [
+          {
+            "name": "漩渦般的超高情緒",
+            "cost": "赤◇",
+            "damage": "50+",
+            "effect": "如果自己場上有6張以上應援，此招式+20。"
+          }
+        ],
+        "keywords": [
+          {
+            "label": "關鍵字",
+            "effect": "無論是誰都會伸出手！\n可以將自己場上的應援1張歸檔:將自己歸檔中持有#遊玩★巡遊隊！的成員1張放回手牌。"
+          }
+        ]
+      },
+      "nameZh": "百燈京子"
+    },
+    "hSD20-007_hSD20_RR_hSD20-007_RR": {
+      "id": "hSD20-007_hSD20_RR_hSD20-007_RR",
+      "cardNumber": "hSD20-007",
+      "name": "百灯キョーコ",
+      "type": "Holomen",
+      "color": "red",
+      "rarity": "RR",
+      "series": "hSD20",
+      "sourceProduct": "hSD20",
+      "sourceProductName": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sourceProductText": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD20/hSD20-007_RR.png",
+      "localImage": "",
+      "hp": "190",
+      "life": "",
+      "arts": "アーツ 赤赤◇「最強」担当　150+ 緑+50 \n自分のステージにエールが6枚以上あるなら、このアーツ+50。",
+      "bloomLevel": "2nd",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD20-007",
+        "name": "百灯キョーコ",
+        "cardType": "ホロメン",
+        "color": "赤",
+        "arts": [
+          {
+            "name": "「最強」担当",
+            "cost": "赤赤◇",
+            "damage": "150+",
+            "tokkou": "緑+50",
+            "effect": "自分のステージにエールが6枚以上あるなら、このアーツ+50。"
+          }
+        ],
+        "keywords": [
+          {
+            "label": "キーワード",
+            "effect": "情熱系ヒーローポリス\n[センターポジション限定]自分のコラボホロメンのアーツ+20。"
+          }
+        ]
+      },
+      "skillsZh": {
+        "cardNumber": "hSD20-007",
+        "name": "百燈京子",
+        "cardType": "成員",
+        "color": "赤",
+        "arts": [
+          {
+            "name": "「最強」擔當",
+            "cost": "赤赤◇",
+            "damage": "150+",
+            "tokkou": "緑+50",
+            "effect": "如果自己場上有6張以上應援，此招式+50。"
+          }
+        ],
+        "keywords": [
+          {
+            "label": "關鍵字",
+            "effect": "熱血系英雄警察\n[中央位置限定]自己的協力成員的招式+20。"
+          }
+        ]
+      },
+      "nameZh": "百燈京子"
+    },
+    "hSD20-008_hSD20_C_hSD20-008_C": {
+      "id": "hSD20-008_hSD20_C_hSD20-008_C",
+      "cardNumber": "hSD20-008",
+      "name": "宙科そぴあ",
+      "type": "Holomen",
+      "color": "blue",
+      "rarity": "C",
+      "series": "hSD20",
+      "sourceProduct": "hSD20",
+      "sourceProductName": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sourceProductText": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ\nスタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD20/hSD20-008_C.png",
+      "localImage": "",
+      "hp": "120",
+      "life": "",
+      "arts": "アーツ ◇全部この目で確かめにいくよ！　10",
+      "bloomLevel": "Debut",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD20-008",
+        "name": "宙科そぴあ",
+        "cardType": "ホロメン",
+        "color": "青",
+        "arts": [
+          {
+            "name": "全部この目で確かめにいくよ！",
+            "cost": "◇",
+            "damage": "10",
+            "effect": ""
+          }
+        ],
+        "keywords": [
+          {
+            "label": "キーワード",
+            "effect": "夢は弾けるビッグバン！\n相手のターンで、このホロメンがダウンした時、自分のデッキを1枚引く。"
+          },
+          {
+            "label": "エクストラ",
+            "effect": "このホロメンはデッキに何枚でも入れられる"
+          }
+        ]
+      },
+      "skillsZh": {
+        "cardNumber": "hSD20-008",
+        "name": "宙科索比亞",
+        "cardType": "成員",
+        "color": "青",
+        "arts": [
+          {
+            "name": "全部都要用這雙眼睛去確認喔！",
+            "cost": "◇",
+            "damage": "10",
+            "effect": ""
+          }
+        ],
+        "keywords": [
+          {
+            "label": "關鍵字",
+            "effect": "夢想是迸發的大爆炸！\n在對手的回合中，當這個成員倒下時，從自己的牌組抽1張牌。"
+          },
+          {
+            "label": "額外",
+            "effect": "這個成員可以在牌組中放入任意張數"
+          }
+        ]
+      },
+      "nameZh": "宙科索比亞"
+    },
+    "hSD20-009_hSD20_U_hSD20-009_U": {
+      "id": "hSD20-009_hSD20_U_hSD20-009_U",
+      "cardNumber": "hSD20-009",
+      "name": "宙科そぴあ",
+      "type": "Holomen",
+      "color": "blue",
+      "rarity": "U",
+      "series": "hSD20",
+      "sourceProduct": "hSD20",
+      "sourceProductName": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sourceProductText": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ\nスタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD20/hSD20-009_U.png",
+      "localImage": "",
+      "hp": "160",
+      "life": "",
+      "arts": "アーツ ◇抑えきれない知的好奇心　30",
+      "bloomLevel": "1st",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD20-009",
+        "name": "宙科そぴあ",
+        "cardType": "ホロメン",
+        "color": "青",
+        "arts": [
+          {
+            "name": "抑えきれない知的好奇心",
+            "cost": "◇",
+            "damage": "30",
+            "effect": ""
+          }
+        ],
+        "keywords": [
+          {
+            "label": "キーワード",
+            "effect": "面白さの探求\n自分のステージに#アソビ★まわり隊！を持つホロメンが3人以上いるなら、このホロメンのエール1枚をアーカイブできる：自分のデッキを2枚引く。"
+          }
+        ]
+      },
+      "skillsZh": {
+        "cardNumber": "hSD20-009",
+        "name": "宙科索比亞",
+        "cardType": "成員",
+        "color": "青",
+        "arts": [
+          {
+            "name": "無法抑制的求知慾",
+            "cost": "◇",
+            "damage": "30",
+            "effect": ""
+          }
+        ],
+        "keywords": [
+          {
+            "label": "關鍵字",
+            "effect": "探求樂趣\n如果自己場上有3位以上持有#遊玩★巡遊隊！的成員，可以將這個成員的應援1張歸檔：從自己的牌組抽2張牌。"
+          }
+        ]
+      },
+      "nameZh": "宙科索比亞"
+    },
+    "hSD20-010_hSD20_R_hSD20-010_R": {
+      "id": "hSD20-010_hSD20_R_hSD20-010_R",
+      "cardNumber": "hSD20-010",
+      "name": "宙科そぴあ",
+      "type": "Holomen",
+      "color": "blue",
+      "rarity": "R",
+      "series": "hSD20",
+      "sourceProduct": "hSD20",
+      "sourceProductName": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sourceProductText": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ\nスタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD20/hSD20-010_R.png",
+      "localImage": "",
+      "hp": "130",
+      "life": "",
+      "arts": "アーツ 青◇面白いもの見つけたよ！　50 \nこのホロメンのエール1枚を自分の他の#アソビ★まわり隊！を持つホロメンに付け替えられる。",
+      "bloomLevel": "1st",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD20-010",
+        "name": "宙科そぴあ",
+        "cardType": "ホロメン",
+        "color": "青",
+        "arts": [
+          {
+            "name": "面白いもの見つけたよ！",
+            "cost": "青◇",
+            "damage": "50",
+            "effect": "このホロメンのエール1枚を自分の他の#アソビ★まわり隊！を持つホロメンに付け替えられる。"
+          }
+        ],
+        "keywords": [
+          {
+            "label": "キーワード",
+            "effect": "仲間を探すぞ～！\n自分のデッキの上から3枚を見る。その中から、#アソビ★まわり隊！を持つホロメン1枚を公開し、手札に加える。そして残ったカードを好きな順でデッキの下に戻す。"
+          }
+        ]
+      },
+      "skillsZh": {
+        "cardNumber": "hSD20-010",
+        "name": "宙科索比亞",
+        "cardType": "成員",
+        "color": "青",
+        "arts": [
+          {
+            "name": "發現有趣的東西了！",
+            "cost": "青◇",
+            "damage": "50",
+            "effect": "可以將這個成員的應援1張轉移到自己的其他持有#遊玩★巡遊隊！的成員。"
+          }
+        ],
+        "keywords": [
+          {
+            "label": "關鍵字",
+            "effect": "去尋找夥伴吧～！\n查看自己牌組上方3張。從中公開1張持有#遊玩★巡遊隊！的成員，加入手牌。然後將剩餘的卡牌以任意順序放回牌組下方。"
+          }
+        ]
+      },
+      "nameZh": "宙科索比亞"
+    },
+    "hSD20-011_hSD20_RR_hSD20-011_RR": {
+      "id": "hSD20-011_hSD20_RR_hSD20-011_RR",
+      "cardNumber": "hSD20-011",
+      "name": "宙科そぴあ",
+      "type": "Holomen",
+      "color": "blue",
+      "rarity": "RR",
+      "series": "hSD20",
+      "sourceProduct": "hSD20",
+      "sourceProductName": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sourceProductText": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ\nスタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD20/hSD20-011_RR.png",
+      "localImage": "",
+      "hp": "200",
+      "life": "",
+      "arts": "アーツ 青◇「ひらめき」担当　80+ 白+50 \nこのホロメンのエール1～3枚をアーカイブできる:アーカイブしたエール1枚につき、このアーツ+20。",
+      "bloomLevel": "2nd",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD20-011",
+        "name": "宙科そぴあ",
+        "cardType": "ホロメン",
+        "color": "青",
+        "arts": [
+          {
+            "name": "「ひらめき」担当",
+            "cost": "青◇",
+            "damage": "80+",
+            "tokkou": "白+50",
+            "effect": "このホロメンのエール1～3枚をアーカイブできる:アーカイブしたエール1枚につき、このアーツ+20。"
+          }
+        ],
+        "keywords": [
+          {
+            "label": "キーワード",
+            "effect": "（自称）天才宇宙飛行士\n自分のアーカイブのエール2枚を自分の#アソビ★まわり隊！を持つホロメン1人に送れる。"
+          }
+        ]
+      },
+      "skillsZh": {
+        "cardNumber": "hSD20-011",
+        "name": "宙科索比亞",
+        "cardType": "成員",
+        "color": "青",
+        "arts": [
+          {
+            "name": "「靈感」擔當",
+            "cost": "青◇",
+            "damage": "80+",
+            "tokkou": "白+50",
+            "effect": "可以將這個成員的應援1～3張歸檔:每歸檔1張應援，此招式+20。"
+          }
+        ],
+        "keywords": [
+          {
+            "label": "關鍵字",
+            "effect": "（自稱）天才太空人\n可以將自己歸檔中的應援2張送給自己的1位持有#遊玩★巡遊隊！的成員。"
+          }
+        ]
+      },
+      "nameZh": "宙科索比亞"
+    },
+    "hSD20-012_hSD20_U_hSD20-012_U": {
+      "id": "hSD20-012_hSD20_U_hSD20-012_U",
+      "cardNumber": "hSD20-012",
+      "name": "アソビ★まわり隊！",
+      "type": "サポート・イベント・LIMITED",
+      "color": "colorless",
+      "rarity": "U",
+      "series": "hSD20",
+      "sourceProduct": "hSD20",
+      "sourceProductName": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sourceProductText": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ\nスタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD20/hSD20-012_U.png",
+      "localImage": "",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD20-012",
+        "name": "アソビ★まわり隊！",
+        "cardType": "サポート・イベント・LIMITED",
+        "color": "",
+        "abilityText": "このカードは、自分の手札がこのカードを含まずに6枚以下でなければ使えない。\n\n自分のデッキの上から4枚を見る。その中から、#アソビ★まわり隊！を持つホロメンを好きな枚数公開し、公開したホロメンを手札に加える。そして残ったカードを好きな順でデッキの下に戻す。\n\nLIMITED:ターンに1枚しか使えない。"
+      },
+      "skillsZh": {
+        "cardNumber": "hSD20-012",
+        "name": "遊玩★巡遊隊！",
+        "cardType": "支援·事件·LIMITED",
+        "color": "",
+        "abilityText": "此卡必須在自己手牌不含此卡且為6張以下時才能使用。\n\n查看自己牌組上方4張。從中，公開任意張數持有#遊玩★巡遊隊！的成員，將公開的成員加入手牌。然後將剩餘的卡牌以任意順序放回牌組下方。\n\nLIMITED:每回合只能使用1張。"
+      },
+      "nameZh": "遊玩★巡遊隊！"
+    },
+    "hSD20-013_hSD20_U_hSD20-013_U": {
+      "id": "hSD20-013_hSD20_U_hSD20-013_U",
+      "cardNumber": "hSD20-013",
+      "name": "ぐるぐるTIME！",
+      "type": "サポート・イベント・LIMITED",
+      "color": "colorless",
+      "rarity": "U",
+      "series": "hSD20",
+      "sourceProduct": "hSD20",
+      "sourceProductName": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sourceProductText": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ\nスタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD20/hSD20-013_U.png",
+      "localImage": "",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD20-013",
+        "name": "ぐるぐるTIME！",
+        "cardType": "サポート・イベント・LIMITED",
+        "color": "",
+        "abilityText": "このカードは、自分のステージのホロメン全員が#アソビ★まわり隊！を持つホロメンでなければ使えない。\n\n相手のバックホロメン1人を選ぶ。選んだホロメンと相手のセンターホロメンを交代させる。その後、相手と勝敗が決まるまでじゃんけんする。自分が勝ったなら、自分のデッキを3枚引く。\n\nLIMITED:ターンに1枚しか使えない。"
+      },
+      "skillsZh": {
+        "cardNumber": "hSD20-013",
+        "name": "轉圈圈TIME！",
+        "cardType": "支援·事件·LIMITED",
+        "color": "",
+        "abilityText": "此卡必須在自己場上的成員全員都是持有#遊玩★巡遊隊！的成員時才能使用。\n\n選擇1位對手的後排成員。將所選成員與對手的中央成員進行交換。之後，與對手進行猜拳直到分出勝負。如果自己獲勝，從自己的牌組抽3張牌。\n\nLIMITED:每回合只能使用1張。"
+      },
+      "nameZh": "轉圈圈TIME！"
+    },
+    "hSD20-014_hSD20_U_hSD20-014_U": {
+      "id": "hSD20-014_hSD20_U_hSD20-014_U",
+      "cardNumber": "hSD20-014",
+      "name": "百灯キョーコの拡声器",
+      "type": "SupportTool",
+      "color": "colorless",
+      "rarity": "U",
+      "series": "hSD20",
+      "sourceProduct": "hSD20",
+      "sourceProductName": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sourceProductText": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD20/hSD20-014_U.png",
+      "localImage": "",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD20-014",
+        "name": "百灯キョーコの拡声器",
+        "cardType": "サポート・ツール",
+        "color": "",
+        "abilityText": "このツールが付いている〈百灯キョーコ〉のアーツ+20。\n\n◆1st以上の〈百灯キョーコ〉に付いていたら能力追加\n\nこのホロメンが相手のホロメンをダウンさせた時、自分のアーカイブのエール1枚を自分の#アソビ★まわり隊！を持つバックホロメンに送れる。\n\nツールは、自分のホロメン1人につき1枚だけ付けられる。"
+      },
+      "skillsZh": {
+        "cardNumber": "hSD20-014",
+        "name": "百燈京子的擴音器",
+        "cardType": "支援·工具",
+        "color": "",
+        "abilityText": "裝備此工具的〈百燈京子〉的招式+20。\n\n◆裝備在1st以上的〈百燈京子〉時追加能力\n\n當這個成員讓對手的成員倒下時，可以將自己歸檔中的應援1張送給自己的持有#遊玩★巡遊隊！的後排成員。\n\n工具只能裝備在自己的每1位成員上1張。"
+      },
+      "nameZh": "百燈京子的擴音器"
+    },
+    "hY03-001_hSD20_C_hY03-001_C": {
+      "id": "hY03-001_hSD20_C_hY03-001_C",
+      "cardNumber": "hY03-001",
+      "name": "赤エール",
+      "type": "Yell",
+      "color": "colorless",
+      "rarity": "C",
+      "series": "hSD20",
+      "sourceProduct": "hSD20",
+      "sourceProductName": "ブースターパック「ブルーミングレディアンス」",
+      "sourceProductText": "ブースターパック「ブルーミングレディアンス」\nブースターパック「クインテットスペクトラム」\nブースターパック「エリートスパーク」\nスタートエールセット\nスタートデッキ 赤 百鬼あやめ\nスタートデッキ 赤 宝鐘マリン\nスタートデッキ 推し Justice\nライブスタートデッキ さくらみこ\nスタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/COMMON/hY03-001_C.png",
+      "localImage": "/images/hY03-001.jpg",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hY03-001",
+        "name": "赤エール",
+        "cardType": "エール",
+        "color": "赤",
+        "abilityText": "■ホロメンがステージから離れる時、そのホロメンのエールすべてをアーカイブする。\n\n■ホロメンがバトンタッチする時、そのホロメンのエールを指定された枚数アーカイブする。"
+      },
+      "skillsZh": {
+        "cardNumber": "hY03-001",
+        "name": "紅色應援",
+        "cardType": "應援",
+        "color": "赤",
+        "abilityText": "■當成員離開場上時，將該成員的所有應援歸檔。\n\n■當成員進行換手時，將該成員的指定張數應援歸檔。"
+      },
+      "nameZh": "紅色應援"
+    },
+    "hY04-001_hSD20_C_hY04-001_C": {
+      "id": "hY04-001_hSD20_C_hY04-001_C",
+      "cardNumber": "hY04-001",
+      "name": "青エール",
+      "type": "Yell",
+      "color": "colorless",
+      "rarity": "C",
+      "series": "hSD20",
+      "sourceProduct": "hSD20",
+      "sourceProductName": "ブースターパック「ブルーミングレディアンス」",
+      "sourceProductText": "ブースターパック「ブルーミングレディアンス」\nブースターパック「クインテットスペクトラム」\nブースターパック「エリートスパーク」\nスタートエールセット\nスタートデッキ 青 猫又おかゆ\nスタートデッキ FLOW GLOW 推し 虎金妃笑虎\nスタートデッキ 推し Advent\nライブスタートデッキ 星街すいせい\nスタートデッキ アソビ★まわり隊！推し 百灯キョーコ\nスタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/COMMON/hY04-001_C.png",
+      "localImage": "/images/hY04-001.jpg",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hY04-001",
+        "name": "青エール",
+        "cardType": "エール",
+        "color": "青",
+        "abilityText": "■ホロメンがステージから離れる時、そのホロメンのエールすべてをアーカイブする。\n\n■ホロメンがバトンタッチする時、そのホロメンのエールを指定された枚数アーカイブする。"
+      },
+      "skillsZh": {
+        "cardNumber": "hY04-001",
+        "name": "藍色應援",
+        "cardType": "應援",
+        "color": "青",
+        "abilityText": "■當成員離開場上時，將該成員的所有應援歸檔。\n\n■當成員進行換手時，將該成員的指定張數應援歸檔。"
+      },
+      "nameZh": "藍色應援"
+    },
+    "hBP01-104_hSD21_C_hBP01-104_C": {
+      "id": "hBP01-104_hSD21_C_hBP01-104_C",
+      "cardNumber": "hBP01-104",
+      "name": "ふつうのパソコン",
+      "type": "SupportItem",
+      "color": "colorless",
+      "rarity": "C",
+      "series": "hSD21",
+      "sourceProduct": "hSD21",
+      "sourceProductName": "ブースターパック「ブルーミングレディアンス」",
+      "sourceProductText": "ブースターパック「ブルーミングレディアンス」\nスタートデッキ 赤 百鬼あやめ\nスタートデッキ 紫 癒月ちょこ\nスタートデッキ 白 轟はじめ\nスタートデッキ 緑 風真いろは\nスタートデッキ 黄 不知火フレア\nスタートデッキ FLOW GLOW 推し 輪堂千速\nスタートデッキ FLOW GLOW 推し 虎金妃笑虎\nスタートデッキ 推し Advent\nスタートデッキ 推し Justice\nエクストラブースター サマー・ホログラム\nスタートデッキ アソビ★まわり隊！推し 百灯キョーコ\nスタートデッキ アソビ★まわり隊！推し 熱千めら\n【使用可能カード】セレクションカップ",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP01/hBP01-104_C.png",
+      "localImage": "/images/hBP01-104.jpg",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hBP01-104",
+        "name": "ふつうのパソコン",
+        "cardType": "サポート・アイテム",
+        "color": "",
+        "abilityText": "自分のデッキから、Debutホロメン1枚を公開し、ステージに出す。そしてデッキをシャッフルする。"
+      },
+      "skillsZh": {
+        "cardNumber": "hBP01-104",
+        "name": "普通電腦",
+        "cardType": "支援·道具",
+        "color": "",
+        "abilityText": "從自己的牌組，展示Debut成員1張，出場到場上。然後洗牌。"
+      },
+      "nameZh": "普通電腦"
+    },
+    "hBP05-074_hSD21_C_hBP05-074_C": {
+      "id": "hBP05-074_hSD21_C_hBP05-074_C",
+      "cardNumber": "hBP05-074",
+      "name": "フレンドリーパソコン",
+      "type": "SupportItem",
+      "color": "colorless",
+      "rarity": "C",
+      "series": "hSD21",
+      "sourceProduct": "hSD21",
+      "sourceProductName": "ブースターパック「エンチャントレガリア」",
+      "sourceProductText": "ブースターパック「エンチャントレガリア」\nスタートデッキ アソビ★まわり隊！推し 百灯キョーコ\nスタートデッキ アソビ★まわり隊！推し 熱千めら\n【使用可能カード】セレクションカップ",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP05/hBP05-074_C.png",
+      "localImage": "/images/hBP05-074.jpg",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hBP05-074",
+        "name": "フレンドリーパソコン",
+        "cardType": "サポート・アイテム",
+        "color": "",
+        "abilityText": "自分のデッキから、エクストラ「このホロメンはデッキに何枚でも入れられる」を持つDebutホロメン1～2枚を公開し、ステージに出す。そしてデッキをシャッフルする。Debutホロメンを2枚出したなら、さらに、自分の手札1枚をデッキの下に戻す。"
+      },
+      "skillsZh": {
+        "cardNumber": "hBP05-074",
+        "name": "友善電腦",
+        "cardType": "支援·道具",
+        "color": "",
+        "abilityText": "從自己的牌組中，公開1～2張持有額外「此成員可在牌組中放入任意張數」之Debut成員，放置於場上。然後洗牌牌組。若Debut成員出了2張，則再將自己1張手牌放回牌組下方。"
+      },
+      "nameZh": "友善電腦"
+    },
+    "hSD01-017_hSD21_C_hSD01-017_C": {
+      "id": "hSD01-017_hSD21_C_hSD01-017_C",
+      "cardNumber": "hSD01-017",
+      "name": "マネちゃん",
+      "type": "サポート・スタッフ・LIMITED",
+      "color": "colorless",
+      "rarity": "C",
+      "series": "hSD21",
+      "sourceProduct": "hSD21",
+      "sourceProductName": "スタートデッキ「ときのそら＆AZKi」",
+      "sourceProductText": "スタートデッキ「ときのそら＆AZKi」\nスタートデッキ 赤 百鬼あやめ\nスタートデッキ 青 猫又おかゆ\nスタートデッキ 紫 癒月ちょこ\nスタートデッキ 白 轟はじめ\nスタートデッキ 緑 風真いろは\nスタートデッキ 黄 不知火フレア\nスタートデッキ 白 天音かなた\nスタートデッキ 赤 宝鐘マリン\nスタートデッキ FLOW GLOW 推し 輪堂千速\nスタートデッキ FLOW GLOW 推し 虎金妃笑虎\nライブスタートデッキ 白上フブキ\nライブスタートデッキ 儒烏風亭らでん\nライブスタートデッキ さくらみこ\nライブスタートデッキ 星街すいせい\nライブスタートデッキ 森カリオペ\nライブスタートデッキ 大空スバル\nスタートデッキ アソビ★まわり隊！推し 百灯キョーコ\nスタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD01/hSD01-017_C.png",
+      "localImage": "/images/hSD01-017.jpg",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD01-017",
+        "name": "マネちゃん",
+        "cardType": "サポート・スタッフ・LIMITED",
+        "color": "",
+        "abilityText": "このカードは、自分の手札がこのカードを含まずに1枚以上なければ使えない。\n\n自分の手札すべてをデッキに戻してシャッフルする。そして自分のデッキを5枚引く。\n\nLIMITED:ターンに1枚しか使えない。"
+      },
+      "skillsZh": {
+        "cardNumber": "hSD01-017",
+        "name": "小經",
+        "cardType": "支援·工作人員·LIMITED",
+        "color": "",
+        "abilityText": "此卡只能在自己的手牌不包含此卡且至少有1張時才能使用。\n\n將自己的所有手牌返回牌組並洗牌。然後抽自己牌組5張。\n\nLIMITED：每回合只能使用1張。"
+      },
+      "nameZh": "小經"
+    },
+    "hSD14-010_hSD21_C_hSD14-010_C_03": {
+      "id": "hSD14-010_hSD21_C_hSD14-010_C_03",
+      "cardNumber": "hSD14-010",
+      "name": "holoAN",
+      "type": "サポート・スタッフ・LIMITED",
+      "color": "colorless",
+      "rarity": "C",
+      "series": "hSD21",
+      "sourceProduct": "hSD21",
+      "sourceProductName": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sourceProductText": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ\nスタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD20/hSD14-010_C_03.png",
+      "localImage": "/images/hSD14-010.jpg",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD14-010",
+        "name": "holoAN",
+        "cardType": "サポート・スタッフ・LIMITED",
+        "color": "",
+        "abilityText": "自分のデッキを３枚引く。\n\nLIMITED：ターンに1枚しか使えない。"
+      },
+      "skillsZh": {
+        "cardNumber": "hSD14-010",
+        "name": "holoAN",
+        "cardType": "支援·工作人員·LIMITED",
+        "color": "",
+        "abilityText": "自己抽3張牌。\n\nLIMITED：每回合只能使用1張。"
+      },
+      "nameZh": "holoAN"
+    },
+    "hSD20-008_hSD21_C_hSD20-008_C": {
+      "id": "hSD20-008_hSD21_C_hSD20-008_C",
+      "cardNumber": "hSD20-008",
+      "name": "宙科そぴあ",
+      "type": "Holomen",
+      "color": "blue",
+      "rarity": "C",
+      "series": "hSD21",
+      "sourceProduct": "hSD21",
+      "sourceProductName": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sourceProductText": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ\nスタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD20/hSD20-008_C.png",
+      "localImage": "",
+      "hp": "120",
+      "life": "",
+      "arts": "アーツ ◇全部この目で確かめにいくよ！　10",
+      "bloomLevel": "Debut",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD20-008",
+        "name": "宙科そぴあ",
+        "cardType": "ホロメン",
+        "color": "青",
+        "arts": [
+          {
+            "name": "全部この目で確かめにいくよ！",
+            "cost": "◇",
+            "damage": "10",
+            "effect": ""
+          }
+        ],
+        "keywords": [
+          {
+            "label": "キーワード",
+            "effect": "夢は弾けるビッグバン！\n相手のターンで、このホロメンがダウンした時、自分のデッキを1枚引く。"
+          },
+          {
+            "label": "エクストラ",
+            "effect": "このホロメンはデッキに何枚でも入れられる"
+          }
+        ]
+      },
+      "skillsZh": {
+        "cardNumber": "hSD20-008",
+        "name": "宙科索比亞",
+        "cardType": "成員",
+        "color": "青",
+        "arts": [
+          {
+            "name": "全部都要用這雙眼睛去確認喔！",
+            "cost": "◇",
+            "damage": "10",
+            "effect": ""
+          }
+        ],
+        "keywords": [
+          {
+            "label": "關鍵字",
+            "effect": "夢想是迸發的大爆炸！\n在對手的回合中，當這個成員倒下時，從自己的牌組抽1張牌。"
+          },
+          {
+            "label": "額外",
+            "effect": "這個成員可以在牌組中放入任意張數"
+          }
+        ]
+      },
+      "nameZh": "宙科索比亞"
+    },
+    "hSD20-009_hSD21_U_hSD20-009_U": {
+      "id": "hSD20-009_hSD21_U_hSD20-009_U",
+      "cardNumber": "hSD20-009",
+      "name": "宙科そぴあ",
+      "type": "Holomen",
+      "color": "blue",
+      "rarity": "U",
+      "series": "hSD21",
+      "sourceProduct": "hSD21",
+      "sourceProductName": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sourceProductText": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ\nスタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD20/hSD20-009_U.png",
+      "localImage": "",
+      "hp": "160",
+      "life": "",
+      "arts": "アーツ ◇抑えきれない知的好奇心　30",
+      "bloomLevel": "1st",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD20-009",
+        "name": "宙科そぴあ",
+        "cardType": "ホロメン",
+        "color": "青",
+        "arts": [
+          {
+            "name": "抑えきれない知的好奇心",
+            "cost": "◇",
+            "damage": "30",
+            "effect": ""
+          }
+        ],
+        "keywords": [
+          {
+            "label": "キーワード",
+            "effect": "面白さの探求\n自分のステージに#アソビ★まわり隊！を持つホロメンが3人以上いるなら、このホロメンのエール1枚をアーカイブできる：自分のデッキを2枚引く。"
+          }
+        ]
+      },
+      "skillsZh": {
+        "cardNumber": "hSD20-009",
+        "name": "宙科索比亞",
+        "cardType": "成員",
+        "color": "青",
+        "arts": [
+          {
+            "name": "無法抑制的求知慾",
+            "cost": "◇",
+            "damage": "30",
+            "effect": ""
+          }
+        ],
+        "keywords": [
+          {
+            "label": "關鍵字",
+            "effect": "探求樂趣\n如果自己場上有3位以上持有#遊玩★巡遊隊！的成員，可以將這個成員的應援1張歸檔：從自己的牌組抽2張牌。"
+          }
+        ]
+      },
+      "nameZh": "宙科索比亞"
+    },
+    "hSD20-010_hSD21_R_hSD20-010_R": {
+      "id": "hSD20-010_hSD21_R_hSD20-010_R",
+      "cardNumber": "hSD20-010",
+      "name": "宙科そぴあ",
+      "type": "Holomen",
+      "color": "blue",
+      "rarity": "R",
+      "series": "hSD21",
+      "sourceProduct": "hSD21",
+      "sourceProductName": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sourceProductText": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ\nスタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD20/hSD20-010_R.png",
+      "localImage": "",
+      "hp": "130",
+      "life": "",
+      "arts": "アーツ 青◇面白いもの見つけたよ！　50 \nこのホロメンのエール1枚を自分の他の#アソビ★まわり隊！を持つホロメンに付け替えられる。",
+      "bloomLevel": "1st",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD20-010",
+        "name": "宙科そぴあ",
+        "cardType": "ホロメン",
+        "color": "青",
+        "arts": [
+          {
+            "name": "面白いもの見つけたよ！",
+            "cost": "青◇",
+            "damage": "50",
+            "effect": "このホロメンのエール1枚を自分の他の#アソビ★まわり隊！を持つホロメンに付け替えられる。"
+          }
+        ],
+        "keywords": [
+          {
+            "label": "キーワード",
+            "effect": "仲間を探すぞ～！\n自分のデッキの上から3枚を見る。その中から、#アソビ★まわり隊！を持つホロメン1枚を公開し、手札に加える。そして残ったカードを好きな順でデッキの下に戻す。"
+          }
+        ]
+      },
+      "skillsZh": {
+        "cardNumber": "hSD20-010",
+        "name": "宙科索比亞",
+        "cardType": "成員",
+        "color": "青",
+        "arts": [
+          {
+            "name": "發現有趣的東西了！",
+            "cost": "青◇",
+            "damage": "50",
+            "effect": "可以將這個成員的應援1張轉移到自己的其他持有#遊玩★巡遊隊！的成員。"
+          }
+        ],
+        "keywords": [
+          {
+            "label": "關鍵字",
+            "effect": "去尋找夥伴吧～！\n查看自己牌組上方3張。從中公開1張持有#遊玩★巡遊隊！的成員，加入手牌。然後將剩餘的卡牌以任意順序放回牌組下方。"
+          }
+        ]
+      },
+      "nameZh": "宙科索比亞"
+    },
+    "hSD20-011_hSD21_RR_hSD20-011_RR": {
+      "id": "hSD20-011_hSD21_RR_hSD20-011_RR",
+      "cardNumber": "hSD20-011",
+      "name": "宙科そぴあ",
+      "type": "Holomen",
+      "color": "blue",
+      "rarity": "RR",
+      "series": "hSD21",
+      "sourceProduct": "hSD21",
+      "sourceProductName": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sourceProductText": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ\nスタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD20/hSD20-011_RR.png",
+      "localImage": "",
+      "hp": "200",
+      "life": "",
+      "arts": "アーツ 青◇「ひらめき」担当　80+ 白+50 \nこのホロメンのエール1～3枚をアーカイブできる:アーカイブしたエール1枚につき、このアーツ+20。",
+      "bloomLevel": "2nd",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD20-011",
+        "name": "宙科そぴあ",
+        "cardType": "ホロメン",
+        "color": "青",
+        "arts": [
+          {
+            "name": "「ひらめき」担当",
+            "cost": "青◇",
+            "damage": "80+",
+            "tokkou": "白+50",
+            "effect": "このホロメンのエール1～3枚をアーカイブできる:アーカイブしたエール1枚につき、このアーツ+20。"
+          }
+        ],
+        "keywords": [
+          {
+            "label": "キーワード",
+            "effect": "（自称）天才宇宙飛行士\n自分のアーカイブのエール2枚を自分の#アソビ★まわり隊！を持つホロメン1人に送れる。"
+          }
+        ]
+      },
+      "skillsZh": {
+        "cardNumber": "hSD20-011",
+        "name": "宙科索比亞",
+        "cardType": "成員",
+        "color": "青",
+        "arts": [
+          {
+            "name": "「靈感」擔當",
+            "cost": "青◇",
+            "damage": "80+",
+            "tokkou": "白+50",
+            "effect": "可以將這個成員的應援1～3張歸檔:每歸檔1張應援，此招式+20。"
+          }
+        ],
+        "keywords": [
+          {
+            "label": "關鍵字",
+            "effect": "（自稱）天才太空人\n可以將自己歸檔中的應援2張送給自己的1位持有#遊玩★巡遊隊！的成員。"
+          }
+        ]
+      },
+      "nameZh": "宙科索比亞"
+    },
+    "hSD20-012_hSD21_U_hSD20-012_U": {
+      "id": "hSD20-012_hSD21_U_hSD20-012_U",
+      "cardNumber": "hSD20-012",
+      "name": "アソビ★まわり隊！",
+      "type": "サポート・イベント・LIMITED",
+      "color": "colorless",
+      "rarity": "U",
+      "series": "hSD21",
+      "sourceProduct": "hSD21",
+      "sourceProductName": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sourceProductText": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ\nスタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD20/hSD20-012_U.png",
+      "localImage": "",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD20-012",
+        "name": "アソビ★まわり隊！",
+        "cardType": "サポート・イベント・LIMITED",
+        "color": "",
+        "abilityText": "このカードは、自分の手札がこのカードを含まずに6枚以下でなければ使えない。\n\n自分のデッキの上から4枚を見る。その中から、#アソビ★まわり隊！を持つホロメンを好きな枚数公開し、公開したホロメンを手札に加える。そして残ったカードを好きな順でデッキの下に戻す。\n\nLIMITED:ターンに1枚しか使えない。"
+      },
+      "skillsZh": {
+        "cardNumber": "hSD20-012",
+        "name": "遊玩★巡遊隊！",
+        "cardType": "支援·事件·LIMITED",
+        "color": "",
+        "abilityText": "此卡必須在自己手牌不含此卡且為6張以下時才能使用。\n\n查看自己牌組上方4張。從中，公開任意張數持有#遊玩★巡遊隊！的成員，將公開的成員加入手牌。然後將剩餘的卡牌以任意順序放回牌組下方。\n\nLIMITED:每回合只能使用1張。"
+      },
+      "nameZh": "遊玩★巡遊隊！"
+    },
+    "hSD20-013_hSD21_U_hSD20-013_U": {
+      "id": "hSD20-013_hSD21_U_hSD20-013_U",
+      "cardNumber": "hSD20-013",
+      "name": "ぐるぐるTIME！",
+      "type": "サポート・イベント・LIMITED",
+      "color": "colorless",
+      "rarity": "U",
+      "series": "hSD21",
+      "sourceProduct": "hSD21",
+      "sourceProductName": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ",
+      "sourceProductText": "スタートデッキ アソビ★まわり隊！推し 百灯キョーコ\nスタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD20/hSD20-013_U.png",
+      "localImage": "",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD20-013",
+        "name": "ぐるぐるTIME！",
+        "cardType": "サポート・イベント・LIMITED",
+        "color": "",
+        "abilityText": "このカードは、自分のステージのホロメン全員が#アソビ★まわり隊！を持つホロメンでなければ使えない。\n\n相手のバックホロメン1人を選ぶ。選んだホロメンと相手のセンターホロメンを交代させる。その後、相手と勝敗が決まるまでじゃんけんする。自分が勝ったなら、自分のデッキを3枚引く。\n\nLIMITED:ターンに1枚しか使えない。"
+      },
+      "skillsZh": {
+        "cardNumber": "hSD20-013",
+        "name": "轉圈圈TIME！",
+        "cardType": "支援·事件·LIMITED",
+        "color": "",
+        "abilityText": "此卡必須在自己場上的成員全員都是持有#遊玩★巡遊隊！的成員時才能使用。\n\n選擇1位對手的後排成員。將所選成員與對手的中央成員進行交換。之後，與對手進行猜拳直到分出勝負。如果自己獲勝，從自己的牌組抽3張牌。\n\nLIMITED:每回合只能使用1張。"
+      },
+      "nameZh": "轉圈圈TIME！"
+    },
+    "hSD21-001_hSD21_OSR_hSD21-001_OSR": {
+      "id": "hSD21-001_hSD21_OSR_hSD21-001_OSR",
+      "cardNumber": "hSD21-001",
+      "name": "熱千めら",
+      "type": "OshiHolomen",
+      "color": "colorless",
+      "rarity": "OSR",
+      "series": "hSD21",
+      "sourceProduct": "hSD21",
+      "sourceProductName": "スタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sourceProductText": "スタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD21/hSD21-001_OSR.png",
+      "localImage": "",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD21-001",
+        "name": "熱千めら",
+        "cardType": "推しホロメン",
+        "color": "紫",
+        "stageSkill": {
+          "name": "サラマンダーの恩返し",
+          "effect": "自分のホロメンがコラボした時、自分のセンターが〈熱千めら〉なら、自分のデッキを1枚引き、手札1枚をアーカイブする。"
+        },
+        "oshiSkill": {
+          "name": "ご利益じゃ！",
+          "cost": "-2",
+          "effect": "[ターンに1回]自分のステージのホロメン1人を選ぶ。自分のアーカイブのギフトを持つホロメン1枚につき、このターンの間、選んだホロメンのアーツ+10。さらに、選んだホロメンが〈熱千めら〉なら、そのホロメンのアーツに必要な無色-1。"
+        }
+      },
+      "skillsZh": {
+        "cardNumber": "hSD21-001",
+        "name": "熱千梅拉",
+        "cardType": "主推成員",
+        "color": "紫",
+        "stageSkill": {
+          "name": "火蜥蜴的報恩",
+          "effect": "當自己的成員進行協力時，若自己的中央成員是〈熱千梅拉〉，則從自己的牌組抽1張牌，並將手牌1張歸檔。"
+        },
+        "oshiSkill": {
+          "name": "是保佑喔！",
+          "cost": "-2",
+          "effect": "[每回合1次]選擇1位自己場上的成員。自己歸檔中持有禮物的成員每有1張，此回合內，所選成員的招式+10。此外，如果所選成員是〈熱千梅拉〉，該成員的招式所需的無色-1。"
+        }
+      },
+      "nameZh": "熱千梅拉"
+    },
+    "hSD21-002_hSD21_C_hSD21-002_C": {
+      "id": "hSD21-002_hSD21_C_hSD21-002_C",
+      "cardNumber": "hSD21-002",
+      "name": "熱千めら",
+      "type": "Holomen",
+      "color": "purple",
+      "rarity": "C",
+      "series": "hSD21",
+      "sourceProduct": "hSD21",
+      "sourceProductName": "スタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sourceProductText": "スタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD21/hSD21-002_C.png",
+      "localImage": "",
+      "hp": "120",
+      "life": "",
+      "arts": "アーツ ◇火の用心じゃ～！　20",
+      "bloomLevel": "Debut",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD21-002",
+        "name": "熱千めら",
+        "cardType": "ホロメン",
+        "color": "紫",
+        "arts": [
+          {
+            "name": "火の用心じゃ～！",
+            "cost": "◇",
+            "damage": "20",
+            "effect": ""
+          }
+        ],
+        "keywords": [
+          {
+            "label": "キーワード",
+            "effect": "防火対策 基礎！\nこのホロメンが受けるアーツダメージ-10。"
+          },
+          {
+            "label": "エクストラ",
+            "effect": "このホロメンはデッキに何枚でも入れられる"
+          }
+        ]
+      },
+      "skillsZh": {
+        "cardNumber": "hSD21-002",
+        "name": "熱千梅拉",
+        "cardType": "成員",
+        "color": "紫",
+        "arts": [
+          {
+            "name": "小心火燭喔～！",
+            "cost": "◇",
+            "damage": "20",
+            "effect": ""
+          }
+        ],
+        "keywords": [
+          {
+            "label": "關鍵字",
+            "effect": "防火對策 基礎！\n這個成員受到的招式傷害-10。"
+          },
+          {
+            "label": "額外",
+            "effect": "這個成員可以在牌組中放入任意張數"
+          }
+        ]
+      },
+      "nameZh": "熱千梅拉"
+    },
+    "hSD21-003_hSD21_U_hSD21-003_U": {
+      "id": "hSD21-003_hSD21_U_hSD21-003_U",
+      "cardNumber": "hSD21-003",
+      "name": "熱千めら",
+      "type": "Holomen",
+      "color": "purple",
+      "rarity": "U",
+      "series": "hSD21",
+      "sourceProduct": "hSD21",
+      "sourceProductName": "スタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sourceProductText": "スタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD21/hSD21-003_U.png",
+      "localImage": "",
+      "hp": "130",
+      "life": "",
+      "arts": "アーツ ◇響く拍子木　20",
+      "bloomLevel": "Debut",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD21-003",
+        "name": "熱千めら",
+        "cardType": "ホロメン",
+        "color": "紫",
+        "arts": [
+          {
+            "name": "響く拍子木",
+            "cost": "◇",
+            "damage": "20",
+            "effect": ""
+          }
+        ],
+        "keywords": [
+          {
+            "label": "キーワード",
+            "effect": "炎を鎮める不思議な力\n自分が後攻で最初のターンなら、自分のデッキから、ギフトを持つ〈熱千めら〉2枚を公開する。その中から1枚を手札に加え、残ったカードをアーカイブする。そしてデッキをシャッフルする。"
+          }
+        ]
+      },
+      "skillsZh": {
+        "cardNumber": "hSD21-003",
+        "name": "熱千梅拉",
+        "cardType": "成員",
+        "color": "紫",
+        "arts": [
+          {
+            "name": "響亮的拍子木",
+            "cost": "◇",
+            "damage": "20",
+            "effect": ""
+          }
+        ],
+        "keywords": [
+          {
+            "label": "關鍵字",
+            "effect": "平息火焰的不可思議之力\n如果自己是後攻且為第一個回合，從自己的牌組公開2張持有禮物的〈熱千梅拉〉。從中將1張加入手牌，剩餘的卡牌歸檔。然後洗牌。"
+          }
+        ]
+      },
+      "nameZh": "熱千梅拉"
+    },
+    "hSD21-004_hSD21_C_hSD21-004_C": {
+      "id": "hSD21-004_hSD21_C_hSD21-004_C",
+      "cardNumber": "hSD21-004",
+      "name": "熱千めら",
+      "type": "Holomen",
+      "color": "purple",
+      "rarity": "C",
+      "series": "hSD21",
+      "sourceProduct": "hSD21",
+      "sourceProductName": "スタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sourceProductText": "スタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD21/hSD21-004_C.png",
+      "localImage": "",
+      "hp": "160",
+      "life": "",
+      "arts": "アーツ 紫元気な頑張り屋　30 \n自分のデッキを1枚引き、手札1枚をアーカイブする。",
+      "bloomLevel": "1st",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD21-004",
+        "name": "熱千めら",
+        "cardType": "ホロメン",
+        "color": "紫",
+        "arts": [
+          {
+            "name": "元気な頑張り屋",
+            "cost": "紫",
+            "damage": "30",
+            "effect": "自分のデッキを1枚引き、手札1枚をアーカイブする。"
+          }
+        ],
+        "keywords": [
+          {
+            "label": "キーワード",
+            "effect": "防火対策 応用！\nこのホロメンが受けるアーツダメージ-20。"
+          }
+        ]
+      },
+      "skillsZh": {
+        "cardNumber": "hSD21-004",
+        "name": "熱千梅拉",
+        "cardType": "成員",
+        "color": "紫",
+        "arts": [
+          {
+            "name": "充滿活力的努力家",
+            "cost": "紫",
+            "damage": "30",
+            "effect": "從自己的牌組抽1張牌，將手牌1張歸檔。"
+          }
+        ],
+        "keywords": [
+          {
+            "label": "關鍵字",
+            "effect": "防火對策 應用！\n這個成員受到的招式傷害-20。"
+          }
+        ]
+      },
+      "nameZh": "熱千梅拉"
+    },
+    "hSD21-005_hSD21_U_hSD21-005_U": {
+      "id": "hSD21-005_hSD21_U_hSD21-005_U",
+      "cardNumber": "hSD21-005",
+      "name": "熱千めら",
+      "type": "Holomen",
+      "color": "purple",
+      "rarity": "U",
+      "series": "hSD21",
+      "sourceProduct": "hSD21",
+      "sourceProductName": "スタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sourceProductText": "スタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD21/hSD21-005_U.png",
+      "localImage": "",
+      "hp": "170",
+      "life": "",
+      "arts": "アーツ 紫最高の非日常へ　40",
+      "bloomLevel": "1st",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD21-005",
+        "name": "熱千めら",
+        "cardType": "ホロメン",
+        "color": "紫",
+        "arts": [
+          {
+            "name": "最高の非日常へ",
+            "cost": "紫",
+            "damage": "40",
+            "effect": ""
+          }
+        ],
+        "keywords": [
+          {
+            "label": "キーワード",
+            "effect": "ハジけるアソビの渦\n自分のアーカイブにギフトを持つホロメンが3枚以上あるなら、相手のセンターホロメンかコラボホロメンに特殊ダメージ20を与える。"
+          }
+        ]
+      },
+      "skillsZh": {
+        "cardNumber": "hSD21-005",
+        "name": "熱千梅拉",
+        "cardType": "成員",
+        "color": "紫",
+        "arts": [
+          {
+            "name": "前往最棒的非日常",
+            "cost": "紫",
+            "damage": "40",
+            "effect": ""
+          }
+        ],
+        "keywords": [
+          {
+            "label": "關鍵字",
+            "effect": "迸發的遊玩漩渦\n如果自己的歸檔中有3張以上持有禮物的成員，對對手的中央成員或協力成員造成特殊傷害20。"
+          }
+        ]
+      },
+      "nameZh": "熱千梅拉"
+    },
+    "hSD21-006_hSD21_R_hSD21-006_R": {
+      "id": "hSD21-006_hSD21_R_hSD21-006_R",
+      "cardNumber": "hSD21-006",
+      "name": "熱千めら",
+      "type": "Holomen",
+      "color": "purple",
+      "rarity": "R",
+      "series": "hSD21",
+      "sourceProduct": "hSD21",
+      "sourceProductName": "スタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sourceProductText": "スタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD21/hSD21-006_R.png",
+      "localImage": "",
+      "hp": "160",
+      "life": "",
+      "arts": "アーツ 紫◇火消しの本領発揮じゃ！　60",
+      "bloomLevel": "1st",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD21-006",
+        "name": "熱千めら",
+        "cardType": "ホロメン",
+        "color": "紫",
+        "arts": [
+          {
+            "name": "火消しの本領発揮じゃ！",
+            "cost": "紫◇",
+            "damage": "60",
+            "effect": ""
+          }
+        ],
+        "keywords": [
+          {
+            "label": "キーワード",
+            "effect": "ご利益パワー\nこのホロメンがダウンした時、このホロメンのエール1～2枚を選び、自分の他のホロメンに割り振って付け替えられる。"
+          }
+        ]
+      },
+      "skillsZh": {
+        "cardNumber": "hSD21-006",
+        "name": "熱千梅拉",
+        "cardType": "成員",
+        "color": "紫",
+        "arts": [
+          {
+            "name": "滅火的真本事發揮啦！",
+            "cost": "紫◇",
+            "damage": "60",
+            "effect": ""
+          }
+        ],
+        "keywords": [
+          {
+            "label": "關鍵字",
+            "effect": "保佑之力\n當這個成員倒下時，可以選擇這個成員的應援1～2張，分配並轉移到自己的其他成員上。"
+          }
+        ]
+      },
+      "nameZh": "熱千梅拉"
+    },
+    "hSD21-007_hSD21_RR_hSD21-007_RR": {
+      "id": "hSD21-007_hSD21_RR_hSD21-007_RR",
+      "cardNumber": "hSD21-007",
+      "name": "熱千めら",
+      "type": "Holomen",
+      "color": "purple",
+      "rarity": "RR",
+      "series": "hSD21",
+      "sourceProduct": "hSD21",
+      "sourceProductName": "スタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sourceProductText": "スタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD21/hSD21-007_RR.png",
+      "localImage": "",
+      "hp": "210",
+      "life": "",
+      "arts": "アーツ 紫◇「ご利益」担当　100+ 黄+50 \n自分のアーカイブにギフトを持つホロメンが3枚以上あるなら、このアーツ+50。",
+      "bloomLevel": "2nd",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD21-007",
+        "name": "熱千めら",
+        "cardType": "ホロメン",
+        "color": "紫",
+        "arts": [
+          {
+            "name": "「ご利益」担当",
+            "cost": "紫◇",
+            "damage": "100+",
+            "tokkou": "黄+50",
+            "effect": "自分のアーカイブにギフトを持つホロメンが3枚以上あるなら、このアーツ+50。"
+          }
+        ],
+        "keywords": [
+          {
+            "label": "キーワード",
+            "effect": "火消しのサラマンダー\nこのホロメンがダウンした時、自分のデッキを2枚引く。"
+          }
+        ]
+      },
+      "skillsZh": {
+        "cardNumber": "hSD21-007",
+        "name": "熱千梅拉",
+        "cardType": "成員",
+        "color": "紫",
+        "arts": [
+          {
+            "name": "「保佑」擔當",
+            "cost": "紫◇",
+            "damage": "100+",
+            "tokkou": "黄+50",
+            "effect": "如果自己的歸檔中有3張以上持有禮物的成員，此招式+50。"
+          }
+        ],
+        "keywords": [
+          {
+            "label": "關鍵字",
+            "effect": "滅火的火蜥蜴\n當這個成員倒下時，從自己的牌組抽2張牌。"
+          }
+        ]
+      },
+      "nameZh": "熱千梅拉"
+    },
+    "hSD21-008_hSD21_U_hSD21-008_U": {
+      "id": "hSD21-008_hSD21_U_hSD21-008_U",
+      "cardNumber": "hSD21-008",
+      "name": "熱千めらの拍子木",
+      "type": "SupportTool",
+      "color": "colorless",
+      "rarity": "U",
+      "series": "hSD21",
+      "sourceProduct": "hSD21",
+      "sourceProductName": "スタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sourceProductText": "スタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD21/hSD21-008_U.png",
+      "localImage": "",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD21-008",
+        "name": "熱千めらの拍子木",
+        "cardType": "サポート・ツール",
+        "color": "",
+        "abilityText": "このツールが付いている〈熱千めら〉のアーツ+20。\n\n◆1st以上の〈熱千めら〉に付いていたら能力追加\n\nこのホロメンが相手のホロメンをダウンさせた時、自分のデッキを1枚引き、手札1枚をアーカイブする。\n\nツールは、自分のホロメン1人につき1枚だけ付けられる。"
+      },
+      "skillsZh": {
+        "cardNumber": "hSD21-008",
+        "name": "熱千梅拉的拍子木",
+        "cardType": "支援·工具",
+        "color": "",
+        "abilityText": "裝備此工具的〈熱千梅拉〉的招式+20。\n\n◆裝備在1st以上的〈熱千梅拉〉時追加能力\n\n當這個成員讓對手的成員倒下時，從自己的牌組抽1張牌，將手牌1張歸檔。\n\n工具只能裝備在自己的每1位成員上1張。"
+      },
+      "nameZh": "熱千梅拉的拍子木"
+    },
+    "hY04-001_hSD21_C_hY04-001_C": {
+      "id": "hY04-001_hSD21_C_hY04-001_C",
+      "cardNumber": "hY04-001",
+      "name": "青エール",
+      "type": "Yell",
+      "color": "colorless",
+      "rarity": "C",
+      "series": "hSD21",
+      "sourceProduct": "hSD21",
+      "sourceProductName": "ブースターパック「ブルーミングレディアンス」",
+      "sourceProductText": "ブースターパック「ブルーミングレディアンス」\nブースターパック「クインテットスペクトラム」\nブースターパック「エリートスパーク」\nスタートエールセット\nスタートデッキ 青 猫又おかゆ\nスタートデッキ FLOW GLOW 推し 虎金妃笑虎\nスタートデッキ 推し Advent\nライブスタートデッキ 星街すいせい\nスタートデッキ アソビ★まわり隊！推し 百灯キョーコ\nスタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/COMMON/hY04-001_C.png",
+      "localImage": "/images/hY04-001.jpg",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hY04-001",
+        "name": "青エール",
+        "cardType": "エール",
+        "color": "青",
+        "abilityText": "■ホロメンがステージから離れる時、そのホロメンのエールすべてをアーカイブする。\n\n■ホロメンがバトンタッチする時、そのホロメンのエールを指定された枚数アーカイブする。"
+      },
+      "skillsZh": {
+        "cardNumber": "hY04-001",
+        "name": "藍色應援",
+        "cardType": "應援",
+        "color": "青",
+        "abilityText": "■當成員離開場上時，將該成員的所有應援歸檔。\n\n■當成員進行換手時，將該成員的指定張數應援歸檔。"
+      },
+      "nameZh": "藍色應援"
+    },
+    "hY05-001_hSD21_C_hY05-001_C": {
+      "id": "hY05-001_hSD21_C_hY05-001_C",
+      "cardNumber": "hY05-001",
+      "name": "紫エール",
+      "type": "Yell",
+      "color": "colorless",
+      "rarity": "C",
+      "series": "hSD21",
+      "sourceProduct": "hSD21",
+      "sourceProductName": "ブースターパック「クインテットスペクトラム」",
+      "sourceProductText": "ブースターパック「クインテットスペクトラム」\nブースターパック「エリートスパーク」\nスタートデッキ 紫 癒月ちょこ\nスタートデッキ FLOW GLOW 推し 輪堂千速\nスタートデッキ 推し Advent\nライブスタートデッキ 森カリオペ\nスタートデッキ アソビ★まわり隊！推し 熱千めら",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/COMMON/hY05-001_C.png",
+      "localImage": "/images/hY05-001.jpg",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hY05-001",
+        "name": "紫エール",
+        "cardType": "エール",
+        "color": "紫",
+        "abilityText": "■ホロメンがステージから離れる時、そのホロメンのエールすべてをアーカイブする。\n\n■ホロメンがバトンタッチする時、そのホロメンのエールを指定された枚数アーカイブする。"
+      },
+      "skillsZh": {
+        "cardNumber": "hY05-001",
+        "name": "紫色應援",
+        "cardType": "應援",
+        "color": "紫",
+        "abilityText": "■當成員離開場上時，將該成員的所有應援歸檔。\n\n■當成員進行換手時，將該成員的指定張數應援歸檔。"
+      },
+      "nameZh": "紫色應援"
     }
   }
 }
