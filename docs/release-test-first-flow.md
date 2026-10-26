@@ -37,8 +37,13 @@ This document separates **code-flow readiness** (what the repo enforces once the
 
 - **`GITHUB_TOKEN` pushes start no workflow.** The manual yuyu build's push to `staging`, or a bot auto-merge, produces **no push CI run**. Such a tip has no proof until a maintainer dispatches **CI** on `staging` with `expected_sha=<that tip>` and `deploy_production=false`, using existing maintainer `gh`/UI access (no new token or permission). Bot PRs into staging merged by a person do trigger push CI.
 - **Schedules use the default branch.** GitHub runs `schedule:` workflows from the **default branch's** files. Until these files are on the default branch, the scheduled bots keep their current `main` targets.
-- **The local scheduler runs the installed launcher.** That launcher re-executes the committed launcher of the ref it fetches, and the installed copy today fetches `main`. The staging retarget becomes active only after the launcher from this change is installed (`git show origin/staging:scripts/scheduler-launch.sh > ~/.hermes/bin/huntercard-scheduler-launch.sh`), or once main carries it. Until then the old timer behaves as before and should be paused if main must stop receiving direct data. The coordinator inspects that. The resident checkout must track `staging` for the in-place route; otherwise it fails closed.
-- **Production price and push alerts stop.** They are no longer sent from the scheduler. Restoring them needs a separate production-lane job that reads promoted production data; that is a product decision.
+- **The actual daily data runtime is not the repo scheduler.**
+  - **Confirmed chain:** LaunchAgent `com.dicoge.holohunter.data-only` → `isolated-job-driver.py` → `~/.hermes/scripts/huntercard-data-only.py` → the installed worker `…/task-2/game-quality-20261013/holohunter-crawler-recovery-20261016/daily-data-worker.py`.
+  - **What it doesn't use:** it does **not** use the `~/.hermes/bin` launcher and does **not** run `scripts/local-scrape-and-push.sh` in a resident checkout.
+  - **What the installed worker does today:** it fetches `main`, builds in an isolated git worktree of `origin/main`, opens its bot PR with base `main`, and conditionally dispatches notifications when its notification gate is open.
+- **The repo scheduler retarget only affects its own callers.** The `scripts/local-scrape-and-push.sh` / `scripts/scheduler-launch.sh` retarget in this branch is correct for whatever invokes those scripts, such as the generic launcher (`git show origin/staging:scripts/scheduler-launch.sh > ~/.hermes/bin/huntercard-scheduler-launch.sh`). **It does not change the runtime above.**
+- **Moving the real runtime needs a separate step.** A staging-only replacement for the installed worker exists as reviewed evidence only (`evidence/staging-first-20261026/runtime-worker/`); it is **not installed**. It fetches exactly `staging`, opens bot PRs against `staging`, and never dispatches notifications. Install it only after this branch has been reviewed and has landed on `staging`, and replace only that one worker file, keeping a backup. The LaunchAgent schedule, the driver, the Hermes wrapper and registry, and the notification gate stay unchanged, and no crawl is triggered by the install. **Nothing here is applied yet.**
+- **Production price and push alerts stop.** With the staging scripts and the staging worker candidate, they are no longer sent from the scheduler. Restoring them needs a separate production-lane job that reads promoted production data; that is a product decision.
 
 ## Operator flow
 
@@ -68,7 +73,7 @@ Remaining steps, none performed by the author:
 4. **Separate staging store** (owner approval, possible billing). Attach it only to staging, confirm the production store is not connected, and record both store hosts. Until then staging KV access refuses or cannot connect.
 5. **Staging-only credentials** (session, push-notify, OAuth and redirects, recognition), each with owner approval. Never copy production values.
 6. **EAS `preview` env** for `staging-alpha` (staging origin, public Google client IDs).
-7. **Scheduler activation:** install the staging launcher and point the resident checkout at `staging`, or pause the old timer (coordinator).
+7. **Runtime activation:** after this branch lands on `staging`, the coordinator replaces only the installed `daily-data-worker.py` with the reviewed staging-only candidate, after backing up the original. Schedule, driver, wrapper and registry are untouched, and there is no immediate crawl. Until then the installed worker keeps targeting `main`; pause it only if main must stop receiving bot data PRs. The generic launcher is a separate path, and installing it is optional.
 8. **Never dispatch** `dic1189-staging-vercel-setup.yml` or `dic910-vercel-setup.yml`. They probe or write production KV, DNS and secrets.
 
 ## Known limits
