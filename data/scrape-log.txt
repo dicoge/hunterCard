@@ -1,128 +1,622 @@
-=== Scrape Log 2026-08-24T12:06:40.400Z ===
+=== Scrape Log 2026-10-16T17:38:49.389Z ===
 ═══════════════════════════════════════
   hunterCard Database Builder
 ═══════════════════════════════════════
 
-  [buyPrice] Preserving buy prices for 1755 cards from previous build
-  [skills] Preserving skills for 1988 cards from previous build
+  [sellPrice] Indexed 3920 previous rows for market-field preservation
+  [skills] Preserving skills for 3920 cards from previous build
 ── Step 1: Scrape yuyu-tei ──
-[database] Starting yuyu-tei scrape (Puppeteer)...
-[database] Scraping hBP01: /sell/hocg/s/search?search_word=&vers[]=hbp01
-  → Found 126 cards with prices
-[database] Scraping hBP02: /sell/hocg/s/search?search_word=&vers[]=hbp02
-  → Found 105 cards with prices
-[database] Scraping hBP03: /sell/hocg/s/search?search_word=&vers[]=hbp03
-  → Found 116 cards with prices
-[database] Scraping hBP04: /sell/hocg/s/hbp04
-  → Found 108 cards with prices
-[database] Scraping hBP05: /sell/hocg/s/search?search_word=&vers[]=hbp05
-  → Found 99 cards with prices
-[database] Scraping hBP06: /sell/hocg/s/search?search_word=&vers[]=hbp06
-  → Found 120 cards with prices
-[database] Scraping hBP07: /sell/hocg/s/search?search_word=&vers[]=hbp07
-  → Found 122 cards with prices
-[database] Scraping hBP08: /sell/hocg/s/search?search_word=&vers[]=hbp08
-  → Found 121 cards with prices
-[database] Scraping hSD01: /sell/hocg/s/search?search_word=&vers[]=hsd01
-  → Found 21 cards with prices
-[database] Scraping hSD02: /sell/hocg/s/search?search_word=&vers[]=hsd02
-  → Found 14 cards with prices
-[database] Scraping hSD03: /sell/hocg/s/search?search_word=&vers[]=hsd03
-  → Found 14 cards with prices
-[database] Scraping hSD04: /sell/hocg/s/search?search_word=&vers[]=hsd04
-  → Found 14 cards with prices
-[database] Scraping hSD05: /sell/hocg/s/search?search_word=&vers[]=hsd05
-  → Found 14 cards with prices
-[database] Scraping hSD06: /sell/hocg/s/search?search_word=&vers[]=hsd06
-  → Found 14 cards with prices
-[database] Scraping hSD07: /sell/hocg/s/search?search_word=&vers[]=hsd07
-  → Found 15 cards with prices
-[database] Scraping hSD08: /sell/hocg/s/search?search_word=&vers[]=hsd08
-  → Found 9 cards with prices
-[database] Scraping hSD09: /sell/hocg/s/search?search_word=&vers[]=hsd09
-  → Found 8 cards with prices
-[database] Scraping hSD10: /sell/hocg/s/search?search_word=&vers[]=hsd10
-  → Found 13 cards with prices
-[database] Scraping hSD11: /sell/hocg/s/search?search_word=&vers[]=hsd11
-  → Found 9 cards with prices
-[database] Scraping hSD12: /sell/hocg/s/search?search_word=&vers[]=hsd12
-  → Found 19 cards with prices
-[database] Scraping hSD13: /sell/hocg/s/search?search_word=&vers[]=hsd13
-  → Found 18 cards with prices
-[database] Scraping hSD14: /sell/hocg/s/search?search_word=&vers[]=hsd14
-  → Found 12 cards with prices
-[database] Scraping hSD15: /sell/hocg/s/search?search_word=&vers[]=hsd15
-  → Found 11 cards with prices
-[database] Scraping hSD16: /sell/hocg/s/search?search_word=&vers[]=hsd16
-  → Found 10 cards with prices
-[database] Scraping hSD17: /sell/hocg/s/search?search_word=&vers[]=hsd17
-  → Found 11 cards with prices
-[database] Scraping hSD18: /sell/hocg/s/search?search_word=&vers[]=hsd18
-  → Found 10 cards with prices
-[database] Scraping hSD19: /sell/hocg/s/search?search_word=&vers[]=hsd19
-  → Found 11 cards with prices
-[database] Scraping hYS01: /sell/hocg/s/hys01
-  → Found 4 cards with prices
-[database] Scraping ent07: /sell/hocg/s/special/4
-  → Found 124 cards with prices
-[database] Scraping hCS01: /sell/hocg/s/special/5
-  → Found 194 cards with prices
-[database] Scraping hPC01: /sell/hocg/s/special/7
-  → Found 105 cards with prices
-[database] Scraping hPR: /sell/hocg/s/special/1
-  → Found 110 cards with prices
-[database] Scraping hSD2025summer: /sell/hocg/s/special/8
-  → Found 128 cards with prices
+[database] Loading yuyu fixture: /Users/dicoge/Documents/Codex/2026-10-06/task-2/game-quality-20261013/holohunter-crawler-recovery-20261016/price-fixture.json
 
-  Total cards from yuyu-tei: 1829
+  Total cards from yuyu-tei: 1320
+  [DIC-1321] scrape coverage: 1320 priced cardNumbers vs previous 1288; partial=false; truncated=false (DIC-1167)
 
 ── Step 2: Download images ──
 
 [database] Downloading images...
-  [images] Downloaded: 0, Skipped: 1225, Errors: 0
+  [images] Downloaded: 0, Skipped: 1320, Errors: 0
 
 ── Step 3: Merge official data ──
 
 [database] Loading official card data...
-  [bloom] Loaded 316 canonical bloom levels
-  [bloom] Backfilled 639 cards, overrode 0 mismatched entries
-  [official] Loaded 2104 cards from 43 files
+  [bloom] Loaded 316 canonical bloom levels (min coverage 300)
+  [bloom] Backfilled 438 cards, overrode 0 mismatched entries
+  [official] Loaded 3920 cards from 39 files
 
 ── Step 4: Build unified database ──
-  [skills] Merged skills into 1988 cards
+  [DIC-1167] hBP01-007: 1 positive listing(s) matched no official printing while sibling printing(s) hBP01-007_hBP01_OSR_hBP01-007_OSR, hBP01-007_hBP01_OUR_hBP01-007_OUR, hBP01-007_hBP01_SEC_hBP01-007_SEC priced by exact match — refusal recorded
+  [DIC-1167] hBP01-002: 1 positive listing(s) matched no official printing while sibling printing(s) hBP01-002_hBP01_OSR_hBP01-002_OSR, hBP01-002_hBP01_OUR_hBP01-002_OUR priced by exact match — refusal recorded
+  [DIC-1167] hBP01-014: 1 positive listing(s) matched no official printing while sibling printing(s) hBP01-014_hBP01_RR_hBP01-014_RR, hBP01-014_hBP01_UR_hBP01-014_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP01-051: 4 positive listing(s) matched no official printing while sibling printing(s) hBP01-051_hBP01_RR_hBP01-051_RR, hBP01-051_hBP01_UR_hBP01-051_UR, hBP01-051_hEB01_RR_hBP01-051_RR_02, hBP01-051_hEB01_SR_hBP01-051_SR_02, hBP01-051_hEB01_UR_hBP01-051_UR_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP01-067: 4 positive listing(s) matched no official printing while sibling printing(s) hBP01-067_hBP01_RR_hBP01-067_RR, hBP01-067_hBP01_UR_hBP01-067_UR, hBP01-067_hEB01_RR_hBP01-067_RR_02, hBP01-067_hEB01_SR_hBP01-067_SR_02, hBP01-067_hEB01_UR_hBP01-067_UR_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP01-081: 5 positive listing(s) matched no official printing while sibling printing(s) hBP01-081_hBP01_RR_hBP01-081_RR_02, hBP01-081_hBP01_UR_hBP01-081_UR_02, hBP01-081_hEB01_RR_hBP01-081_RR_02, hBP01-081_hEB01_SR_hBP01-081_SR_02, hBP01-081_hEB01_UR_hBP01-081_UR_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP01-013: 1 positive listing(s) matched no official printing while sibling printing(s) hBP01-013_hBP01_R_hBP01-013_R_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP01-031: 3 positive listing(s) matched no official printing while sibling printing(s) hBP01-031_hBP01_R_hBP01-031_R, hBP01-031_hEB01_R_hBP01-031_R_02, hBP01-031_hEB01_SR_hBP01-031_SR_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP01-055: 2 positive listing(s) matched no official printing while sibling printing(s) hBP01-055_hBP01_R_hBP01-055_R, hBP01-055_hEB01_R_hBP01-055_R_02, hBP01-055_hEB01_SR_hBP01-055_SR_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP01-061: 2 positive listing(s) matched no official printing while sibling printing(s) hBP01-061_hBP01_R_hBP01-061_R, hBP01-061_hEB01_R_hBP01-061_R_02, hBP01-061_hEB01_SR_hBP01-061_SR_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP01-066: 1 positive listing(s) matched no official printing while sibling printing(s) hBP01-066_hBP01_R_hBP01-066_R priced by exact match — refusal recorded
+  [DIC-1167] hBP01-080: 1 positive listing(s) matched no official printing while sibling printing(s) hBP01-080_hBP01_R_hBP01-080_R priced by exact match — refusal recorded
+  [DIC-1167] hBP01-026: 2 positive listing(s) matched no official printing while sibling printing(s) hBP01-026_hBP01_U_hBP01-026_U, hBP01-026_hEB01_SR_hBP01-026_SR_02, hBP01-026_hEB01_U_hBP01-026_U_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP01-039: 2 positive listing(s) matched no official printing while sibling printing(s) hBP01-039_hBP01_U_hBP01-039_U, hBP01-039_hEB01_SR_hBP01-039_SR_02, hBP01-039_hEB01_U_hBP01-039_U_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP01-041: 3 positive listing(s) matched no official printing while sibling printing(s) hBP01-041_hBP01_U_hBP01-041_U, hBP01-041_hBP06_SR_hBP01-041_SR, hBP01-041_hEB01_SR_hBP01-041_SR_02, hBP01-041_hEB01_U_hBP01-041_U_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP01-050: 2 positive listing(s) matched no official printing while sibling printing(s) hBP01-050_hBP01_U_hBP01-050_U_02, hBP01-050_hEB01_SR_hBP01-050_SR_02, hBP01-050_hEB01_U_hBP01-050_U_02, hBP01-050_hSD06_U_hBP01-050_U_2 priced by exact match — refusal recorded
+  [DIC-1167] hBP01-054: 2 positive listing(s) matched no official printing while sibling printing(s) hBP01-054_hBP01_U_hBP01-054_U, hBP01-054_hEB01_SR_hBP01-054_SR_02, hBP01-054_hEB01_U_hBP01-054_U_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP01-060: 2 positive listing(s) matched no official printing while sibling printing(s) hBP01-060_hBP01_U_hBP01-060_U, hBP01-060_hEB01_SR_hBP01-060_SR_02, hBP01-060_hEB01_U_hBP01-060_U_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP01-065: 2 positive listing(s) matched no official printing while sibling printing(s) hBP01-065_hBP01_U_hBP01-065_U, hBP01-065_hEB01_SR_hBP01-065_SR_02, hBP01-065_hEB01_U_hBP01-065_U_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP01-070: 2 positive listing(s) matched no official printing while sibling printing(s) hBP01-070_hBP01_U_hBP01-070_U, hBP01-070_hEB01_SR_hBP01-070_SR_02, hBP01-070_hEB01_U_hBP01-070_U_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP01-074: 2 positive listing(s) matched no official printing while sibling printing(s) hBP01-074_hBP01_U_hBP01-074_U, hBP01-074_hEB01_SR_hBP01-074_SR_02, hBP01-074_hEB01_U_hBP01-074_U_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP01-077: 1 positive listing(s) matched no official printing while sibling printing(s) hBP01-077_hBP01_U_hBP01-077_U priced by exact match — refusal recorded
+  [DIC-1167] hBP01-090: 2 positive listing(s) matched no official printing while sibling printing(s) hBP01-090_hBP01_U_hBP01-090_U, hBP01-090_hEB01_SR_hBP01-090_SR_02, hBP01-090_hEB01_U_hBP01-090_U_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP01-094: 2 positive listing(s) matched no official printing while sibling printing(s) hBP01-094_hBP01_U_hBP01-094_U, hBP01-094_hEB01_SR_hBP01-094_SR_02, hBP01-094_hEB01_U_hBP01-094_U_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP01-102: 1 positive listing(s) matched no official printing while sibling printing(s) hBP01-102_hBP01_U_hBP01-102_U priced by exact match — refusal recorded
+  [DIC-1167] hBP01-021: 3 positive listing(s) matched no official printing while sibling printing(s) hBP01-021_hBP01_C_hBP01-021_C, hBP01-021_hEB01_C_hBP01-021_C_02, hBP01-021_hEB01_HR_hBP01-021_HR priced by exact match — refusal recorded
+  [DIC-1167] hBP01-028: 1 positive listing(s) matched no official printing while sibling printing(s) hBP01-028_hBP01_C_hBP01-028_C, hBP01-028_hBP08_C_hBP01-028_C_02, hBP01-028_hBP08_HR_hBP01-028_HR priced by exact match — refusal recorded
+  [DIC-1167] hBP01-048: 1 positive listing(s) matched no official printing while sibling printing(s) hBP01-048_ent07_P_hBP01-048_P, hBP01-048_hBP01_C_hBP01-048_C, hBP01-048_hBP06_C_hBP01-048_03_C, hBP01-048_hBP06_HR_hBP01-048_HR, hBP01-048_hSD06_C_hBP01-048_C_2 priced by exact match — refusal recorded
+  [DIC-1167] hBP01-068: 1 positive listing(s) matched no official printing while sibling printing(s) hBP01-068_hBP01_C_hBP01-068_C, hBP01-068_hBP05_C_hBP01-068_02_C, hBP01-068_hBP05_HR_hBP01-068_HR priced by exact match — refusal recorded
+  [DIC-1167] hBP01-072: 2 positive listing(s) matched no official printing while sibling printing(s) hBP01-072_hBP01_C_hBP01-072_C, hBP01-072_hBP06_C_hBP01-072_02_C, hBP01-072_hBP09_C_hBP01-072_C_02, hBP01-072_hBP09_HR_hBP01-072_HR priced by exact match — refusal recorded
+  [DIC-1167] hBP01-076: 1 positive listing(s) matched no official printing while sibling printing(s) hBP01-076_hBP01_C_hBP01-076_C, hBP01-076_hBP05_C_hBP01-076_02_C, hBP01-076_hBP05_HR_hBP01-076_HR priced by exact match — refusal recorded
+  [DIC-1167] hBP01-088: 3 positive listing(s) matched no official printing while sibling printing(s) hBP01-088_hBP01_C_hBP01-088_C, hBP01-088_hBP06_C_hBP01-088_02_C, hBP01-088_hBP09_C_hBP01-088_C_02, hBP01-088_hBP09_HR_hBP01-088_HR priced by exact match — refusal recorded
+  [DIC-1167] hBP01-104: 1 positive listing(s) matched no official printing while sibling printing(s) hBP01-104_hBP01_C_hBP01-104_C, hBP01-104_hSD14_C_hBP01-104_02_C, hBP01-104_hSD15_C_hBP01-104_03_C, hBP01-104_hSD16_C_hBP01-104_04_C, hBP01-104_hSD17_C_hBP01-104_05_C, hBP01-104_hSD18_C_hBP01-104_06_C, hBP01-104_hSD19_C_hBP01-104_07_C priced by exact match — refusal recorded
+  [DIC-1167] hBP02-001: 2 positive listing(s) matched no official printing while sibling printing(s) hBP02-001_hBP02_OSR_hBP02-001_OSR, hBP02-001_hBP02_OUR_hBP02-001_OUR, hBP02-001_hBP02_SEC_hBP02-001_SEC priced by exact match — refusal recorded
+  [DIC-1167] hBP02-003: 3 positive listing(s) matched no official printing while sibling printing(s) hBP02-003_hBP02_OSR_hBP02-003_OSR, hBP02-003_hBP02_OUR_hBP02-003_OUR, hBP02-003_hBP02_SEC_hBP02-003_SEC priced by exact match — refusal recorded
+  [DIC-1167] hBP02-004: 1 positive listing(s) matched no official printing while sibling printing(s) hBP02-004_hBP02_OSR_hBP02-004_OSR, hBP02-004_hBP02_OUR_hBP02-004_OUR, hBP02-004_hBP02_SEC_hBP02-004_SEC priced by exact match — refusal recorded
+  [DIC-1167] hBP02-084: 1 positive listing(s) matched no official printing while sibling printing(s) hBP02-084_hBP02_SEC_hBP02-084_SEC, hBP02-084_hBP02_S_hBP02-084_S, hBP02-084_hBP02_U_hBP02-084_U, hBP02-084_hBP04_SR_hBP02-084_02_SR, hBP02-084_hBP04_U_hBP02-084_02_U priced by exact match — refusal recorded
+  [DIC-1167] hBP02-002: 1 positive listing(s) matched no official printing while sibling printing(s) hBP02-002_hBP02_OSR_hBP02-002_OSR, hBP02-002_hBP02_OUR_hBP02-002_OUR priced by exact match — refusal recorded
+  [DIC-1167] hBP02-005: 1 positive listing(s) matched no official printing while sibling printing(s) hBP02-005_hBP02_OSR_hBP02-005_OSR, hBP02-005_hBP02_OUR_hBP02-005_OUR priced by exact match — refusal recorded
+  [DIC-1167] hBP02-007: 1 positive listing(s) matched no official printing while sibling printing(s) hBP02-007_hBP02_OSR_hBP02-007_OSR, hBP02-007_hBP02_OUR_hBP02-007_OUR priced by exact match — refusal recorded
+  [DIC-1167] hBP02-013: 1 positive listing(s) matched no official printing while sibling printing(s) hBP02-013_hBP02_RR_hBP02-013_RR, hBP02-013_hBP02_SR_hBP02-013_SR, hBP02-013_hBP02_UR_hBP02-013_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP02-017: 4 positive listing(s) matched no official printing while sibling printing(s) hBP02-017_hBP02_RR_hBP02-017_RR, hBP02-017_hBP02_SR_hBP02-017_SR, hBP02-017_hBP02_UR_hBP02-017_UR, hBP02-017_hEB01_RR_hBP02-017_RR_02, hBP02-017_hEB01_SR_hBP02-017_SR_02, hBP02-017_hEB01_UR_hBP02-017_UR_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP02-023: 4 positive listing(s) matched no official printing while sibling printing(s) hBP02-023_hBP02_RR_hBP02-023_RR, hBP02-023_hBP02_SR_hBP02-023_SR, hBP02-023_hBP02_UR_hBP02-023_UR, hBP02-023_hEB01_RR_hBP02-023_RR_02, hBP02-023_hEB01_SR_hBP02-023_SR_02, hBP02-023_hEB01_UR_hBP02-023_UR_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP02-027: 5 positive listing(s) matched no official printing while sibling printing(s) hBP02-027_hBP02_RR_hBP02-027_RR, hBP02-027_hBP02_SR_hBP02-027_SR, hBP02-027_hBP02_UR_hBP02-027_UR, hBP02-027_hEB01_RR_hBP02-027_RR_02, hBP02-027_hEB01_SR_hBP02-027_SR_02, hBP02-027_hEB01_UR_hBP02-027_UR_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP02-033: 4 positive listing(s) matched no official printing while sibling printing(s) hBP02-033_hBP02_RR_hBP02-033_RR, hBP02-033_hBP02_SR_hBP02-033_SR, hBP02-033_hBP02_UR_hBP02-033_UR, hBP02-033_hEB01_RR_hBP02-033_RR_02, hBP02-033_hEB01_SR_hBP02-033_SR_02, hBP02-033_hEB01_UR_hBP02-033_UR_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP02-034: 1 positive listing(s) matched no official printing while sibling printing(s) hBP02-034_hBP02_RR_hBP02-034_RR, hBP02-034_hBP02_SR_hBP02-034_SR, hBP02-034_hBP02_UR_hBP02-034_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP02-040: 1 positive listing(s) matched no official printing while sibling printing(s) hBP02-040_hBP02_RR_hBP02-040_RR, hBP02-040_hBP02_SR_hBP02-040_SR, hBP02-040_hBP02_UR_hBP02-040_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP02-041: 1 positive listing(s) matched no official printing while sibling printing(s) hBP02-041_hBP02_RR_hBP02-041_RR, hBP02-041_hBP02_SR_hBP02-041_SR, hBP02-041_hBP02_UR_hBP02-041_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP02-047: 1 positive listing(s) matched no official printing while sibling printing(s) hBP02-047_hBP02_RR_hBP02-047_RR, hBP02-047_hBP02_SR_hBP02-047_SR, hBP02-047_hBP02_UR_hBP02-047_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP02-059: 3 positive listing(s) matched no official printing while sibling printing(s) hBP02-059_hBP02_RR_hBP02-059_RR, hBP02-059_hBP02_SR_hBP02-059_SR, hBP02-059_hBP02_UR_hBP02-059_UR, hBP02-059_hEB01_RR_hBP02-059_RR_02, hBP02-059_hEB01_SR_hBP02-059_SR_02, hBP02-059_hEB01_UR_hBP02-059_UR_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP02-064: 1 positive listing(s) matched no official printing while sibling printing(s) hBP02-064_hBP02_RR_hBP02-064_RR, hBP02-064_hBP02_SR_hBP02-064_SR, hBP02-064_hBP02_UR_hBP02-064_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP02-022: 2 positive listing(s) matched no official printing while sibling printing(s) hBP02-022_hBP02_R_hBP02-022_R, hBP02-022_hBP02_SR_hBP02-022_SR, hBP02-022_hEB01_R_hBP02-022_R_02, hBP02-022_hEB01_SR_hBP02-022_SR_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP02-032: 1 positive listing(s) matched no official printing while sibling printing(s) hBP02-032_hBP02_R_hBP02-032_R, hBP02-032_hBP02_SR_hBP02-032_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP02-058: 2 positive listing(s) matched no official printing while sibling printing(s) hBP02-058_hBP02_R_hBP02-058_R, hBP02-058_hBP02_SR_hBP02-058_SR, hBP02-058_hEB01_R_hBP02-058_R_02, hBP02-058_hEB01_SR_hBP02-058_SR_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP02-072: 1 positive listing(s) matched no official printing while sibling printing(s) hBP02-072_hBP02_R_hBP02-072_R, hBP02-072_hBP02_SR_hBP02-072_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP02-011: 2 positive listing(s) matched no official printing while sibling printing(s) hBP02-011_hBP02_S_hBP02-011_S, hBP02-011_hBP02_U_hBP02-011_U, hBP02-011_hEB01_SR_hBP02-011_SR_02, hBP02-011_hEB01_U_hBP02-011_U_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP02-015: 1 positive listing(s) matched no official printing while sibling printing(s) hBP02-015_hBP02_C_hBP02-015_C, hBP02-015_hBP02_S_hBP02-015_S priced by exact match — refusal recorded
+  [DIC-1167] hBP02-016: 3 positive listing(s) matched no official printing while sibling printing(s) hBP02-016_hBP02_S_hBP02-016_S, hBP02-016_hBP02_U_hBP02-016_U, hBP02-016_hBP06_SR_hBP02-016_SR, hBP02-016_hEB01_SR_hBP02-016_SR_02, hBP02-016_hEB01_U_hBP02-016_U_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP02-026: 2 positive listing(s) matched no official printing while sibling printing(s) hBP02-026_hBP02_S_hBP02-026_S, hBP02-026_hBP02_U_hBP02-026_U, hBP02-026_hEB01_SR_hBP02-026_SR_02, hBP02-026_hEB01_U_hBP02-026_U_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP02-036: 1 positive listing(s) matched no official printing while sibling printing(s) hBP02-036_hBP02_S_hBP02-036_S, hBP02-036_hBP02_U_hBP02-036_U priced by exact match — refusal recorded
+  [DIC-1167] hBP02-067: 2 positive listing(s) matched no official printing while sibling printing(s) hBP02-067_hBP02_S_hBP02-067_S, hBP02-067_hBP02_U_hBP02-067_U, hBP02-067_hEB01_SR_hBP02-067_SR_02, hBP02-067_hEB01_U_hBP02-067_U_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP02-075: 1 positive listing(s) matched no official printing while sibling printing(s) hBP02-075_hBP02_S_hBP02-075_S, hBP02-075_hBP02_U_hBP02-075_U priced by exact match — refusal recorded
+  [DIC-1167] hBP02-086: 1 positive listing(s) matched no official printing while sibling printing(s) hBP02-086_hBP02_C_hBP02-086_C, hBP02-086_hBP02_S_hBP02-086_S priced by exact match — refusal recorded
+  [DIC-1167] hBP02-095: 1 positive listing(s) matched no official printing while sibling printing(s) hBP02-095_hBP02_C_hBP02-095_C, hBP02-095_hBP02_S_hBP02-095_S priced by exact match — refusal recorded
+  [DIC-1167] hBP02-098: 1 positive listing(s) matched no official printing while sibling printing(s) hBP02-098_hBP02_C_hBP02-098_C, hBP02-098_hBP02_S_hBP02-098_S priced by exact match — refusal recorded
+  [DIC-1167] hBP02-100: 1 positive listing(s) matched no official printing while sibling printing(s) hBP02-100_hBP02_C_hBP02-100_C, hBP02-100_hBP02_S_hBP02-100_S priced by exact match — refusal recorded
+  [DIC-1167] hBP02-029: 1 positive listing(s) matched no official printing while sibling printing(s) hBP02-029_hBP02_U_hBP02-029_U priced by exact match — refusal recorded
+  [DIC-1167] hBP02-043: 1 positive listing(s) matched no official printing while sibling printing(s) hBP02-043_hBP02_U_hBP02-043_U priced by exact match — refusal recorded
+  [DIC-1167] hBP02-014: 2 positive listing(s) matched no official printing while sibling printing(s) hBP02-014_hBP02_C_hBP02-014_C, hBP02-014_hBP05_C_hBP02-014_02_C, hBP02-014_hBP05_HR_hBP02-014_HR, hBP02-014_hBP09_C_hBP02-014_C_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP02-018: 1 positive listing(s) matched no official printing while sibling printing(s) hBP02-018_hBP02_C_hBP02-018_C, hBP02-018_hBP08_C_hBP02-018_C_02, hBP02-018_hBP08_HR_hBP02-018_HR priced by exact match — refusal recorded
+  [DIC-1167] hBP02-024: 3 positive listing(s) matched no official printing while sibling printing(s) hBP02-024_hBP02_C_hBP02-024_C, hBP02-024_hBP07_C_hBP02-024_02_C, hBP02-024_hBP09_C_hBP02-024_C_02, hBP02-024_hBP09_HR_hBP02-024_HR priced by exact match — refusal recorded
+  [DIC-1167] hBP02-028: 4 positive listing(s) matched no official printing while sibling printing(s) hBP02-028_hBP02_C_hBP02-028_C, hBP02-028_hEB01_C_hBP02-028_C_02, hBP02-028_hEB01_HR_hBP02-028_HR priced by exact match — refusal recorded
+  [DIC-1167] hBP02-048: 1 positive listing(s) matched no official printing while sibling printing(s) hBP02-048_hBP02_C_hBP02-048_C priced by exact match — refusal recorded
+  [DIC-1167] hBP02-061: 1 positive listing(s) matched no official printing while sibling printing(s) hBP02-061_hBP02_C_hBP02-061_C, hBP02-061_hBP08_C_hBP02-061_C_02, hBP02-061_hBP08_HR_hBP02-061_HR priced by exact match — refusal recorded
+  [DIC-1167] hBP02-065: 2 positive listing(s) matched no official printing while sibling printing(s) hBP02-065_hBP02_C_hBP02-065_C, hBP02-065_hBP05_C_hBP02-065_02_C, hBP02-065_hBP05_HR_hBP02-085_HR, hBP02-065_hBP09_C_hBP02-065_C_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP03-002: 2 positive listing(s) matched no official printing while sibling printing(s) hBP03-002_hBP03_OSR_hBP03-002_OSR, hBP03-002_hBP03_OUR_hBP03-002_OUR, hBP03-002_hBP03_SEC_hBP03-002_SEC priced by exact match — refusal recorded
+  [DIC-1167] hBP03-003: 2 positive listing(s) matched no official printing while sibling printing(s) hBP03-003_hBP03_OSR_hBP03-003_OSR, hBP03-003_hBP03_OUR_hBP03-003_OUR, hBP03-003_hBP03_SEC_hBP03-003_SEC priced by exact match — refusal recorded
+  [DIC-1167] hBP03-005: 1 positive listing(s) matched no official printing while sibling printing(s) hBP03-005_hBP03_OSR_hBP03-005_OSR, hBP03-005_hBP03_OUR_hBP03-005_OUR, hBP03-005_hBP03_SEC_hBP03-005_SEC priced by exact match — refusal recorded
+  [DIC-1167] hBP03-007: 2 positive listing(s) matched no official printing while sibling printing(s) hBP03-007_hBP03_OSR_hBP03-007_OSR, hBP03-007_hBP03_OUR_hBP03-007_OUR, hBP03-007_hBP03_SEC_hBP03-007_SEC priced by exact match — refusal recorded
+  [DIC-1167] hBP03-001: 1 positive listing(s) matched no official printing while sibling printing(s) hBP03-001_hBP03_OSR_hBP03-001_OSR, hBP03-001_hBP03_OUR_hBP03-001_OUR priced by exact match — refusal recorded
+  [DIC-1167] hBP03-008: 1 positive listing(s) matched no official printing while sibling printing(s) hBP03-008_hBP03_OSR_hBP03-008_OSR, hBP03-008_hBP03_OUR_hBP03-008_OUR priced by exact match — refusal recorded
+  [DIC-1167] hBP03-015: 2 positive listing(s) matched no official printing while sibling printing(s) hBP03-015_hBP03_RR_hBP03-015_RR, hBP03-015_hBP03_SR_hBP03-015_SR, hBP03-015_hBP03_UR_hBP03-015_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP03-021: 2 positive listing(s) matched no official printing while sibling printing(s) hBP03-021_hBP03_RR_hBP03-021_RR, hBP03-021_hBP03_SR_hBP03-021_SR, hBP03-021_hBP03_UR_hBP03-021_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP03-024: 1 positive listing(s) matched no official printing while sibling printing(s) hBP03-024_hBP03_RR_hBP03-024_RR, hBP03-024_hBP03_SR_hBP03-024_SR, hBP03-024_hBP03_UR_hBP03-024_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP03-030: 1 positive listing(s) matched no official printing while sibling printing(s) hBP03-030_hBP03_RR_hBP03-030_RR, hBP03-030_hBP03_SR_hBP03-030_SR, hBP03-030_hBP03_UR_hBP03-030_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP03-034: 4 positive listing(s) matched no official printing while sibling printing(s) hBP03-034_hBP03_RR_hBP03-034_RR, hBP03-034_hBP03_SR_hBP03-034_SR, hBP03-034_hBP03_UR_hBP03-034_UR, hBP03-034_hEB01_RR_hBP03-034_RR_02, hBP03-034_hEB01_SR_hBP03-034_SR_02, hBP03-034_hEB01_UR_hBP03-034_UR_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP03-056: 1 positive listing(s) matched no official printing while sibling printing(s) hBP03-056_hBP03_RR_hBP03-056_RR, hBP03-056_hBP03_SR_hBP03-056_SR, hBP03-056_hBP03_UR_hBP03-056_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP03-079: 1 positive listing(s) matched no official printing while sibling printing(s) hBP03-079_hBP03_RR_hBP03-079_RR, hBP03-079_hBP03_SR_hBP03-079_SR, hBP03-079_hBP03_UR_hBP03-079_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP03-023: 2 positive listing(s) matched no official printing while sibling printing(s) hBP03-023_hBP03_R_hBP03-023_R, hBP03-023_hBP03_SR_hBP03-023_SR, hBP03-023_hEB01_R_hBP03-023_R_02, hBP03-023_hEB01_SR_hBP03-023_SR_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP03-029: 2 positive listing(s) matched no official printing while sibling printing(s) hBP03-029_hBP03_R_hBP03-029_R, hBP03-029_hBP03_SR_hBP03-029_SR, hBP03-029_hEB01_R_hBP03-029_R_02, hBP03-029_hEB01_SR_hBP03-029_SR_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP03-036: 2 positive listing(s) matched no official printing while sibling printing(s) hBP03-036_hBP03_R_hBP03-036_R, hBP03-036_hBP03_SR_hBP03-036_SR, hBP03-036_hEB01_R_hBP03-036_R_02, hBP03-036_hEB01_SR_hBP03-036_SR_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP03-044: 2 positive listing(s) matched no official printing while sibling printing(s) hBP03-044_hBP03_R_hBP03-044_R, hBP03-044_hBP03_SR_hBP03-044_SR, hBP03-044_hEB01_R_hBP03-044_R_02, hBP03-044_hEB01_SR_hBP03-044_SR_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP03-050: 2 positive listing(s) matched no official printing while sibling printing(s) hBP03-050_hBP03_R_hBP03-050_R, hBP03-050_hBP03_SR_hBP03-050_SR, hBP03-050_hEB01_R_hBP03-050_R_02, hBP03-050_hEB01_SR_hBP03-050_SR_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP03-060: 2 positive listing(s) matched no official printing while sibling printing(s) hBP03-060_hBP03_R_hBP03-060_R, hBP03-060_hBP03_SR_hBP03-060_SR, hBP03-060_hEB01_R_hBP03-060_R_02, hBP03-060_hEB01_SR_hBP03-060_SR_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP03-065: 2 positive listing(s) matched no official printing while sibling printing(s) hBP03-065_hBP03_R_hBP03-065_R, hBP03-065_hBP03_SR_hBP03-065_SR, hBP03-065_hEB01_R_hBP03-065_R_02, hBP03-065_hEB01_SR_hBP03-065_SR_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP03-010: 1 positive listing(s) matched no official printing while sibling printing(s) hBP03-010_hBP03_S_hBP03-010_S, hBP03-010_hBP03_U_hBP03-010_U priced by exact match — refusal recorded
+  [DIC-1167] hBP03-012: 1 positive listing(s) matched no official printing while sibling printing(s) hBP03-012_hBP03_S_hBP03-012_S, hBP03-012_hBP03_U_hBP03-012_U priced by exact match — refusal recorded
+  [DIC-1167] hBP03-027: 1 positive listing(s) matched no official printing while sibling printing(s) hBP03-027_hBP03_C_hBP03-027_C_2, hBP03-027_hBP03_S_hBP03-027_S_2 priced by exact match — refusal recorded
+  [DIC-1167] hBP03-038: 1 positive listing(s) matched no official printing while sibling printing(s) hBP03-038_hBP03_C_hBP03-038_C, hBP03-038_hBP03_S_hBP03-038_S priced by exact match — refusal recorded
+  [DIC-1167] hBP03-042: 1 positive listing(s) matched no official printing while sibling printing(s) hBP03-042_hBP03_S_hBP03-042_S, hBP03-042_hBP03_U_hBP03-042_U priced by exact match — refusal recorded
+  [DIC-1167] hBP03-047: 1 positive listing(s) matched no official printing while sibling printing(s) hBP03-047_hBP03_C_hBP03-047_C, hBP03-047_hBP03_S_hBP03-047_S priced by exact match — refusal recorded
+  [DIC-1167] hBP03-048: 1 positive listing(s) matched no official printing while sibling printing(s) hBP03-048_hBP03_S_hBP03-048_S, hBP03-048_hBP03_U_hBP03-048_U priced by exact match — refusal recorded
+  [DIC-1167] hBP03-054: 1 positive listing(s) matched no official printing while sibling printing(s) hBP03-054_hBP03_S_hBP03-054_S, hBP03-054_hBP03_U_hBP03-054_U priced by exact match — refusal recorded
+  [DIC-1167] hBP03-058: 1 positive listing(s) matched no official printing while sibling printing(s) hBP03-058_hBP03_C_hBP03-058_C, hBP03-058_hBP03_S_hBP03-058_S priced by exact match — refusal recorded
+  [DIC-1167] hBP03-059: 2 positive listing(s) matched no official printing while sibling printing(s) hBP03-059_hBP03_S_hBP03-059_S, hBP03-059_hBP03_U_hBP03-059_U, hBP03-059_hEB01_SR_hBP03-059_SR_02, hBP03-059_hEB01_U_hBP03-059_U_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP03-070: 2 positive listing(s) matched no official printing while sibling printing(s) hBP03-070_hBP03_S_hBP03-070_S, hBP03-070_hBP03_U_hBP03-070_U, hBP03-070_hEB01_SR_hBP03-070_SR_02, hBP03-070_hEB01_U_hBP03-070_U_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP03-081: 1 positive listing(s) matched no official printing while sibling printing(s) hBP03-081_hBP03_C_hBP03-081_C, hBP03-081_hBP03_S_hBP03-081_S priced by exact match — refusal recorded
+  [DIC-1167] hBP03-082: 1 positive listing(s) matched no official printing while sibling printing(s) hBP03-082_hBP03_S_hBP03-082_S, hBP03-082_hBP03_U_hBP03-082_U priced by exact match — refusal recorded
+  [DIC-1167] hBP03-088: 4 positive listing(s) matched no official printing while sibling printing(s) hBP03-088_hBP03_S_hBP03-088_S, hBP03-088_hBP03_U_hBP03-088_U priced by exact match — refusal recorded
+  [DIC-1167] hBP03-091: 1 positive listing(s) matched no official printing while sibling printing(s) hBP03-091_hBP03_S_hBP03-091_S, hBP03-091_hBP03_U_hBP03-091_U priced by exact match — refusal recorded
+  [DIC-1167] hBP03-098: 1 positive listing(s) matched no official printing while sibling printing(s) hBP03-098_hBP03_S_hBP03-098_S, hBP03-098_hBP03_U_hBP03-098_U priced by exact match — refusal recorded
+  [DIC-1167] hBP03-100: 1 positive listing(s) matched no official printing while sibling printing(s) hBP03-100_hBP03_C_hBP03-100_C, hBP03-100_hBP03_S_hBP03-100_S priced by exact match — refusal recorded
+  [DIC-1167] hBP03-101: 1 positive listing(s) matched no official printing while sibling printing(s) hBP03-101_hBP03_C_hBP03-101_C, hBP03-101_hBP03_S_hBP03-101_S priced by exact match — refusal recorded
+  [DIC-1167] hBP03-105: 1 positive listing(s) matched no official printing while sibling printing(s) hBP03-105_hBP03_S_hBP03-105_S, hBP03-105_hBP03_U_hBP03-105_U priced by exact match — refusal recorded
+  [DIC-1167] hBP03-106: 1 positive listing(s) matched no official printing while sibling printing(s) hBP03-106_hBP03_C_hBP03-106_C, hBP03-106_hBP03_S_hBP03-106_S priced by exact match — refusal recorded
+  [DIC-1167] hBP03-110: 1 positive listing(s) matched no official printing while sibling printing(s) hBP03-110_hBP03_S_hBP03-110_S, hBP03-110_hBP03_U_hBP03-110_U priced by exact match — refusal recorded
+  [DIC-1167] hBP03-051: 3 positive listing(s) matched no official printing while sibling printing(s) hBP03-051_hBP03_C_hBP03-051_C, hBP03-051_hBP09_C_hBP03-051_C_02, hBP03-051_hBP09_HR_hBP03-051_HR priced by exact match — refusal recorded
+  [DIC-1167] hBP03-067: 1 positive listing(s) matched no official printing while sibling printing(s) hBP03-067_hBP03_C_hBP03-067_C, hBP03-067_hBP07_C_hBP03-067_02_C, hBP03-067_hBP07_HR_hBP03-067_HR priced by exact match — refusal recorded
+  [DIC-1167] hBP04-001: 2 positive listing(s) matched no official printing while sibling printing(s) hBP04-001_hBP04_OSR_hBP04-001_OSR, hBP04-001_hBP04_OUR_hBP04-001_OUR, hBP04-001_hBP04_SEC_hBP04-001_SEC priced by exact match — refusal recorded
+  [DIC-1167] hBP04-004: 2 positive listing(s) matched no official printing while sibling printing(s) hBP04-004_hBP04_OSR_hBP04-004_OSR, hBP04-004_hBP04_OUR_hBP04-004_OUR, hBP04-004_hBP04_SEC_hBP04-004_SEC priced by exact match — refusal recorded
+  [DIC-1167] hBP04-005: 2 positive listing(s) matched no official printing while sibling printing(s) hBP04-005_hBP04_OSR_hBP04-005_OSR, hBP04-005_hBP04_OUR_hBP04-005_OUR, hBP04-005_hBP04_SEC_hBP04-005_SEC priced by exact match — refusal recorded
+  [DIC-1167] hBP04-006: 2 positive listing(s) matched no official printing while sibling printing(s) hBP04-006_hBP04_OSR_hBP04-006_OSR, hBP04-006_hBP04_OUR_hBP04-006_OUR, hBP04-006_hBP04_SEC_hBP04-006_SEC priced by exact match — refusal recorded
+  [DIC-1167] hBP04-002: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-002_hBP04_OSR_hBP04-002_OSR, hBP04-002_hBP04_OUR_hBP04-002_OUR priced by exact match — refusal recorded
+  [DIC-1167] hBP04-003: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-003_hBP04_OSR_hBP04-003_OSR, hBP04-003_hBP04_OUR_hBP04-003_OUR priced by exact match — refusal recorded
+  [DIC-1167] hBP04-007: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-007_hBP04_OSR_hBP04-007_OSR, hBP04-007_hBP04_OUR_hBP04-007_OUR priced by exact match — refusal recorded
+  [DIC-1167] hBP04-013: 2 positive listing(s) matched no official printing while sibling printing(s) hBP04-013_hBP04_RR_hBP04-013_RR, hBP04-013_hBP04_SR_hBP04-013_SR, hBP04-013_hBP04_UR_hBP04-013_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP04-025: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-025_hBP04_RR_hBP04-025_RR, hBP04-025_hBP04_SR_hBP04-025_SR, hBP04-025_hBP04_UR_hBP04-025_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP04-042: 2 positive listing(s) matched no official printing while sibling printing(s) hBP04-042_hBP04_RR_hBP04-042_RR, hBP04-042_hBP04_SR_hBP04-042_SR, hBP04-042_hBP04_UR_hBP04-042_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP04-048: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-048_hBP04_RR_hBP04-048_RR, hBP04-048_hBP04_SR_hBP04-048_SR, hBP04-048_hBP04_UR_hBP04-048_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP04-053: 2 positive listing(s) matched no official printing while sibling printing(s) hBP04-053_hBP04_RR_hBP04-053_RR, hBP04-053_hBP04_SR_hBP04-053_SR, hBP04-053_hBP04_UR_hBP04-053_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP04-059: 2 positive listing(s) matched no official printing while sibling printing(s) hBP04-059_hBP04_RR_hBP04-059_RR, hBP04-059_hBP04_SR_hBP04-059_SR, hBP04-059_hBP04_UR_hBP04-059_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP04-066: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-066_hBP04_RR_hBP04-066_RR, hBP04-066_hBP04_SR_hBP04-066_SR, hBP04-066_hBP04_UR_hBP04-066_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP04-072: 5 positive listing(s) matched no official printing while sibling printing(s) hBP04-072_hBP04_RR_hBP04-072_RR, hBP04-072_hBP04_SR_hBP04-072_SR, hBP04-072_hBP04_UR_hBP04-072_UR, hBP04-072_hEB01_RR_hBP04-072_RR_02, hBP04-072_hEB01_SR_hBP04-072_SR_02, hBP04-072_hEB01_UR_hBP04-072_UR_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP04-086: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-086_hBP04_RR_hBP04-086_RR, hBP04-086_hBP04_SR_hBP04-086_SR, hBP04-086_hBP04_UR_hBP04-086_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP04-012: 3 positive listing(s) matched no official printing while sibling printing(s) hBP04-012_hBP04_R_hBP04-012_R, hBP04-012_hBP04_SR_hBP04-012_SR, hBP04-012_hEB01_R_hBP04-012_R_02, hBP04-012_hEB01_SR_hBP04-012_SR_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP04-015: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-015_hBP04_R_hBP04-015_R, hBP04-015_hBP04_SR_hBP04-015_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP04-027: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-027_hBP04_R_hBP04-027_R, hBP04-027_hBP04_SR_hBP04-027_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP04-038: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-038_hBP04_R_hBP04-038_R, hBP04-038_hBP04_SR_hBP04-038_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP04-047: 2 positive listing(s) matched no official printing while sibling printing(s) hBP04-047_hBP04_R_hBP04-047_R, hBP04-047_hBP04_SR_hBP04-047_SR, hBP04-047_hEB01_R_hBP04-047_R_02, hBP04-047_hEB01_SR_hBP04-047_SR_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP04-061: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-061_hBP04_R_hBP04-061_R, hBP04-061_hBP04_SR_hBP04-061_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP04-071: 2 positive listing(s) matched no official printing while sibling printing(s) hBP04-071_hBP04_R_hBP04-071_R, hBP04-071_hBP04_SR_hBP04-071_SR, hBP04-071_hEB01_R_hBP04-071_R_02, hBP04-071_hEB01_SR_hBP04-071_SR_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP04-009: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-009_hBP04_S_hBP04-009_S, hBP04-009_hBP04_U_hBP04-009_U priced by exact match — refusal recorded
+  [DIC-1167] hBP04-010: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-010_hBP04_C_hBP04-010_C, hBP04-010_hBP04_S_hBP04-010_S priced by exact match — refusal recorded
+  [DIC-1167] hBP04-029: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-029_hBP04_C_hBP04-029_C, hBP04-029_hBP04_S_hBP04-029_S priced by exact match — refusal recorded
+  [DIC-1167] hBP04-030: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-030_hBP04_S_hBP04-030_S, hBP04-030_hBP04_U_hBP04-030_U priced by exact match — refusal recorded
+  [DIC-1167] hBP04-035: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-035_hBP04_S_hBP04-035_S, hBP04-035_hBP04_U_hBP04-035_U priced by exact match — refusal recorded
+  [DIC-1167] hBP04-040: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-040_hBP04_C_hBP04-040_C, hBP04-040_hBP04_S_hBP04-040_S priced by exact match — refusal recorded
+  [DIC-1167] hBP04-041: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-041_hBP04_S_hBP04-041_S, hBP04-041_hBP04_U_hBP04-041_U priced by exact match — refusal recorded
+  [DIC-1167] hBP04-044: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-044_hBP04_S_hBP04-044_S, hBP04-044_hBP04_U_hBP04-044_U priced by exact match — refusal recorded
+  [DIC-1167] hBP04-052: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-052_hBP04_S_hBP04-052_S, hBP04-052_hBP04_U_hBP04-052_U priced by exact match — refusal recorded
+  [DIC-1167] hBP04-054: 2 positive listing(s) matched no official printing while sibling printing(s) hBP04-054_hBP04_C_hBP04-054_C, hBP04-054_hBP04_S_hBP04-054_S, hBP04-054_hBP07_C_hBP04-054_02_C, hBP04-054_hBP07_HR_hBP04-054_HR priced by exact match — refusal recorded
+  [DIC-1167] hBP04-070: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-070_hBP04_S_hBP04-070_S, hBP04-070_hBP04_U_hBP04-070_U priced by exact match — refusal recorded
+  [DIC-1167] hBP04-074: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-074_hBP04_S_hBP04-074_S, hBP04-074_hBP04_U_hBP04-074_U priced by exact match — refusal recorded
+  [DIC-1167] hBP04-084: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-084_hBP04_C_hBP04-084_C, hBP04-084_hBP04_S_hBP04-084_S priced by exact match — refusal recorded
+  [DIC-1167] hBP04-085: 2 positive listing(s) matched no official printing while sibling printing(s) hBP04-085_hBP04_S_hBP04-085_S, hBP04-085_hBP04_U_hBP04-085_U, hBP04-085_hEB01_SR_hBP04-085_SR_02, hBP04-085_hEB01_U_hBP04-085_U_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP04-091: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-091_hBP04_S_hBP04-091_S, hBP04-091_hBP04_U_hBP04-091_U priced by exact match — refusal recorded
+  [DIC-1167] hBP04-092: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-092_hBP04_S_hBP04-092_S, hBP04-092_hBP04_U_hBP04-092_U priced by exact match — refusal recorded
+  [DIC-1167] hBP04-094: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-094_hBP04_S_hBP04-094_S, hBP04-094_hBP04_U_hBP04-094_U priced by exact match — refusal recorded
+  [DIC-1167] hBP04-096: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-096_hBP04_S_hBP04-096_S, hBP04-096_hBP04_U_hBP04-096_U priced by exact match — refusal recorded
+  [DIC-1167] hBP04-097: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-097_hBP04_S_hBP04-097_S, hBP04-097_hBP04_U_hBP04-097_U priced by exact match — refusal recorded
+  [DIC-1167] hBP04-098: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-098_hBP04_S_hBP04-098_S, hBP04-098_hBP04_U_hBP04-098_U priced by exact match — refusal recorded
+  [DIC-1167] hBP04-100: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-100_hBP04_C_hBP04-100_C, hBP04-100_hBP04_S_hBP04-100_S priced by exact match — refusal recorded
+  [DIC-1167] hBP04-103: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-103_hBP04_C_hBP04-103_C, hBP04-103_hBP04_S_hBP04-103_S priced by exact match — refusal recorded
+  [DIC-1167] hBP04-105: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-105_hBP04_S_hBP04-105_S, hBP04-105_hBP04_U_hBP04-105_U priced by exact match — refusal recorded
+  [DIC-1167] hSD01-017: 2 positive listing(s) matched no official printing while sibling printing(s) hSD01-017_hBP04_C_hSD01-017_02_C, hSD01-017_hBP04_S_hSD01-017_02_S, hSD01-017_hSD01_C_hSD01-017_C priced by exact match — refusal recorded
+  [DIC-1167] hBP04-008: 3 positive listing(s) matched no official printing while sibling printing(s) hBP04-008_hBP04_C_hBP04-008_C, hBP04-008_hEB01_C_hBP04-008_C_02, hBP04-008_hEB01_HR_hBP04-008_HR priced by exact match — refusal recorded
+  [DIC-1167] hBP04-039: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-039_hBP04_C_hBP04-039_C, hBP04-039_hBP09_C_hBP04-039_C_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP04-043: 1 positive listing(s) matched no official printing while sibling printing(s) hBP04-043_hBP04_C_hBP04-043_C, hBP04-043_hBP06_C_hBP04-043_02_C, hBP04-043_hBP06_HR_hBP04-043_HR, hBP04-043_hBP09_C_hBP04-043_C_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP04-067: 2 positive listing(s) matched no official printing while sibling printing(s) hBP04-067_hBP04_C_hBP04-067_C, hBP04-067_hBP06_C_hBP04-067_02_C, hBP04-067_hBP06_HR_hBP04-067_HR, hBP04-067_hBP09_C_hBP04-067_C_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP04-079: 3 positive listing(s) matched no official printing while sibling printing(s) hBP04-079_hBP04_C_hBP04-079_C, hBP04-079_hBP06_C_hBP04-079_02_C, hBP04-079_hBP09_C_hBP04-079_C_02, hBP04-079_hBP09_HR_hBP04-079_HR priced by exact match — refusal recorded
+  [DIC-1167] hBP05-003: 1 positive listing(s) matched no official printing while sibling printing(s) hBP05-003_hBP05_OSR_hBP05-003_OSR, hBP05-003_hBP05_OUR_hBP05-003_OUR, hBP05-003_hBP05_SEC_hBP05-003_SEC priced by exact match — refusal recorded
+  [DIC-1167] hBP05-005: 1 positive listing(s) matched no official printing while sibling printing(s) hBP05-005_hBP05_OSR_hBP05-005_OSR, hBP05-005_hBP05_OUR_hBP05-005_OUR, hBP05-005_hBP05_SEC_hBP05-005_SEC priced by exact match — refusal recorded
+  [DIC-1167] hBP05-016: 7 positive listing(s) matched no official printing while sibling printing(s) hBP05-016_hBP05_RR_hBP05-016_RR, hBP05-016_hBP05_SEC_hBP05-016_SEC, hBP05-016_hBP05_SR_hBP05-016_SR, hBP05-016_hBP05_UR_hBP05-016_UR, hBP05-016_hEB01_RR_hBP05-016_RR_02, hBP05-016_hEB01_SR_hBP05-016_SR_02, hBP05-016_hEB01_UR_hBP05-016_UR_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP05-080: 4 positive listing(s) matched no official printing while sibling printing(s) hBP05-080_hBP05_SEC_hBP05-080_SEC, hBP05-080_hBP05_SR_hBP05-080_SR, hBP05-080_hBP05_U_hBP05-080_U, hBP05-080_hEB01_SR_hBP05-080_SR_02, hBP05-080_hEB01_U_hBP05-080_U_t02 priced by exact match — refusal recorded
+  [DIC-1167] hSD07-002: 1 positive listing(s) matched no official printing while sibling printing(s) hSD07-002_hBP05_C_hSD07-002_02_C, hSD07-002_hBP05_HR_hSD07-002_HR, hSD07-002_hSD07_C_hSD07-002_C priced by exact match — refusal recorded
+  [DIC-1167] hBP05-006: 1 positive listing(s) matched no official printing while sibling printing(s) hBP05-006_hBP05_OSR_hBP05-006_OSR, hBP05-006_hBP05_OUR_hBP05-006_OUR priced by exact match — refusal recorded
+  [DIC-1167] hBP05-007: 1 positive listing(s) matched no official printing while sibling printing(s) hBP05-007_hBP05_OSR_hBP05-007_OSR, hBP05-007_hBP05_OUR_hBP05-007_OUR priced by exact match — refusal recorded
+  [DIC-1167] hBP05-012: 1 positive listing(s) matched no official printing while sibling printing(s) hBP05-012_hBP05_RR_hBP05-012_RR, hBP05-012_hBP05_SR_hBP05-012_SR, hBP05-012_hBP05_UR_hBP05-012_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP05-037: 1 positive listing(s) matched no official printing while sibling printing(s) hBP05-037_hBP05_RR_hBP05-037_RR, hBP05-037_hBP05_SR_hBP05-037_SR, hBP05-037_hBP05_UR_hBP05-037_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP05-045: 4 positive listing(s) matched no official printing while sibling printing(s) hBP05-045_hBP05_RR_hBP05-045_RR, hBP05-045_hBP05_SR_hBP05-045_SR, hBP05-045_hBP05_UR_hBP05-045_UR, hBP05-045_hEB01_RR_hBP05-045_RR_02, hBP05-045_hEB01_SR_hBP05-045_SR_02, hBP05-045_hEB01_UR_hBP05-045_UR_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP05-049: 1 positive listing(s) matched no official printing while sibling printing(s) hBP05-049_hBP05_RR_hBP05-049_RR, hBP05-049_hBP05_SR_hBP05-049_SR, hBP05-049_hBP05_UR_hBP05-049_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP05-056: 1 positive listing(s) matched no official printing while sibling printing(s) hBP05-056_hBP05_RR_hBP05-056_RR, hBP05-056_hBP05_SR_hBP05-056_SR, hBP05-056_hBP05_UR_hBP05-056_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP05-061: 1 positive listing(s) matched no official printing while sibling printing(s) hBP05-061_hBP05_RR_hBP05-061_RR_02, hBP05-061_hBP05_SR_hBP05-061_SR_02, hBP05-061_hBP05_UR_hBP05-061_UR_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP05-011: 1 positive listing(s) matched no official printing while sibling printing(s) hBP05-011_hBP05_R_hBP05-011_R, hBP05-011_hBP05_SR_hBP05-011_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP05-013: 1 positive listing(s) matched no official printing while sibling printing(s) hBP05-013_hBP05_R_hBP05-013_R, hBP05-013_hBP05_SR_hBP05-013_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP05-029: 1 positive listing(s) matched no official printing while sibling printing(s) hBP05-029_hBP05_R_hBP05-029_R, hBP05-029_hBP05_SR_hBP05-029_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP05-039: 1 positive listing(s) matched no official printing while sibling printing(s) hBP05-039_hBP05_R_hBP05-039_R, hBP05-039_hBP05_SR_hBP05-039_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP05-060: 3 positive listing(s) matched no official printing while sibling printing(s) hBP05-060_hBP05_R_hBP05-060_R, hBP05-060_hBP05_SR_hBP05-060_SR, hBP05-060_hEB01_R_hBP05-060_R_02, hBP05-060_hEB01_SR_hBP05-060_SR_02 priced by exact match — refusal recorded
+  [DIC-1167] hBP05-008: 1 positive listing(s) matched no official printing while sibling printing(s) hBP05-008_hBP05_S_hBP05-008_S, hBP05-008_hBP05_U_hBP05-008_U priced by exact match — refusal recorded
+  [DIC-1167] hBP05-009: 1 positive listing(s) matched no official printing while sibling printing(s) hBP05-009_ent07, hBP05-009_hBP05_C_hBP05-009_C, hBP05-009_hBP05_S_hBP05-009_S priced by exact match — refusal recorded
+  [DIC-1167] hBP05-025: 1 positive listing(s) matched no official printing while sibling printing(s) hBP05-025_hBP05_C_hBP05-025_C, hBP05-025_hBP05_S_hBP05-025_S priced by exact match — refusal recorded
+  [DIC-1167] hBP05-026: 1 positive listing(s) matched no official printing while sibling printing(s) hBP05-026_hBP05_S_hBP05-026_S, hBP05-026_hBP05_U_hBP05-026_U priced by exact match — refusal recorded
+  [DIC-1167] hBP05-040: 1 positive listing(s) matched no official printing while sibling printing(s) hBP05-040_hBP05_S_hBP05-040_S, hBP05-040_hBP05_U_hBP05-040_U priced by exact match — refusal recorded
+  [DIC-1167] hBP05-041: 1 positive listing(s) matched no official printing while sibling printing(s) hBP05-041_hBP05_S_hBP05-041_S, hBP05-041_hBP05_U_hBP05-041_U priced by exact match — refusal recorded
+  [DIC-1167] hBP05-042: 1 positive listing(s) matched no official printing while sibling printing(s) hBP05-042_hBP05_C_hBP05-042_C, hBP05-042_hBP05_S_hBP05-042_S priced by exact match — refusal recorded
+  [DIC-1167] hBP05-052: 1 positive listing(s) matched no official printing while sibling printing(s) hBP05-052_hBP05_S_hBP05-052_S, hBP05-052_hBP05_U_hBP05-052_U priced by exact match — refusal recorded
+  [DIC-1167] hBP05-053: 1 positive listing(s) matched no official printing while sibling printing(s) hBP05-053_hBP05_C_hBP05-053_C, hBP05-053_hBP05_S_hBP05-053_S priced by exact match — refusal recorded
+  [DIC-1167] hBP05-054: 1 positive listing(s) matched no official printing while sibling printing(s) hBP05-054_hBP05_S_hBP05-054_S, hBP05-054_hBP05_U_hBP05-054_U priced by exact match — refusal recorded
+  [DIC-1167] hBP05-058: 1 positive listing(s) matched no official printing while sibling printing(s) hBP05-058_hBP05_C_hBP05-058_C, hBP05-058_hBP05_S_hBP05-058_S priced by exact match — refusal recorded
+  [DIC-1167] hBP05-068: 2 positive listing(s) matched no official printing while sibling printing(s) hBP05-068_hBP05_C_hBP05-068_C, hBP05-068_hBP05_S_hBP05-068_S priced by exact match — refusal recorded
+  [DIC-1167] hBP05-074: 2 positive listing(s) matched no official printing while sibling printing(s) hBP05-074_hBP05_C_hBP05-074_C, hBP05-074_hBP05_S_hBP05-074_S, hBP05-074_hEB01_C_hBP05-074_C_04, hBP05-074_hSD12_C_hBP05-074_02_C priced by exact match — refusal recorded
+  [DIC-1167] hBP05-075: 1 positive listing(s) matched no official printing while sibling printing(s) hBP05-075_hBP05_C_hBP05-075_C, hBP05-075_hBP05_S_hBP05-075_S priced by exact match — refusal recorded
+  [DIC-1167] hBP05-076: 1 positive listing(s) matched no official printing while sibling printing(s) hBP05-076_hBP05_S_hBP05-076_S, hBP05-076_hBP05_U_hBP05-076_U priced by exact match — refusal recorded
+  [DIC-1167] hBP05-079: 2 positive listing(s) matched no official printing while sibling printing(s) hBP05-079_hBP05_S_hBP05-079_S, hBP05-079_hBP05_U_hBP05-079_U priced by exact match — refusal recorded
+  [DIC-1167] hBP05-081: 1 positive listing(s) matched no official printing while sibling printing(s) hBP05-081_hBP05_S_hBP05-081_S, hBP05-081_hBP05_U_hBP05-081_U priced by exact match — refusal recorded
+  [DIC-1167] hBP05-083: 1 positive listing(s) matched no official printing while sibling printing(s) hBP05-083_hBP05_S_hBP05-083_S, hBP05-083_hBP05_U_hBP05-083_U priced by exact match — refusal recorded
+  [DIC-1167] hBP05-087: 1 positive listing(s) matched no official printing while sibling printing(s) hBP05-087_hBP05_S_hBP05-087_S, hBP05-087_hBP05_U_hBP05-087_U priced by exact match — refusal recorded
+  [DIC-1167] hBP06-001: 2 positive listing(s) matched no official printing while sibling printing(s) hBP06-001_hBP06_OSR_hBP06-001_OSR, hBP06-001_hBP06_OUR_hBP06-001_OUR, hBP06-001_hBP06_SEC_hBP06-001_SEC priced by exact match — refusal recorded
+  [DIC-1167] hBP06-003: 2 positive listing(s) matched no official printing while sibling printing(s) hBP06-003_hBP06_OSR_hBP06-003_OSR, hBP06-003_hBP06_OUR_hBP06-003_OUR, hBP06-003_hBP06_SEC_hBP06-003_SEC priced by exact match — refusal recorded
+  [DIC-1167] hBP06-004: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-004_hBP06_OSR_hBP06-004_OSR, hBP06-004_hBP06_OUR_hBP06-004_OUR, hBP06-004_hBP06_SEC_hBP06-004_SEC priced by exact match — refusal recorded
+  [DIC-1167] hBP06-008: 2 positive listing(s) matched no official printing while sibling printing(s) hBP06-008_hBP06_OSR_hBP06-008_OSR, hBP06-008_hBP06_OUR_hBP06-008_OUR, hBP06-008_hBP06_SEC_hBP06-008_SEC priced by exact match — refusal recorded
+  [DIC-1167] hBP06-015: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-015_hBP06_C_hBP06-015_C, hBP06-015_hBP06_HR_hBP06-015_HR priced by exact match — refusal recorded
+  [DIC-1167] hSD02-002: 1 positive listing(s) matched no official printing while sibling printing(s) hSD02-002_hBP06_C_hSD02-002_02_C, hSD02-002_hBP06_HR_hSD02-002_HR, hSD02-002_hSD02_C_hSD02-002_C priced by exact match — refusal recorded
+  [DIC-1167] hBP06-002: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-002_hBP06_OSR_hBP06-002_OSR, hBP06-002_hBP06_OUR_hBP06-002_OUR priced by exact match — refusal recorded
+  [DIC-1167] hBP06-005: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-005_hBP06_OSR_hBP06-005_OSR, hBP06-005_hBP06_OUR_hBP06-005_OUR priced by exact match — refusal recorded
+  [DIC-1167] hBP06-007: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-007_hBP06_OSR_hBP06-007_OSR, hBP06-007_hBP06_OUR_hBP06-007_OUR priced by exact match — refusal recorded
+  [DIC-1167] hBP06-014: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-014_hBP06_RR_hBP06-014_RR, hBP06-014_hBP06_SR_hBP06-014_SR, hBP06-014_hBP06_UR_hBP06-014_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP06-020: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-020_hBP06_RR_hBP06-020_RR, hBP06-020_hBP06_SR_hBP06-020_SR, hBP06-020_hBP06_UR_hBP06-020_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP06-027: 2 positive listing(s) matched no official printing while sibling printing(s) hBP06-027_hBP06_RR_hBP06-027_RR, hBP06-027_hBP06_SR_hBP06-027_SR, hBP06-027_hBP06_UR_hBP06-027_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP06-031: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-031_hBP06_RR_hBP06-031_RR, hBP06-031_hBP06_SR_hBP06-031_SR, hBP06-031_hBP06_UR_hBP06-031_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP06-077: 2 positive listing(s) matched no official printing while sibling printing(s) hBP06-077_hBP06_RR_hBP06-077_RR, hBP06-077_hBP06_SR_hBP06-077_SR, hBP06-077_hBP06_UR_hBP06-077_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP06-021: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-021_hBP06_R_hBP06-021_R, hBP06-021_hBP06_SR_hBP06-021_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP06-044: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-044_hBP06_R_hBP06-044_R, hBP06-044_hBP06_SR_hBP06-044_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP06-059: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-059_hBP06_R_hBP06-059_R, hBP06-059_hBP06_SR_hBP06-059_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP06-076: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-076_hBP06_R_hBP06-076_R, hBP06-076_hBP06_SR_hBP06-076_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP06-080: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-080_hBP06_R_hBP06-080_R, hBP06-080_hBP06_SR_hBP06-080_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP06-082: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-082_hBP06_R_hBP06-082_R, hBP06-082_hBP06_SR_hBP06-082_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP06-024: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-024_hBP06_C_hBP06-024_C, hBP06-024_hBP06_S_hBP06-024_S priced by exact match — refusal recorded
+  [DIC-1167] hBP06-025: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-025_hBP06_S_hBP06-025_S, hBP06-025_hBP06_U_hBP06-025_U priced by exact match — refusal recorded
+  [DIC-1167] hBP06-034: 2 positive listing(s) matched no official printing while sibling printing(s) hBP06-034_hBP06_C_hBP06-034_C, hBP06-034_hBP06_S_hBP06-034_S priced by exact match — refusal recorded
+  [DIC-1167] hBP06-036: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-036_hBP06_C_hBP06-036_C, hBP06-036_hBP06_S_hBP06-036_S priced by exact match — refusal recorded
+  [DIC-1167] hBP06-037: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-037_hBP06_S_hBP06-037_S, hBP06-037_hBP06_U_hBP06-037_U priced by exact match — refusal recorded
+  [DIC-1167] hBP06-042: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-042_hBP06_C_hBP06-042_C, hBP06-042_hBP06_S_hBP06-042_S priced by exact match — refusal recorded
+  [DIC-1167] hBP06-048: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-048_hBP06_C_hBP06-048_C, hBP06-048_hBP06_S_hBP06-048_S priced by exact match — refusal recorded
+  [DIC-1167] hBP06-050: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-050_hBP06_C_hBP06-050_C, hBP06-050_hBP06_S_hBP06-050_S priced by exact match — refusal recorded
+  [DIC-1167] hBP06-051: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-051_hBP06_S_hBP06-051_S, hBP06-051_hBP06_U_hBP06-051_U priced by exact match — refusal recorded
+  [DIC-1167] hBP06-061: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-061_hBP06_C_hBP06-061_C, hBP06-061_hBP06_S_hBP06-061_S priced by exact match — refusal recorded
+  [DIC-1167] hBP06-072: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-072_hBP06_C_hBP06-072_C, hBP06-072_hBP06_S_hBP06-072_S priced by exact match — refusal recorded
+  [DIC-1167] hBP06-074: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-074_hBP06_C_hBP06-074_C, hBP06-074_hBP06_S_hBP06-074_S priced by exact match — refusal recorded
+  [DIC-1167] hBP06-084: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-084_hBP06_S_hBP06-084_S, hBP06-084_hBP06_U_hBP06-084_U priced by exact match — refusal recorded
+  [DIC-1167] hBP06-087: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-087_hBP06_S_hBP06-087_S, hBP06-087_hBP06_U_hBP06-087_U priced by exact match — refusal recorded
+  [DIC-1167] hBP06-089: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-089_hBP06_C_hBP06-089_C, hBP06-089_hBP06_S_hBP06-089_S priced by exact match — refusal recorded
+  [DIC-1167] hBP06-090: 3 positive listing(s) matched no official printing while sibling printing(s) hBP06-090_hBP06_S_hBP06-090_S, hBP06-090_hBP06_U_hBP06-090_U priced by exact match — refusal recorded
+  [DIC-1167] hBP06-098: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-098_hBP06_S_hBP06-098_S, hBP06-098_hBP06_U_hBP06-098_U priced by exact match — refusal recorded
+  [DIC-1167] hBP06-101: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-101_hBP06_C_hBP06-101_C, hBP06-101_hBP06_S_hBP06-101_S priced by exact match — refusal recorded
+  [DIC-1167] hBP06-102: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-102_hBP06_C_hBP06-102_C, hBP06-102_hBP06_S_hBP06-102_S priced by exact match — refusal recorded
+  [DIC-1167] hBP06-103: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-103_hBP06_C_hBP06-103_C, hBP06-103_hBP06_S_hBP06-103_S priced by exact match — refusal recorded
+  [DIC-1167] hBP06-093: 1 positive listing(s) matched no official printing while sibling printing(s) hBP06-093_hBP06_U_hBP06-093_U priced by exact match — refusal recorded
+  [DIC-1167] hBP07-002: 2 positive listing(s) matched no official printing while sibling printing(s) hBP07-002_hBP07_OSR_hBP07-002_OSR, hBP07-002_hBP07_OUR_hBP07-002_OUR, hBP07-002_hBP07_SEC_hBP07-002_SEC priced by exact match — refusal recorded
+  [DIC-1167] hBP07-003: 2 positive listing(s) matched no official printing while sibling printing(s) hBP07-003_hBP07_OSR_hBP07-003_OSR, hBP07-003_hBP07_OUR_hBP07-003_OUR, hBP07-003_hBP07_SEC_hBP07-003_SEC priced by exact match — refusal recorded
+  [DIC-1167] hBP07-006: 2 positive listing(s) matched no official printing while sibling printing(s) hBP07-006_hBP07_OSR_hBP07-006_OSR, hBP07-006_hBP07_OUR_hBP07-006_OUR, hBP07-006_hBP07_SEC_hBP07-006_SEC priced by exact match — refusal recorded
+  [DIC-1167] hBP07-007: 2 positive listing(s) matched no official printing while sibling printing(s) hBP07-007_hBP07_OSR_hBP07-007_OSR, hBP07-007_hBP07_OUR_hBP07-007_OUR, hBP07-007_hBP07_SEC_hBP07-007_SEC priced by exact match — refusal recorded
+  [DIC-1167] hBP07-001: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-001_hBP07_OSR_hBP07-001_OSR, hBP07-001_hBP07_OUR_hBP07-001_OUR priced by exact match — refusal recorded
+  [DIC-1167] hBP07-004: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-004_hBP07_OSR_hBP07-004_OSR, hBP07-004_hBP07_OUR_hBP07-004_OUR priced by exact match — refusal recorded
+  [DIC-1167] hBP07-014: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-014_hBP07_RR_hBP07-014_RR, hBP07-014_hBP07_SR_hBP07-014_SR, hBP07-014_hBP07_UR_hBP07-014_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP07-021: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-021_hBP07_RR_hBP07-021_RR, hBP07-021_hBP07_SR_hBP07-021_SR, hBP07-021_hBP07_UR_hBP07-021_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP07-035: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-035_hBP07_RR_hBP07-035_RR, hBP07-035_hBP07_SR_hBP07-035_SR, hBP07-035_hBP07_UR_hBP07-035_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP07-049: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-049_hBP07_RR_hBP07-049_RR, hBP07-049_hBP07_SR_hBP07-049_SR, hBP07-049_hBP07_UR_hBP07-049_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP07-056: 2 positive listing(s) matched no official printing while sibling printing(s) hBP07-056_hBP07_RR_hBP07-056_RR, hBP07-056_hBP07_SR_hBP07-056_SR, hBP07-056_hBP07_UR_hBP07-056_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP07-062: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-062_hBP07_RR_hBP07-062_RR, hBP07-062_hBP07_SR_hBP07-062_SR, hBP07-062_hBP07_UR_hBP07-062_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP07-069: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-069_hBP07_RR_hBP07-069_RR, hBP07-069_hBP07_SR_hBP07-069_SR, hBP07-069_hBP07_UR_hBP07-069_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP07-074: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-074_hBP07_RR_hBP07-074_RR, hBP07-074_hBP07_SR_hBP07-074_SR, hBP07-074_hBP07_UR_hBP07-074_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP07-019: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-019_hBP07_R_hBP07-019_R, hBP07-019_hBP07_SR_hBP07-019_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP07-027: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-027_hBP07_R_hBP07-027_R, hBP07-027_hBP07_SR_hBP07-027_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP07-034: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-034_hBP07_R_hBP07-034_R, hBP07-034_hBP07_SR_hBP07-034_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP07-054: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-054_hBP07_R_hBP07-054_R, hBP07-054_hBP07_SR_hBP07-054_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP07-058: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-058_hBP07_R_hBP07-058_R, hBP07-058_hBP07_SR_hBP07-058_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP07-067: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-067_hBP07_R_hBP07-067_R, hBP07-067_hBP07_SR_hBP07-067_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP07-070: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-070_hBP07_R_hBP07-070_R, hBP07-070_hBP07_SR_hBP07-070_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP07-076: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-076_hBP07_R_hBP07-076_R, hBP07-076_hBP07_SR_hBP07-076_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP07-081: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-081_hBP07_R_hBP07-081_R, hBP07-081_hBP07_SR_hBP07-081_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP07-089: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-089_hBP07_R_hBP07-089_R, hBP07-089_hBP07_SR_hBP07-089_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP07-009: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-009_hBP07_S_hBP07-009_S, hBP07-009_hBP07_U_hBP07-009_U priced by exact match — refusal recorded
+  [DIC-1167] hBP07-011: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-011_hBP07_C_hBP07-011_C, hBP07-011_hBP07_S_hBP07-011_S priced by exact match — refusal recorded
+  [DIC-1167] hBP07-016: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-016_hBP07_S_hBP07-016_S, hBP07-016_hBP07_U_hBP07-016_U priced by exact match — refusal recorded
+  [DIC-1167] hBP07-017: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-017_hBP07_C_hBP07-017_C, hBP07-017_hBP07_S_hBP07-017_S priced by exact match — refusal recorded
+  [DIC-1167] hBP07-028: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-028_hBP07_S_hBP07-028_S, hBP07-028_hBP07_U_hBP07-028_U priced by exact match — refusal recorded
+  [DIC-1167] hBP07-033: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-033_hBP07_S_hBP07-033_S, hBP07-033_hBP07_U_hBP07-033_U priced by exact match — refusal recorded
+  [DIC-1167] hBP07-052: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-052_hBP07_C_hBP07-052_C, hBP07-052_hBP07_S_hBP07-052_S priced by exact match — refusal recorded
+  [DIC-1167] hBP07-064: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-064_hBP07_S_hBP07-064_S, hBP07-064_hBP07_U_hBP07-064_U priced by exact match — refusal recorded
+  [DIC-1167] hBP07-066: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-066_hBP07_C_hBP07-066_C, hBP07-066_hBP07_S_hBP07-066_S priced by exact match — refusal recorded
+  [DIC-1167] hBP07-078: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-078_hBP07_S_hBP07-078_S, hBP07-078_hBP07_U_hBP07-078_U priced by exact match — refusal recorded
+  [DIC-1167] hBP07-079: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-079_hBP07_C_hBP07-079_C, hBP07-079_hBP07_S_hBP07-079_S priced by exact match — refusal recorded
+  [DIC-1167] hBP07-082: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-082_hBP07_S_hBP07-082_S, hBP07-082_hBP07_U_hBP07-082_U priced by exact match — refusal recorded
+  [DIC-1167] hBP07-092: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-092_hBP07_S_hBP07-092_S, hBP07-092_hBP07_U_hBP07-092_U priced by exact match — refusal recorded
+  [DIC-1167] hBP07-095: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-095_hBP07_C_hBP07-095_C, hBP07-095_hBP07_S_hBP07-095_S priced by exact match — refusal recorded
+  [DIC-1167] hBP07-098: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-098_hBP07_S_hBP07-098_S, hBP07-098_hBP07_U_hBP07-098_U priced by exact match — refusal recorded
+  [DIC-1167] hBP07-099: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-099_hBP07_C_hBP07-099_C, hBP07-099_hBP07_S_hBP07-099_S priced by exact match — refusal recorded
+  [DIC-1167] hBP07-101: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-101_hBP07_C_hBP07-101_C, hBP07-101_hBP07_S_hBP07-101_S priced by exact match — refusal recorded
+  [DIC-1167] hBP07-103: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-103_hBP07_S_hBP07-103_S, hBP07-103_hBP07_U_hBP07-103_U priced by exact match — refusal recorded
+  [DIC-1167] hBP07-106: 1 positive listing(s) matched no official printing while sibling printing(s) hBP07-106_hBP07_S_hBP07-106_S, hBP07-106_hBP07_U_hBP07-106_U priced by exact match — refusal recorded
+  [DIC-1167] hBP08-003: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-003_hBP08_OSR_hBP08-003_OSR, hBP08-003_hBP08_OUR_hBP08-003_OUR, hBP08-003_hBP08_SEC_hBP08-003_SEC priced by exact match — refusal recorded
+  [DIC-1167] hBP08-004: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-004_hBP08_OSR_hBP08-004_OSR, hBP08-004_hBP08_OUR_hBP08-004_OUR, hBP08-004_hBP08_SEC_hBP08-004_SEC priced by exact match — refusal recorded
+  [DIC-1167] hBP08-005: 2 positive listing(s) matched no official printing while sibling printing(s) hBP08-005_hBP08_OSR_hBP08-005_OSR, hBP08-005_hBP08_OUR_hBP08-005_OUR, hBP08-005_hBP08_SEC_hBP08-005_SEC priced by exact match — refusal recorded
+  [DIC-1167] hBP08-006: 2 positive listing(s) matched no official printing while sibling printing(s) hBP08-006_hBP08_OSR_hBP08-006_OSR, hBP08-006_hBP08_OUR_hBP08-006_OUR, hBP08-006_hBP08_SEC_hBP08-006_SEC priced by exact match — refusal recorded
+  [DIC-1167] hBP08-007: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-007_hBP08_OSR_hBP08-007_OSR, hBP08-007_hBP08_OUR_hBP08-007_OUR, hBP08-007_hBP08_SEC_hBP08-007_SEC priced by exact match — refusal recorded
+  [DIC-1167] hBP08-001: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-001_hBP08_OSR_hBP08-001_OSR, hBP08-001_hBP08_OUR_hBP08-001_OUR priced by exact match — refusal recorded
+  [DIC-1167] hBP08-002: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-002_hBP08_OSR_hBP08-002_OSR, hBP08-002_hBP08_OUR_hBP08-002_OUR priced by exact match — refusal recorded
+  [DIC-1167] hBP08-014: 2 positive listing(s) matched no official printing while sibling printing(s) hBP08-014_hBP08_RR_hBP08-014_RR, hBP08-014_hBP08_SR_hBP08-014_SR, hBP08-014_hBP08_UR_hBP08-014_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP08-044: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-044_hBP08_RR_hBP08-044_RR, hBP08-044_hBP08_SR_hBP08-044_SR, hBP08-044_hBP08_UR_hBP08-044_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP08-083: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-083_hBP08_RR_hBP08-083_RR, hBP08-083_hBP08_SR_hBP08-083_SR, hBP08-083_hBP08_UR_hBP08-083_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP08-012: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-012_hBP08_R_hBP08-012_R, hBP08-012_hBP08_SR_hBP08-012_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP08-017: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-017_hBP08_R_hBP08-017_R, hBP08-017_hBP08_SR_hBP08-017_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP08-020: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-020_hBP08_R_hBP08-020_R, hBP08-020_hBP08_SR_hBP08-020_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP08-040: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-040_hBP08_R_hBP08-040_R, hBP08-040_hBP08_SR_hBP08-040_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP08-054: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-054_hBP08_R_hBP08-054_R, hBP08-054_hBP08_SR_hBP08-054_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP08-058: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-058_hBP08_R_hBP08-058_R, hBP08-058_hBP08_SR_hBP08-058_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP08-084: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-084_hBP08_R_hBP08-084_R, hBP08-084_hBP08_SR_hBP08-084_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP08-009: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-009_hBP08_S_hBP08-009_S, hBP08-009_hBP08_U_hBP08-009_U priced by exact match — refusal recorded
+  [DIC-1167] hBP08-010: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-010_hBP08_C_hBP08-010_C, hBP08-010_hBP08_S_hBP08-010_S priced by exact match — refusal recorded
+  [DIC-1167] hBP08-011: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-011_hBP08_C_hBP08-011_C, hBP08-011_hBP08_S_hBP08-011_S priced by exact match — refusal recorded
+  [DIC-1167] hBP08-013: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-013_hBP08_S_hBP08-013_S, hBP08-013_hBP08_U_hBP08-013_U priced by exact match — refusal recorded
+  [DIC-1167] hBP08-015: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-015_hBP08_C_hBP08-015_C, hBP08-015_hBP08_S_hBP08-015_S priced by exact match — refusal recorded
+  [DIC-1167] hBP08-016: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-016_hBP08_S_hBP08-016_S, hBP08-016_hBP08_U_hBP08-016_U priced by exact match — refusal recorded
+  [DIC-1167] hBP08-023: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-023_hBP08_C_hBP08-023_C, hBP08-023_hBP08_S_hBP08-023_S priced by exact match — refusal recorded
+  [DIC-1167] hBP08-042: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-042_hBP08_S_hBP08-042_S, hBP08-042_hBP08_U_hBP08-042_U priced by exact match — refusal recorded
+  [DIC-1167] hBP08-048: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-048_hBP08_S_hBP08-048_S, hBP08-048_hBP08_U_hBP08-048_U priced by exact match — refusal recorded
+  [DIC-1167] hBP08-062: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-062_hBP08_S_hBP08-062_S, hBP08-062_hBP08_U_hBP08-062_U priced by exact match — refusal recorded
+  [DIC-1167] hBP08-070: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-070_hBP08_C_hBP08-070_C, hBP08-070_hBP08_S_hBP08-070_S priced by exact match — refusal recorded
+  [DIC-1167] hBP08-086: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-086_hBP08_S_hBP08-086_S, hBP08-086_hBP08_U_hBP08-086_U priced by exact match — refusal recorded
+  [DIC-1167] hBP08-090: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-090_hBP08_C_hBP08-090_C, hBP08-090_hBP08_S_hBP08-090_S priced by exact match — refusal recorded
+  [DIC-1167] hBP08-096: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-096_hBP08_S_hBP08-096_S, hBP08-096_hBP08_U_hBP08-096_U priced by exact match — refusal recorded
+  [DIC-1167] hBP08-101: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-101_hBP08_S_hBP08-101_S, hBP08-101_hBP08_U_hBP08-101_U priced by exact match — refusal recorded
+  [DIC-1167] hBP08-102: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-102_hBP08_C_hBP08-102_C, hBP08-102_hBP08_S_hBP08-102_S priced by exact match — refusal recorded
+  [DIC-1167] hBP08-106: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-106_hBP08_C_hBP08-106_C, hBP08-106_hBP08_S_hBP08-106_S priced by exact match — refusal recorded
+  [DIC-1167] hBP08-109: 1 positive listing(s) matched no official printing while sibling printing(s) hBP08-109_hBP08_C_hBP08-109_C, hBP08-109_hBP08_S_hBP08-109_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-002: 4 positive listing(s) matched no official printing while sibling printing(s) hBP09-002_hBP09_OSR_hBP09-002_OSR, hBP09-002_hBP09_OUR_hBP09-002_OUR, hBP09-002_hBP09_SEC_hBP09-002_SEC priced by exact match — refusal recorded
+  [DIC-1167] hBP09-003: 5 positive listing(s) matched no official printing while sibling printing(s) hBP09-003_hBP09_OSR_hBP09-003_OSR, hBP09-003_hBP09_OUR_hBP09-003_OUR, hBP09-003_hBP09_SEC_hBP09-003_SEC priced by exact match — refusal recorded
+  [DIC-1167] hBP09-004: 5 positive listing(s) matched no official printing while sibling printing(s) hBP09-004_hBP09_OSR_hBP09-004_OSR, hBP09-004_hBP09_OUR_hBP09-004_OUR, hBP09-004_hBP09_SEC_hBP09-004_SEC priced by exact match — refusal recorded
+  [DIC-1167] hBP09-006: 5 positive listing(s) matched no official printing while sibling printing(s) hBP09-006_hBP09_OSR_hBP09-006_OSR, hBP09-006_hBP09_OUR_hBP09-006_OUR, hBP09-006_hBP09_SEC_hBP09-006_SEC priced by exact match — refusal recorded
+  [DIC-1167] hSD05-002: 3 positive listing(s) matched no official printing while sibling printing(s) hSD05-002_hBP09_C_hSD05-002_C_02, hSD05-002_hBP09_HR_hSD05-002_HR, hSD05-002_hSD05_C_hSD05-002_C priced by exact match — refusal recorded
+  [DIC-1167] hBP09-001: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-001_hBP09_OSR_hBP09-001_OSR, hBP09-001_hBP09_OUR_hBP09-001_OUR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-005: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-005_hBP09_OSR_hBP09-005_OSR, hBP09-005_hBP09_OUR_hBP09-005_OUR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-007: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-007_hBP09_OSR_hBP09-007_OSR, hBP09-007_hBP09_OUR_hBP09-007_OUR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-014: 4 positive listing(s) matched no official printing while sibling printing(s) hBP09-014_hBP09_RR_hBP09-014_RR, hBP09-014_hBP09_SR_hBP09-014_SR, hBP09-014_hBP09_UR_hBP09-014_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-021: 5 positive listing(s) matched no official printing while sibling printing(s) hBP09-021_hBP09_RR_hBP09-021_RR, hBP09-021_hBP09_SR_hBP09-021_SR, hBP09-021_hBP09_UR_hBP09-021_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-031: 5 positive listing(s) matched no official printing while sibling printing(s) hBP09-031_hBP09_RR_hBP09-031_RR, hBP09-031_hBP09_SR_hBP09-031_SR, hBP09-031_hBP09_UR_hBP09-031_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-035: 4 positive listing(s) matched no official printing while sibling printing(s) hBP09-035_hBP09_RR_hBP09-035_RR, hBP09-035_hBP09_SR_hBP09-035_SR, hBP09-035_hBP09_UR_hBP09-035_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-044: 5 positive listing(s) matched no official printing while sibling printing(s) hBP09-044_hBP09_RR_hBP09-044_RR, hBP09-044_hBP09_SR_hBP09-044_SR, hBP09-044_hBP09_UR_hBP09-044_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-050: 4 positive listing(s) matched no official printing while sibling printing(s) hBP09-050_hBP09_RR_hBP09-050_RR, hBP09-050_hBP09_SR_hBP09-050_SR, hBP09-050_hBP09_UR_hBP09-050_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-057: 5 positive listing(s) matched no official printing while sibling printing(s) hBP09-057_hBP09_RR_hBP09-057_RR, hBP09-057_hBP09_SR_hBP09-057_SR, hBP09-057_hBP09_UR_hBP09-057_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-062: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-062_hBP09_RR_hBP09-062_RR, hBP09-062_hBP09_SR_hBP09-062_SR, hBP09-062_hBP09_UR_hBP09-062_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-070: 4 positive listing(s) matched no official printing while sibling printing(s) hBP09-070_hBP09_RR_hBP09-070_RR, hBP09-070_hBP09_SR_hBP09-070_SR, hBP09-070_hBP09_UR_hBP09-070_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-076: 5 positive listing(s) matched no official printing while sibling printing(s) hBP09-076_hBP09_RR_hBP09-076_RR, hBP09-076_hBP09_SR_hBP09-076_SR, hBP09-076_hBP09_UR_hBP09-076_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-083: 4 positive listing(s) matched no official printing while sibling printing(s) hBP09-083_hBP09_RR_hBP09-083_RR, hBP09-083_hBP09_SR_hBP09-083_SR, hBP09-083_hBP09_UR_hBP09-083_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-087: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-087_hBP09_RR_hBP09-087_RR, hBP09-087_hBP09_SR_hBP09-087_SR, hBP09-087_hBP09_UR_hBP09-087_UR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-012: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-012_hBP09_R_hBP09-012_R, hBP09-012_hBP09_SR_hBP09-012_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-019: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-019_hBP09_R_hBP09-019_R, hBP09-019_hBP09_SR_hBP09-019_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-022: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-022_hBP09_R_hBP09-022_R, hBP09-022_hBP09_SR_hBP09-022_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-023: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-023_hBP09_R_hBP09-023_R, hBP09-023_hBP09_SR_hBP09-023_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-024: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-024_hBP09_R_hBP09-024_R, hBP09-024_hBP09_SR_hBP09-024_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-029: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-029_hBP09_R_hBP09-029_R, hBP09-029_hBP09_SR_hBP09-029_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-034: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-034_hBP09_R_hBP09-034_R, hBP09-034_hBP09_SR_hBP09-034_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-036: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-036_hBP09_R_hBP09-036_R, hBP09-036_hBP09_SR_hBP09-036_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-037: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-037_hBP09_R_hBP09-037_R, hBP09-037_hBP09_SR_hBP09-037_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-042: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-042_hBP09_R_hBP09-042_R, hBP09-042_hBP09_SR_hBP09-042_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-045: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-045_hBP09_R_hBP09-045_R, hBP09-045_hBP09_SR_hBP09-045_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-049: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-049_hBP09_R_hBP09-049_R, hBP09-049_hBP09_SR_hBP09-049_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-055: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-055_hBP09_R_hBP09-055_R, hBP09-055_hBP09_SR_hBP09-055_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-058: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-058_hBP09_R_hBP09-058_R, hBP09-058_hBP09_SR_hBP09-058_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-061: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-061_hBP09_R_hBP09-061_R, hBP09-061_hBP09_SR_hBP09-061_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-063: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-063_hBP09_R_hBP09-063_R, hBP09-063_hBP09_SR_hBP09-063_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-068: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-068_hBP09_R_hBP09-068_R, hBP09-068_hBP09_SR_hBP09-068_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-071: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-071_hBP09_R_hBP09-071_R, hBP09-071_hBP09_SR_hBP09-071_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-072: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-072_hBP09_R_hBP09-072_R, hBP09-072_hBP09_SR_hBP09-072_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-075: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-075_hBP09_R_hBP09-075_R, hBP09-075_hBP09_SR_hBP09-075_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-081: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-081_hBP09_R_hBP09-081_R, hBP09-081_hBP09_SR_hBP09-081_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-086: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-086_hBP09_R_hBP09-086_R, hBP09-086_hBP09_SR_hBP09-086_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-088: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-088_hBP09_R_hBP09-088_R, hBP09-088_hBP09_SR_hBP09-088_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-089: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-089_hBP09_R_hBP09-089_R, hBP09-089_hBP09_SR_hBP09-089_SR priced by exact match — refusal recorded
+  [DIC-1167] hBP09-105: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-105_hBP09_SR_hBP09-105_SR, hBP09-105_hBP09_U_hBP09-105_U priced by exact match — refusal recorded
+  [DIC-1167] hBP09-008: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-008_hBP09_C_hBP09-008_C, hBP09-008_hBP09_S_hBP09-008_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-010: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-010_hBP09_C_hBP09-010_C, hBP09-010_hBP09_S_hBP09-010_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-011: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-011_hBP09_C_hBP09-011_C, hBP09-011_hBP09_S_hBP09-011_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-013: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-013_hBP09_S_hBP09-013_S, hBP09-013_hBP09_U_hBP09-013_U priced by exact match — refusal recorded
+  [DIC-1167] hBP09-015: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-015_hBP09_C_hBP09-015_C, hBP09-015_hBP09_S_hBP09-015_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-017: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-017_hBP09_C_hBP09-017_C, hBP09-017_hBP09_S_hBP09-017_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-018: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-018_hBP09_C_hBP09-018_C, hBP09-018_hBP09_S_hBP09-018_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-020: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-020_hBP09_S_hBP09-020_S, hBP09-020_hBP09_U_hBP09-020_U priced by exact match — refusal recorded
+  [DIC-1167] hBP09-025: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-025_hBP09_C_hBP09-025_C, hBP09-025_hBP09_S_hBP09-025_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-027: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-027_hBP09_C_hBP09-027_C, hBP09-027_hBP09_S_hBP09-027_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-028: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-028_hBP09_C_hBP09-028_C, hBP09-028_hBP09_S_hBP09-028_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-030: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-030_hBP09_S_hBP09-030_S, hBP09-030_hBP09_U_hBP09-030_U priced by exact match — refusal recorded
+  [DIC-1167] hBP09-032: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-032_hBP09_C_hBP09-032_C, hBP09-032_hBP09_S_hBP09-032_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-033: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-033_hBP09_S_hBP09-033_S, hBP09-033_hBP09_U_hBP09-033_U priced by exact match — refusal recorded
+  [DIC-1167] hBP09-038: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-038_hBP09_C_hBP09-038_C, hBP09-038_hBP09_S_hBP09-038_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-040: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-040_hBP09_C_hBP09-040_C, hBP09-040_hBP09_S_hBP09-040_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-041: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-041_hBP09_C_hBP09-041_C, hBP09-041_hBP09_S_hBP09-041_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-043: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-043_hBP09_S_hBP09-043_S, hBP09-043_hBP09_U_hBP09-043_U priced by exact match — refusal recorded
+  [DIC-1167] hBP09-046: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-046_hBP09_S_hBP09-046_S, hBP09-046_hBP09_U_hBP09-046_U priced by exact match — refusal recorded
+  [DIC-1167] hBP09-047: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-047_hBP09_C_hBP09-047_C, hBP09-047_hBP09_S_hBP09-047_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-048: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-048_hBP09_S_hBP09-048_S, hBP09-048_hBP09_U_hBP09-048_U priced by exact match — refusal recorded
+  [DIC-1167] hBP09-051: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-051_hBP09_C_hBP09-051_C, hBP09-051_hBP09_S_hBP09-051_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-053: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-053_hBP09_C_hBP09-053_C, hBP09-053_hBP09_S_hBP09-053_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-054: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-054_hBP09_C_hBP09-054_C, hBP09-054_hBP09_S_hBP09-054_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-056: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-056_hBP09_S_hBP09-056_S, hBP09-056_hBP09_U_hBP09-056_U priced by exact match — refusal recorded
+  [DIC-1167] hBP09-059: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-059_hBP09_C_hBP09-059_C, hBP09-059_hBP09_S_hBP09-059_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-060: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-060_hBP09_S_hBP09-060_S, hBP09-060_hBP09_U_hBP09-060_U priced by exact match — refusal recorded
+  [DIC-1167] hBP09-064: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-064_hBP09_C_hBP09-064_C, hBP09-064_hBP09_S_hBP09-064_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-066: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-066_hBP09_C_hBP09-066_C, hBP09-066_hBP09_S_hBP09-066_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-067: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-067_hBP09_C_hBP09-067_C, hBP09-067_hBP09_S_hBP09-067_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-069: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-069_hBP09_S_hBP09-069_S, hBP09-069_hBP09_U_hBP09-069_U priced by exact match — refusal recorded
+  [DIC-1167] hBP09-073: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-073_hBP09_C_hBP09-073_C, hBP09-073_hBP09_S_hBP09-073_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-074: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-074_hBP09_S_hBP09-074_S, hBP09-074_hBP09_U_hBP09-074_U priced by exact match — refusal recorded
+  [DIC-1167] hBP09-077: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-077_hBP09_C_hBP09-077_C, hBP09-077_hBP09_S_hBP09-077_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-079: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-079_hBP09_C_hBP09-079_C, hBP09-079_hBP09_S_hBP09-079_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-080: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-080_hBP09_C_hBP09-080_C, hBP09-080_hBP09_S_hBP09-080_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-082: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-082_hBP09_S_hBP09-082_S, hBP09-082_hBP09_U_hBP09-082_U priced by exact match — refusal recorded
+  [DIC-1167] hBP09-084: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-084_hBP09_C_hBP09-084_C, hBP09-084_hBP09_S_hBP09-084_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-085: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-085_hBP09_S_hBP09-085_S, hBP09-085_hBP09_U_hBP09-085_U priced by exact match — refusal recorded
+  [DIC-1167] hBP09-090: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-090_hBP09_C_hBP09-090_C, hBP09-090_hBP09_S_hBP09-090_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-091: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-091_hBP09_S_hBP09-091_S, hBP09-091_hBP09_U_hBP09-091_U priced by exact match — refusal recorded
+  [DIC-1167] hBP09-092: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-092_hBP09_C_hBP09-092_C, hBP09-092_hBP09_S_hBP09-092_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-093: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-093_hBP09_C_hBP09-093_C, hBP09-093_hBP09_S_hBP09-093_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-095: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-095_hBP09_C_hBP09-095_C, hBP09-095_hBP09_S_hBP09-095_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-096: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-096_hBP09_S_hBP09-096_S, hBP09-096_hBP09_U_hBP09-096_U priced by exact match — refusal recorded
+  [DIC-1167] hBP09-097: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-097_hBP09_S_hBP09-097_S, hBP09-097_hBP09_U_hBP09-097_U priced by exact match — refusal recorded
+  [DIC-1167] hBP09-098: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-098_hBP09_C_hBP09-098_C, hBP09-098_hBP09_S_hBP09-098_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-099: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-099_hBP09_C_hBP09-099_C, hBP09-099_hBP09_S_hBP09-099_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-100: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-100_hBP09_S_hBP09-100_S, hBP09-100_hBP09_U_hBP09-100_U priced by exact match — refusal recorded
+  [DIC-1167] hBP09-101: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-101_hBP09_S_hBP09-101_S, hBP09-101_hBP09_U_hBP09-101_U priced by exact match — refusal recorded
+  [DIC-1167] hBP09-102: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-102_hBP09_C_hBP09-102_C, hBP09-102_hBP09_S_hBP09-102_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-103: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-103_hBP09_C_hBP09-103_C, hBP09-103_hBP09_S_hBP09-103_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-104: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-104_hBP09_C_hBP09-104_C, hBP09-104_hBP09_S_hBP09-104_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-106: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-106_hBP09_C_hBP09-106_C, hBP09-106_hBP09_S_hBP09-106_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-107: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-107_hBP09_S_hBP09-107_S, hBP09-107_hBP09_U_hBP09-107_U priced by exact match — refusal recorded
+  [DIC-1167] hBP09-108: 3 positive listing(s) matched no official printing while sibling printing(s) hBP09-108_hBP09_C_hBP09-108_C, hBP09-108_hBP09_S_hBP09-108_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-109: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-109_hBP09_S_hBP09-109_S, hBP09-109_hBP09_U_hBP09-109_U priced by exact match — refusal recorded
+  [DIC-1167] hBP09-111: 2 positive listing(s) matched no official printing while sibling printing(s) hBP09-111_hBP09_C_hBP09-111_C, hBP09-111_hBP09_S_hBP09-111_S priced by exact match — refusal recorded
+  [DIC-1167] hBP09-009: 1 positive listing(s) matched no official printing while sibling printing(s) hBP09-009_hBP09_U_hBP09-009_U priced by exact match — refusal recorded
+  [DIC-1167] hBP09-016: 1 positive listing(s) matched no official printing while sibling printing(s) hBP09-016_hBP09_U_hBP09-016_U priced by exact match — refusal recorded
+  [DIC-1167] hBP09-026: 1 positive listing(s) matched no official printing while sibling printing(s) hBP09-026_hBP09_U_hBP09-026_U priced by exact match — refusal recorded
+  [DIC-1167] hBP09-039: 1 positive listing(s) matched no official printing while sibling printing(s) hBP09-039_hBP09_U_hBP09-039_U priced by exact match — refusal recorded
+  [DIC-1167] hBP09-052: 1 positive listing(s) matched no official printing while sibling printing(s) hBP09-052_hBP09_U_hBP09-052_U priced by exact match — refusal recorded
+  [DIC-1167] hBP09-065: 1 positive listing(s) matched no official printing while sibling printing(s) hBP09-065_hBP09_U_hBP09-065_U priced by exact match — refusal recorded
+  [DIC-1167] hBP09-078: 1 positive listing(s) matched no official printing while sibling printing(s) hBP09-078_hBP09_U_hBP09-078_U priced by exact match — refusal recorded
+  [DIC-1167] hBP09-094: 1 positive listing(s) matched no official printing while sibling printing(s) hBP09-094_hBP09_U_hBP09-094_U priced by exact match — refusal recorded
+  [DIC-1167] hBP09-110: 1 positive listing(s) matched no official printing while sibling printing(s) hBP09-110_hBP09_U_hBP09-110_U priced by exact match — refusal recorded
+  [DIC-1167] hSD10-007: 1 positive listing(s) matched no official printing while sibling printing(s) hSD10-007_hBP09_C_hSD10-007_C_02, hSD10-007_hSD10_C_hSD10-007_C priced by exact match — refusal recorded
+  [DIC-1167] hSD01-004: 1 positive listing(s) matched no official printing while sibling printing(s) hSD01-004_hSD01_R_hSD01-004_R priced by exact match — refusal recorded
+  [DIC-1167] hSD01-016: 1 positive listing(s) matched no official printing while sibling printing(s) hSD01-016_hSD01_C_hSD01-016_C, hSD01-016_hSD08_C_hSD01-016_02_C priced by exact match — refusal recorded
+  [DIC-1167] hSD01-018: 2 positive listing(s) matched no official printing while sibling printing(s) hSD01-018_hSD01_C_hSD01-018_C priced by exact match — refusal recorded
+  [DIC-1167] hSD02-007: 2 positive listing(s) matched no official printing while sibling printing(s) hSD02-007_hEB01_SR_hSD02-007_SR_02, hSD02-007_hEB01_U_hSD02-007_U_02, hSD02-007_hSD02_U_hSD02-007_U priced by exact match — refusal recorded
+  [DIC-1167] hSD02-006: 2 positive listing(s) matched no official printing while sibling printing(s) hSD02-006_hEB01_C_hSD02-006_C_02, hSD02-006_hEB01_SR_hSD02-006_SR_02, hSD02-006_hSD02_C_hSD02-006_C priced by exact match — refusal recorded
+  [DIC-1167] hSD03-007: 2 positive listing(s) matched no official printing while sibling printing(s) hSD03-007_hEB01_SR_hSD03-007_SR_02, hSD03-007_hEB01_U_hSD03-007_U_02, hSD03-007_hSD03_U_hSD03-007_U priced by exact match — refusal recorded
+  [DIC-1167] hSD04-007: 2 positive listing(s) matched no official printing while sibling printing(s) hSD04-007_hEB01_SR_hSD04-007_SR_02, hSD04-007_hEB01_U_hSD04-007_U_02, hSD04-007_hSD04_U_hSD04-007_U priced by exact match — refusal recorded
+  [DIC-1167] hSD05-007: 2 positive listing(s) matched no official printing while sibling printing(s) hSD05-007_hEB01_SR_hSD05-007_SR_02, hSD05-007_hEB01_U_hSD05-007_U_02, hSD05-007_hSD05_U_hSD05-007_U priced by exact match — refusal recorded
+  [DIC-1167] hSD06-005: 2 positive listing(s) matched no official printing while sibling printing(s) hSD06-005_hEB01_C_hSD06-005_C_02, hSD06-005_hEB01_SR_hSD06-005_SR_02, hSD06-005_hSD06_C_hSD06-005_C priced by exact match — refusal recorded
+  [DIC-1167] hSD08-007: 2 positive listing(s) matched no official printing while sibling printing(s) hSD08-007_hEB01_C_hSD08-007_C_02, hSD08-007_hEB01_SR_hSD08-007_SR_02, hSD08-007_hSD08_C_hSD08-007_C priced by exact match — refusal recorded
+  [DIC-1167] hSD09-002: 2 positive listing(s) matched no official printing while sibling printing(s) hSD09-002_hEB01_SR_hSD09-002_SR_02, hSD09-002_hEB01_U_hSD09-002_U_02, hSD09-002_hSD09_U_hSD09-002_U priced by exact match — refusal recorded
+  [DIC-1167] hSD10-006: 1 positive listing(s) matched no official printing while sibling printing(s) hSD10-006_hSD10_RR_hSD10-006_RR priced by exact match — refusal recorded
+  [DIC-1167] hSD12-011: 1 positive listing(s) matched no official printing while sibling printing(s) hSD12-011_hSD12_RR_hSD12-011_RR priced by exact match — refusal recorded
+  [DIC-1167] hSD13-007: 1 positive listing(s) matched no official printing while sibling printing(s) hSD13-007_hSD13_RR_hSD13-007_RR priced by exact match — refusal recorded
+  [DIC-1167] hSD13-013: 1 positive listing(s) matched no official printing while sibling printing(s) hSD13-013_hSD13_RR_hSD13-013_RR priced by exact match — refusal recorded
+  [DIC-1167] hEB01-001: 3 positive listing(s) matched no official printing while sibling printing(s) hEB01-001_hEB01_OSR_hEB01-001_OSR, hEB01-001_hEB01_OUR_hEB01-001_OUR, hEB01-001_hEB01_SEC_hEB01-001_SEC priced by exact match — refusal recorded
+  [DIC-1167] hEB01-002: 4 positive listing(s) matched no official printing while sibling printing(s) hEB01-002_hEB01_OSR_hEB01-002_OSR, hEB01-002_hEB01_OUR_hEB01-002_OUR, hEB01-002_hEB01_SEC_hEB01-002_SEC priced by exact match — refusal recorded
+  [DIC-1167] hEB01-003: 4 positive listing(s) matched no official printing while sibling printing(s) hEB01-003_hEB01_OSR_hEB01-003_OSR, hEB01-003_hEB01_OUR_hEB01-003_OUR, hEB01-003_hEB01_SEC_hEB01-003_SEC priced by exact match — refusal recorded
+  [DIC-1167] hEB01-010: 4 positive listing(s) matched no official printing while sibling printing(s) hEB01-010_hEB01_RR_hEB01-010_RR, hEB01-010_hEB01_SR_hEB01-010_SR, hEB01-010_hEB01_UR_hEB01-010_UR priced by exact match — refusal recorded
+  [DIC-1167] hEB01-017: 4 positive listing(s) matched no official printing while sibling printing(s) hEB01-017_hEB01_RR_hEB01-017_RR, hEB01-017_hEB01_SR_hEB01-017_SR, hEB01-017_hEB01_UR_hEB01-017_UR priced by exact match — refusal recorded
+  [DIC-1167] hEB01-024: 4 positive listing(s) matched no official printing while sibling printing(s) hEB01-024_hEB01_RR_hEB01-024_RR, hEB01-024_hEB01_SR_hEB01-024_SR, hEB01-024_hEB01_UR_hEB01-024_UR priced by exact match — refusal recorded
+  [DIC-1167] hEB01-004: 2 positive listing(s) matched no official printing while sibling printing(s) hEB01-004_hEB01_C_hEB01-004_C, hEB01-004_hEB01_SR_hEB01-004_SR priced by exact match — refusal recorded
+  [DIC-1167] hEB01-005: 2 positive listing(s) matched no official printing while sibling printing(s) hEB01-005_hEB01_SR_hEB01-005_SR, hEB01-005_hEB01_U_hEB01-005_U priced by exact match — refusal recorded
+  [DIC-1167] hEB01-006: 2 positive listing(s) matched no official printing while sibling printing(s) hEB01-006_hEB01_C_hEB01-006_C, hEB01-006_hEB01_SR_hEB01-006_SR priced by exact match — refusal recorded
+  [DIC-1167] hEB01-007: 2 positive listing(s) matched no official printing while sibling printing(s) hEB01-007_hEB01_SR_hEB01-007_SR, hEB01-007_hEB01_U_hEB01-007_U priced by exact match — refusal recorded
+  [DIC-1167] hEB01-008: 2 positive listing(s) matched no official printing while sibling printing(s) hEB01-008_hEB01_R_hEB01-008_R, hEB01-008_hEB01_SR_hEB01-008_SR priced by exact match — refusal recorded
+  [DIC-1167] hEB01-009: 2 positive listing(s) matched no official printing while sibling printing(s) hEB01-009_hEB01_R_hEB01-009_R, hEB01-009_hEB01_SR_hEB01-009_SR priced by exact match — refusal recorded
+  [DIC-1167] hEB01-011: 2 positive listing(s) matched no official printing while sibling printing(s) hEB01-011_hEB01_C_hEB01-011_C, hEB01-011_hEB01_SR_hEB01-011_SR priced by exact match — refusal recorded
+  [DIC-1167] hEB01-012: 2 positive listing(s) matched no official printing while sibling printing(s) hEB01-012_hEB01_SR_hEB01-012_SR, hEB01-012_hEB01_U_hEB01-012_U priced by exact match — refusal recorded
+  [DIC-1167] hEB01-013: 2 positive listing(s) matched no official printing while sibling printing(s) hEB01-013_hEB01_C_hEB01-013_C, hEB01-013_hEB01_SR_hEB01-013_SR priced by exact match — refusal recorded
+  [DIC-1167] hEB01-014: 2 positive listing(s) matched no official printing while sibling printing(s) hEB01-014_hEB01_SR_hEB01-014_SR, hEB01-014_hEB01_U_hEB01-014_U priced by exact match — refusal recorded
+  [DIC-1167] hEB01-015: 3 positive listing(s) matched no official printing while sibling printing(s) hEB01-015_hEB01_R_hEB01-015_R, hEB01-015_hEB01_SR_hEB01-015_SR priced by exact match — refusal recorded
+  [DIC-1167] hEB01-016: 3 positive listing(s) matched no official printing while sibling printing(s) hEB01-016_hEB01_R_hEB01-016_R, hEB01-016_hEB01_SR_hEB01-016_SR priced by exact match — refusal recorded
+  [DIC-1167] hEB01-018: 3 positive listing(s) matched no official printing while sibling printing(s) hEB01-018_hEB01_C_hEB01-018_C, hEB01-018_hEB01_SR_hEB01-018_SR priced by exact match — refusal recorded
+  [DIC-1167] hEB01-019: 3 positive listing(s) matched no official printing while sibling printing(s) hEB01-019_hEB01_SR_hEB01-019_SR, hEB01-019_hEB01_U_hEB01-019_U priced by exact match — refusal recorded
+  [DIC-1167] hEB01-020: 2 positive listing(s) matched no official printing while sibling printing(s) hEB01-020_hEB01_C_hEB01-020_C, hEB01-020_hEB01_SR_hEB01-020_SR priced by exact match — refusal recorded
+  [DIC-1167] hEB01-021: 2 positive listing(s) matched no official printing while sibling printing(s) hEB01-021_hEB01_SR_hEB01-021_SR, hEB01-021_hEB01_U_hEB01-021_U priced by exact match — refusal recorded
+  [DIC-1167] hEB01-022: 3 positive listing(s) matched no official printing while sibling printing(s) hEB01-022_hEB01_R_hEB01-022_R, hEB01-022_hEB01_SR_hEB01-022_SR priced by exact match — refusal recorded
+  [DIC-1167] hEB01-023: 2 positive listing(s) matched no official printing while sibling printing(s) hEB01-023_hEB01_R_hEB01-023_R, hEB01-023_hEB01_SR_hEB01-023_SR priced by exact match — refusal recorded
+  [DIC-1167] hEB01-026: 1 positive listing(s) matched no official printing while sibling printing(s) hEB01-026_hEB01_U_hEB01-026_U priced by exact match — refusal recorded
+  [DIC-1167] hEB01-030: 1 positive listing(s) matched no official printing while sibling printing(s) hEB01-030_hEB01_U_hEB01-030_U priced by exact match — refusal recorded
+  [DIC-1167] hEB01-032: 1 positive listing(s) matched no official printing while sibling printing(s) hEB01-032_hEB01_U_hEB01-032_U priced by exact match — refusal recorded
+  [DIC-1167] hEB01-034: 1 positive listing(s) matched no official printing while sibling printing(s) hEB01-034_hEB01_U_hEB01-034_U priced by exact match — refusal recorded
+  [DIC-1167] hEB01-025: 1 positive listing(s) matched no official printing while sibling printing(s) hEB01-025_hEB01_C_hEB01-025_C priced by exact match — refusal recorded
+  [DIC-1167] hEB01-027: 1 positive listing(s) matched no official printing while sibling printing(s) hEB01-027_hEB01_C_hEB01-027_C priced by exact match — refusal recorded
+  [DIC-1167] hEB01-028: 1 positive listing(s) matched no official printing while sibling printing(s) hEB01-028_hEB01_C_hEB01-028_C priced by exact match — refusal recorded
+  [DIC-1167] hEB01-029: 1 positive listing(s) matched no official printing while sibling printing(s) hEB01-029_hEB01_C_hEB01-029_C priced by exact match — refusal recorded
+  [DIC-1167] hEB01-031: 1 positive listing(s) matched no official printing while sibling printing(s) hEB01-031_hEB01_C_hEB01-031_C priced by exact match — refusal recorded
+  [DIC-1167] hEB01-033: 1 positive listing(s) matched no official printing while sibling printing(s) hEB01-033_hEB01_C_hEB01-033_C priced by exact match — refusal recorded
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY01-006: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY01-007: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY01-015: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY02-003: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY03-009: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY04-003: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY04-005: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY04-010: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY05-011: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY06-005: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY04-007: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY01-005: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY01-009: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY02-004: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY03-005: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY03-006: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY03-007: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY03-008: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY03-011: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY03-012: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY04-009: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY05-007: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY06-003: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY06-006: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hBD24-001: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hBD24-006: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hBD24-009: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hBD24-010: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hBD24-018: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hBD24-022: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hBD24-024: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hBD24-025: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hBD24-027: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hBD24-030: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hBD24-033: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hBD24-043: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hBD24-044: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hBD24-045: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hBD24-046: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hBD24-047: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hBD24-051: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hBD24-056: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hBD24-057: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hBD24-065: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hBD24-066: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hBD24-067: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY01-014: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY02-012: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY03-016: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY04-013: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY06-011: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY01-001: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY02-001: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY03-001: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY04-001: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY05-001: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY06-001: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY02-013: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY03-017: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY04-014: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY05-012: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber hY06-012: no listing proves to an exact official printing — fail-closed, no cardNumber-wide fallback
+  [preserve] restored sellPrice=72 prices=72 priceHistory=2424 ytStats=2221
+  [detail-align] reordered rows within 531 cardNumber groups
+  [skills] Merged skills into 3920 cards
+  [DIC-1167] fail-closed 2 newly-priced row(s) without exact-print provenance: hBP01-048_ent07_P_hBP01-048_P [cross-product-image], hSD03-002_ent07_P_2_hSD03-002_P_2 [cross-product-image]
+  [DIC-1167] re-aligned 2 cardNumber group(s) after stripping refused payloads
+  [DIC-1334] final artifact keeps 1258/1320 freshly-proven priced cardNumbers (1288 total incl. preservation); 42 not priced in final artifact (examined sample: hY01-006, hY01-007, hY01-015, hY02-003, hY03-009)
+  [DIC-1167] price coverage reconciled: 1320 scraped cardNumbers = 1258 fresh + 20 preserved (20 after fallback refusal) + 42 refused-fallback + 0 refused-increase + 0 ambiguity-nulled + 0 no-sell-listing + 0 unaccounted; 550 listing refusal(s) recorded
+  [DIC-1167] exact-printing ledger: 2454 freshly-priced + 0 positive-listing-unpriced printings = 2452 shipped priced + 2 refused-increase + 0 ambiguity-nulled + 0 refused-listing + 0 unaccounted
+  [DIC-1167] listing ledger: 3393 positive listings = 2466 matched to an exact printing + 927 refused by listing id + 0 unaccounted
+  [DIC-1482] priced metrics rows 2529→2524, uniqueCardNumbers 1288→1288, entries 2529→2524; rejections=7 (decrease=5, refused-increase=2), listing refusals=550
 [add-zh-names] 開始為卡片添加中文名稱...
 [add-zh-names] ⚠️ 過濾了 2 個損壞的翻譯條目 (含 U+FFFD)
-[add-zh-names] ✅ 載入 339 筆翻譯對照
-[add-zh-names] 📝 處理 2150 張卡片...
+[add-zh-names] ✅ 載入 372 筆翻譯對照
+[add-zh-names] 📝 處理 3920 張卡片...
 [add-zh-names] ✅ 完成！
-[add-zh-names]   靜態匹配: 2126 張卡片
-[add-zh-names]   自動翻譯: 0 張卡片
-[add-zh-names]   未匹配: 24 張卡片
-[add-zh-names]   輸出: /Users/dicoge/hunterCard/data/database.json
+[add-zh-names]   靜態匹配: 3920 張卡片
+[add-zh-names]   未匹配: 0 張卡片
+[add-zh-names]   輸出: /Users/dicoge/Documents/Codex/2026-10-06/task-2/game-quality-20261013/holohunter-crawler-recovery-20261016/isolated-data/data/database.json
 
 ── Step 5: Save price history ──
-  [price-history] Saved 2057 new records; index totals: 2072 cards / 127442 records
+  [DIC-1229] Step 5 skipped 100 unproven printings — no durable record written (DIC-1229 fail-closed)
+  [price-history] Saved 1913 new records; index totals: 4202 cards / 187932 records
 
 ── Step 6: Merge priceHistory into database ──
-  [priceHistory] Merged into 2072 cards
-  [buyPrice] Restored buy prices onto 1755 cards
+  [priceHistory] Merged into 2424 cards; skipped 1496 unproven printings (DIC-1229 fail-closed)
+  [buyPriceHistory] Carried 2323 observations onto 784 cards
 
 ── Step 7: Merge VTuber YouTube stats ──
-  [yt-stats] Merged stats onto 1160 cards (54 channels tracked)
+  [yt-stats] Merged stats onto 2221 cards (54 channels tracked)
 
 ═══════════════════════════════════════
   ✅ Build complete!
-  Total cards: 2150
-  Cards with prices: 1225
+  Total cards: 3920
+  Cards with prices: 1320
   Images downloaded: 0
-  Duration: 317.7s
-  Output: /Users/dicoge/hunterCard/data/database.json
+  Duration: 1.6s
+  Output: /Users/dicoge/Documents/Codex/2026-10-06/task-2/game-quality-20261013/holohunter-crawler-recovery-20261016/isolated-data/data/database.json
 ═══════════════════════════════════════
 
 Build result: {
-  "totalCards": 2150,
-  "yuyuCount": 1225,
-  "officialCount": 2104,
+  "totalCards": 3920,
+  "yuyuCount": 1320,
+  "officialCount": 3920,
   "imagesDownloaded": 0,
-  "duration": 317.7
+  "duration": 1.6
 }

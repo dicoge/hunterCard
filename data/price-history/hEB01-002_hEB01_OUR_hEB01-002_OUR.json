@@ -1,0 +1,65 @@
+{
+  "cardId": "hEB01-002_hEB01_OUR_hEB01-002_OUR",
+  "cardNumber": "hEB01-002",
+  "name": "宝鐘マリン",
+  "records": [
+    {
+      "date": "2026-09-27",
+      "price": 12800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hEB01-002_hEB01_OUR_hEB01-002_OUR",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-02",
+      "price": 12800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hEB01-002_hEB01_OUR_hEB01-002_OUR",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-03",
+      "price": 12800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hEB01-002_hEB01_OUR_hEB01-002_OUR",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-16",
+      "price": 12800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hEB01-002_hEB01_OUR_hEB01-002_OUR",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-17",
+      "price": 12800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hEB01-002_hEB01_OUR_hEB01-002_OUR",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-18",
+      "price": 12800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hEB01-002_hEB01_OUR_hEB01-002_OUR",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-26",
+      "price": 12800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hEB01-002_hEB01_OUR_hEB01-002_OUR",
+      "sourceProduct": "hEB01"
+    }
+  ],
+  "lastUpdated": "2026-10-26T02:46:00.115Z",
+  "nameZh": "寶鍾瑪琳"
+}

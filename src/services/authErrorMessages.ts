@@ -56,6 +56,22 @@ export function friendlyAuthErrorMessage(
       return `${label} 未授權此次登入，請再試一次。`;
     case 'play_services_unavailable':
       return '此裝置的 Google Play 服務不可用或需更新，無法使用 Google 登入。';
+    // Native Android Google Sign-In diagnostics (DIC-1318). Each maps to a
+    // DISTINCT safe message so a v21 Closed Test failure surfaces which SDK
+    // condition tripped — the previous handler collapsed every non-cancel
+    // signIn() failure into the generic 'google_failed' string. The user-facing
+    // copy includes the short machine code so a support screenshot is
+    // actionable; it is a compile-time literal, never a raw provider message.
+    case 'google_developer_error':
+      return `${label} 登入失敗（google_developer_error）：此版本簽章可能未在登入服務授權。請截圖此畫面回報，或聯絡我們。`;
+    case 'google_internal_error':
+      return `${label} 登入服務暫時異常（google_internal_error），請稍後再試。`;
+    case 'google_in_progress':
+      return `目前已有 ${label} 登入進行中，請稍候或關閉重試。`;
+    case 'google_sign_in_required':
+      return `${label} 登入尚未就緒，請再點一次登入按鈕。`;
+    case 'google_failed':
+      return `${label} 登入失敗，請再試一次。`;
     case 'apple_unavailable':
       return '此裝置不支援 Apple 登入（需 iOS 13 以上）。';
     case 'no_code':

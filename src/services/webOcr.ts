@@ -1,5 +1,7 @@
 /**\n * Web OCR Service\n * 在 web 版使用 Tesseract.js 替代 expo-ocr-kit\n *\n * Card number detection is handled server-side via Gemini Vision API.\n * Local Tesseract serves as fallback with fixed-position crop.\n */
 
+import { findCardNumberTokens } from '../utils/cardNumberToken';
+
 let Tesseract: any = null;
 
 async function getTesseract() {
@@ -64,44 +66,8 @@ async function cropCardNumberArea(imageUri: string): Promise<string> {
 /**\n * 從裁切區 OCR 文字中提取卡號（支援 hBP04-005、BP04-005、NP04-005 等格式）
  */
 function extractCardId(text: string): string | null {
-  // 正規化文字：全形→半形、統一字元
-  const normalized = text
-    .normalize('NFKC')
-    .replace(/[oO〇]/g, '0')
-    .replace(/[lI｜]/g, '1')
-    .replace(/[－‐-―−－]/g, '-')
-    .replace(/[‾\s]/g, '-')
-    .replace(/-$/, '');
-
-  // 優先匹配 h 前綴的標準卡號
-  const hMatch = normalized.match(/h[a-z]{2}\d{0,2}-\d{1,3}/i);
-  if (hMatch) return hMatch[0].toLowerCase();
-
-  // 無 h 前綴的卡號（如 BP04-005）
-  const idMatch = normalized.match(/[a-z]{2}\d{2}-\d{3}/i);
-  if (idMatch) {
-    const raw = idMatch[0].toLowerCase();
-    // 前綴別名對照
-    const prefixAliases: Record<string, string> = {
-      np: 'hbp',
-      bp: 'hbp',
-      sd: 'hsd',
-      pr: 'hpr',
-      sp: 'hsp',
-      ocg: 'hocg',
-      pc: 'hpc',
-      cs: 'hcs',
-      co: 'hco',
-      wf: 'hwf',
-      ys: 'hys',
-      ent: 'hent',
-    };
-    const prefix = raw.slice(0, 2);
-    const rest = raw.slice(2);
-    return (prefixAliases[prefix] || 'h' + prefix) + rest;
-  }
-
-  return null;
+  // Whole-token parse only (src/utils/cardNumberToken): `hBP04-0050` is not hBP04-005.
+  return findCardNumberTokens(text)[0] ?? null;
 }
 
 /**

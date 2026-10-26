@@ -1,0 +1,15 @@
+{
+  "cardId": "hBP06-015",
+  "name": "響咲リオナ",
+  "nameZh": "響咲莉歐娜",
+  "trend": "up",
+  "score": 0.33,
+  "confidence": 0.7,
+  "components": {
+    "priceTrend": 0.5,
+    "ytTrend": 0,
+    "newsSentiment": 0.15
+  },
+  "lastUpdated": "2026-10-03T12:08:42.548Z",
+  "dataPoints": 67
+}

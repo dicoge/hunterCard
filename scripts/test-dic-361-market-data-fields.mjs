@@ -15,6 +15,7 @@ const cardRecognition = read('src/services/cardRecognition.ts');
 const scanScreen = read('src/screens/ScanScreen.tsx');
 const apiCardMapper = read('src/utils/apiCardMapper.ts');
 const searchResults = read('src/screens/SearchResultsScreen.tsx');
+const canonicalRecord = read('src/utils/canonicalCardRecord.ts');
 const cardDetail = read('src/screens/CardDetailScreen.tsx');
 const zhLocale = read('src/i18n/locales/zh.ts');
 const jaLocale = read('src/i18n/locales/ja.ts');
@@ -78,12 +79,21 @@ assertSourceIncludes(scanScreen, [
   "onViewCard={(card) => navigation?.navigate('CardDetail', { card })}",
 ], 'src/screens/ScanScreen');
 
-// Search route regression: search cards still carry the same market fields.
-assertSourceIncludes(searchResults, [
+// Search/favorites route regression: DIC-1430 moved the record → CardDetail
+// mapper into one shared pure module so the two routes cannot drift. Assert the
+// market fields where they are now produced, and assert the search route really
+// routes through that mapper instead of keeping a bespoke duplicate.
+assertSourceIncludes(canonicalRecord, [
+  'export function toCanonicalCardRecord',
   'sellPrice: c.sellPrice ?? null',
   'buyPrice: c.buyPrice ?? null',
   'ytStats: c.ytStats ?? null',
   'priceHistory: c.priceHistory || {}',
+], 'src/utils/canonicalCardRecord');
+
+assertSourceIncludes(searchResults, [
+  "from '../utils/canonicalCardRecord'",
+  'toCanonicalCardRecord(c, nameMap, cardFlags)',
 ], 'src/screens/SearchResultsScreen');
 
 // MarketDataPanel should render exact-version buy/subscriber sections, while

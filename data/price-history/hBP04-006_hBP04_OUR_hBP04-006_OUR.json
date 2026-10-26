@@ -1,0 +1,81 @@
+{
+  "cardId": "hBP04-006_hBP04_OUR_hBP04-006_OUR",
+  "cardNumber": "hBP04-006",
+  "name": "大空スバル",
+  "records": [
+    {
+      "date": "2026-09-23",
+      "price": 12800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-006_hBP04_OUR_hBP04-006_OUR",
+      "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-09-26",
+      "price": 12800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-006_hBP04_OUR_hBP04-006_OUR",
+      "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-09-27",
+      "price": 12800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-006_hBP04_OUR_hBP04-006_OUR",
+      "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-10-02",
+      "price": 12800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-006_hBP04_OUR_hBP04-006_OUR",
+      "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-10-03",
+      "price": 12800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-006_hBP04_OUR_hBP04-006_OUR",
+      "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-10-16",
+      "price": 9980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-006_hBP04_OUR_hBP04-006_OUR",
+      "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-10-17",
+      "price": 9980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-006_hBP04_OUR_hBP04-006_OUR",
+      "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-10-18",
+      "price": 9980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-006_hBP04_OUR_hBP04-006_OUR",
+      "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-10-26",
+      "price": 9980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-006_hBP04_OUR_hBP04-006_OUR",
+      "sourceProduct": "hBP04"
+    }
+  ],
+  "lastUpdated": "2026-10-26T02:45:59.890Z",
+  "nameZh": "大空昴"
+}

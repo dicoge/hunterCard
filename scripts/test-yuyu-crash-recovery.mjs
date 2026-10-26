@@ -44,7 +44,7 @@ async function testFinalCrashRelaunchesBeforeNextSeries() {
           throw new Error('Protocol error (Runtime.callFunctionOn): Target closed');
         }
       },
-      prices: browserId === 4 ? {
+      prices: browserId === 6 ? {
         'hBP01-001': { sellPrice: 100, name: 'success', timestamp: new Date().toISOString() },
       } : {},
     });
@@ -62,14 +62,21 @@ async function testFinalCrashRelaunchesBeforeNextSeries() {
     outputDir: tmpDir,
   });
 
-  assert.equal(launchCount, 4, 'initial launch + two retry relaunches + final-crash relaunch');
+  // DIC-1167 refresh: launch accounting now includes the per-group browser
+  // restart (the first series always triggers one: currentGroup null →
+  // 'special') and MAX_RETRIES=3 crash retries. Sequence: initial launch (1),
+  // group-change restart (2), crash retries relaunch (3,4,5), final-crash
+  // relaunch before the next series (6). The crashy series is attempted on
+  // browsers 2–5 (4 attempts = initial + 3 retries); 'next' runs on 6.
+  assert.equal(launchCount, 6, 'initial + group restart + three retry relaunches + final-crash relaunch');
   assert.deepEqual(
     events.filter(e => e.startsWith('goto:')),
     [
-      'goto:1:https://example.test/crashy',
       'goto:2:https://example.test/crashy',
       'goto:3:https://example.test/crashy',
-      'goto:4:https://example.test/next',
+      'goto:4:https://example.test/crashy',
+      'goto:5:https://example.test/crashy',
+      'goto:6:https://example.test/next',
     ],
     'next series should run on the freshly relaunched browser after final crash',
   );
@@ -114,12 +121,15 @@ async function testNormalErrorDoesNotRelaunch() {
     outputDir: tmpDir,
   });
 
-  assert.equal(launchCount, 1, 'normal per-series errors should not relaunch browser');
+  // DIC-1167 refresh: the first series still triggers the per-group browser
+  // restart (launch 1 → group restart 2); the point under test is that the
+  // NORMAL error itself causes no additional relaunch.
+  assert.equal(launchCount, 2, 'group restart only — normal per-series errors should not relaunch browser');
   assert.deepEqual(
     events.filter(e => e.startsWith('goto:')),
     [
-      'goto:1:https://example.test/normal-error',
-      'goto:1:https://example.test/next',
+      'goto:2:https://example.test/normal-error',
+      'goto:2:https://example.test/next',
     ],
     'next series should keep the same page after a non-crash error',
   );

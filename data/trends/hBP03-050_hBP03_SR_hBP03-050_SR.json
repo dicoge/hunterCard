@@ -1,0 +1,15 @@
+{
+  "cardId": "hBP03-050",
+  "name": "FUWAMOCO",
+  "nameZh": "FUWAMOCO",
+  "trend": "down",
+  "score": -0.48,
+  "confidence": 0.4,
+  "components": {
+    "priceTrend": -0.84,
+    "ytTrend": 0,
+    "newsSentiment": 0.15
+  },
+  "lastUpdated": "2026-10-03T12:08:42.464Z",
+  "dataPoints": 65
+}

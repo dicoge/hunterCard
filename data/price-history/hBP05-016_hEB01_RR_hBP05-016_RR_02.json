@@ -1,0 +1,65 @@
+{
+  "cardId": "hBP05-016_hEB01_RR_hBP05-016_RR_02",
+  "cardNumber": "hBP05-016",
+  "name": "兎田ぺこら",
+  "records": [
+    {
+      "date": "2026-09-27",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-016_hEB01_RR_hBP05-016_RR_02",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-016_hEB01_RR_hBP05-016_RR_02",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-016_hEB01_RR_hBP05-016_RR_02",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-16",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-016_hEB01_RR_hBP05-016_RR_02",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-17",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-016_hEB01_RR_hBP05-016_RR_02",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-18",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-016_hEB01_RR_hBP05-016_RR_02",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-26",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-016_hEB01_RR_hBP05-016_RR_02",
+      "sourceProduct": "hEB01"
+    }
+  ],
+  "lastUpdated": "2026-10-26T02:45:59.931Z",
+  "nameZh": "兔田佩克拉"
+}

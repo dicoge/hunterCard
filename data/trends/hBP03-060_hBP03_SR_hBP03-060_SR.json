@@ -1,0 +1,15 @@
+{
+  "cardId": "hBP03-060",
+  "name": "ロボ子さん",
+  "nameZh": "蘿蔔子",
+  "trend": "down",
+  "score": -0.2,
+  "confidence": 0.5,
+  "components": {
+    "priceTrend": -0.37,
+    "ytTrend": 0,
+    "newsSentiment": 0.15
+  },
+  "lastUpdated": "2026-10-03T12:08:42.470Z",
+  "dataPoints": 67
+}

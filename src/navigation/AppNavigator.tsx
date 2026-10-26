@@ -1,5 +1,6 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
+import { formatDocumentTitle } from './documentTitle';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createDrawerNavigator, DrawerContentScrollView, DrawerItemList, DrawerContentComponentProps } from '@react-navigation/drawer';
 import { Text, View, StyleSheet, ActivityIndicator } from 'react-native';
@@ -12,14 +13,18 @@ import { useTranslation } from '../i18n';
 import HomeScreen from '../screens/HomeScreen';
 import SearchScreen from '../screens/SearchScreen';
 import ScanScreen from '../screens/ScanScreen';
+import ScanScreenErrorBoundary from '../components/ScanScreenErrorBoundary';
 import CollectionScreen from '../screens/CollectionScreen';
+import FavoritesScreen from '../screens/FavoritesScreen';
 import DeckEditorScreen from '../screens/DeckEditorScreen';
 import TournamentReportScreen from '../screens/TournamentReportScreen';
 import WatchlistScreen from '../screens/WatchlistScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import MeScreen from '../screens/MeScreen';
 import CardDetailScreen from '../screens/CardDetailScreen';
 import SearchResultsScreen from '../screens/SearchResultsScreen';
 import LoginScreen from '../screens/LoginScreen';
+import LandingScreen from '../screens/LandingScreen';
 
 import TutorialScreen from '../screens/TutorialScreen';
 import TutorialDetailScreen from '../screens/TutorialDetailScreen';
@@ -34,6 +39,18 @@ import { useAuthStore } from '../store/authStore';
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const Drawer = createDrawerNavigator<MainDrawerParamList>();
+const DeckStack = createNativeStackNavigator();
+
+// 牌組 (user 2026-10-19): explicit list / editor routes — DeckList (entry) → DeckDetail
+// ({ deckId }). Back from a deck pops to the list; back on the list leaves the feature.
+export function DeckNavigator() {
+  return (
+    <DeckStack.Navigator initialRouteName="DeckList" screenOptions={{ headerShown: false }}>
+      <DeckStack.Screen name="DeckList" component={DeckEditorScreen} />
+      <DeckStack.Screen name="DeckDetail" component={DeckEditorScreen} />
+    </DeckStack.Navigator>
+  );
+}
 
 // Custom Drawer Content
 function CustomDrawerContent(props: DrawerContentComponentProps) {
@@ -46,6 +63,22 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
       </View>
       <DrawerItemList {...props} />
     </DrawerContentScrollView>
+  );
+}
+
+// DIC-1286: the shipped Android APK hard-crashes when opening the Scan screen.
+// Wrap ScanScreen in a class ErrorBoundary so any synchronous render/mount
+// error in the camera subtree renders a recoverable fallback UI instead of
+// taking down the entire app. Keeping the wrapper module-scoped preserves
+// react-navigation's `component={...}` identity so the Drawer route does not
+// re-mount on every drawer render (which would reset the boundary).
+function ScanScreenSafe(props: any) {
+  return (
+    <ScanScreenErrorBoundary
+      onGoHome={() => props?.navigation?.navigate?.('Home')}
+    >
+      <ScanScreen {...props} />
+    </ScanScreenErrorBoundary>
   );
 }
 
@@ -80,66 +113,128 @@ function MainDrawer() {
         },
       }}
     >
-      <Drawer.Screen 
-        name="Home" 
+      <Drawer.Screen
+        name="Home"
         component={HomeScreen}
-        options={{ 
+        options={{
           title: t('nav_home'),
+          // DIC-1409 Phase 3: Home renders the shared Pen v2 AppShell
+          // (status bar + app bar + bottom tab bar), so the drawer header is
+          // redundant chrome. The drawer itself stays reachable through the
+          // shell's brand mark (`onLeadingPress` → openDrawer).
+          headerShown: false,
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>🏠</Text>
           ),
         }}
       />
-      <Drawer.Screen 
-        name="Scan" 
-        component={ScanScreen}
-        options={{ 
+      <Drawer.Screen
+        name="Scan"
+        component={ScanScreenSafe}
+        options={{
           title: t('nav_scan'),
+          // DIC-1409 CR fix: the scan flow carries the Pen App/04 top
+          // action row (close / quota / flash) itself — the legacy drawer
+          // header was double chrome over a full-bleed camera surface.
+          headerShown: false,
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>📷</Text>
           ),
         }}
       />
-      <Drawer.Screen 
-        name="Search" 
+      <Drawer.Screen
+        name="Search"
         component={SearchScreen}
-        options={{ 
+        options={{
           title: t('nav_search'),
+          // DIC-1409 CR fix: Search renders the shared Pen v2 RouteShell.
+          headerShown: false,
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>🔍</Text>
           ),
         }}
       />
-      <Drawer.Screen 
-        name="Collection"
-        component={CollectionScreen}
-        options={{ 
-          title: t('nav_favorites'),
-          drawerIcon: ({ focused }) => (
-            <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>❤️</Text>
-          ),
-        }}
-      />
+      {/* 收藏 (bookmarks — the independent useFavoritesStore).
+          DIC-1380 W7 CR fix: `nav_favorites` now actually routes to
+          FavoritesScreen, which reads the store, lists bookmarks, and
+          calls removeFavorite (stamping the sync tombstone). Previously
+          the label 我的收藏 opened CollectionScreen — an unrelated
+          ownership browser. Hidden in Store MVP by the same
+          FEATURES.favorites gate. */}
+      {FEATURES.favorites && (
+        <Drawer.Screen
+          name="Favorites"
+          component={FavoritesScreen}
+          options={{
+            title: t('nav_favorites'),
+            // DIC-1409 Phase 5: route renders the shared Pen v2 shell.
+            headerShown: false,
+            drawerIcon: ({ focused }) => (
+              <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>❤️</Text>
+            ),
+          }}
+        />
+      )}
+      {/* Card Collection ownership browser (browse-by-owned) — registered in
+          EVERY release profile (DIC-1481). The corrected new-interface release
+          contract keeps this route reachable under preview / production /
+          Store MVP, superseding DIC-1256's route-unregistration criterion for
+          this one route: `navigate('Collection')`, the nested deep link and
+          the 我的 hub controls must all arrive in every profile.
+
+          FEATURES.collection is constant `true` — it is the shared contract
+          point between this registration and the MeScreen controls that
+          navigate here, pinned by test:store-mvp-ui-gates so it cannot be
+          silently re-derived from STORE_MVP.
+
+          The fail-closed boundary did NOT move for anything else: Favorites
+          (bookmarks) above and Watchlist below stay unregistered under Store
+          MVP, and CollectionScreen itself carries no market-data / watchlist
+          / external-price surface (its valuation is the always-on
+          FEATURES.sellPrice exact-printing sale price). */}
+      {FEATURES.collection && (
+        <Drawer.Screen
+          name="Collection"
+          component={CollectionScreen}
+          options={{
+            title: t('nav_collection'),
+            // DIC-1409 Phase 5: route renders the shared Pen v2 shell.
+            headerShown: false,
+            drawerIcon: ({ focused }) => (
+              <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>📚</Text>
+            ),
+          }}
+        />
+      )}
       <Drawer.Screen
         name="DeckEditor"
-        component={DeckEditorScreen}
+        component={DeckNavigator}
         options={{
           title: t('nav_deck_editor'),
+          // DIC-1409 Phase 4: DeckEditor renders the shared Pen v2 shell
+          // (status bar + its own Pen app bar + bottom tab bar).
+          headerShown: false,
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>🃏</Text>
           ),
         }}
       />
+      {/* 賽事月報 — hidden in the first release (FEATURES.tournamentReport): not registering
+          the route blocks the drawer item, every navigate() and any restored nav state. */}
+      {FEATURES.tournamentReport && (
       <Drawer.Screen
         name="TournamentReport"
         component={TournamentReportScreen}
         options={{
           title: t('nav_tournament_report'),
+          // DIC-1409 Phase 5: route renders the shared Pen v2 shell.
+          headerShown: false,
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>🏆</Text>
           ),
         }}
       />
+      )}
       {/* 到價提醒 — hidden in Store MVP (DIC-908). Removing the Drawer.Screen
           unregisters the route so nav + deep link are both blocked, not just
           visually hidden. */}
@@ -149,6 +244,8 @@ function MainDrawer() {
           component={WatchlistScreen}
           options={{
             title: t('nav_watchlist'),
+            // DIC-1409 Phase 5: route renders the shared Pen v2 shell.
+            headerShown: false,
             drawerIcon: ({ focused }) => (
               <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>🔔</Text>
             ),
@@ -160,8 +257,23 @@ function MainDrawer() {
         component={TutorialScreen}
         options={{ 
           title: t('nav_tutorial'),
+          // DIC-1409 Phase 5: route renders the shared Pen v2 shell.
+          headerShown: false,
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>📚</Text>
+          ),
+        }}
+      />
+      {/* DIC-1427: Pen App/07 我的 collection hub (frame siVsa) — the 我的
+          bottom tab lands here; Settings stays its own route (Pen x44r8t). */}
+      <Drawer.Screen
+        name="Me"
+        component={MeScreen}
+        options={{
+          title: t('nav_me'),
+          headerShown: false,
+          drawerIcon: ({ focused }) => (
+            <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>👤</Text>
           ),
         }}
       />
@@ -170,6 +282,8 @@ function MainDrawer() {
         component={SettingsScreen}
         options={{ 
           title: t('nav_settings'),
+          // DIC-1409 Phase 4: 我的 renders the shared Pen v2 shell.
+          headerShown: false,
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>⚙️</Text>
           ),
@@ -180,7 +294,10 @@ function MainDrawer() {
 }
 
 // Stack Navigator for screens that need navigation (CardDetail, SearchResults)
-function StackNavigator() {
+// Exported for the DIC-1409 shell-tab navigation regression, which mounts
+// the REAL nested stack+drawer tree (not a stub) to prove bottom-tab
+// presses resolve from both drawer children and root-stack screens.
+export function StackNavigator() {
   const { t } = useTranslation();
 
   return (
@@ -206,22 +323,26 @@ function StackNavigator() {
       <Stack.Screen
         name="CardDetail"
         component={CardDetailScreen}
-        options={{ title: t('nav_card_detail') }}
+        // DIC-1409 Phase 3: these two routes render the shared Pen v2 shell
+        // with their own back-arrow app bar, so the stack header is hidden.
+        options={{ title: t('nav_card_detail'), headerShown: false }}
       />
       <Stack.Screen
         name="SearchResults"
         component={SearchResultsScreen}
-        options={{ title: t('nav_search_results') }}
+        options={{ title: t('nav_search_results'), headerShown: false }}
       />
       <Stack.Screen
         name="TutorialDetail"
         component={TutorialDetailScreen}
-        options={{ title: t('nav_tutorial_detail') }}
+        // DIC-1409 Phase 6: route renders the shared Pen v2 shell.
+        options={{ title: t('nav_tutorial_detail'), headerShown: false }}
       />
       <Stack.Screen
         name="TutorialSimulation"
         component={TutorialSimulationScreen}
-        options={{ title: t('nav_tutorial_simulation') }}
+        // DIC-1409 Phase 6: route renders the shared Pen v2 shell.
+        options={{ title: t('nav_tutorial_simulation'), headerShown: false }}
       />
     </Stack.Navigator>
   );
@@ -240,13 +361,21 @@ export default function AppNavigator() {
     );
   }
 
+  // DIC-1380 W5b: unauthenticated visitors land on the Pen artifact's
+  // accepted marketing Landing (LandingScreen) at `/`.
+  // DIC-1427 (Pen p28zL): the Pen auth surface is now a REAL reachable state
+  // — the Landing's 登入 entries push `AuthLogin` (LoginScreen) inside the
+  // same unauthenticated stack, so the auth gate itself is unchanged.
   return (
-    <NavigationContainer>
+    <NavigationContainer documentTitle={{ formatter: (options) => formatDocumentTitle(options) }}>
       <AuthStack.Navigator screenOptions={{ headerShown: false }}>
         {isAuthenticated || isGuest ? (
           <AuthStack.Screen name="Main" component={StackNavigator} />
         ) : (
-          <AuthStack.Screen name="Login" component={LoginScreen} />
+          <>
+            <AuthStack.Screen name="Login" component={LandingScreen} />
+            <AuthStack.Screen name="AuthLogin" component={LoginScreen} />
+          </>
         )}
       </AuthStack.Navigator>
     </NavigationContainer>

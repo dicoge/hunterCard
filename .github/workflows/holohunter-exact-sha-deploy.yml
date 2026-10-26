@@ -1,0 +1,860 @@
+name: HoloHunter exact-SHA Production deploy
+
+# DIC-1430 CI/CD recovery.
+#
+# Why this workflow exists
+# ------------------------
+# PR #193 merged as `defa959271cc5944518ed164a3b4739c001f39f9` — a tree
+# byte-identical to the approved head `781db3fad75b1d33cbb2d4391617cf55f404fb58`
+# — but GitHub emitted no PushEvent for that merge. With no push event there
+# was no Actions run, no check suite, and no Vercel deployment. `main` moved
+# forward while Production kept serving pre-merge code. The cause of the
+# missing event is UNKNOWN, so the recovery path has to be an explicit,
+# repeatable, fail-closed workflow rather than a hand-run curl nobody can
+# audit afterwards.
+#
+# The contract
+# ------------
+# Build and promote to Production the EXACT commit the operator names, or
+# fail. Never the branch tip, never a rebuild of whatever is live now.
+#
+# Deliberately NOT used, because each of these can produce a green
+# "deployed" run that actually shipped a different commit:
+#
+#   * cloning an existing build by its id — it rebuilds whatever that older
+#     build pointed at. dic910-vercel-setup.yml does exactly this, which is
+#     fine for an env-var refresh and wrong for a commit-accurate recovery.
+#   * the "reuse the latest commit" flag — that resolves to the branch tip,
+#     which during an incident is precisely the state you cannot trust.
+#   * looking up the newest Production deployment and redeploying it — the
+#     requested SHA is never consulted at all.
+#   * a Vercel deploy hook — it builds the branch tip.
+#
+# Blast radius
+# ------------
+# Reads project metadata, performs ONE bounded environment write — the
+# sensitive, Production-only GEMINI_API_KEY provisioning (remove any
+# Production-only GEMINI_API_KEY entry, re-add it sensitive, read it back)
+# through the committed module scripts/ci/provision-gemini-key.mjs
+# (DIC-P0 hBP09) — creates one
+# deployment, reads that deployment back, and finally reads the canonical
+# alias record. It touches no other environment variable, no alias, no
+# domain, and no DNS record, and it holds only `contents: read` on the
+# GitHub side. Every Vercel API call goes through scripts/ci/vercel-curl.sh,
+# which fails closed on an absent or malformed VERCEL_TOKEN and hands curl the
+# Authorization header on stdin (`--config -`, written by bash's builtin
+# printf), so the token is never in any process argv, never in curl's
+# environment, and never assembled into an echoed header string (PR #216
+# security CR d90a82ad: `--oauth2-bearer "${VERCEL_TOKEN}"` put it in argv);
+# GEMINI_API_KEY reaches only the provisioning module's process environment
+# and is never echoed, interpolated, placed in argv, or persisted.
+#
+# Diagnostics
+# -----------
+# No step prints a response body, and no step interpolates a value that came
+# out of one: not a parse error (V8 quotes the offending input back), not an
+# API error code or message, not a deployment id, not a url, not a raw status
+# field. An Actions log honours ANSI control sequences and `::workflow
+# command::` lines, so echoing remote bytes into it is log forgery and
+# terminal manipulation performed on behalf of whatever answered the request.
+# What is printed instead: fixed labels, bounded attempt counters, workflow
+# constants, curl's own numeric status reduced to three digits, and
+# EXPECTED_SHA — the operator's input, already proven to be 40 lowercase hex
+# digits and the live tip of main. API ids additionally clear a strict
+# allowlist before reaching GITHUB_ENV, since a newline in one would inject
+# environment variables into every later step.
+#
+# The companion suite `npm run test:exact-sha-production-recovery` enforces
+# every one of the above statements mechanically, including the bans.
+
+# Reachability (DIC-1430 Actions registry recovery)
+# -------------------------------------------------
+# This file is present on the default branch at a reviewed blob and
+# actionlint 1.7.12 reports zero errors against it, but GitHub's Actions
+# workflow registry never listed it: the filename endpoint 404s and the
+# workflow cannot be dispatched at all. A later real push CI on current main
+# did not register it either. The cause is UNKNOWN — the same class of
+# unexplained Actions-side omission as the missing PushEvent above.
+#
+# `.github/workflows/ci.yml` IS registered and dispatches normally. So this
+# workflow additionally exposes `workflow_call`, and the registered ci.yml
+# invokes it as a LOCAL reusable workflow behind an explicit, default-off
+# deploy intent plus its three green gates. The deployment logic below is
+# invoked by that trampoline, never copied into it: a second transcript of
+# this shell living in ci.yml would be a Production deploy path that none of
+# the guarantees documented above apply to.
+#
+# Both invocation modes carry the IDENTICAL `expected_sha` contract, and every
+# other trigger stays forbidden — an auto-firing Production deploy is the
+# precise failure this workflow exists to prevent. `inputs.expected_sha`
+# resolves the same way under either mode, so the job body is unchanged.
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: "Full lowercase 40-hex commit SHA that MUST be the current tip of main"
+        type: string
+        required: true
+  workflow_call:
+    inputs:
+      expected_sha:
+        description: "Full lowercase 40-hex commit SHA that MUST be the current tip of main"
+        type: string
+        required: true
+    # Exactly the three secrets the steps below actually reference, and all
+    # required: an optional secret would fail deep inside a Production deploy
+    # instead of at the call boundary. GEMINI_API_KEY is the DIC-P0 hBP09
+    # recognition credential: this workflow provisions it into Vercel
+    # Production BEFORE any deployment exists, so its absence must stop the
+    # call at the boundary too.
+    secrets:
+      VERCEL_TOKEN:
+        required: true
+      VERCEL_ORG_ID:
+        required: true
+      GEMINI_API_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  # Two recovery runs must not race to create Production deployments, but a
+  # run that is already building must never be cancelled halfway — that
+  # leaves Production in a state nobody can describe.
+  group: holohunter-exact-sha-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy the exact SHA to Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      VERCEL_PROJECT_NAME: holocard-hunter
+      CANONICAL_HOST: holohunter.dicoge.com
+      EXPECTED_SHA: ${{ inputs.expected_sha }}
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Verify expected_sha is the exact current tip of main
+        env:
+          DISPATCH_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          if ! printf '%s' "$EXPECTED_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::expected_sha must be a full lowercase 40-hex commit SHA."
+            exit 1
+          fi
+
+          if [ "$EXPECTED_SHA" != "$DISPATCH_SHA" ]; then
+            echo "::error::expected_sha does not match the dispatched commit (${DISPATCH_SHA})."
+            exit 1
+          fi
+
+          head_sha=$(git rev-parse HEAD)
+          if [ "$EXPECTED_SHA" != "$head_sha" ]; then
+            echo "::error::expected_sha does not match the checked-out HEAD (${head_sha})."
+            exit 1
+          fi
+
+          # The checked-out copy can lag behind whatever main is right now.
+          # The live remote tip is the authority.
+          remote_sha=$(git ls-remote origin refs/heads/main | awk '{print $1}')
+          if [ "$EXPECTED_SHA" != "$remote_sha" ]; then
+            echo "::error::expected_sha is not the live tip of origin/main (live tip is ${remote_sha})."
+            exit 1
+          fi
+
+          echo "Verified: ${EXPECTED_SHA} is the exact current tip of main."
+
+      - name: Require the GEMINI_API_KEY repository secret (fail closed before any write)
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          set -euo pipefail
+
+          # DIC-P0 hBP09: a Production deployment without a Google key answers
+          # every scan 503 RECOGNITION_UNAVAILABLE. The key's PRESENCE is
+          # proven here, before this run reads or writes ANYTHING at Vercel,
+          # so a missing or empty repository secret stops the deploy at the
+          # cheapest possible point — long before a deployment could exist.
+          # The VALUE is never echoed, interpolated into a diagnostic, passed
+          # as an argument, or persisted: `[ -z … ]` inspects it without
+          # printing it, and the failure line below is a fixed string.
+          if [ -z "${GEMINI_API_KEY}" ]; then
+            echo "::error::The GEMINI_API_KEY repository secret is missing or empty. Add or rotate it in GitHub Actions secrets (docs/recognition-provisioning.md); refusing to start a Production deploy whose scanner cannot recognise anything."
+            exit 1
+          fi
+          echo "The GEMINI_API_KEY repository secret is present."
+
+      - name: Resolve the Vercel project and its GitHub linkage
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          set -euo pipefail
+
+          # The VERCEL_PROJECT_ID repo secret is known-stale — its value
+          # matches no project under this account (documented in
+          # dic910-vercel-setup.yml). Resolve by the project's well-known
+          # name instead, and derive everything else from that response.
+          resp=$(bash scripts/ci/vercel-curl.sh -sS -w '\n%{http_code}' \
+            "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_NAME}?teamId=${VERCEL_ORG_ID}")
+          code=$(echo "$resp" | tail -n1)
+          echo "$resp" | sed '$d' > /tmp/project.json
+
+          if [ "$code" != "200" ]; then
+            echo "::error::Could not read Vercel project '${VERCEL_PROJECT_NAME}' (HTTP ${code}). Aborting before any write."
+            exit 1
+          fi
+
+          # Every string below comes from a remote API response and ends up in
+          # a public Actions log, so none of them is interpolated into a
+          # message: the diagnostics are fixed and the values are only ever
+          # compared. Ids additionally have to clear a strict allowlist before
+          # they are written to GITHUB_ENV — an unvalidated value containing a
+          # newline would inject arbitrary environment variables into every
+          # later step.
+          node -e '
+            const fs = require("fs");
+            let d;
+            try {
+              d = JSON.parse(fs.readFileSync("/tmp/project.json", "utf8"));
+            } catch {
+              console.error("::error::The Vercel project response was not valid JSON.");
+              process.exit(1);
+            }
+            const link = (d && d.link) || {};
+            if (link.type !== "github") {
+              console.error("::error::Project is not GitHub-linked; cannot pin a commit.");
+              process.exit(1);
+            }
+            if (link.org !== "dicoge" || link.repo !== "hunterCard") {
+              console.error("::error::Project is linked to a repository other than dicoge/hunterCard.");
+              process.exit(1);
+            }
+            const projectId = d && d.id;
+            if (typeof projectId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(projectId)) {
+              console.error("::error::Project response carried no id of the expected shape.");
+              process.exit(1);
+            }
+            const repo = link.repoId;
+            if (!/^[0-9]{1,20}$/.test(String(repo == null ? "" : repo))) {
+              console.error("::error::Project link carries no usable repoId; cannot pin a gitSource.");
+              process.exit(1);
+            }
+            fs.appendFileSync(
+              process.env.GITHUB_ENV,
+              `PROJECT_ID=${projectId}\nREPO_ID=${repo}\n`,
+            );
+            console.log("Resolved the GitHub-linked Vercel project for dicoge/hunterCard.");
+          '
+
+      - name: Provision GEMINI_API_KEY into Vercel Production (before any deployment exists)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          set -euo pipefail
+
+          # DIC-P0 hBP09: the ONE deliberate environment write this workflow
+          # performs, and the reason the blast-radius statement above names an
+          # env write. The committed module establishes the GitHub repository
+          # secret GEMINI_API_KEY as a SENSITIVE, PRODUCTION-ONLY environment
+          # variable on the project resolved above and PROVES it by readback:
+          # it lists the project env, refuses (without writing) any existing
+          # GEMINI_API_KEY entry that shares Production with another
+          # environment, removes Production-only entries (Vercel's documented
+          # path to "sensitive" — upsert only rewrites a value), creates the
+          # sensitive Production-only var, requires the create answer to carry
+          # an EMPTY `failed` array and the confirmed record, then lists again
+          # and requires exactly that one entry. Any other outcome fails the
+          # run, so a deployment is only ever created for a Production that
+          # can actually recognise cards (CR 2a9a285d).
+          #
+          # Why a committed module and not inline curl: a heredoc cannot be
+          # executed by a test (the verify-alias-binding.mjs lesson), and the
+          # request here carries a secret in its body, so the transport, the
+          # exact endpoint shapes, the Production-only target, the
+          # failed-array and readback rules, and the no-logging discipline are
+          # all pinned by scripts/test-gemini-provisioning.mjs against this
+          # same file.
+          #
+          # Secrets reach the module via its process environment ONLY — no
+          # argv, no URL, no echoed header string. Response bodies are read
+          # through one size-capped parser and reduced to structural facts;
+          # the module prints fixed strings plus a bounded three-digit status
+          # only, writes nothing to disk, and provisioning must succeed BEFORE
+          # the Create Deployment step below runs.
+          node scripts/ci/provision-gemini-key.mjs
+
+      - name: Create a fresh Production deployment pinned to the exact SHA
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          set -euo pipefail
+
+          body=$(node -e '
+            const [name, project, repoId, sha] = process.argv.slice(1);
+            console.log(JSON.stringify({
+              name,
+              project,
+              target: "production",
+              gitSource: {
+                type: "github",
+                repoId: Number(repoId),
+                ref: "main",
+                sha: sha,
+              },
+            }));
+          ' "$VERCEL_PROJECT_NAME" "$PROJECT_ID" "$REPO_ID" "$EXPECTED_SHA")
+
+          code=$(bash scripts/ci/vercel-curl.sh -sS -o /tmp/created.json -w '%{http_code}' -X POST \
+            -H "Content-Type: application/json" \
+            --data-raw "$body" \
+            "https://api.vercel.com/v13/deployments?forceNew=1&teamId=${VERCEL_ORG_ID}")
+
+          if [ "$code" != "200" ] && [ "$code" != "201" ]; then
+            # The status is curl's own `%{http_code}`, not response content, and
+            # it is reduced to three digits before it is printed. The response
+            # BODY is never printed: it is remote data, and a log line is a
+            # place where ANSI sequences and forged `::workflow commands::`
+            # would both be honoured.
+            status=$(printf '%s' "$code" | grep -Eo '^[0-9]{3}$' || echo "unreadable")
+            echo "::error::Failed to create the deployment (HTTP ${status})."
+            exit 1
+          fi
+
+          node -e '
+            const fs = require("fs");
+            let d;
+            try {
+              d = JSON.parse(fs.readFileSync("/tmp/created.json", "utf8"));
+            } catch {
+              console.error("::error::The create-deployment response was not valid JSON.");
+              process.exit(1);
+            }
+            const created = d && d.id;
+            if (typeof created !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(created)) {
+              console.error("::error::Deployment response carried no id of the expected shape.");
+              process.exit(1);
+            }
+            fs.appendFileSync(process.env.GITHUB_ENV, `DEPLOYMENT_ID=${created}\n`);
+            console.log("Created a fresh Production deployment for this run.");
+          '
+
+      - name: Wait for the deployment to reach READY (bounded)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          set -euo pipefail
+
+          MAX_ATTEMPTS=80
+          SLEEP_SECONDS=15
+          attempt=0
+
+          while [ "$attempt" -lt "$MAX_ATTEMPTS" ]; do
+            attempt=$((attempt + 1))
+            bash scripts/ci/vercel-curl.sh -sS -o /tmp/poll.json \
+              "https://api.vercel.com/v13/deployments/${DEPLOYMENT_ID}?teamId=${VERCEL_ORG_ID}"
+            # readyState is remote data. Reduce it to an allowlisted token
+            # before it is ever echoed, and make a malformed body a fixed
+            # error rather than a thrown exception — V8 quotes a slice of the
+            # offending input back inside the parse error message.
+            state=$(node -e '
+              const fs = require("fs");
+              let d;
+              try {
+                d = JSON.parse(fs.readFileSync("/tmp/poll.json", "utf8"));
+              } catch {
+                console.error("::error::The deployment poll response was not valid JSON.");
+                process.exit(1);
+              }
+              const s = d && d.readyState;
+              process.stdout.write(
+                typeof s === "string" && /^[A-Z_]{1,32}$/.test(s) ? s : "UNRECOGNISED",
+              );
+            ')
+            echo "attempt ${attempt}/${MAX_ATTEMPTS}: readyState=${state}"
+
+            case "$state" in
+              READY)
+                echo "Deployment reached READY."
+                exit 0
+                ;;
+              ERROR|CANCELED)
+                echo "::error::Deployment finished in terminal state ${state}."
+                exit 1
+                ;;
+            esac
+
+            sleep "$SLEEP_SECONDS"
+          done
+
+          echo "::error::Timed out after ${MAX_ATTEMPTS} attempts; the deployment never reached READY."
+          exit 1
+
+      - name: Verify the finished deployment is Production and built the exact SHA
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          set -euo pipefail
+
+          bash scripts/ci/vercel-curl.sh -sS -o /tmp/verify.json \
+            "https://api.vercel.com/v13/deployments/${DEPLOYMENT_ID}?withGitRepoInfo=true&teamId=${VERCEL_ORG_ID}"
+
+          # `expected` is the only value printed anywhere below: it is the
+          # operator-supplied SHA, already proven to be 40 lowercase hex digits
+          # and the live tip of main. Field NAMES are local constants. Field
+          # VALUES come from the API and are compared, never echoed.
+          node -e '
+            const fs = require("fs");
+            let d;
+            try {
+              d = JSON.parse(fs.readFileSync("/tmp/verify.json", "utf8"));
+            } catch {
+              console.error("::error::The deployment verification response was not valid JSON.");
+              process.exit(1);
+            }
+            const expected = process.argv[1];
+
+            const target = d && d.target;
+            if (target !== "production") {
+              console.error("::error::Deployment target is not the production target.");
+              process.exit(1);
+            }
+
+            // The v13 payload has carried the built commit in more than one
+            // place across API revisions, so consult every field that claims
+            // to be the source commit. At least one must be present, and all
+            // present ones must agree with the requested SHA.
+            const candidates = {
+              "gitSource.sha": d.gitSource && d.gitSource.sha,
+              "meta.githubCommitSha": d.meta && d.meta.githubCommitSha,
+              "gitRepo.sha": d.gitRepo && d.gitRepo.sha,
+            };
+            const present = Object.entries(candidates)
+              .filter(([, v]) => typeof v === "string" && v.length > 0);
+
+            if (present.length === 0) {
+              console.error("::error::Could not determine the built source sha from the deployment response; refusing to treat this as verified.");
+              process.exit(1);
+            }
+
+            const mismatched = present.filter(([, v]) => v.toLowerCase() !== expected);
+            if (mismatched.length > 0) {
+              for (const [field] of mismatched) {
+                console.error(`::error::${field} does not match the requested ${expected}.`);
+              }
+              process.exit(1);
+            }
+
+            for (const [field] of present) {
+              console.log(`verified ${field} matches ${expected}`);
+            }
+          ' "$EXPECTED_SHA"
+
+      - name: Require the canonical alias and a live Production HTTP 200
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          set -euo pipefail
+
+          MAX_ATTEMPTS=20
+          SLEEP_SECONDS=15
+
+          # A Production deployment that never takes the canonical alias has
+          # not actually replaced what users see, so this is a hard gate.
+          attempt=0
+          alias_ok=0
+          while [ "$attempt" -lt "$MAX_ATTEMPTS" ]; do
+            attempt=$((attempt + 1))
+            bash scripts/ci/vercel-curl.sh -sS -o /tmp/alias.json \
+              "https://api.vercel.com/v13/deployments/${DEPLOYMENT_ID}?withGitRepoInfo=true&teamId=${VERCEL_ORG_ID}"
+            # A malformed body must fail this probe quietly (it is retried
+            # below), not throw — an uncaught parse error prints a quoted slice
+            # of the remote payload into the log.
+            if node -e '
+                const fs = require("fs");
+                let d;
+                try {
+                  d = JSON.parse(fs.readFileSync("/tmp/alias.json", "utf8"));
+                } catch {
+                  process.exit(1);
+                }
+                const host = process.argv[1];
+                const list = d && Array.isArray(d.alias) ? d.alias : [];
+                process.exit(list.includes(host) ? 0 : 1);
+              ' "$CANONICAL_HOST"; then
+              alias_ok=1
+              echo "Deployment holds the canonical alias ${CANONICAL_HOST}."
+              break
+            fi
+            echo "attempt ${attempt}/${MAX_ATTEMPTS}: canonical alias not attached yet."
+            sleep "$SLEEP_SECONDS"
+          done
+
+          if [ "$alias_ok" != "1" ]; then
+            echo "::error::Deployment never took the canonical alias ${CANONICAL_HOST}."
+            exit 1
+          fi
+
+          # NOTE: a 200 here is necessary but NOT sufficient, and this step
+          # must not short-circuit the job with `exit 0` — the alias-binding
+          # step below is the authoritative Production linkage check.
+          attempt=0
+          http_ok=0
+          while [ "$attempt" -lt "$MAX_ATTEMPTS" ]; do
+            attempt=$((attempt + 1))
+            # `|| true`, never `|| echo "000"`: curl already emits 000 through
+            # -w when the connection itself fails, so a second echoed value
+            # would make $code the two-line string "000\n000", which matches
+            # neither arm below and turns a hard network failure into a silent
+            # spin. `|| true` keeps exactly one code on the line, and a failed
+            # probe can never surface as 200.
+            code=$(curl -sS -o /dev/null -w '%{http_code}' -L --max-time 30 "https://${CANONICAL_HOST}/" || true)
+            echo "attempt ${attempt}/${MAX_ATTEMPTS}: https://${CANONICAL_HOST}/ -> ${code}"
+            if [ "$code" = "200" ]; then
+              http_ok=1
+              echo "Canonical Production root is serving HTTP 200."
+              break
+            fi
+            sleep "$SLEEP_SECONDS"
+          done
+
+          if [ "$http_ok" != "1" ]; then
+            echo "::error::Canonical Production root never returned HTTP 200."
+            exit 1
+          fi
+
+      - name: Require the canonical alias to be bound to THIS deployment
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          set -euo pipefail
+
+          # Why this step is authoritative
+          # -----------------------------
+          # Everything above proves "a deployment built the right SHA" and
+          # "the canonical host answers 200". Neither ties the bytes users
+          # receive to THIS run. The deployment payload's `alias` array is a
+          # deployment-side claim, and a concurrent Vercel/Git deployment can
+          # move the alias between that read and the HTTP probe — the 200
+          # would look identical while serving somebody else's commit.
+          #
+          # So the last word belongs to the alias record itself, read from
+          # the alias side:
+          #
+          #   GET /v4/aliases/{idOrAlias}?teamId=...
+          #
+          # whose 200 response requires `deploymentId` and mirrors it in
+          # `deployment.id`. It is read-only by construction: the alias WRITE
+          # paths are POST /v2/deployments/{id}/aliases and
+          # DELETE /v2/aliases/{aliasId}, and this workflow calls neither.
+          #
+          # This proof is a point in time. The recognition probe below runs
+          # after it, so the final step of the job re-reads the same record
+          # and fails closed if the alias moved during that window.
+
+          MAX_ATTEMPTS=20
+          SLEEP_SECONDS=15
+          attempt=0
+
+          while [ "$attempt" -lt "$MAX_ATTEMPTS" ]; do
+            attempt=$((attempt + 1))
+
+            # `|| true`, not `|| echo "000"`: curl already prints 000 through
+            # -w when the connection itself fails, so echoing a second value
+            # would produce a two-line code matching no arm below.
+            code=$(bash scripts/ci/vercel-curl.sh -sS -o /tmp/alias-binding.json -w '%{http_code}' \
+              "https://api.vercel.com/v4/aliases/${CANONICAL_HOST}?teamId=${VERCEL_ORG_ID}" || true)
+
+            # The alias response BODY is never printed — not on success, not on
+            # retry, not on error. It is remote data, and an Actions log honours
+            # both ANSI control sequences and `::workflow command::` lines, so a
+            # dump of it is log forgery and terminal manipulation driven by
+            # whatever answers for the alias API. Only the decision matters
+            # here, and scripts/ci/verify-alias-binding.mjs reports that as a
+            # fixed string plus an exit code.
+            case "$code" in
+              200)
+                ;;
+              400|401|403|410)
+                # The documented explicit alias-API errors: invalid query,
+                # unauthorized, forbidden, gone. Waiting cannot fix any of
+                # them, so fail now rather than burn the whole window.
+                #
+                # `$code` is curl's own `%{http_code}`, and inside this arm the
+                # pattern has already constrained it to one of four literals,
+                # so it is a safe thing to name in the log.
+                echo "::error::Alias API returned HTTP ${code} for the canonical host."
+                exit 1
+                ;;
+              *)
+                # 404 (alias not visible yet), 429, 5xx, 000 and anything
+                # unrecognised are treated as not-readable-yet. This does not
+                # soften the gate: the loop is bounded and ends in a hard
+                # failure below if the binding is never proven.
+                #
+                # This arm is the catch-all, so reduce the status to three
+                # digits before echoing it rather than trusting its shape.
+                status=$(printf '%s' "$code" | grep -Eo '^[0-9]{3}$' || echo "unreadable")
+                echo "attempt ${attempt}/${MAX_ATTEMPTS}: alias record not readable yet (HTTP ${status})."
+                sleep "$SLEEP_SECONDS"
+                continue
+                ;;
+            esac
+
+            # The decision itself lives in a committed module, not an inline
+            # heredoc, because a heredoc cannot be executed by a test. An
+            # earlier inline version accepted a record with NO top-level
+            # deploymentId whenever the optional nested mirror matched, and the
+            # whole structural suite passed beside it without ever running it.
+            # scripts/test-alias-binding-validator.mjs now executes THIS file
+            # against a fixture for every branch below.
+            #
+            #   0 = the alias record names this run's deployment (success)
+            #   2 = well-formed but naming another deployment, or not yet
+            #       propagated (retryable — keep waiting, bounded)
+            #   1 = malformed JSON, explicit API error, missing/invalid
+            #       required top-level id, or a self-contradicting record
+            #       (fatal — waiting cannot repair any of these)
+            set +e
+            node scripts/ci/verify-alias-binding.mjs \
+              /tmp/alias-binding.json "$CANONICAL_HOST" "$DEPLOYMENT_ID"
+            rc=$?
+            set -e
+
+            # Deployment ids are API-derived, so they are not echoed either.
+            # EXPECTED_SHA is the operator's own input, already proven to be 40
+            # lowercase hex digits and the live tip of main, and it is the value
+            # a reader actually needs to identify the run.
+            case "$rc" in
+              0)
+                echo "Production linkage proven: the canonical host resolves to the deployment this run created (${EXPECTED_SHA})."
+                exit 0
+                ;;
+              2)
+                echo "attempt ${attempt}/${MAX_ATTEMPTS}: the canonical alias is not bound to this run's deployment yet."
+                ;;
+              1)
+                echo "::error::The canonical alias record is unusable; aborting without retrying."
+                exit 1
+                ;;
+              *)
+                echo "::error::Alias binding validator returned unexpected status ${rc}; failing closed."
+                exit 1
+                ;;
+            esac
+
+            sleep "$SLEEP_SECONDS"
+          done
+
+          echo "::error::The canonical alias never resolved to the deployment this run created; refusing to report a Production deploy this run did not place."
+          exit 1
+
+      - name: Require Production recognition to be provisioned (DIC-P0 hBP09)
+        run: |
+          set -euo pipefail
+
+          # Why this step exists, and why it runs AFTER the alias proof
+          # -----------------------------------------------------------
+          # On 2026-09-24 canonical Production answered every hBP09 scan with
+          # 503 RECOGNITION_UNAVAILABLE: the deployment had no GEMINI_API_KEY,
+          # while the catalog itself carried all 244 hBP09 rows. DIC-1185 made
+          # recognition fail closed to Google direct — correctly — but no gate
+          # made a Production deploy PROVE the provider is provisioned, so this
+          # workflow kept reporting green for a Production whose scanner could
+          # not recognise anything. This step probes what users now actually
+          # receive, so it must run after the alias binding is proven; probing
+          # earlier would grade the PREVIOUS deployment.
+          #
+          # It can only turn a success into a failure, never the reverse: the
+          # alias record remains the sole Production linkage authority, and
+          # this step holds no secret and creates nothing. Because the probe
+          # window spans up to MAX_ATTEMPTS x SLEEP_SECONDS, a concurrent
+          # deploy could move the alias while it runs, and a provisioned
+          # FOREIGN deployment would answer this probe exactly as ours would.
+          # So this step's success is not the run's success: the next (final)
+          # step re-proves the alias binding after the probe.
+          #
+          # The probe is free by construction. api/recognize-card.ts checks the
+          # provider BEFORE the legibility floor, so a valid PNG below 320px is
+          # answered 404 (photo-level) without a vision call when provisioned,
+          # and 503 RECOGNITION_UNAVAILABLE when not. The decision procedure
+          # lives in a committed module for the same reason the alias one does:
+          # a heredoc cannot be executed by a test. Exit codes:
+          #
+          #   0 = provisioned (the handler answered about the probe photo)
+          #   2 = not decidable yet (network blip, platform 5xx, cold start —
+          #       keep waiting, bounded)
+          #   1 = the deployment declared RECOGNITION_UNAVAILABLE, or the probe
+          #       contract itself broke (fatal — waiting cannot provision a
+          #       secret)
+          #
+          # The response body is never printed; the module prints fixed strings
+          # only. Provisioning happens earlier in THIS run (the pre-deploy
+          # GEMINI_API_KEY provisioning step); this probe is the READBACK PROOF that
+          # what users now receive actually resolved a provider, per
+          # docs/recognition-provisioning.md.
+          MAX_ATTEMPTS=10
+          SLEEP_SECONDS=15
+          attempt=0
+
+          node scripts/ci/verify-recognition-availability.mjs --emit-probe-body \
+            > /tmp/recognition-probe-request.json
+
+          while [ "$attempt" -lt "$MAX_ATTEMPTS" ]; do
+            attempt=$((attempt + 1))
+
+            # `|| true`, never `|| echo "000"`: curl already emits 000 through
+            # -w when the connection itself fails; a second echoed value would
+            # turn $code into a two-line string matching no arm below.
+            code=$(curl -sS -o /tmp/recognition-probe.json -w '%{http_code}' \
+              -H "Content-Type: application/json" \
+              --data-binary @/tmp/recognition-probe-request.json \
+              "https://${CANONICAL_HOST}/api/recognize-card" || true)
+
+            set +e
+            node scripts/ci/verify-recognition-availability.mjs \
+              "$code" /tmp/recognition-probe.json
+            rc=$?
+            set -e
+
+            case "$rc" in
+              0)
+                echo "Production recognition probe passed at the canonical host (${EXPECTED_SHA}); the alias binding is re-proven next."
+                exit 0
+                ;;
+              2)
+                # The catch-all lane; reduce the status to three digits before
+                # echoing it rather than trusting its shape.
+                status=$(printf '%s' "$code" | grep -Eo '^[0-9]{3}$' || echo "unreadable")
+                echo "attempt ${attempt}/${MAX_ATTEMPTS}: recognition probe not decidable yet (HTTP ${status})."
+                ;;
+              1)
+                echo "::error::Production recognition is unavailable on the deployment this run placed even though this run provisioned GEMINI_API_KEY before deploying. Check the GitHub Actions secret GEMINI_API_KEY and the Vercel Production environment (docs/recognition-provisioning.md); refusing to report this as a completed Production deploy."
+                exit 1
+                ;;
+              *)
+                echo "::error::Recognition availability validator returned unexpected status ${rc}; failing closed."
+                exit 1
+                ;;
+            esac
+
+            sleep "$SLEEP_SECONDS"
+          done
+
+          echo "::error::Production recognition availability was never proven within the window; refusing to report a Production deploy whose scanner state is unknown."
+          exit 1
+
+      - name: Re-prove the canonical alias is still bound to THIS deployment after the recognition probe
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          set -euo pipefail
+
+          # Why this step exists, and why it is last
+          # ----------------------------------------
+          # The alias binding was proven BEFORE the recognition probe, and the
+          # probe then ran against https://${CANONICAL_HOST} for up to
+          # MAX_ATTEMPTS x SLEEP_SECONDS of its own. A concurrent Vercel/Git
+          # deployment or a manual promotion can move the alias inside that
+          # window; if the deployment it lands on is also provisioned, the
+          # probe passes against somebody else's commit and the run would
+          # report a false exact-SHA Production proof (CR ffba1e2b). So the
+          # last word goes back to the alias record, read again after the
+          # probe, through the same read-only endpoint and the same committed
+          # validator as the binding step above.
+          #
+          # The binding was already proven once, so this read is NOT a
+          # propagation wait. Validator status 2 (well-formed, naming another
+          # deployment) means the alias moved during the probe window: that
+          # is fatal here, never retried — waiting for it to come back would
+          # still leave the probe graded against an unknown deployment.
+          # HTTP 404 is fatal for the same reason: the binding step already
+          # read this record, so "alias not found" now means the alias was
+          # removed or unassigned after it was proven, not that it has yet to
+          # propagate — retrying would let a later rebind to this deployment
+          # turn an observed gap into a pass (CR 53aa6513). Only a record that
+          # is unreadable for reasons that say nothing about the binding
+          # (network, 429, 5xx) is retried, and only within a short bounded
+          # window that ends in a hard failure.
+          #
+          # Residual: two reads bracket the probe, so an alias that leaves and
+          # returns entirely between them is not observable from the alias
+          # side. That needs a concurrent deploy AND a second move back to
+          # this run's deployment inside the probe window.
+          MAX_ATTEMPTS=5
+          SLEEP_SECONDS=10
+          attempt=0
+
+          while [ "$attempt" -lt "$MAX_ATTEMPTS" ]; do
+            attempt=$((attempt + 1))
+
+            # `|| true`, not `|| echo "000"`: curl already prints 000 through
+            # -w when the connection itself fails.
+            code=$(bash scripts/ci/vercel-curl.sh -sS -o /tmp/alias-recheck.json -w '%{http_code}' \
+              "https://api.vercel.com/v4/aliases/${CANONICAL_HOST}?teamId=${VERCEL_ORG_ID}" || true)
+
+            # The alias response body is never printed (see the binding step).
+            case "$code" in
+              200)
+                ;;
+              404)
+                echo "::error::The canonical alias was not found on the post-probe recheck after it had been proven bound; it was removed during the recognition probe window, so refusing to report an exact-SHA Production deploy."
+                exit 1
+                ;;
+              400|401|403|410)
+                echo "::error::Alias API returned HTTP ${code} for the canonical host on the post-probe recheck."
+                exit 1
+                ;;
+              *)
+                status=$(printf '%s' "$code" | grep -Eo '^[0-9]{3}$' || echo "unreadable")
+                echo "attempt ${attempt}/${MAX_ATTEMPTS}: alias record not readable on the post-probe recheck (HTTP ${status})."
+                sleep "$SLEEP_SECONDS"
+                continue
+                ;;
+            esac
+
+            set +e
+            node scripts/ci/verify-alias-binding.mjs \
+              /tmp/alias-recheck.json "$CANONICAL_HOST" "$DEPLOYMENT_ID"
+            rc=$?
+            set -e
+
+            case "$rc" in
+              0)
+                echo "Production linkage re-proven after the recognition probe: the canonical host still resolves to the deployment this run created (${EXPECTED_SHA})."
+                exit 0
+                ;;
+              2)
+                echo "::error::The canonical alias moved off the deployment this run created during the recognition probe window; the probe may have graded another deployment, so refusing to report an exact-SHA Production deploy."
+                exit 1
+                ;;
+              1)
+                echo "::error::The canonical alias record is unusable on the post-probe recheck; aborting without retrying."
+                exit 1
+                ;;
+              *)
+                echo "::error::Alias binding validator returned unexpected status ${rc} on the post-probe recheck; failing closed."
+                exit 1
+                ;;
+            esac
+          done
+
+          echo "::error::The canonical alias record could not be re-read after the recognition probe; refusing to report a Production deploy whose linkage is no longer proven."
+          exit 1

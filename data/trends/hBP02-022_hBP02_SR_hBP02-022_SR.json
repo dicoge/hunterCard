@@ -1,0 +1,15 @@
+{
+  "cardId": "hBP02-022",
+  "name": "パヴォリア・レイネ",
+  "nameZh": "帕沃莉亞·蕾內",
+  "trend": "down",
+  "score": -0.2,
+  "confidence": 0.5,
+  "components": {
+    "priceTrend": -0.37,
+    "ytTrend": 0,
+    "newsSentiment": 0.15
+  },
+  "lastUpdated": "2026-10-03T12:08:42.348Z",
+  "dataPoints": 67
+}

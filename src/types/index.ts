@@ -54,6 +54,8 @@ export type RootStackParamList = {
 
 export type AuthStackParamList = {
   Login: undefined;
+  /** DIC-1427 Pen p28zL: the Pen auth surface, pushed from the Landing. */
+  AuthLogin: undefined;
   Main: undefined;
 };
 
@@ -61,8 +63,17 @@ export type MainDrawerParamList = {
   Home: undefined;
   Scan: undefined;
   Search: undefined;
+  // DIC-1380 W7: `Favorites` is the bookmark list (the independent
+  // useFavoritesStore); `Collection` is the ownership browser (Card
+  // Collection). Previously `nav_favorites` was mislabelled onto the
+  // Collection route — the drawer entry showed 我的收藏 but opened
+  // CollectionScreen.
+  Favorites: undefined;
   Collection: undefined;
-  DeckEditor: undefined;
+  // DIC-1427: Pen App/07 我的 collection hub (frame siVsa).
+  Me: undefined;
+  // 牌組 stack (DeckList → DeckDetail); a nested target / params may be given.
+  DeckEditor: undefined | { screen: 'DeckList' | 'DeckDetail'; params?: { deckId?: string; addCardNumber?: string } };
   TournamentReport: undefined;
   Watchlist: undefined;
   Settings: undefined;

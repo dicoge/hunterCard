@@ -18,8 +18,10 @@ import {
   Dimensions,
 } from 'react-native';
 import { COLORS, convertPrice, CURRENCIES } from '../constants';
+import { FEATURES } from '../config/releaseFlags';
 import { CardInfo } from '../services/cardRecognition';
 import { useTranslation } from '../i18n';
+import { resolveCardDisplayName } from '../utils/cardDisplayName';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -38,6 +40,8 @@ export interface ScanResultCardProps {
   preferredCurrency?: string;
   /** Preferred language (default: 'zh') */
   preferredLanguage?: string;
+  /** Distance from the top; the scan screen passes the bottom of its top bar so the ✕ stays reachable. */
+  top?: number;
 }
 
 export default function ScanResultCard({
@@ -48,6 +52,7 @@ export default function ScanResultCard({
   autoDismissMs = 5000,
   preferredCurrency = 'TWD',
   preferredLanguage = 'zh',
+  top,
 }: ScanResultCardProps) {
   const { t } = useTranslation();
   const slideAnim = useRef(new Animated.Value(0)).current;
@@ -138,12 +143,6 @@ export default function ScanResultCard({
     return `${symbol}${value.toLocaleString()} (¥${price.toLocaleString()})`;
   };
 
-  const confidencePercent = Math.round(confidence * 100);
-  const confidenceColor = confidencePercent >= 80
-    ? '#10b981'
-    : confidencePercent >= 50
-      ? '#f59e0b'
-      : '#ef4444';
 
   const variants = card.variants && card.variants.length > 0 ? card.variants : null;
   const sellPriceNull = card.sellPrice == null;
@@ -152,6 +151,7 @@ export default function ScanResultCard({
     <Animated.View
       style={[
         styles.container,
+        top !== undefined && { top },
         {
           transform: [{
             translateY: slideAnim.interpolate({
@@ -173,66 +173,74 @@ export default function ScanResultCard({
           <View style={[styles.rarityBadge, { backgroundColor: getRarityColor(card.rarity) }]}>
             <Text style={styles.rarityText}>{card.rarity}</Text>
           </View>
-          <View style={[styles.confidenceBadge, { borderColor: confidenceColor }]}>
-            <Text style={[styles.confidenceText, { color: confidenceColor }]}>
-              {confidencePercent}%
-            </Text>
-          </View>
+          {/* No confidence percentage: the ranker score is not a calibrated probability. */}
+          <View style={{ flex: 1 }} />
           <TouchableOpacity onPress={handleDismiss} style={styles.closeBtn}>
             <Text style={styles.closeText}>✕</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Card name + number */}
+        {/* Card name + number — resolved through the DIC-1380 shared helper so
+            every surface (Search, Scan, CardDetail, DeckEditor) picks the
+            same primary + subtitle for the current language preference. */}
         <View style={styles.infoContainer}>
-          {preferredLanguage === 'zh' && card.nameZh ? (
-            <>
-              <Text style={styles.cardName} numberOfLines={2}>{card.nameZh}</Text>
-              <Text style={styles.cardNameZh}>{card.name}</Text>
-            </>
-          ) : (
-            <>
-              <Text style={styles.cardName} numberOfLines={2}>{card.name}</Text>
-              {card.nameZh && preferredLanguage !== 'ja' ? (
-                <Text style={styles.cardNameZh}>{card.nameZh}</Text>
-              ) : null}
-            </>
-          )}
+          {(() => {
+            const { primary, secondary } = resolveCardDisplayName(card, preferredLanguage);
+            return (
+              <>
+                <Text style={styles.cardName} numberOfLines={2}>{primary}</Text>
+                {secondary ? (
+                  <Text style={styles.cardNameZh}>{secondary}</Text>
+                ) : null}
+              </>
+            );
+          })()}
           <Text style={styles.cardId}>
             #{card.cardNumber || card.id}
           </Text>
         </View>
 
-        {/* All price rows — always visible */}
-        <View style={styles.pricesSection}>
-          {uniquePrices ? (
-            uniquePrices.map((p, i) => (
-              <View key={`p-${p.name}-${p.sellPrice}-${i}`} style={styles.priceRow}>
-                <Text style={styles.priceLabel} numberOfLines={1}>{p.name}</Text>
+        {/* 掃到的這張卡自己的售價 — Store MVP 也顯示 (DIC-1319)。掃描→看價是
+            產品主路徑。這裡列的是這筆 catalog entry 自己的 card.prices，不會去
+            抓別筆 entry 的價格；但要注意 prices[] 是 yuyu-tei 對同一張卡號的
+            掛牌列表，實務上可能同時含普卡／パラレル／箔押し，甚至跨收錄系列，
+            價差可以到三個數量級。也就是說這一段沒有「跨版本借價」，卻也還沒告訴
+            使用者哪一列才是手上那一版——版本確認仍由候選選擇器與 session 的版本
+            chip 負責 (見 DIC-1319 交付說明的待決事項)。 */}
+        {FEATURES.sellPrice && (
+          <View style={styles.pricesSection} testID="scan-result-prices">
+            {uniquePrices ? (
+              uniquePrices.map((p, i) => (
+                <View key={`p-${p.name}-${p.sellPrice}-${i}`} style={styles.priceRow}>
+                  <Text style={styles.priceLabel} numberOfLines={1}>{p.name}</Text>
+                  <Text style={[
+                    styles.priceValue,
+                    p.sellPrice != null ? styles.priceValuePositive : styles.priceValueNull,
+                  ]}>
+                    {formatPrice(p.sellPrice)}
+                  </Text>
+                </View>
+              ))
+            ) : (
+              <View style={styles.priceRow}>
+                <Text style={styles.priceLabel}>{card.series || t('scan_estimate')}</Text>
                 <Text style={[
                   styles.priceValue,
-                  p.sellPrice != null ? styles.priceValuePositive : styles.priceValueNull,
+                  sellPriceNull ? styles.priceValueNull : styles.priceValuePositive,
                 ]}>
-                  {formatPrice(p.sellPrice)}
+                  {formatPrice(card.sellPrice)}
                 </Text>
               </View>
-            ))
-          ) : (
-            <View style={styles.priceRow}>
-              <Text style={styles.priceLabel}>{card.series || t('scan_estimate')}</Text>
-              <Text style={[
-                styles.priceValue,
-                sellPriceNull ? styles.priceValueNull : styles.priceValuePositive,
-              ]}>
-                {formatPrice(card.sellPrice)}
-              </Text>
-            </View>
-          )}
-        </View>
+            )}
+          </View>
+        )}
 
-        {/* Series reprint variants */}
-        {variants && (
-          <View style={styles.variantsSection}>
+        {/* Series reprint variants — stays on FEATURES.marketData: this section
+            compares OTHER printings' prices against the one in hand, which is
+            the cross-printing surface DIC-1319 must keep out of the store
+            build. The price above is this printing's own. */}
+        {FEATURES.marketData && variants && (
+          <View style={styles.variantsSection} testID="scan-result-variants">
             <Text style={styles.variantsHeader}>{t('scan_other_versions')}</Text>
             {variants.map((v, i) => {
               const vPrices = v.prices && v.prices.length > 0 ? v.prices : null;

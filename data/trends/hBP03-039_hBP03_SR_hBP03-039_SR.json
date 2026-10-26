@@ -1,0 +1,15 @@
+{
+  "cardId": "hBP03-039",
+  "name": "モココ・アビスガード",
+  "nameZh": "雙子·深淵護衛",
+  "trend": "up",
+  "score": 0.39,
+  "confidence": 0.5,
+  "components": {
+    "priceTrend": 0.6,
+    "ytTrend": 0,
+    "newsSentiment": 0.15
+  },
+  "lastUpdated": "2026-10-03T12:08:42.463Z",
+  "dataPoints": 67
+}

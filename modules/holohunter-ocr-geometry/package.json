@@ -1,0 +1,7 @@
+{
+  "name": "holohunter-ocr-geometry",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local Expo module (Android): on-device ML Kit text recognition that also returns LINE and ELEMENT boxes, so the automatic scan measures the printed card number itself, not the whole text block it was grouped into.",
+  "license": "UNLICENSED"
+}

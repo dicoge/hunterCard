@@ -12,6 +12,8 @@ export interface SeriesItem {
   label: string;
   query: string;
   name: string;
+  /** DIC-1427 (Pen tmKqY): real art thumb — the series' first card image. */
+  thumbUrl?: string;
 }
 
 export interface SeriesCatalog {
@@ -21,7 +23,7 @@ export interface SeriesCatalog {
 }
 
 interface DatabaseLike {
-  cards?: Record<string, { series?: string }>;
+  cards?: Record<string, { series?: string; officialImage?: string; localImage?: string; cardNumber?: string; id?: string }>;
 }
 
 export function buildSeriesCatalog(
@@ -29,9 +31,18 @@ export function buildSeriesCatalog(
   seriesNames: Record<string, string>,
 ): SeriesCatalog {
   const seriesSet = new Set<string>();
+  // DIC-1427 (Pen tmKqY): the series tiles carry real card art, so track the
+  // lowest-numbered card with an image per series as its thumb.
+  const thumbBySeries = new Map<string, { key: string; url: string }>();
   for (const card of Object.values(db?.cards ?? {})) {
     const s = card?.series || '';
-    if (s) seriesSet.add(s);
+    if (!s) continue;
+    seriesSet.add(s);
+    const url = card?.officialImage || card?.localImage || '';
+    if (!url) continue;
+    const key = (card?.cardNumber || card?.id || '').toLowerCase();
+    const existing = thumbBySeries.get(s);
+    if (!existing || key < existing.key) thumbBySeries.set(s, { key, url });
   }
 
   const allSeries: SeriesItem[] = Array.from(seriesSet)
@@ -40,6 +51,7 @@ export function buildSeriesCatalog(
       label: code,
       query: code,
       name: seriesNames[code] || code,
+      thumbUrl: thumbBySeries.get(code)?.url,
     }));
 
   return {

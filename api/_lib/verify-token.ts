@@ -137,9 +137,12 @@ function verifySignature(jwt: JwtParts, jwk: Jwk): void {
   } else {
     throw new IdentityStoreError('INVALID_TOKEN', `Unsupported alg: ${jwt.header.alg}`);
   }
-  if (!ok) throw new IdentityStoreError('INVALID_TOKEN', 'Signature verification failed');
+  if (!ok) throw new IdentityStoreError('INVALID_TOKEN', 'Signature verification failed', { reason: 'bad_signature' });
 }
 
+// `reason` (fixed vocabulary, never a claim value) travels to the client so a real
+// Android failure is reportable: bad_audience on Android but not web means the build's
+// webClientId and the server's accepted audiences differ (2026-10-15 diagnostics).
 function assertClaims(
   payload: Record<string, any>,
   { issuers, audience, nonce }: { issuers: string[]; audience: string[]; nonce?: string },
@@ -148,22 +151,22 @@ function assertClaims(
   // Require a finite numeric exp: a missing / non-numeric / NaN / Infinity exp
   // must fail closed, not skip the expiry check and accept a never-expiring token.
   if (typeof payload.exp !== 'number' || !Number.isFinite(payload.exp)) {
-    throw new IdentityStoreError('INVALID_TOKEN', 'Missing or non-numeric exp');
+    throw new IdentityStoreError('INVALID_TOKEN', 'Missing or non-numeric exp', { reason: 'missing_exp' });
   }
   if (now >= payload.exp) {
     throw new IdentityStoreError('TOKEN_EXPIRED', 'ID token expired');
   }
   if (!issuers.includes(payload.iss)) {
-    throw new IdentityStoreError('INVALID_TOKEN', `Bad issuer: ${payload.iss}`);
+    throw new IdentityStoreError('INVALID_TOKEN', `Bad issuer: ${payload.iss}`, { reason: 'bad_issuer' });
   }
   const auds = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
   if (!audience.some((a) => a && auds.includes(a))) {
-    throw new IdentityStoreError('INVALID_TOKEN', `Bad audience: ${payload.aud}`);
+    throw new IdentityStoreError('INVALID_TOKEN', `Bad audience: ${payload.aud}`, { reason: 'bad_audience' });
   }
   if (nonce && payload.nonce !== nonce) {
-    throw new IdentityStoreError('INVALID_TOKEN', 'Nonce mismatch');
+    throw new IdentityStoreError('INVALID_TOKEN', 'Nonce mismatch', { reason: 'nonce_mismatch' });
   }
-  if (!payload.sub) throw new IdentityStoreError('INVALID_TOKEN', 'Missing subject');
+  if (!payload.sub) throw new IdentityStoreError('INVALID_TOKEN', 'Missing subject', { reason: 'missing_subject' });
 }
 
 async function verify(

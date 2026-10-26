@@ -1,0 +1,146 @@
+{
+ "source": "api/recognize-card.ts @ ec8447dc (v37), mocked Gemini reading; raw reply dropped, debug limited to safe expected fields",
+ "reading": {
+  "CHARACTER": "天音かなた",
+  "RARITY": "U",
+  "CARD_NUMBER": "hBP01-010"
+ },
+ "status": 200,
+ "body": {
+  "success": true,
+  "confidence": 0.99,
+  "reason": "cardNumber exact, character exact/contains, rarity",
+  "card": {
+   "id": "hBP01-010_hBP01_U_hBP01-010_U",
+   "cardNumber": "hBP01-010",
+   "name": "天音かなた",
+   "rarity": "U",
+   "series": "hBP01",
+   "sellPrice": 80,
+   "prices": [
+    {
+     "name": "天音かなた",
+     "sellPrice": 80,
+     "rarity": "U",
+     "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10020.jpg"
+    }
+   ],
+   "confidence": 0.99,
+   "reason": "cardNumber exact, character exact/contains, rarity",
+   "score": 135.5,
+   "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP01/hBP01-010_U.png"
+  },
+  "candidates": [
+   {
+    "id": "hBP01-010_hBP01_U_hBP01-010_U",
+    "cardNumber": "hBP01-010",
+    "name": "天音かなた",
+    "rarity": "U",
+    "series": "hBP01",
+    "sellPrice": 80,
+    "prices": [
+     {
+      "name": "天音かなた",
+      "sellPrice": 80,
+      "rarity": "U",
+      "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10020.jpg"
+     }
+    ],
+    "confidence": 0.99,
+    "reason": "cardNumber exact, character exact/contains, rarity",
+    "score": 135.5,
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP01/hBP01-010_U.png"
+   },
+   {
+    "id": "hBP01-012_hBP01_U_hBP01-012_U",
+    "cardNumber": "hBP01-012",
+    "name": "天音かなた",
+    "rarity": "U",
+    "series": "hBP01",
+    "sellPrice": 180,
+    "prices": [
+     {
+      "name": "天音かなた",
+      "sellPrice": 180,
+      "rarity": "U",
+      "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10022.jpg"
+     }
+    ],
+    "confidence": 0.96,
+    "reason": "cardNumber fuzzy-1, character exact/contains, rarity",
+    "score": 113.5,
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP01/hBP01-012_U.png"
+   },
+   {
+    "id": "hBP01-011_hBP01_C_hBP01-011_C",
+    "cardNumber": "hBP01-011",
+    "name": "天音かなた",
+    "rarity": "C",
+    "series": "hBP01",
+    "sellPrice": 80,
+    "prices": [
+     {
+      "name": "天音かなた",
+      "sellPrice": 80,
+      "rarity": "C",
+      "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10021.jpg"
+     }
+    ],
+    "confidence": 0.89,
+    "reason": "cardNumber fuzzy-1, character exact/contains",
+    "score": 105.5,
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP01/hBP01-011_C.png"
+   },
+   {
+    "id": "hBP01-013_hBP01_R_hBP01-013_R_02",
+    "cardNumber": "hBP01-013",
+    "name": "天音かなた",
+    "rarity": "R",
+    "series": "hBP01",
+    "sellPrice": 120,
+    "prices": [
+     {
+      "name": "天音かなた",
+      "sellPrice": 120,
+      "rarity": "R",
+      "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10023.jpg"
+     }
+    ],
+    "confidence": 0.89,
+    "reason": "cardNumber fuzzy-1, character exact/contains",
+    "score": 105.5,
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD08/hBP01-013_R_02.png"
+   },
+   {
+    "id": "hBP01-014_hBP01_RR_hBP01-014_RR",
+    "cardNumber": "hBP01-014",
+    "name": "天音かなた",
+    "rarity": "RR",
+    "series": "hBP01",
+    "sellPrice": 220,
+    "prices": [
+     {
+      "name": "天音かなた",
+      "sellPrice": 220,
+      "rarity": "RR",
+      "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10024.jpg"
+     }
+    ],
+    "confidence": 0.89,
+    "reason": "cardNumber fuzzy-1, character exact/contains",
+    "score": 105.5,
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP01/hBP01-014_RR.png"
+   }
+  ],
+  "debug": {
+   "provider": "gemini",
+   "model": "gemini-2.5-flash",
+   "normalizedCardNumber": "hbp01-010",
+   "extracted": {
+    "characterName": "天音かなた",
+    "cardNumberRaw": "hBP01-010",
+    "rarity": "U"
+   }
+  }
+ }
+}

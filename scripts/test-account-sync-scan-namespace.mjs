@@ -74,10 +74,14 @@ function compileTs(relPath) {
   });
   fs.writeFileSync(output, compiled.outputText);
 }
+// The store's full runtime import graph. scanSessionSync is a real runtime
+// import of account-sync-store (constants + emptyScanSession), added on main
+// after DIC-1189; the store's other cross-imports are type-only and elided.
 for (const rel of [
   'src/config/appEnv.ts',
   'api/_lib/env-guard.ts',
   'api/_lib/kv-namespace.ts',
+  'src/utils/scanSessionSync.ts',
   'api/_lib/account-sync-store.ts',
 ]) compileTs(rel);
 

@@ -1,0 +1,89 @@
+{
+  "cardId": "hBP01-048_hBP06_HR_hBP01-048_HR",
+  "cardNumber": "hBP01-048",
+  "name": "風真いろは",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-048_hBP06_HR_hBP01-048_HR",
+      "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-09-23",
+      "price": 7980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-048_hBP06_HR_hBP01-048_HR",
+      "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-09-26",
+      "price": 7980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-048_hBP06_HR_hBP01-048_HR",
+      "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-09-27",
+      "price": 7980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-048_hBP06_HR_hBP01-048_HR",
+      "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-10-02",
+      "price": 7980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-048_hBP06_HR_hBP01-048_HR",
+      "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-10-03",
+      "price": 7980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-048_hBP06_HR_hBP01-048_HR",
+      "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-10-16",
+      "price": 8980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-048_hBP06_HR_hBP01-048_HR",
+      "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-10-17",
+      "price": 8980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-048_hBP06_HR_hBP01-048_HR",
+      "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-10-18",
+      "price": 8980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-048_hBP06_HR_hBP01-048_HR",
+      "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-10-26",
+      "price": 8980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-048_hBP06_HR_hBP01-048_HR",
+      "sourceProduct": "hBP06"
+    }
+  ],
+  "lastUpdated": "2026-10-26T02:45:59.465Z",
+  "nameZh": "風真伊呂波"
+}

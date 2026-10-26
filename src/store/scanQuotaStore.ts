@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import platformStorage from '../stores/storage';
-import { UserRole } from '../types/auth';
-import { isQuotaExceeded, effectiveRole } from '../services/permissionService';
+import type { UserRole } from '../types/auth';
+import { isQuotaExceeded, effectiveRole, MONTHLY_SCAN_LIMIT } from '../services/permissionService';
 import { useAuthStore } from './authStore';
 
 interface ScanQuotaState {
@@ -54,8 +54,8 @@ export const useScanQuotaStore = create<ScanQuotaState>()(
         const now = getCurrentMonth();
         const effectiveCount = currentMonth !== now ? 0 : scanCount;
         if (role === 'subscriber') return -1;
-        if (role === 'guest') return 0;
-        return Math.max(0, 100 - effectiveCount);
+        // Guests and free users share one device-local allowance.
+        return Math.max(0, MONTHLY_SCAN_LIMIT - effectiveCount);
       },
 
       resetQuota: () => {

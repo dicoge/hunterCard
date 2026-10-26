@@ -1,0 +1,15 @@
+{
+  "cardId": "hBP05-037",
+  "name": "星街すいせい",
+  "nameZh": "星街彗星",
+  "trend": "stable",
+  "score": -0.08,
+  "confidence": 0.6,
+  "components": {
+    "priceTrend": -0.18,
+    "ytTrend": 0,
+    "newsSentiment": 0.15
+  },
+  "lastUpdated": "2026-10-03T12:08:42.530Z",
+  "dataPoints": 67
+}

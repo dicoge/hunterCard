@@ -1,0 +1,81 @@
+{
+  "cardId": "hBP02-017_hBP02_SR_hBP02-017_SR",
+  "cardNumber": "hBP02-017",
+  "name": "白銀ノエル",
+  "records": [
+    {
+      "date": "2026-09-23",
+      "price": 420,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-017_hBP02_SR_hBP02-017_SR",
+      "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-09-26",
+      "price": 320,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-017_hBP02_SR_hBP02-017_SR",
+      "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-09-27",
+      "price": 320,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-017_hBP02_SR_hBP02-017_SR",
+      "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-10-02",
+      "price": 320,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-017_hBP02_SR_hBP02-017_SR",
+      "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-10-03",
+      "price": 320,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-017_hBP02_SR_hBP02-017_SR",
+      "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-10-16",
+      "price": 420,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-017_hBP02_SR_hBP02-017_SR",
+      "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-10-17",
+      "price": 420,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-017_hBP02_SR_hBP02-017_SR",
+      "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-10-18",
+      "price": 420,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-017_hBP02_SR_hBP02-017_SR",
+      "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-10-26",
+      "price": 420,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-017_hBP02_SR_hBP02-017_SR",
+      "sourceProduct": "hBP02"
+    }
+  ],
+  "lastUpdated": "2026-10-26T02:45:59.602Z",
+  "nameZh": "白銀諾艾爾"
+}

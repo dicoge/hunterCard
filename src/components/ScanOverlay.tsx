@@ -7,9 +7,26 @@
  * Contains:
  * - Scan area with animated scan line
  * - Corner decorations
- * - Camera controls (flash, scan button, flip)
- * - Auto-scan mode toggle
- * - Gallery button
+ * - The primary scan action plus a gallery entry point so a card that cannot
+ *   be pointed at (e.g. a photo the user already has) still has a scan path
+ *   on native. The flash toggle rides the Pen `x7iIL` top bar (DIC-1409).
+ *
+ * DIC-1319: the normal flow is one primary action. Camera flip, manual search
+ * and the auto-scan mode toggle used to sit under the viewfinder and were what
+ * the v21 tester read as "many unnecessary buttons"; the auto-scan toggle was
+ * inert on Android to begin with (the auto-scan loop is web-only). Those are
+ * gone; manual search stays reachable from the scan-failure and low-confidence
+ * recovery panels.
+ *
+ * DIC-1336: the gallery entry is back, but this time it is here for a reason.
+ * The release-like Android QA (DIC-1332) found that the shipped APK had no
+ * reachable gallery path — both `pickFromGallery` invocation sites in
+ * ScanScreen were gated by `isWeb`, so on native there was no way to scan a
+ * card from a photo the user already had. It is rendered here as an icon-only
+ * secondary control beside the shutter so it does not compete with the
+ * primary scan action, and it is ALSO exposed on the camera-permission-denied
+ * surface (CameraPermissionDeniedView) so gallery scanning remains a real
+ * recovery path when the camera is unavailable.
  */
 
 import React from 'react';
@@ -19,14 +36,20 @@ import {
   StyleSheet,
   TouchableOpacity,
   Animated,
-  Dimensions,
+  useWindowDimensions,
   LayoutChangeEvent,
 } from 'react-native';
 import { COLORS } from '../constants';
+import { PALETTE } from '../theme/tokensV2';
 import { useTranslation } from '../i18n';
+import { useScanSessionStore } from '../stores/scanSessionStore';
+import ScanTopBar, { useScanTopInset } from './ScanTopBar';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const SCAN_AREA_SIZE = SCREEN_WIDTH * 0.75;
+import { computeScanFrameSize } from '../utils/scanFrame';
+// Scan frame: a PORTRAIT card window at the real 63:88 card ratio, sized per viewport
+// by computeScanFrameSize (Pen docs/pen-scan/holohunter-scan-best-match.pen, A USowC /
+// F i51Hi). v37 capped it at min(0.64 × width, 280px). The same function sizes the web
+// ROI fallback and the native crop plan, and the crop itself uses the measured layout.
 
 export interface ScanOverlayProps {
   // Animation values
@@ -37,19 +60,45 @@ export interface ScanOverlayProps {
   // Scan state
   isScanning: boolean;
   flash: boolean;
-  autoScanEnabled: boolean;
+  // Whether the frame-stability auto-scan loop is actually running. ScanScreen
+  // only runs it on web, so this is false on Android/iOS and the hint text
+  // stops promising an automatic capture the platform never performs.
+  autoScanActive: boolean;
   isCameraReady: boolean;
   cameraError: string | null;
 
   // Callbacks
   onFlash: () => void;
   onScan: () => void;
-  onFlip: () => void;
-  onGallery: () => void;
-  onManualSearch: () => void;
-  onToggleAutoScan: () => void;
   onRetry: () => void;
+  // v43: shown with a camera start error — leave the automatic camera for the manual one.
+  onManualCamera?: () => void;
+  // Gallery entry — mounted unconditionally (no `isWeb` gate) so the shipped
+  // Android APK exposes a native gallery scan path. ScanScreen wires this to
+  // its own `pickFromGallery`; if the platform later cannot fulfil the pick
+  // (no photo library permission, no picker), the handler itself is
+  // responsible for surfacing that error — never this overlay.
+  onGallery: () => void;
   onScanAreaLayout?: (event: LayoutChangeEvent) => void;
+  /** Native crop: measured in window coordinates at capture time. */
+  scanAreaRef?: React.Ref<View>;
+  /** Pen `x7iIL` top-bar close — dismisses the scan flow (back to Home). */
+  onClose?: () => void;
+  /** DIC-1427 Pen Cys7V: the 自動掃描/手動 pill renders ONLY where the
+   *  frame-stability loop is a real capability (web today). Never render an
+   *  inert switch on platforms without the loop. */
+  autoScanSupported?: boolean;
+  // v43: Android build whose automatic scanner view could not be loaded — say so (manual only).
+  autoScanUnavailable?: boolean;
+  onToggleAutoScan?: (next: boolean) => void;
+  /** Native automatic capture stopped after a long idle stretch (src/services/autoCapture). */
+  autoScanPaused?: boolean;
+  /** Automatic mode is on but the photo-upload disclosure is not accepted yet: nothing is
+   *  captured until the user enables it here (no shutter needed). */
+  autoScanNeedsConsent?: boolean;
+  onEnableAutoScan?: () => void;
+  /** DIC-1427 Pen AQf9b: the 估值清單 count box opens the session list. */
+  onOpenSession?: () => void;
 }
 
 export default function ScanOverlay({
@@ -58,19 +107,34 @@ export default function ScanOverlay({
   borderAnim,
   isScanning,
   flash,
-  autoScanEnabled,
+  autoScanActive,
   isCameraReady,
   cameraError,
   onFlash,
   onScan,
-  onFlip,
-  onGallery,
-  onManualSearch,
-  onToggleAutoScan,
   onRetry,
+  onManualCamera,
+  onGallery,
   onScanAreaLayout,
+  scanAreaRef,
+  onClose,
+  autoScanSupported = false,
+  autoScanUnavailable = false,
+  autoScanPaused = false,
+  autoScanNeedsConsent = false,
+  onEnableAutoScan,
+  onToggleAutoScan,
+  onOpenSession,
 }: ScanOverlayProps) {
   const { t } = useTranslation();
+  const viewport = useWindowDimensions();
+  // The frame leaves room for the status-bar inset the top bar now clears, so the bar
+  // can never sit on the frame; the native crop measures the frame itself either way.
+  const topInset = useScanTopInset();
+  const frame = computeScanFrameSize({ width: viewport.width, height: viewport.height }, { top: topInset });
+  // Real session size for the Pen AQf9b count box — read straight from the
+  // store so the badge can never drift from the actual session.
+  const sessionCount = useScanSessionStore((s) => s.cardCount);
   return (
     <>
       {/* Camera loading overlay */}
@@ -84,143 +148,222 @@ export default function ScanOverlay({
                 <TouchableOpacity
                   style={resultStyles.retryButton}
                   onPress={onRetry}
+                  testID="scan-camera-retry"
                 >
                   <Text style={resultStyles.retryText}>{t('common_retry')}</Text>
                 </TouchableOpacity>
+                {onManualCamera && (
+                  <TouchableOpacity
+                    style={resultStyles.retryButton}
+                    onPress={onManualCamera}
+                    testID="scan-camera-manual"
+                  >
+                    <Text style={resultStyles.retryText}>{t('scan_camera_use_manual')}</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             )}
           </View>
         </View>
       )}
 
-      {/* Overlay with scan area */}
+      {/* Overlay with scan area — DIC-1286 (DIC-1294 QA crash fix +
+          DIC-1296 CR round-2 UX fix).
+          Two nested Animated.View nodes so JS-driver and native-driver
+          animations never share a single node:
+            • outer node (`scanAreaPulse`) carries the native-driven
+              `transform: [{ scale: pulseAnim }]` and NO JS-driven props.
+              Because the transform is applied at the parent, the entire
+              visible frame — border, `overflow: hidden` clip, corners,
+              scan line — scales together as it did before the split.
+            • inner node (`styles.scanArea`) carries the JS-driven
+              `borderColor: borderAnim.interpolate(...)` and NO native
+              props. width / height / borderWidth / borderRadius / overflow
+              are STATIC on this node, so they are safe on either driver.
+              onLayout stays here so `scanAreaViewportRef` measures the
+              same layout-space rect as before (transform is visual-only,
+              never affects onLayout measurements).
+          Mixing `transform` (native) with `borderColor` (JS-only) on the
+          SAME Animated.View triggered
+          `Attempting to run JS driven animation on animated node that has
+          been moved to "native"` FATAL EXCEPTION mqt_v_native — reproduced
+          by DIC-1294 on API-36 emulator. Two-node split preserves the
+          full pulse UX AND fixes the crash. */}
       <View style={styles.overlay}>
         <View style={styles.overlayTop} />
         <View style={styles.scanAreaContainer}>
           <View style={styles.overlaySide} />
           <Animated.View
             style={[
-              styles.scanArea,
-              {
-                transform: [{ scale: pulseAnim }],
-                borderColor: borderAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [COLORS.primary, COLORS.primaryLight],
-                }),
-              },
+              styles.scanAreaPulse,
+              frame,
+              { transform: [{ scale: pulseAnim }] },
             ]}
-            onLayout={onScanAreaLayout}
+            pointerEvents="box-none"
           >
             <Animated.View
+              ref={scanAreaRef as any}
+              testID="scan-frame"
               style={[
-                styles.scanLine,
+                styles.scanArea,
+                frame,
                 {
-                  transform: [{
-                    translateY: scanLineAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0, SCAN_AREA_SIZE - 4],
-                    }),
-                  }],
-                  opacity: scanLineAnim.interpolate({
-                    inputRange: [0, 0.5, 1],
-                    outputRange: [0, 1, 0],
+                  borderColor: borderAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [COLORS.primary, COLORS.primaryLight],
                   }),
                 },
               ]}
-            />
-            <View style={[styles.corner, styles.topLeft]} />
-            <View style={[styles.corner, styles.topRight]} />
-            <View style={[styles.corner, styles.bottomLeft]} />
-            <View style={[styles.corner, styles.bottomRight]} />
-            {isScanning && (
-              <View style={styles.scanningIndicator}>
-                <Animated.Text
-                  style={[styles.scanningText, { transform: [{ scale: pulseAnim }] }]}
-                >
-                  {t('scan_recognizing')}
-                </Animated.Text>
-              </View>
-            )}
+              onLayout={onScanAreaLayout}
+            >
+              <Animated.View
+                style={[
+                  styles.scanLine,
+                  {
+                    transform: [{
+                      translateY: scanLineAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0, frame.height - 4],
+                      }),
+                    }],
+                    opacity: scanLineAnim.interpolate({
+                      inputRange: [0, 0.5, 1],
+                      outputRange: [0, 1, 0],
+                    }),
+                  },
+                ]}
+              />
+              <View style={[styles.corner, styles.topLeft]} />
+              <View style={[styles.corner, styles.topRight]} />
+              <View style={[styles.corner, styles.bottomLeft]} />
+              <View style={[styles.corner, styles.bottomRight]} />
+              {isScanning && (
+                <View style={styles.scanningIndicator}>
+                  <Animated.Text
+                    style={[styles.scanningText, { transform: [{ scale: pulseAnim }] }]}
+                  >
+                    {t('scan_recognizing')}
+                  </Animated.Text>
+                </View>
+              )}
+            </Animated.View>
           </Animated.View>
           <View style={styles.overlaySide} />
         </View>
         <View style={styles.overlayBottom}>
-          <Text style={styles.hintText}>
-            {autoScanEnabled ? t('scan_frame_auto') : t('scan_frame_manual')}
+          <Text style={styles.hintText} testID="scan-hint">
+            {autoScanActive
+              ? t(autoScanNeedsConsent ? 'scan_auto_needs_consent' : autoScanPaused ? 'scan_auto_paused' : 'scan_frame_auto')
+              : t(autoScanUnavailable ? 'scan_auto_unavailable' : 'scan_frame_manual')}
           </Text>
-          <View style={styles.controls}>
-            {/* Flash toggle */}
+          {autoScanActive && autoScanNeedsConsent && onEnableAutoScan ? (
             <TouchableOpacity
-              style={[styles.controlBtn, flash && styles.controlBtnActive]}
-              onPress={onFlash}
-              activeOpacity={0.7}
+              style={styles.autoEnableBtn}
+              onPress={onEnableAutoScan}
+              accessibilityRole="button"
+              testID="scan-auto-enable"
             >
-              <Text style={styles.controlIcon}>{flash ? '🔦' : '💡'}</Text>
-              <Text style={styles.controlLabel}>{flash ? t('scan_flash_on') : t('scan_flash')}</Text>
+              <Text style={styles.autoEnableText}>{t('scan_auto_enable')}</Text>
             </TouchableOpacity>
+          ) : null}
+          {/* Pen Tips row (node Cc84X): three pill chips */}
+          <View style={styles.tipsRow} testID="scan-tips-row">
+            <View style={styles.tipChip}><Text style={styles.tipChipText}>{t('scan_tip_number')}</Text></View>
+            <View style={styles.tipChip}><Text style={styles.tipChipText}>{t('scan_tip_glare')}</Text></View>
+            <View style={styles.tipChip}><Text style={styles.tipChipText}>{t('scan_tip_flat')}</Text></View>
+          </View>
+          {/* DIC-1319 × DIC-1409: one primary action. Camera flip, manual
+              search and the auto-scan mode switch stay out of the viewfinder
+              (the auto-scan loop is web-only, so the switch was inert on
+              Android; manual search remains reachable from the scan-failure
+              and low-confidence recovery panels). The flash control rides the
+              Pen `x7iIL` top bar, so this row is the scan action plus the
+              gallery entry only. */}
+          {/* Mode pill (Pen Cys7V) — only where auto-scan really runs. */}
+          {autoScanSupported && onToggleAutoScan ? (
+            <View style={styles.modePill} testID="scan-mode-pill">
+              <TouchableOpacity
+                style={[styles.modeSeg, autoScanActive && styles.modeSegActive]}
+                onPress={() => onToggleAutoScan(true)}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: autoScanActive }}
+                testID="scan-mode-auto"
+                {...({ 'aria-selected': autoScanActive } as object)}
+              >
+                <Text style={[styles.modeSegText, autoScanActive && styles.modeSegTextActive]}>{t('scan_mode_auto')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modeSeg, !autoScanActive && styles.modeSegActive]}
+                onPress={() => onToggleAutoScan(false)}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: !autoScanActive }}
+                testID="scan-mode-manual"
+                {...({ 'aria-selected': !autoScanActive } as object)}
+              >
+                <Text style={[styles.modeSegText, !autoScanActive && styles.modeSegTextActive]}>{t('scan_mode_manual')}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
 
-            {/* Gallery button */}
+          {/* Shutter row (Pen BUFW2): 相簿 LEFT · shutter CENTER · 估值清單 RIGHT. */}
+          <View style={styles.controls} testID="scan-primary-controls">
+            {/* Gallery — labeled side box (Pen TOYLP). Rendered unconditionally
+                so the Android APK has a reachable gallery scan path
+                (DIC-1336); any inability to fulfil the picker is the
+                handler's problem, not the overlay's. */}
             <TouchableOpacity
-              style={styles.controlBtn}
+              style={styles.sideControl}
               onPress={onGallery}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={t('scan_gallery_action')}
+              testID="scan-gallery-action"
             >
-              <Text style={styles.controlIcon}>🖼️</Text>
-              <Text style={styles.controlLabel}>{t('scan_gallery')}</Text>
+              <View style={styles.controlBtn}>
+                <Text style={styles.controlIcon}>🖼️</Text>
+              </View>
+              <Text style={styles.sideControlLabel}>{t('scan_gallery_label')}</Text>
             </TouchableOpacity>
 
-            {/* Scan button */}
+            {/* The single scan action (Pen TbHVE 72px gradient shutter). */}
             <TouchableOpacity
               style={[styles.scanButton, isScanning && styles.scanButtonDisabled]}
               onPress={onScan}
               disabled={isScanning}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={isScanning ? t('scan_recognizing') : t('scan_scan_action')}
+              testID="scan-primary-action"
             >
               <View style={styles.scanButtonInner}>
-                <Text style={styles.scanButtonIcon}>{isScanning ? '⏳' : '📷'}</Text>
+                {isScanning ? <Text style={styles.scanButtonIcon}>⏳</Text> : null}
               </View>
-              <Text style={styles.scanButtonLabel}>
-                {isScanning ? t('scan_recognizing') : autoScanEnabled ? t('scan_manual') : t('scan_scan_action')}
-              </Text>
             </TouchableOpacity>
 
-            {/* Flip camera */}
+            {/* 估值清單 count box (Pen AQf9b) — real session size. */}
             <TouchableOpacity
-              style={styles.controlBtn}
-              onPress={onFlip}
+              style={styles.sideControl}
+              onPress={onOpenSession}
+              disabled={!onOpenSession}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={t('scan_session_entry_a11y', { count: sessionCount })}
+              testID="scan-session-entry"
             >
-              <Text style={styles.controlIcon}>🔄</Text>
-              <Text style={styles.controlLabel}>{t('scan_flip')}</Text>
-            </TouchableOpacity>
-
-            {/* Manual search */}
-            <TouchableOpacity
-              style={styles.controlBtn}
-              onPress={onManualSearch}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.controlIcon}>🔤</Text>
-              <Text style={styles.controlLabel}>{t('common_search')}</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Auto-scan toggle */}
-          <View style={styles.autoScanToggleContainer}>
-            <TouchableOpacity
-              style={[
-                styles.autoScanToggle,
-                autoScanEnabled && styles.autoScanToggleActive,
-              ]}
-              onPress={onToggleAutoScan}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.autoScanToggleText, autoScanEnabled && styles.autoScanToggleTextActive]}>
-                {autoScanEnabled ? t('scan_auto_mode') : t('scan_manual_mode')}
-              </Text>
+              <View style={styles.controlBtn}>
+                <Text style={styles.sessionCountText}>{sessionCount}</Text>
+              </View>
+              <Text style={styles.sideControlLabel}>{t('scan_session_entry_label')}</Text>
             </TouchableOpacity>
           </View>
         </View>
+      </View>
+
+      {/* Pen `x7iIL` Top Bar — Close / quota pill / Flash, rendered LAST and above
+          everything, the loading overlay included (zIndex / elevation): nothing can
+          cover or take its touches. It sits below the status-bar inset (ScanTopBar). */}
+      <View style={styles.topBarLayer} pointerEvents="box-none" testID="scan-top-bar-layer">
+        <ScanTopBar onClose={onClose} onFlash={onFlash} flashOn={flash} />
       </View>
     </>
   );
@@ -241,12 +384,23 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     fontSize: 16,
   },
+  // DIC-1409 CR fix: the overlay chrome sits ABSOLUTELY over the camera
+  // element instead of flowing after the 100%-height <video> as a flex
+  // sibling — normal flow pushed the whole scan UI below the fold.
   overlay: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
   },
   overlayTop: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
+  },
+  topBarLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 30,
+    elevation: 30,
   },
   scanAreaContainer: {
     flexDirection: 'row',
@@ -255,15 +409,25 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
   },
+  // Pen scan frame (node Aj73G): portrait card window, #FFFFFF08 fill, r16.
   scanArea: {
-    width: SCAN_AREA_SIZE,
-    height: SCAN_AREA_SIZE * 0.63,
     position: 'relative',
     borderWidth: 2,
     borderColor: COLORS.primary,
-    borderRadius: 8,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF08',
     overflow: 'hidden',
   },
+  // Outer pulse wrapper (DIC-1294 + DIC-1296 CR round-2): owns the layout
+  // box (width / height match the scanArea) and receives the native-driven
+  // `scale` transform. Because the transform is applied here — the parent
+  // of the border-styled scanArea — the border, the `overflow: hidden`
+  // clipping boundary, the corners and the scan line ALL scale together,
+  // preserving the original visible pulse UX. Kept separate from the
+  // borderColor-animated child so JS-driven `borderColor` and native-driven
+  // `transform` never share a single Animated.View — the crash pattern from
+  // the API-36 emulator logcat.
+  scanAreaPulse: {},
   scanLine: {
     position: 'absolute',
     left: 10,
@@ -276,39 +440,40 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.8,
     shadowRadius: 4,
   },
+  // Pen corner brackets (nodes K3Ja4K…): white, 32px, r10.
   corner: {
     position: 'absolute',
-    width: 24,
-    height: 24,
-    borderColor: COLORS.primary,
+    width: 32,
+    height: 32,
+    borderColor: '#FFFFFF',
   },
   topLeft: {
     top: -1,
     left: -1,
     borderTopWidth: 4,
     borderLeftWidth: 4,
-    borderTopLeftRadius: 8,
+    borderTopLeftRadius: 10,
   },
   topRight: {
     top: -1,
     right: -1,
     borderTopWidth: 4,
     borderRightWidth: 4,
-    borderTopRightRadius: 8,
+    borderTopRightRadius: 10,
   },
   bottomLeft: {
     bottom: -1,
     left: -1,
     borderBottomWidth: 4,
     borderLeftWidth: 4,
-    borderBottomLeftRadius: 8,
+    borderBottomLeftRadius: 10,
   },
   bottomRight: {
     bottom: -1,
     right: -1,
     borderBottomWidth: 4,
     borderRightWidth: 4,
-    borderBottomRightRadius: 8,
+    borderBottomRightRadius: 10,
   },
   scanningIndicator: {
     position: 'absolute',
@@ -332,35 +497,104 @@ const styles = StyleSheet.create({
     paddingTop: 30,
     alignItems: 'center',
   },
+  autoEnableBtn: {
+    marginBottom: 10,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: COLORS.primary,
+  },
+  autoEnableText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
+  // Pen Hint title (node RrYjs): 14/600 white.
   hintText: {
-    color: COLORS.text,
-    fontSize: 16,
-    marginBottom: 20,
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 10,
     textShadowColor: 'rgba(0, 0, 0, 0.8)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
+  // Pen Tips chips (node Cc84X): #FFFFFF0F pills, 11 muted text.
+  tipsRow: {
+    flexDirection: 'row',
+    gap: 7,
+    marginBottom: 16,
+  },
+  tipChip: {
+    backgroundColor: '#FFFFFF0F',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  tipChipText: {
+    color: '#C6C6DE',
+    fontSize: 11,
+  },
   controls: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
     width: '100%',
-    paddingHorizontal: 12,
+    paddingHorizontal: 44,
+    marginTop: 10,
   },
+  // Mode pill (Pen Cys7V: #00000080 r999 with 3px inset segments)
+  modePill: {
+    flexDirection: 'row',
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 999,
+    padding: 3,
+    gap: 2,
+  },
+  modeSeg: {
+    borderRadius: 999,
+    paddingHorizontal: 13,
+    paddingVertical: 6,
+  },
+  modeSegActive: {
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  modeSegText: {
+    color: '#9A9AB8',
+    fontSize: 11.5,
+    fontWeight: '500',
+  },
+  modeSegTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  sideControl: {
+    alignItems: 'center',
+    gap: 5,
+    width: 52,
+  },
+  sideControlLabel: {
+    color: '#9A9AB8',
+    fontSize: 10.5,
+  },
+  sessionCountText: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  // Pen side controls (相簿 node TOYLP): #FFFFFF14 boxes, r14.
   controlBtn: {
     alignItems: 'center',
+    justifyContent: 'center',
+    width: 48,
+    height: 48,
     padding: 8,
+    backgroundColor: '#FFFFFF14',
+    borderRadius: 14,
+    minWidth: 52,
   },
   controlBtnActive: {
     opacity: 1,
   },
   controlIcon: {
     fontSize: 26,
-    marginBottom: 4,
-  },
-  controlLabel: {
-    color: COLORS.textSecondary,
-    fontSize: 11,
   },
   scanButton: {
     alignItems: 'center',
@@ -368,15 +602,14 @@ const styles = StyleSheet.create({
   scanButtonDisabled: {
     opacity: 0.6,
   },
+  // Pen Shutter (node TbHVE): 72px accent circle with glow, no white ring.
   scanButtonInner: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: COLORS.primary,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: PALETTE.accent,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 4,
-    borderColor: '#fff',
     shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
@@ -391,30 +624,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     marginTop: 6,
-  },
-  autoScanToggleContainer: {
-    marginTop: 12,
-    alignItems: 'center',
-  },
-  autoScanToggle: {
-    paddingHorizontal: 20,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  autoScanToggleActive: {
-    backgroundColor: 'rgba(255, 107, 157, 0.2)',
-    borderColor: COLORS.primary,
-  },
-  autoScanToggleText: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  autoScanToggleTextActive: {
-    color: COLORS.primary,
   },
 });
 

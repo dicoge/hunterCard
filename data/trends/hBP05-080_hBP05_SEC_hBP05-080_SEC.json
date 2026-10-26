@@ -1,0 +1,15 @@
+{
+  "cardId": "hBP05-080",
+  "name": "SorAZセレブレーション",
+  "nameZh": "SorAZ慶典",
+  "trend": "down",
+  "score": -0.34,
+  "confidence": 0.5,
+  "components": {
+    "priceTrend": -0.61,
+    "ytTrend": 0,
+    "newsSentiment": 0.15
+  },
+  "lastUpdated": "2026-10-03T12:08:42.543Z",
+  "dataPoints": 65
+}

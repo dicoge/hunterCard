@@ -1,0 +1,15 @@
+{
+  "cardId": "hBP05-045",
+  "name": "猫又おかゆ",
+  "nameZh": "貓又小粥",
+  "trend": "down",
+  "score": -0.3,
+  "confidence": 0.5,
+  "components": {
+    "priceTrend": -0.56,
+    "ytTrend": 0,
+    "newsSentiment": 0.15
+  },
+  "lastUpdated": "2026-10-03T12:08:42.533Z",
+  "dataPoints": 65
+}

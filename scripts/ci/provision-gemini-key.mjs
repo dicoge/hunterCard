@@ -1,0 +1,471 @@
+#!/usr/bin/env node
+/**
+ * DIC-P0 hBP09 — GEMINI_API_KEY Production provisioning.
+ *
+ * This is the PRODUCTION provisioning procedure for the exact-SHA deploy
+ * workflow: BEFORE any deployment is created, establish the GitHub Actions
+ * repository secret GEMINI_API_KEY as a SENSITIVE, PRODUCTION-ONLY Vercel
+ * environment variable on the resolved project, PROVE that state by reading
+ * it back, or fail the whole deploy.
+ *
+ * Why it exists: on 2026-09-24 canonical Production answered every hBP09 scan
+ * with 503 RECOGNITION_UNAVAILABLE because the deployment had no
+ * GEMINI_API_KEY. The first repair only added a post-deploy smoke that
+ * DETECTED the missing key; nothing in the pipeline ever PLACED it. This
+ * module closes that gap: the one human action left is adding/rotating the
+ * GitHub Actions secret, and the workflow synchronizes it to Vercel
+ * Production before the deployment exists.
+ *
+ * It lives in a committed file rather than inside the workflow shell for the
+ * same reason verify-alias-binding.mjs does: a heredoc cannot be executed by
+ * a test. scripts/test-gemini-provisioning.mjs runs THIS file's exported
+ * functions against a mock Vercel and proves every property below.
+ *
+ * The Vercel contract this relies on (CR 2a9a285d)
+ * ------------------------------------------------
+ * Taken from the Vercel REST reference, not inferred:
+ *   * POST /v10/projects/{id}/env answers 201 whose body REQUIRES a `failed`
+ *     array; a 201 with a non-empty `failed` array is a write that did NOT
+ *     happen. The HTTP status alone therefore proves nothing.
+ *   * `upsert=true` only updates an existing variable's VALUE; an existing
+ *     variable becomes sensitive only by being removed and re-added
+ *     (docs/environment-variables/sensitive-environment-variables). So an
+ *     upsert can never establish "sensitive + Production-only" over a
+ *     pre-existing plain/encrypted or wider-scoped variable, and this module
+ *     does not use upsert at all.
+ *   * GET /v10/projects/{id}/env lists the variables as `{ envs: [...] }`
+ *     (optionally with `pagination` or `hiddenProductionEnvCount`);
+ *     DELETE /v9/projects/{id}/env/{envId} removes one and returns the
+ *     removed record(s).
+ *
+ * The procedure
+ * -------------
+ *   1. List the project's variables. Any GEMINI_API_KEY entry that reaches
+ *      Production together with ANOTHER environment (preview, development,
+ *      a git branch, a custom environment) is a conflict this module refuses
+ *      to resolve: deleting it would silently strip the key from those other
+ *      environments. Fail closed before any write; the operator splits it.
+ *   2. Remove every GEMINI_API_KEY entry whose scope is exactly Production
+ *      (whatever its type) — this is Vercel's documented remove-and-re-add
+ *      path to a sensitive variable. Entries that do not reach Production
+ *      are left untouched.
+ *   3. Create GEMINI_API_KEY as type "sensitive", target ["production"], and
+ *      require the create answer to confirm exactly that record with an
+ *      empty `failed` array.
+ *   4. List again and require that exactly ONE GEMINI_API_KEY entry reaches
+ *      Production, that it is the record just created, and that it is
+ *      sensitive and Production-only. Only then is the result PROVISIONED.
+ *
+ * Removing the old Production entry before re-adding does not affect any
+ * running deployment (a deployment's environment is fixed when it is
+ * created); if the create step then fails, the deploy stops before a new
+ * deployment exists.
+ *
+ * The security contract
+ * ---------------------
+ *   * Secrets arrive ONLY via environment variables (GEMINI_API_KEY,
+ *     VERCEL_TOKEN, VERCEL_ORG_ID, PROJECT_ID) — never argv, so no secret can
+ *     surface in a process listing or an Actions `run:` transcript.
+ *   * The key value travels ONLY in the create request's JSON body; the token
+ *     travels ONLY in the Authorization header. Neither is ever part of a URL.
+ *   * Response bodies ARE read now (the contract above requires it), but only
+ *     through readBoundedJson(): size-capped, parsed without inspecting the
+ *     parse error (V8 quotes input back in it), and reduced to structural
+ *     booleans/ids. No response byte is ever logged, returned to the caller,
+ *     or persisted — a listed plain/encrypted value may be in there.
+ *   * Every diagnostic is a compile-time constant from a frozen table,
+ *     passed through a final sanitizer, plus at most a bounded three-digit
+ *     status. This file deliberately contains NO template-literal
+ *     interpolation at all; the companion structural suite asserts that.
+ *   * Nothing is written to disk.
+ *   * Missing or empty inputs fail closed BEFORE any request is sent, so a
+ *     misconfigured repository can never reach the deployment-creation step.
+ */
+
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+/** Unambiguous outcomes, mapped 1:1 onto the process exit codes. */
+export const PROVISION_SUCCESS = 0;
+export const PROVISION_FATAL = 1;
+
+/**
+ * The COMPLETE set of strings this module can print. Nothing outside this
+ * table ever reaches stdout or stderr, so no secret byte and no response
+ * byte can either.
+ */
+export const GEMINI_PROVISIONING_MESSAGES = Object.freeze({
+  MISSING_GEMINI_KEY:
+    'The GEMINI_API_KEY repository secret is missing or empty. Add or rotate '
+    + 'it in GitHub Actions secrets (docs/recognition-provisioning.md); '
+    + 'refusing to continue toward a Production deploy that cannot recognise '
+    + 'anything.',
+  MISSING_VERCEL_TOKEN:
+    'VERCEL_TOKEN was not supplied to the provisioning step.',
+  MISSING_VERCEL_ORG:
+    'VERCEL_ORG_ID was not supplied to the provisioning step.',
+  MISSING_PROJECT_ID:
+    'PROJECT_ID was not supplied to the provisioning step; the Vercel project '
+    + 'must be resolved before provisioning runs.',
+  BAD_PROJECT_ID:
+    'PROJECT_ID does not have the expected id shape; refusing to build a '
+    + 'request URL from it.',
+  BAD_ORG_ID:
+    'VERCEL_ORG_ID does not have the expected id shape; refusing to build a '
+    + 'request URL from it.',
+  REQUEST_FAILED:
+    'A Vercel env provisioning request could not be completed at the '
+    + 'transport level.',
+  LIST_FAILED:
+    'The Vercel API did not return a readable env list for the project; '
+    + 'the existing GEMINI_API_KEY state cannot be established, failing the '
+    + 'deploy before any deployment is created.',
+  LIST_INCOMPLETE:
+    'The Vercel env list is paginated or hides Production variables from this '
+    + 'token; the existing GEMINI_API_KEY state cannot be fully established, '
+    + 'failing the deploy before any deployment is created.',
+  SHARED_TARGET_CONFLICT:
+    'An existing GEMINI_API_KEY variable reaches Production AND another '
+    + 'environment. It cannot be made Production-only without removing the '
+    + 'key from that other environment, so nothing was changed. Split it in '
+    + 'the Vercel project settings (docs/recognition-provisioning.md).',
+  DELETE_FAILED:
+    'The Vercel API did not confirm removal of an existing Production-only '
+    + 'GEMINI_API_KEY variable (required to re-add it as sensitive); failing '
+    + 'the deploy before any deployment is created.',
+  API_REJECTED:
+    'The Vercel API did not accept the sensitive Production-only '
+    + 'GEMINI_API_KEY create (non-2xx, or a 2xx carrying failed entries); '
+    + 'failing the deploy before any deployment is created.',
+  CREATE_UNCONFIRMED:
+    'The Vercel create answer did not confirm a sensitive, Production-only '
+    + 'GEMINI_API_KEY record; failing the deploy before any deployment is '
+    + 'created.',
+  VERIFY_FAILED:
+    'Readback did not show exactly one sensitive, Production-only '
+    + 'GEMINI_API_KEY variable matching the record just created; failing the '
+    + 'deploy before any deployment is created.',
+  PROVISIONED:
+    'GEMINI_API_KEY is provisioned and read back as a sensitive, '
+    + 'Production-only Vercel environment variable.',
+});
+
+/** Longest diagnostic this module will ever emit. */
+export const PROVISIONING_MAX_DIAGNOSTIC = 300;
+
+/** Largest response body this module will read (bytes of text). */
+export const PROVISIONING_MAX_RESPONSE_CHARS = 4 * 1024 * 1024;
+
+const ENV_KEY = 'GEMINI_API_KEY';
+const PRODUCTION = 'production';
+
+const isNonEmptyString = (v) => typeof v === 'string' && v.length > 0;
+const isRecord = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+/** Ids are embedded in request URLs, so they must clear a strict shape. */
+const ID_SHAPE = /^[A-Za-z0-9_.-]{1,128}$/;
+
+/**
+ * Final guard on anything headed for a log: strip control bytes (to a space,
+ * before the colon pass), break up `::workflow command::` colon runs, bound
+ * the length. Same discipline as verify-alias-binding.mjs.
+ */
+export function sanitizeDiagnostic(text) {
+  return String(text)
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')
+    .replace(/:{2,}/g, (run) => run.split('').join(' '))
+    .slice(0, PROVISIONING_MAX_DIAGNOSTIC);
+}
+
+const API = 'https://api.vercel.com';
+
+function authHeaders(token) {
+  return {
+    Authorization: 'Bearer ' + token,
+    'Content-Type': 'application/json',
+  };
+}
+
+/** GET /v10/projects/{projectId}/env?teamId={orgId} — no decrypt. */
+export function buildListEnvRequest({ projectId, orgId, token }) {
+  return {
+    url: API + '/v10/projects/' + encodeURIComponent(projectId)
+      + '/env?teamId=' + encodeURIComponent(orgId),
+    init: { method: 'GET', headers: authHeaders(token) },
+  };
+}
+
+/** DELETE /v9/projects/{projectId}/env/{envId}?teamId={orgId}. */
+export function buildDeleteEnvRequest({ projectId, orgId, token, envId }) {
+  return {
+    url: API + '/v9/projects/' + encodeURIComponent(projectId)
+      + '/env/' + encodeURIComponent(envId)
+      + '?teamId=' + encodeURIComponent(orgId),
+    init: { method: 'DELETE', headers: authHeaders(token) },
+  };
+}
+
+/**
+ * POST /v10/projects/{projectId}/env?teamId={orgId} creating a sensitive,
+ * Production-only GEMINI_API_KEY. Deliberately NO `upsert=true`: upsert only
+ * rewrites an existing value and cannot change type or scope, so an existing
+ * Production entry is removed first and a conflicting create must fail.
+ *
+ * @returns {{ url: string, init: { method: string, headers: object, body: string } }}
+ */
+export function buildGeminiEnvRequest({ projectId, orgId, token, geminiApiKey }) {
+  return {
+    url: API + '/v10/projects/' + encodeURIComponent(projectId)
+      + '/env?teamId=' + encodeURIComponent(orgId),
+    init: {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify({
+        key: 'GEMINI_API_KEY',
+        value: geminiApiKey,
+        type: 'sensitive',
+        target: ['production'],
+      }),
+    },
+  };
+}
+
+/**
+ * Reduce a response status to a bounded, printable token. The status is
+ * response-adjacent data, so only a proven three-digit integer may reach a
+ * log; anything else prints as a fixed word.
+ */
+export function boundedStatus(status) {
+  return Number.isInteger(status) && status >= 100 && status <= 599
+    ? String(status)
+    : 'unreadable';
+}
+
+/**
+ * The ONLY place a response body is read. Returns the parsed JSON value, or
+ * undefined for anything unreadable, oversized, or unparseable. The parse
+ * exception is deliberately NOT inspected: V8 quotes a slice of the
+ * offending input back inside `err.message`.
+ */
+export async function readBoundedJson(response) {
+  if (typeof response?.text !== 'function') return undefined;
+  let raw;
+  try {
+    raw = await response.text();
+  } catch {
+    return undefined;
+  }
+  if (typeof raw !== 'string' || raw.length === 0
+    || raw.length > PROVISIONING_MAX_RESPONSE_CHARS) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Vercel documents `target` as an array or a single environment string. */
+function normalizeTargets(target) {
+  if (typeof target === 'string') return [target];
+  if (Array.isArray(target) && target.every((t) => typeof t === 'string')) return target;
+  return null;
+}
+
+/**
+ * Reduce one env record to the only facts this module acts on. Never carries
+ * `value` (or any other field) forward.
+ */
+export function describeEnvRecord(record) {
+  if (!isRecord(record)) return null;
+  const targets = normalizeTargets(record.target);
+  const customIds = record.customEnvironmentIds;
+  const hasCustom = Array.isArray(customIds) ? customIds.length > 0 : customIds != null;
+  const hasBranch = record.gitBranch != null && record.gitBranch !== '';
+  return {
+    id: typeof record.id === 'string' ? record.id : null,
+    isKey: record.key === ENV_KEY,
+    type: typeof record.type === 'string' ? record.type : null,
+    targets,
+    reachesProduction: targets !== null && targets.includes(PRODUCTION),
+    productionOnly: targets !== null && targets.length === 1
+      && targets[0] === PRODUCTION && !hasCustom && !hasBranch,
+  };
+}
+
+/**
+ * Classify a GET env list answer. Fails closed on anything that does not
+ * prove it is the complete, visible set of the project's variables.
+ *
+ * @returns {{ ok: true, entries: object[] } | { ok: false, reason: string }}
+ */
+export function classifyEnvList(body) {
+  if (!isRecord(body) || !Array.isArray(body.envs)) return { ok: false, reason: 'LIST_FAILED' };
+  if (isRecord(body.pagination) && body.pagination.next != null) {
+    return { ok: false, reason: 'LIST_INCOMPLETE' };
+  }
+  if (body.hiddenProductionEnvCount != null && body.hiddenProductionEnvCount !== 0) {
+    return { ok: false, reason: 'LIST_INCOMPLETE' };
+  }
+  const entries = [];
+  for (const raw of body.envs) {
+    const d = describeEnvRecord(raw);
+    if (d === null) return { ok: false, reason: 'LIST_FAILED' };
+    if (!d.isKey) continue;
+    // A GEMINI_API_KEY entry whose scope or id cannot be read is unknown
+    // state that might reach Production — never assume it does not.
+    if (d.targets === null || !isNonEmptyString(d.id) || !ID_SHAPE.test(d.id)) {
+      return { ok: false, reason: 'LIST_FAILED' };
+    }
+    entries.push(d);
+  }
+  return { ok: true, entries };
+}
+
+/**
+ * Classify a POST create answer: 2xx, `failed` present and EMPTY, and
+ * `created` is exactly one sensitive, Production-only GEMINI_API_KEY record.
+ *
+ * @returns {{ ok: true, id: string } | { ok: false, reason: string }}
+ */
+export function classifyCreateAnswer(status, body) {
+  if (status !== 200 && status !== 201) return { ok: false, reason: 'API_REJECTED' };
+  if (!isRecord(body)) return { ok: false, reason: 'CREATE_UNCONFIRMED' };
+  // `failed` is REQUIRED by the documented 201 schema; a missing one is not
+  // an answer this module knows how to trust.
+  if (!Array.isArray(body.failed)) return { ok: false, reason: 'CREATE_UNCONFIRMED' };
+  if (body.failed.length > 0) return { ok: false, reason: 'API_REJECTED' };
+  const created = Array.isArray(body.created) ? body.created : [body.created];
+  if (created.length !== 1) return { ok: false, reason: 'CREATE_UNCONFIRMED' };
+  const d = describeEnvRecord(created[0]);
+  if (d === null || !d.isKey || d.type !== 'sensitive' || !d.productionOnly
+    || !isNonEmptyString(d.id) || !ID_SHAPE.test(d.id)) {
+    return { ok: false, reason: 'CREATE_UNCONFIRMED' };
+  }
+  return { ok: true, id: d.id };
+}
+
+/** A DELETE answer must be 200 and name the removed record's id. */
+export function classifyDeleteAnswer(status, body, envId) {
+  if (status !== 200) return false;
+  const removed = Array.isArray(body) ? body : [body];
+  return removed.some((r) => isRecord(r) && r.id === envId);
+}
+
+/**
+ * Provision GEMINI_API_KEY into Vercel Production, fail-closed.
+ *
+ * @param {object}   args
+ * @param {object}   args.env       Environment map (defaults injected by CLI).
+ * @param {Function} args.fetchImpl fetch-compatible transport.
+ * @param {Function} [args.log]     stdout line sink (default console.log).
+ * @param {Function} [args.logError] stderr line sink (default console.error).
+ * @returns {Promise<{ code: number, reason: string }>}
+ */
+export async function provisionGeminiKey({ env, fetchImpl, log, logError }) {
+  const out = log ?? ((line) => console.log(line));
+  const err = logError ?? ((line) => console.error(line));
+  const fatal = (reason, status) => {
+    err('::error::' + sanitizeDiagnostic(GEMINI_PROVISIONING_MESSAGES[reason])
+      + (status === undefined ? '' : ' (HTTP ' + boundedStatus(status) + ')'));
+    return { code: PROVISION_FATAL, reason };
+  };
+
+  // ── Fail closed on every missing input, BEFORE any request exists ──────
+  const geminiApiKey = env?.GEMINI_API_KEY;
+  const token = env?.VERCEL_TOKEN;
+  const orgId = env?.VERCEL_ORG_ID;
+  const projectId = env?.PROJECT_ID;
+
+  if (!isNonEmptyString(geminiApiKey)) return fatal('MISSING_GEMINI_KEY');
+  if (!isNonEmptyString(token)) return fatal('MISSING_VERCEL_TOKEN');
+  if (!isNonEmptyString(orgId)) return fatal('MISSING_VERCEL_ORG');
+  if (!isNonEmptyString(projectId)) return fatal('MISSING_PROJECT_ID');
+  if (!ID_SHAPE.test(projectId)) return fatal('BAD_PROJECT_ID');
+  if (!ID_SHAPE.test(orgId)) return fatal('BAD_ORG_ID');
+
+  const ids = { projectId, orgId, token };
+
+  // The transport exception is deliberately NOT inspected: its message can
+  // quote the request, and nothing in it is needed to act on this.
+  const send = async (request) => {
+    try {
+      const response = await fetchImpl(request.url, request.init);
+      return { status: response?.status, body: await readBoundedJson(response) };
+    } catch {
+      return null;
+    }
+  };
+
+  const listGemini = async () => {
+    const answer = await send(buildListEnvRequest(ids));
+    if (answer === null) return { ok: false, reason: 'REQUEST_FAILED' };
+    if (answer.status !== 200) return { ok: false, reason: 'LIST_FAILED', status: answer.status };
+    return classifyEnvList(answer.body);
+  };
+
+  // ── 1. Establish the existing state ────────────────────────────────────
+  const before = await listGemini();
+  if (!before.ok) return fatal(before.reason, before.status);
+  const production = before.entries.filter((e) => e.reachesProduction);
+  if (production.some((e) => !e.productionOnly)) return fatal('SHARED_TARGET_CONFLICT');
+
+  // ── 2. Remove Production-only entries (Vercel's path to "sensitive") ──
+  for (const entry of production) {
+    const answer = await send(buildDeleteEnvRequest({ ...ids, envId: entry.id }));
+    if (answer === null) return fatal('REQUEST_FAILED');
+    if (!classifyDeleteAnswer(answer.status, answer.body, entry.id)) {
+      return fatal('DELETE_FAILED', answer.status);
+    }
+  }
+
+  // ── 3. Create the sensitive, Production-only variable ──────────────────
+  const createAnswer = await send(buildGeminiEnvRequest({ ...ids, geminiApiKey }));
+  if (createAnswer === null) return fatal('REQUEST_FAILED');
+  const created = classifyCreateAnswer(createAnswer.status, createAnswer.body);
+  if (!created.ok) return fatal(created.reason, createAnswer.status);
+
+  // ── 4. Read back and prove the resulting state ─────────────────────────
+  const after = await listGemini();
+  if (!after.ok) return fatal(after.reason === 'LIST_INCOMPLETE' ? 'LIST_INCOMPLETE' : 'VERIFY_FAILED', after.status);
+  const reaching = after.entries.filter((e) => e.reachesProduction);
+  if (reaching.length !== 1
+    || reaching[0].id !== created.id
+    || reaching[0].type !== 'sensitive'
+    || !reaching[0].productionOnly) {
+    return fatal('VERIFY_FAILED');
+  }
+
+  out(sanitizeDiagnostic(GEMINI_PROVISIONING_MESSAGES.PROVISIONED));
+  return { code: PROVISION_SUCCESS, reason: 'PROVISIONED' };
+}
+
+/**
+ * CLI: provision-gemini-key.mjs  (no arguments — secrets arrive via env ONLY)
+ * Exits 0 (provisioned) or 1 (fail closed).
+ */
+export async function main() {
+  const result = await provisionGeminiKey({
+    env: process.env,
+    fetchImpl: globalThis.fetch,
+  });
+  return result.code;
+}
+
+const invokedDirectly = process.argv[1]
+  && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
+
+if (invokedDirectly) {
+  main().then(
+    (code) => process.exit(code),
+    () => {
+      // A rejection here would be a programming error in this file; still
+      // fail closed with a fixed line rather than an interpolated stack.
+      console.error('::error::'
+        + sanitizeDiagnostic(GEMINI_PROVISIONING_MESSAGES.REQUEST_FAILED));
+      process.exit(PROVISION_FATAL);
+    },
+  );
+}

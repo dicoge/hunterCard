@@ -219,7 +219,8 @@ await test('current-version inventory persists and survives reload', async () =>
   const raw = platformStorage.getItem(STORE_KEY);
   assert.ok(raw, 'store must write a persisted payload');
   const parsed = JSON.parse(raw);
-  assert.equal(parsed.version, 2, 'persisted payload must be at current schema version (v2 after DIC-1139)');
+  assert.equal(parsed.version, 4, 'persisted payload must be at current schema version (v4: the open deck is session state)');
+  assert.equal('activeDeckId' in parsed.state, false, 'the open deck is NOT persisted (牌組 reopens on the deck list)');
 
   useDeckStore.setState({ decks: [], activeDeckId: null, collection: {} });
   platformStorage.setItem(STORE_KEY, raw);

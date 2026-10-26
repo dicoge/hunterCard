@@ -32,8 +32,10 @@
     },
     "production": {
       "distribution": "store",
+      "credentialsSource": "remote",
       "autoIncrement": true,
       "environment": "production",
+      "node": "22.23.4",
       "env": {
         "EXPO_PUBLIC_STORE_MVP": "1"
       },
@@ -42,6 +44,31 @@
       },
       "android": {
         "buildType": "app-bundle"
+      }
+    },
+    "production-apk": {
+      "extends": "production",
+      "distribution": "internal",
+      "credentialsSource": "remote",
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "production-release": {
+      "extends": "production",
+      "autoIncrement": false
+    },
+    "production-apk-release": {
+      "extends": "production-apk",
+      "autoIncrement": false
+    },
+    "staging-alpha": {
+      "extends": "production",
+      "environment": "preview",
+      "env": {
+        "EXPO_PUBLIC_STORE_MVP": "1",
+        "EXPO_PUBLIC_APP_STAGE": "staging",
+        "EXPO_PUBLIC_APP_ENV": "staging"
       }
     }
   },
@@ -61,7 +88,7 @@
       },
       "android": {
         "serviceAccountKeyPath": "./google-service-account.json",
-        "track": "internal",
+        "track": "production",
         "releaseStatus": "completed",
         "changesNotSentForReview": false
       }

@@ -192,10 +192,17 @@ export interface SourcePrinting {
   /** store acquisition price — card-market display only, never a deck cost */
   buyPrice: number | null;
   /** Image proven by the source listing for this printing. Missing when the
-   * source has no image or conflicting listings publish different images. */
+   * source published no image, or when conflicting listings publish different
+   * images — `imageAmbiguous` tells those two cases apart. */
   imageUrl?: string;
   /** two listings claim this printing at different prices → priced fail-closed */
   ambiguous: boolean;
+  /** Two listings claim this printing with DIFFERENT art. The printing keeps no
+   * image rather than an arbitrary pick, and a caller must not substitute
+   * card-level art for it either — the source genuinely disagrees about what
+   * this printing looks like (DIC-1430). Distinct from "no image published",
+   * where card-level art is still honest. */
+  imageAmbiguous?: boolean;
 }
 
 /**
@@ -252,9 +259,9 @@ export function buildSourcePrintings(
   }
 
   for (const [printing, images] of imageUrls) {
-    if (images.size === 1) {
-      (byPrinting.get(printing) as SourcePrinting).imageUrl = Array.from(images)[0];
-    }
+    const entry = byPrinting.get(printing) as SourcePrinting;
+    if (images.size === 1) entry.imageUrl = Array.from(images)[0];
+    else if (images.size > 1) entry.imageAmbiguous = true;
   }
 
   return order.map((printing) => byPrinting.get(printing) as SourcePrinting);

@@ -1,6 +1,18 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import platformStorage from '../stores/storage';
+import { authDiagnostic } from '../services/scanDiagnostics';
+import { recordDiagnostic } from '../services/diagnosticsSink';
+
+/** Local, sanitised sign-in failure record (stage + code only). Never throws. */
+function recordAuthFailure(err: unknown, provider: 'google' | 'apple', operation: string): void {
+  try {
+    const d = authDiagnostic(err, provider);
+    recordDiagnostic('auth', { auth: { stage: `${operation}_${d.stage}`.slice(0, 32), code: d.code } });
+  } catch {
+    // diagnostics are best-effort
+  }
+}
 import {
   HoloUser,
   AuthProvider,
@@ -16,6 +28,7 @@ import {
   completePendingWebGoogleLogin,
   hasPendingWebGoogleRedirectReturn,
 } from '../services/authService';
+import { useAccountSyncOutboxStore } from './accountSyncOutboxStore';
 import {
   friendlyAuthErrorMessage,
   isCancelAuthError,
@@ -76,6 +89,7 @@ export const useAuthStore = create<AuthStore>()(
             role: user.role,
           });
         } catch (err: any) {
+          recordAuthFailure(err, 'google', 'login');
           // The root login gate (LoginScreen) renders `error` verbatim, so we
           // must map it to a friendly-but-safe string HERE — never store a raw
           // provider/SDK/network/backend message that could leak an id_token,
@@ -102,6 +116,7 @@ export const useAuthStore = create<AuthStore>()(
             role: user.role,
           });
         } catch (err: any) {
+          recordAuthFailure(err, 'apple', 'login');
           // Same friendly-but-safe mapping as Google (DIC-928 blocker 1): the
           // gate renders this string, so it must never be a raw provider error.
           set({
@@ -151,6 +166,7 @@ export const useAuthStore = create<AuthStore>()(
             adoptedSession = true;
           }
         } catch (err: any) {
+          recordAuthFailure(err, 'google', 'web_return');
           set({
             isLoading: false,
             error: isCancelAuthError(err) ? null : friendlyAuthErrorMessage(err, 'google'),
@@ -252,6 +268,10 @@ export const useAuthStore = create<AuthStore>()(
             error: null,
             role: 'guest',
           });
+          // The account no longer exists: any pending edits parked for it on this
+          // device (account-sync outbox, v41) are discarded, never restored. Done after
+          // the session is cleared so it also removes what that sign-out just parked.
+          try { useAccountSyncOutboxStore.getState().discard(user.internalId); } catch { /* best effort */ }
         } catch (err: any) {
           set({ isLoading: false, error: err.message || 'Failed to delete account' });
           throw err;

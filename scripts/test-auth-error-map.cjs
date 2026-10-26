@@ -63,6 +63,42 @@ function testClientMissingIsRecognisable() {
   assert.match(m, /設定/);
 }
 
+function testAndroidNativeGoogleCodesAreDistinct() {
+  // DIC-1318: the Android native path used to collapse every non-cancel
+  // GoogleSignin.signIn() failure to the generic `google_failed` banner, so a
+  // Play App Signing SHA-1 that isn't registered in Google Cloud Console (the
+  // classic release-build symptom) looked identical to a flaky network. Each
+  // preserved SDK code must now produce a DISTINCT friendly message so support
+  // can diagnose from a screenshot.
+  const codes = [
+    'google_developer_error',
+    'google_internal_error',
+    'google_in_progress',
+    'google_sign_in_required',
+    'google_failed',
+    'network_error',
+    'play_services_unavailable',
+  ];
+  const msgs = codes.map((code) => friendlyAuthErrorMessage({ code, status: 400 }, 'google'));
+  for (let i = 0; i < codes.length; i++) {
+    assert.ok(msgs[i] && msgs[i].length > 0, `empty message for ${codes[i]}`);
+  }
+  // Every code above resolves to its OWN string — the DIC-1318 anti-regression:
+  // if a future refactor drops one branch, its message collapses to another and
+  // this Set-size check fails.
+  const unique = new Set(msgs);
+  assert.equal(
+    unique.size,
+    codes.length,
+    `expected ${codes.length} distinct messages, got ${unique.size}: ${[...unique].join(' | ')}`,
+  );
+  // The support-facing screenshot must carry the developer-error MACHINE code
+  // verbatim so a report can be filed against the right root cause; verify.
+  const dev = friendlyAuthErrorMessage({ code: 'google_developer_error', status: 400 }, 'google');
+  assert.ok(dev.includes('google_developer_error'),
+    `developer-error message must expose the code label, got: ${dev}`);
+}
+
 function testWebRedirectTransportCodesAreDistinct() {
   // DIC-976: the web-Google same-window redirect transport can fail in several
   // ways that MUST each be distinguishable, not collapse to the generic default
@@ -142,6 +178,7 @@ function testNullishSafe() {
 const tests = [
   testDistinctCausesGiveDistinctMessages,
   testClientMissingIsRecognisable,
+  testAndroidNativeGoogleCodesAreDistinct,
   testWebRedirectTransportCodesAreDistinct,
   testRedirectingSentinelIsCancelLike,
   testCancelDetection,

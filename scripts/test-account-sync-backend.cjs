@@ -92,6 +92,33 @@ const kv = {
         kvState.values.delete(userKey);
         return 'OK';
       }
+      if (script.includes('-- STAGE')) {
+        // KEYS = [lock, detail, identities]; ARGV = [token, ttl, detailJson, member]
+        // stage a link: SET detail + SADD member
+        kvState.values.set(keys[1], JSON.parse(args[2]));
+        const set = kvState.sets.get(keys[2]) ?? new Set();
+        set.add(args[3]);
+        kvState.sets.set(keys[2], set);
+        return 'OK';
+      }
+      if (script.includes('-- ROLLBACK')) {
+        // KEYS = [lock, idx, detail, identities]; ARGV = [token, ttl, idxOwner, member]
+        if (kvState.values.get(keys[1]) === args[2]) kvState.values.delete(keys[1]);
+        kvState.values.delete(keys[2]);
+        const setR = kvState.sets.get(keys[3]);
+        if (setR) setR.delete(args[3]);
+        return 'OK';
+      }
+      if (script.includes('-- UNLINK')) {
+        // KEYS = [lock, idx, detail, identities, user]
+        // ARGV = [token, ttl, idxOwner, member, userJson]
+        if (kvState.values.get(keys[1]) === args[2]) kvState.values.delete(keys[1]);
+        kvState.values.delete(keys[2]);
+        const setU = kvState.sets.get(keys[3]);
+        if (setU) setU.delete(args[3]);
+        kvState.values.set(keys[4], args[4]);
+        return 'OK';
+      }
       throw new Error(`unexpected fenced eval: ${script}`);
     }
     if (script.includes("redis.call('DEL', KEYS[1])")) {
@@ -160,6 +187,7 @@ for (const rel of [
   'api/_lib/apple-token-store.ts',
   'api/auth/[action].ts',
   'api/auth/delete-account.ts',
+  'src/utils/scanSessionSync.ts',
 ]) compileTs(rel);
 
 const { issueSession } = require(path.join(outDir, 'api/_lib/session.js'));
@@ -613,7 +641,273 @@ async function testDeletedAccountTokenCannotReadWriteOrRecreateSyncData() {
   assert.equal(kvState.values.has(`account-sync:idempotency:${user.internalId}:idem-delete-0002`), false, 'stale token must not create idempotency data');
 }
 
+// ── DIC-1380 W12 CR: Apple-linked deletion is NOT in-app self-service.
+// `api/_lib/apple-token-store.ts` is a non-shipping stub —
+// `getStoredAppleRefreshToken` always returns null. Consequently
+// `POST /api/auth/delete-account` MUST return 501 for an Apple-linked
+// account, whether or not APPLE_* env vars are configured, and MUST
+// NOT delete anything. Mac-Codex W12 evidence: the previous green
+// suite only exercised Google identities and never proved this.
+async function testAppleLinkedDeleteReturns501NoConfig() {
+  resetKv(); configureBackend();
+  // Ensure APPLE_* env vars are UNSET so getAppleConfig() returns null.
+  delete process.env.APPLE_TEAM_ID;
+  delete process.env.APPLE_CLIENT_ID;
+  delete process.env.APPLE_KEY_ID;
+  delete process.env.APPLE_PRIVATE_KEY;
+  const { user } = await identityStore.loginOrCreate({
+    provider: 'apple',
+    subject: 'apple-sub-delete-a',
+    email: 'apple-a@example.test',
+  });
+  const session = issueSession(user.internalId);
+  // Prime an account-sync record so we can assert it is NOT deleted.
+  kvState.values.set(`account-sync:user:${user.internalId}`, JSON.stringify({ revision: 1 }));
+  const res = await requestDeleteAccount(session);
+  assert.equal(res.status, 501, 'Apple-linked delete without APPLE_* config must be 501');
+  assert.equal(res.body.reason, 'apple_revocation_not_configured');
+  assert.equal(res.body.deleted, false);
+  // Nothing was actually deleted.
+  assert.equal(kvState.values.has(`account-sync:user:${user.internalId}`), true, 'user sync data must NOT be cascade-deleted when Apple revocation cannot run');
+  // Identity still resolves.
+  const stillThere = await identityStore.getUser(user.internalId);
+  assert.ok(stillThere, 'Apple identity mapping must still resolve after fail-closed 501');
+}
+
+async function testAppleLinkedDeleteReturns501WithConfigButNoStoredToken() {
+  resetKv(); configureBackend();
+  // Configure APPLE_* env vars so getAppleConfig() returns non-null.
+  process.env.APPLE_TEAM_ID = 'TEAM123';
+  process.env.APPLE_CLIENT_ID = 'com.example.holohunter';
+  process.env.APPLE_KEY_ID = 'KEY123';
+  process.env.APPLE_PRIVATE_KEY = '-----BEGIN PRIVATE KEY-----\\ntest\\n-----END PRIVATE KEY-----';
+  const { user } = await identityStore.loginOrCreate({
+    provider: 'apple',
+    subject: 'apple-sub-delete-b',
+    email: 'apple-b@example.test',
+  });
+  const session = issueSession(user.internalId);
+  kvState.values.set(`account-sync:user:${user.internalId}`, JSON.stringify({ revision: 1 }));
+  const res = await requestDeleteAccount(session);
+  assert.equal(res.status, 501, 'Apple-linked delete with config but no stored token must be 501');
+  // With APPLE_* configured but the token store still a stub, the
+  // second-tier reason must be `apple_deletion_not_implemented` (this
+  // is precisely the state Mac-Codex flagged in W12).
+  assert.equal(res.body.reason, 'apple_deletion_not_implemented');
+  assert.equal(res.body.deleted, false);
+  assert.equal(kvState.values.has(`account-sync:user:${user.internalId}`), true, 'user sync data must NOT be cascade-deleted when apple refresh_token is unavailable');
+  const stillThere = await identityStore.getUser(user.internalId);
+  assert.ok(stillThere, 'Apple identity mapping must still resolve after fail-closed 501 (stub token store)');
+  // Cleanup env for the next test.
+  delete process.env.APPLE_TEAM_ID;
+  delete process.env.APPLE_CLIENT_ID;
+  delete process.env.APPLE_KEY_ID;
+  delete process.env.APPLE_PRIVATE_KEY;
+}
+
+async function testGoogleLinkedDeleteStillSucceedsAfterAppleFail() {
+  // Sanity: the fail-closed Apple branch must NOT regress the working
+  // Google branch. A Google-linked account still deletes cleanly.
+  resetKv(); configureBackend();
+  delete process.env.APPLE_TEAM_ID;
+  const { user, session } = await createSession('google-after-apple');
+  kvState.values.set(`account-sync:user:${user.internalId}`, JSON.stringify({ revision: 1 }));
+  const res = await requestDeleteAccount(session);
+  assert.equal(res.status, 200, 'Google-linked deletion still works after Apple fail-closed patch');
+  assert.equal(res.body.deleted, true);
+  assert.equal(res.body.revokedApple, false);
+  assert.equal(kvState.values.has(`account-sync:user:${user.internalId}`), false, 'Google delete still cascades');
+}
+
+// DIC-1381 W13 CR — a Google+Apple dual-linked account MUST take the
+// same fail-closed 501 path as an Apple-only account. The delete handler
+// checks `user.linkedProviders.some(p => p.provider === 'apple')`, so
+// ANY apple identity — even a secondary one linked on top of Google —
+// blocks self-service deletion. If the copy claims "Google-linked can
+// self-delete" (and does not qualify with "Google-only, no Apple"), a
+// Google+Apple user reading it is misled. This test proves both 501
+// branches trigger for that account shape, and no data is deleted.
+async function testDualLinkedGoogleApple501WithoutConfig() {
+  resetKv(); configureBackend();
+  delete process.env.APPLE_TEAM_ID;
+  delete process.env.APPLE_CLIENT_ID;
+  delete process.env.APPLE_KEY_ID;
+  delete process.env.APPLE_PRIVATE_KEY;
+  // Create a Google-first account.
+  const { user, session } = await createSession('dual-link-a');
+  // Then link an Apple identity on top of it.
+  const linked = await identityStore.linkIdentity(user.internalId, {
+    provider: 'apple',
+    subject: 'apple-linked-on-google',
+    email: 'apple-on-google-a@example.test',
+  });
+  assert.equal(linked.alreadyLinked, false);
+  assert.ok(
+    linked.user.linkedProviders.some((p) => p.provider === 'apple'),
+    'dual-linked user must have an Apple identity in linkedProviders',
+  );
+  assert.ok(
+    linked.user.linkedProviders.some((p) => p.provider === 'google'),
+    'dual-linked user must still carry the original Google identity',
+  );
+  kvState.values.set(`account-sync:user:${user.internalId}`, JSON.stringify({ revision: 1 }));
+  const res = await requestDeleteAccount(session);
+  assert.equal(res.status, 501, 'Google+Apple account MUST fail closed like Apple-only');
+  assert.equal(res.body.reason, 'apple_revocation_not_configured', 'without APPLE_* config, dual-linked delete lands on apple_revocation_not_configured');
+  assert.equal(res.body.deleted, false);
+  assert.equal(
+    kvState.values.has(`account-sync:user:${user.internalId}`),
+    true,
+    'dual-linked user sync data must NOT be cascade-deleted when Apple revocation cannot run',
+  );
+  const stillThere = await identityStore.getUser(user.internalId);
+  assert.ok(stillThere, 'dual-linked identity mapping must survive after fail-closed 501');
+  assert.equal(
+    stillThere.linkedProviders.some((p) => p.provider === 'apple'),
+    true,
+    'the Apple identity must still be linked after fail-closed 501',
+  );
+  assert.equal(
+    stillThere.linkedProviders.some((p) => p.provider === 'google'),
+    true,
+    'the Google identity must still be linked after fail-closed 501',
+  );
+}
+
+async function testDualLinkedGoogleApple501WithConfigButNoStoredToken() {
+  resetKv(); configureBackend();
+  process.env.APPLE_TEAM_ID = 'TEAM123';
+  process.env.APPLE_CLIENT_ID = 'com.example.holohunter';
+  process.env.APPLE_KEY_ID = 'KEY123';
+  process.env.APPLE_PRIVATE_KEY = '-----BEGIN PRIVATE KEY-----\\ntest\\n-----END PRIVATE KEY-----';
+  const { user, session } = await createSession('dual-link-b');
+  const linked = await identityStore.linkIdentity(user.internalId, {
+    provider: 'apple',
+    subject: 'apple-linked-on-google-b',
+    email: 'apple-on-google-b@example.test',
+  });
+  assert.equal(linked.alreadyLinked, false);
+  kvState.values.set(`account-sync:user:${user.internalId}`, JSON.stringify({ revision: 1 }));
+  const res = await requestDeleteAccount(session);
+  assert.equal(res.status, 501, 'Google+Apple with APPLE_* configured but no stored token must be 501');
+  assert.equal(res.body.reason, 'apple_deletion_not_implemented', 'second-tier 501 reason: apple_deletion_not_implemented');
+  assert.equal(res.body.deleted, false);
+  assert.equal(
+    kvState.values.has(`account-sync:user:${user.internalId}`),
+    true,
+    'dual-linked user sync data must NOT be cascade-deleted when Apple refresh_token is unavailable',
+  );
+  const stillThere = await identityStore.getUser(user.internalId);
+  assert.ok(stillThere, 'dual-linked identity mapping must survive after fail-closed 501 (stub token store)');
+  delete process.env.APPLE_TEAM_ID;
+  delete process.env.APPLE_CLIENT_ID;
+  delete process.env.APPLE_KEY_ID;
+  delete process.env.APPLE_PRIVATE_KEY;
+}
+
+// v41 (2026-10-17): the 估值清單 travels as an additive, validated `scanSession`.
+const scanEntry = (id, over = {}) => ({
+  instanceId: id,
+  scannedAt: '2026-10-17T01:00:00.000Z',
+  card: { id: 'hBP01-010_hBP01_U_hBP01-010_U', cardNumber: 'hBP01-010', name: '天音かなた', rarity: 'U', series: 'hBP01', imageUrl: 'https://hololive-official-cardgame.com/x.png', sellPrice: 30 },
+  priceVersions: [{ name: '天音かなた', printing: 'BASE', sellPrice: 30, buyPrice: null }],
+  selectedVersion: 0,
+  versionConfident: true,
+  ...over,
+});
+
+async function testScanSessionRoundTripAndUserIsolation() {
+  resetKv(); configureBackend();
+  const a = await createSession('scan-user-a');
+  const b = await createSession('scan-user-b');
+  let res = await request('GET', undefined, a.session);
+  assert.deepEqual(res.body.snapshot.scanSession, { entries: [], clearedAt: null }, 'a fresh account has an empty list');
+  res = await request('POST', {
+    baseRevision: 0, idempotencyKey: 'scan-0001', userId: b.user.internalId,
+    patch: { scanSession: { entries: [scanEntry('m1abc-x1')], clearedAt: null } },
+  }, a.session);
+  assert.equal(res.status, 200);
+  assert.equal(res.body.snapshot.scanSession.entries[0].instanceId, 'm1abc-x1');
+  // B (another Google account) sees nothing of A's list, whatever userId A put in the body.
+  res = await request('GET', undefined, b.session);
+  assert.deepEqual(res.body.snapshot.scanSession.entries, [], 'user B never sees user A data');
+  assert.equal(res.body.snapshot.revision, 0);
+  // A second device of A reads the same list.
+  res = await request('GET', undefined, a.session);
+  assert.equal(res.body.snapshot.scanSession.entries.length, 1);
+  // A patch without scanSession keeps it (other fields only).
+  res = await request('POST', { baseRevision: 1, idempotencyKey: 'scan-0002', patch: { settings: { preferredLanguage: 'ja' } } }, a.session);
+  assert.equal(res.body.snapshot.scanSession.entries.length, 1, 'untouched field kept');
+  // An old snapshot written before v41 (no scanSession) reads as an empty list.
+  kvState.values.set(`account-sync:user:${b.user.internalId}`, JSON.stringify({ schemaVersion: 1, revision: 4, collection: { 'x|BASE': 1 } }));
+  res = await request('GET', undefined, b.session);
+  assert.deepEqual(res.body.snapshot.scanSession, { entries: [], clearedAt: null });
+  assert.equal(res.body.snapshot.collection['x|BASE'], 1);
+}
+
+async function testScanSessionValidationRejectsHostileEntries() {
+  resetKv(); configureBackend();
+  const { session } = await createSession('scan-user-c');
+  const bad = [
+    [{ entries: [scanEntry('ok-1', { instanceId: '../../etc' })], clearedAt: null }, 'instanceId format'],
+    [{ entries: [scanEntry('ok-2'), scanEntry('ok-2')], clearedAt: null }, 'duplicate instanceId'],
+    [{ entries: [scanEntry('ok-3', { card: { ...scanEntry('x').card, imageUrl: 'javascript:alert(1)' } })], clearedAt: null }, 'non-https image'],
+    [{ entries: [scanEntry('ok-4', { card: { ...scanEntry('x').card, name: 'x'.repeat(5000) } })], clearedAt: null }, 'overlong text'],
+    [{ entries: [scanEntry('ok-5', { selectedVersion: -1 })], clearedAt: null }, 'negative version'],
+    [{ entries: [scanEntry('ok-6', { versionConfident: 'yes' })], clearedAt: null }, 'non-boolean'],
+    [{ entries: [scanEntry('ok-7', { scannedAt: 'yesterday' })], clearedAt: null }, 'bad timestamp'],
+    [{ entries: 'nope', clearedAt: null }, 'entries not array'],
+  ];
+  let idem = 100;
+  for (const [scanSession, why] of bad) {
+    const res = await request('POST', { baseRevision: 0, idempotencyKey: `scan-bad-${idem++}`, patch: { scanSession } }, session);
+    assert.equal(res.status, 400, `${why} rejected`);
+  }
+  const tooMany = { entries: Array.from({ length: 301 }, (_, i) => scanEntry(`n-${i}`)), clearedAt: null };
+  const res = await request('POST', { baseRevision: 0, idempotencyKey: 'scan-bad-many', patch: { scanSession: tooMany } }, session);
+  assert.ok(res.status === 413 || res.status === 400, 'over the entry cap rejected');
+  assert.equal((await request('GET', undefined, session)).body.snapshot.revision, 0, 'nothing committed');
+}
+
+async function testScanSelectionProvenanceIsKept() {
+  // CR 93677fb: the optional explicit-pick time is validated, stored and returned;
+  // older clients (no field) still work; a malformed one is rejected; a time ahead of
+  // the server clock is capped to now.
+  resetKv(); configureBackend();
+  const { session } = await createSession('scan-user-sel');
+  let res = await request('POST', { baseRevision: 0, idempotencyKey: 'sel-0001', patch: { scanSession: { entries: [
+    scanEntry('sel-1', { selectedAt: '2026-10-16T10:00:00.000Z' }), scanEntry('sel-2'),
+  ], clearedAt: null } } }, session);
+  assert.equal(res.status, 200);
+  res = await request('GET', undefined, session);
+  const byId = Object.fromEntries(res.body.snapshot.scanSession.entries.map((e) => [e.instanceId, e]));
+  assert.equal(byId['sel-1'].selectedAt, '2026-10-16T10:00:00.000Z', 'kept on the server');
+  assert.equal('selectedAt' in byId['sel-2'], false, 'absent stays absent (older clients)');
+  res = await request('POST', { baseRevision: 1, idempotencyKey: 'sel-0002', patch: { scanSession: { entries: [scanEntry('sel-3', { selectedAt: 'soon' })], clearedAt: null } } }, session);
+  assert.equal(res.status, 400, 'malformed selectedAt rejected');
+  const future = new Date(Date.now() + 10 * 24 * 3600 * 1000).toISOString();
+  res = await request('POST', { baseRevision: 1, idempotencyKey: 'sel-0003', patch: { scanSession: { entries: [scanEntry('sel-4', { selectedAt: future })], clearedAt: null } } }, session);
+  assert.equal(res.status, 200);
+  const stored = res.body.snapshot.scanSession.entries[0].selectedAt;
+  assert.ok(Date.parse(stored) <= Date.now(), `a future pick time is capped to the server clock (${stored})`);
+}
+
+async function testForgedSessionCannotReadAnotherUser() {
+  resetKv(); configureBackend();
+  const a = await createSession('scan-user-d');
+  await request('POST', { baseRevision: 0, idempotencyKey: 'scan-d-001', patch: { collection: { 'hBP01-001|BASE': 3 } } }, a.session);
+  const forged = `${a.session.slice(0, -4)}AAAA`;
+  const res = await request('GET', undefined, forged);
+  assert.equal(res.status, 401, 'tampered session signature rejected');
+  const res2 = await request('GET', undefined, a.user.internalId);
+  assert.equal(res2.status, 401, 'a bare user id is not a session');
+}
+
 (async () => {
+  await testScanSessionRoundTripAndUserIsolation();
+  await testScanSelectionProvenanceIsKept();
+  await testScanSessionValidationRejectsHostileEntries();
+  await testForgedSessionCannotReadAnotherUser();
   await testUnauthorizedFailsClosed();
   await testSnapshotRoundTripBySessionUser();
   await testOptimisticConflictAndIdempotentReplay();
@@ -626,6 +920,11 @@ async function testDeletedAccountTokenCannotReadWriteOrRecreateSyncData() {
   await testAccountDeleteCascadeHook();
   await testAuthorizedSyncCannotCommitAfterDeletionFence();
   await testDeletedAccountTokenCannotReadWriteOrRecreateSyncData();
+  await testAppleLinkedDeleteReturns501NoConfig();
+  await testAppleLinkedDeleteReturns501WithConfigButNoStoredToken();
+  await testGoogleLinkedDeleteStillSucceedsAfterAppleFail();
+  await testDualLinkedGoogleApple501WithoutConfig();
+  await testDualLinkedGoogleApple501WithConfigButNoStoredToken();
   console.log('account sync backend tests passed');
 })().catch((err) => {
   console.error(err);

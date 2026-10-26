@@ -1,0 +1,1547 @@
+{
+  "schema": 1,
+  "state": "CONTRACT_FIXTURES_PREPARED_NOT_CANDIDATE_PASS",
+  "input": "synthetic image frames; no OCR tokens supplied to detector",
+  "network": "must be replaced with local in-memory recognition seam; reject all real HTTP",
+  "clock": "virtual, no 45*700ms wall wait",
+  "initialState": {
+    "consent": true,
+    "allowance": 50,
+    "foreground": true,
+    "focused": true,
+    "scanFrame": {
+      "x": 30,
+      "y": 55,
+      "width": 260,
+      "height": 360
+    }
+  },
+  "frameOverrides": {
+    "landscapePreview": {
+      "scanFrame": {
+        "x": 110,
+        "y": 30,
+        "width": 260,
+        "height": 300
+      }
+    },
+    "tallPreview": {
+      "scanFrame": {
+        "x": 30,
+        "y": 80,
+        "width": 260,
+        "height": 400
+      }
+    }
+  },
+  "assets": {
+    "blank": {
+      "path": "images/blank.png",
+      "size": [
+        320,
+        480
+      ],
+      "sha256": "756143ffa84d0e81970f626b8a1f9630110d6bf5ebb7f4a226a29b2a4517bf73",
+      "containsReadableCardNumber": false
+    },
+    "cardA": {
+      "path": "images/cardA.png",
+      "size": [
+        320,
+        480
+      ],
+      "sha256": "bf9b38b4f45aaf5df0a1918a855de68cd4eaac5d366fe0cf5f89fa6856959238",
+      "containsReadableCardNumber": false
+    },
+    "cardB": {
+      "path": "images/cardB.png",
+      "size": [
+        320,
+        480
+      ],
+      "sha256": "06dde8e943095df1ebfd5088c85a103226f310a9dcf56d4b604655a016c0fd5d",
+      "containsReadableCardNumber": false
+    },
+    "jitter": {
+      "path": "images/jitter.png",
+      "size": [
+        320,
+        480
+      ],
+      "sha256": "2385ebe56053455d6a16c624593aa38e1c576eb8dca4816d5ce2ea65e431de0a",
+      "containsReadableCardNumber": false
+    },
+    "moveLeft": {
+      "path": "images/moveLeft.png",
+      "size": [
+        320,
+        480
+      ],
+      "sha256": "7523f6a23aeb7ce432c007aea8720c676eed30e83311fe2d83cc8dbb5e6029fc",
+      "containsReadableCardNumber": false
+    },
+    "moveRight": {
+      "path": "images/moveRight.png",
+      "size": [
+        320,
+        480
+      ],
+      "sha256": "ef69d3ccae50983c464f6ee8a921d1ec19238c5955a0092ddcb9e5e69bc8ccc8",
+      "containsReadableCardNumber": false
+    },
+    "outside": {
+      "path": "images/outside.png",
+      "size": [
+        320,
+        480
+      ],
+      "sha256": "5035a3e13875b491d76a4c6a99bc466e0d049987fb8ebb3550ce0afbdee74b0e",
+      "containsReadableCardNumber": false
+    },
+    "twoCards": {
+      "path": "images/twoCards.png",
+      "size": [
+        320,
+        480
+      ],
+      "sha256": "a40a994f2ccbe69da73d82ea5533fb40bcf8b15df90a360e2f7d6de8a767db36",
+      "containsReadableCardNumber": false
+    },
+    "wrongAspect": {
+      "path": "images/wrongAspect.png",
+      "size": [
+        320,
+        480
+      ],
+      "sha256": "1cfe61a2460d20ddd3e7c05f41e4f95e9896b183a8833b668c2ac32313a5a987",
+      "containsReadableCardNumber": false
+    },
+    "small": {
+      "path": "images/small.png",
+      "size": [
+        320,
+        480
+      ],
+      "sha256": "ca634cca4cbd8dfe7095077706837dbd0788fcca39a7ecfae1fc2bed01cb5473",
+      "containsReadableCardNumber": false
+    },
+    "landscapePreview": {
+      "path": "images/landscapePreview.png",
+      "size": [
+        480,
+        360
+      ],
+      "sha256": "776563a88104c43bf15d56e3361aaa6d6a0b44388f7f8dc1745217ffa1d6fa63",
+      "containsReadableCardNumber": false
+    },
+    "tallPreview": {
+      "path": "images/tallPreview.png",
+      "size": [
+        320,
+        640
+      ],
+      "sha256": "8798feeb893acb4c652026141090f9bb0224ad5f0d0a1cd73980304bc1d52bea",
+      "containsReadableCardNumber": false
+    }
+  },
+  "cases": [
+    {
+      "name": "empty45_then_card_resumes_without_OCR_or_shutter",
+      "events": [
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        }
+      ],
+      "expected": {
+        "captures": 1,
+        "mockRecognitionRequests": 1,
+        "quotaCommits": 0
+      }
+    },
+    {
+      "name": "empty90_never_blind_capture",
+      "events": [
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        }
+      ],
+      "expected": {
+        "captures": 0,
+        "mockRecognitionRequests": 0,
+        "quotaCommits": 0
+      }
+    },
+    {
+      "name": "stable_card_without_any_readable_card_number",
+      "events": [
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        }
+      ],
+      "expected": {
+        "captures": 1,
+        "mockRecognitionRequests": 1,
+        "quotaCommits": 0
+      }
+    },
+    {
+      "name": "small_hand_jitter_is_stable",
+      "events": [
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "jitter",
+          "dtMs": 700
+        },
+        {
+          "image": "jitter",
+          "dtMs": 700
+        },
+        {
+          "image": "jitter",
+          "dtMs": 700
+        }
+      ],
+      "expected": {
+        "captures": 1,
+        "mockRecognitionRequests": 1,
+        "quotaCommits": 0
+      }
+    },
+    {
+      "name": "moving_card_never_captures",
+      "events": [
+        {
+          "image": "moveLeft",
+          "dtMs": 700
+        },
+        {
+          "image": "moveRight",
+          "dtMs": 700
+        },
+        {
+          "image": "moveLeft",
+          "dtMs": 700
+        },
+        {
+          "image": "moveRight",
+          "dtMs": 700
+        },
+        {
+          "image": "moveLeft",
+          "dtMs": 700
+        },
+        {
+          "image": "moveRight",
+          "dtMs": 700
+        },
+        {
+          "image": "moveLeft",
+          "dtMs": 700
+        },
+        {
+          "image": "moveRight",
+          "dtMs": 700
+        },
+        {
+          "image": "moveLeft",
+          "dtMs": 700
+        },
+        {
+          "image": "moveRight",
+          "dtMs": 700
+        }
+      ],
+      "expected": {
+        "captures": 0,
+        "mockRecognitionRequests": 0,
+        "quotaCommits": 0
+      }
+    },
+    {
+      "name": "motion_then_settles",
+      "events": [
+        {
+          "image": "moveLeft",
+          "dtMs": 700
+        },
+        {
+          "image": "moveRight",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        }
+      ],
+      "expected": {
+        "captures": 1,
+        "mockRecognitionRequests": 1,
+        "quotaCommits": 0
+      }
+    },
+    {
+      "name": "outside_scan_frame",
+      "events": [
+        {
+          "image": "outside",
+          "dtMs": 700
+        },
+        {
+          "image": "outside",
+          "dtMs": 700
+        },
+        {
+          "image": "outside",
+          "dtMs": 700
+        },
+        {
+          "image": "outside",
+          "dtMs": 700
+        },
+        {
+          "image": "outside",
+          "dtMs": 700
+        }
+      ],
+      "expected": {
+        "captures": 0,
+        "mockRecognitionRequests": 0,
+        "quotaCommits": 0
+      }
+    },
+    {
+      "name": "two_cards_ambiguous",
+      "events": [
+        {
+          "image": "twoCards",
+          "dtMs": 700
+        },
+        {
+          "image": "twoCards",
+          "dtMs": 700
+        },
+        {
+          "image": "twoCards",
+          "dtMs": 700
+        },
+        {
+          "image": "twoCards",
+          "dtMs": 700
+        },
+        {
+          "image": "twoCards",
+          "dtMs": 700
+        }
+      ],
+      "expected": {
+        "captures": 0,
+        "mockRecognitionRequests": 0,
+        "quotaCommits": 0
+      }
+    },
+    {
+      "name": "wrong_aspect_not_a_card",
+      "events": [
+        {
+          "image": "wrongAspect",
+          "dtMs": 700
+        },
+        {
+          "image": "wrongAspect",
+          "dtMs": 700
+        },
+        {
+          "image": "wrongAspect",
+          "dtMs": 700
+        },
+        {
+          "image": "wrongAspect",
+          "dtMs": 700
+        },
+        {
+          "image": "wrongAspect",
+          "dtMs": 700
+        }
+      ],
+      "expected": {
+        "captures": 0,
+        "mockRecognitionRequests": 0,
+        "quotaCommits": 0
+      }
+    },
+    {
+      "name": "tiny_card_unusable",
+      "events": [
+        {
+          "image": "small",
+          "dtMs": 700
+        },
+        {
+          "image": "small",
+          "dtMs": 700
+        },
+        {
+          "image": "small",
+          "dtMs": 700
+        },
+        {
+          "image": "small",
+          "dtMs": 700
+        },
+        {
+          "image": "small",
+          "dtMs": 700
+        }
+      ],
+      "expected": {
+        "captures": 0,
+        "mockRecognitionRequests": 0,
+        "quotaCommits": 0
+      }
+    },
+    {
+      "name": "landscape_preview_mapping",
+      "events": [
+        {
+          "image": "landscapePreview",
+          "dtMs": 700
+        },
+        {
+          "image": "landscapePreview",
+          "dtMs": 700
+        },
+        {
+          "image": "landscapePreview",
+          "dtMs": 700
+        },
+        {
+          "image": "landscapePreview",
+          "dtMs": 700
+        }
+      ],
+      "expected": {
+        "captures": 1,
+        "mockRecognitionRequests": 1,
+        "quotaCommits": 0
+      }
+    },
+    {
+      "name": "tall_preview_mapping",
+      "events": [
+        {
+          "image": "tallPreview",
+          "dtMs": 700
+        },
+        {
+          "image": "tallPreview",
+          "dtMs": 700
+        },
+        {
+          "image": "tallPreview",
+          "dtMs": 700
+        },
+        {
+          "image": "tallPreview",
+          "dtMs": 700
+        }
+      ],
+      "expected": {
+        "captures": 1,
+        "mockRecognitionRequests": 1,
+        "quotaCommits": 0
+      }
+    },
+    {
+      "name": "background_drops_frames_then_requires_new_stability",
+      "events": [
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "action": "background"
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "action": "foreground"
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        }
+      ],
+      "expected": {
+        "captures": 1,
+        "mockRecognitionRequests": 1,
+        "quotaCommits": 0,
+        "lateFrameMustBeIgnored": true
+      }
+    },
+    {
+      "name": "consent_absent_no_capture",
+      "events": [
+        {
+          "image": "cardA",
+          "dtMs": 700,
+          "consent": false
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700,
+          "consent": false
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700,
+          "consent": false
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700,
+          "consent": false
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700,
+          "consent": false
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700,
+          "consent": false
+        }
+      ],
+      "expected": {
+        "captures": 0,
+        "mockRecognitionRequests": 0,
+        "quotaCommits": 0
+      }
+    },
+    {
+      "name": "quota_unavailable_no_capture",
+      "events": [
+        {
+          "image": "cardA",
+          "dtMs": 700,
+          "allowance": 0
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700,
+          "allowance": 0
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700,
+          "allowance": 0
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700,
+          "allowance": 0
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700,
+          "allowance": 0
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700,
+          "allowance": 0
+        }
+      ],
+      "expected": {
+        "captures": 0,
+        "mockRecognitionRequests": 0,
+        "quotaCommits": 0
+      }
+    },
+    {
+      "name": "blur_or_screen_exit_no_capture",
+      "events": [
+        {
+          "action": "blur"
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        }
+      ],
+      "expected": {
+        "captures": 0,
+        "mockRecognitionRequests": 0,
+        "quotaCommits": 0
+      }
+    },
+    {
+      "name": "pending_capture_cancel_late_result_no_commit",
+      "events": [
+        {
+          "image": "cardA",
+          "dtMs": 700,
+          "captureMode": "deferred"
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700,
+          "captureMode": "deferred"
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700,
+          "captureMode": "deferred"
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700,
+          "captureMode": "deferred"
+        },
+        {
+          "action": "cancel"
+        },
+        {
+          "action": "resolvePendingCaptureAndRecognition"
+        }
+      ],
+      "expected": {
+        "captures": 1,
+        "mockRecognitionRequests": 0,
+        "quotaCommits": 0,
+        "lateCaptureMustBeIgnored": true
+      }
+    },
+    {
+      "name": "same_card_result_add_once_then_no_recapture",
+      "events": [
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "action": "tapAddResult"
+        },
+        {
+          "action": "tapAddResult"
+        },
+        {
+          "action": "closeResult"
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        }
+      ],
+      "expected": {
+        "captures": 1,
+        "mockRecognitionRequests": 1,
+        "quotaCommits": 1
+      }
+    },
+    {
+      "name": "remove_card_then_different_card_once_each",
+      "events": [
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "action": "tapAddResult"
+        },
+        {
+          "action": "closeResult"
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "blank",
+          "dtMs": 700
+        },
+        {
+          "image": "cardB",
+          "dtMs": 700
+        },
+        {
+          "image": "cardB",
+          "dtMs": 700
+        },
+        {
+          "image": "cardB",
+          "dtMs": 700
+        },
+        {
+          "image": "cardB",
+          "dtMs": 700
+        },
+        {
+          "action": "tapAddResult"
+        }
+      ],
+      "expected": {
+        "captures": 2,
+        "mockRecognitionRequests": 2,
+        "quotaCommits": 2
+      }
+    },
+    {
+      "name": "cover_number_only_does_not_rearm_same_card",
+      "events": [
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "action": "tapAddResult"
+        },
+        {
+          "action": "closeResult"
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700,
+          "occludeTextOnly": true
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700,
+          "occludeTextOnly": true
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700,
+          "occludeTextOnly": true
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700,
+          "occludeTextOnly": true
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700,
+          "occludeTextOnly": true
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700,
+          "occludeTextOnly": true
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700,
+          "occludeTextOnly": true
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700,
+          "occludeTextOnly": true
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700,
+          "occludeTextOnly": true
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700,
+          "occludeTextOnly": true
+        }
+      ],
+      "expected": {
+        "captures": 1,
+        "mockRecognitionRequests": 1,
+        "quotaCommits": 1
+      }
+    },
+    {
+      "name": "provider_mock_failure_no_auto_retry_or_charge",
+      "events": [
+        {
+          "image": "cardA",
+          "dtMs": 700,
+          "mockResponse": "503"
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700,
+          "mockResponse": "503"
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700,
+          "mockResponse": "503"
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700,
+          "mockResponse": "503"
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        },
+        {
+          "image": "cardA",
+          "dtMs": 700
+        }
+      ],
+      "expected": {
+        "captures": 1,
+        "mockRecognitionRequests": 1,
+        "quotaCommits": 0
+      }
+    }
+  ],
+  "rules": [
+    "Do not expose fixture asset name, expected bounds or identity to production detector; feed decoded pixels only",
+    "Assertions must count real analyzer\u2192screen automatic capture\u2192mock request\u2192result\u2192explicit Add events",
+    "No card-number OCR precondition",
+    "No pixel detector or candidate implementation is mocked at boundary under test",
+    "No frame polling photos or timer-only shutter",
+    "Same card held stays disarmed after result; OCR disappearance is not card removal",
+    "Physical camera/provider/real quota QA remain CANCELLED/UNTESTED"
+  ]
+}

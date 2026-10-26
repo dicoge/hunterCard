@@ -76,7 +76,8 @@ const SOURCE_COVERAGE = {
   'src/screens/SearchResultsScreen.tsx': 9,
   'src/screens/CardDetailScreen.tsx': 65,
   'src/screens/CollectionScreen.tsx': 13,
-  'src/screens/ScanScreen.tsx': 55,
+  'src/screens/ScanScreen.tsx': 51,
+  'src/components/CameraPermissionDeniedView.tsx': 4,
   'src/screens/DeckEditorScreen.tsx': 70,
   'src/screens/SettingsScreen.tsx': 40,
   'src/screens/TutorialScreen.tsx': 11,
@@ -87,7 +88,10 @@ const SOURCE_COVERAGE = {
   'src/components/ObservedShareDonut.tsx': 4,
   'src/components/CardPicker.tsx': 18,
   'src/components/PriceAlertEditor.tsx': 18,
-  'src/components/ScanOverlay.tsx': 12,
+  // DIC-1319 removed the gallery / flip / manual-search controls and the
+  // auto-scan mode toggle from the scan viewfinder, taking their t() keys with
+  // them. The floor tracks the surviving copy.
+  'src/components/ScanOverlay.tsx': 10,
   'src/components/ScanCandidateSelector.tsx': 10,
   'src/components/ScanQuotaBanner.tsx': 5,
   'src/components/ScanResultCard.tsx': 4,
@@ -586,4 +590,14 @@ test('ja summary path does not surface Chinese runtime coverage/source strings',
   }
 });
 
+
+// v41: the web tab title never shows an internal route name (QA baseline saw "Login").
+{
+  const { formatDocumentTitle } = await import('../src/navigation/documentTitle.ts');
+  assert.equal(formatDocumentTitle(undefined), 'HoloHunter', 'Login / AuthLogin (no title) → brand, not "Login"');
+  assert.equal(formatDocumentTitle({ title: t('nav_home', 'zh') }), '首頁 · HoloHunter');
+  assert.equal(formatDocumentTitle({ title: t('nav_home', 'ja') }), `${t('nav_home', 'ja')} · HoloHunter`);
+  assert.equal(formatDocumentTitle({ title: '  ' }), 'HoloHunter');
+  passed += 1;
+}
 console.log(`test-i18n: PASS (${passed} checks)`);

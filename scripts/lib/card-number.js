@@ -48,3 +48,19 @@ export function assertCanonicalCardNumber(value, context = 'card number') {
     throw new Error(`${context} has invalid canonical format ${JSON.stringify(value)} (expected ${CANONICAL_CARD_NUMBER_RE})`);
   }
 }
+
+/**
+ * Canonicalize a card number by padding the trailing digits to exactly 3.
+ *
+ * yuyu-tei emits short suffixes (hY01-14, hY02-01) while the canonical schema
+ * requires 3 digits (hY01-014, hY02-001).  Returns the input unchanged when it
+ * is already canonical or when no card number can be extracted.
+ */
+export function canonicalizeCardNumber(value) {
+  const raw = extractCardNumber(value);
+  if (!raw) return value;
+  if (isCanonicalCardNumber(raw)) return raw;
+  const m = raw.match(/^(h[A-Za-z0-9]+-)(\d+)$/i);
+  if (!m) return raw;
+  return m[1] + m[2].padStart(3, '0');
+}

@@ -47,6 +47,10 @@ const {
 
 const LIST_PADDING_X = SEARCH_RESULTS_LAYOUT.listPaddingX;
 const GRID_GAP = SEARCH_RESULTS_LAYOUT.gridGap;
+// DIC-1427: below 768 the screen renders the Pen Z6jlE 3-column Card Tile
+// grid with the Pen 9px gap (tiles land on the exact 113px Pen width at 390).
+const MOBILE_COLUMNS = SEARCH_RESULTS_LAYOUT.mobileColumns;
+const MOBILE_GAP = SEARCH_RESULTS_LAYOUT.mobileGridGap;
 const DESKTOP_MAX_WIDTH = SEARCH_RESULTS_LAYOUT.desktopMaxWidth;
 const DESKTOP_BREAKPOINT = 768;
 const WIDE_BREAKPOINT = 1100;
@@ -54,19 +58,26 @@ const CARD_NUMBER_MIN_WIDTH = 72;
 let viewportWidth = 1366;
 let viewportHeight = 900;
 
+// DIC-1427 QA P1: the Pen tile design system applies at EVERY width — 8 tile
+// columns at wide, 6 at tablet, 3 at mobile, all with the Pen 9px gap.
 function columnsFor(viewport) {
-  if (viewport >= WIDE_BREAKPOINT) return 3;
-  if (viewport >= DESKTOP_BREAKPOINT) return 2;
-  return 1;
+  if (viewport >= WIDE_BREAKPOINT) return SEARCH_RESULTS_LAYOUT.wideTileColumns;
+  if (viewport >= DESKTOP_BREAKPOINT) return SEARCH_RESULTS_LAYOUT.tabletTileColumns;
+  return MOBILE_COLUMNS;
+}
+
+function gapFor() {
+  return MOBILE_GAP;
 }
 
 function expectedLayoutForViewport(viewport) {
   const centerWrap = Math.min(viewport, DESKTOP_MAX_WIDTH);
   const content = centerWrap - LIST_PADDING_X * 2;
   const columns = columnsFor(viewport);
-  const perCard = Math.floor((content - (columns - 1) * GRID_GAP) / columns);
-  const rowTotal = columns * perCard + (columns - 1) * GRID_GAP;
-  return { centerWrap, content, columns, perCard, rowTotal };
+  const gap = gapFor(viewport);
+  const perCard = Math.floor((content - (columns - 1) * gap) / columns);
+  const rowTotal = columns * perCard + (columns - 1) * gap;
+  return { centerWrap, content, columns, gap, perCard, rowTotal };
 }
 
 function setViewport(width, height = 900) {
@@ -250,7 +261,7 @@ for (const viewport of [1080, 1100, 1366, 1440]) {
     try {
       const widths = items.map((item) => px(getComputedStyle(item).width));
       assert.ok(widths.every((width) => width === expected.perCard), `got widths ${widths.join(', ')}, expected ${expected.perCard}`);
-      const rowTotal = expected.columns * widths[0] + (expected.columns - 1) * GRID_GAP;
+      const rowTotal = expected.columns * widths[0] + (expected.columns - 1) * expected.gap;
       assert.equal(rowTotal, expected.rowTotal);
       assert.ok(rowTotal <= expected.content, `row ${rowTotal} exceeded content ${expected.content}`);
       assert.ok(expected.content - rowTotal <= expected.columns - 1);
@@ -267,42 +278,69 @@ for (const viewport of [1080, 1100, 1366, 1440]) {
   });
 }
 
-await test('1068px content, 3 columns, 12px gap gives fixed 348px cards via the rendered screen path', async () => {
+await test('1068px content, 8 tile columns, 9px gap gives fixed-width tiles via the rendered screen path', async () => {
   const { items, cleanup } = await renderScreenAt(1366, 5);
   try {
-    assert.equal(expectedLayoutForViewport(1366).content, 1068);
-    assert.ok(items.every((item) => px(getComputedStyle(item).width) === 348));
-    assert.equal(3 * 348 + 2 * GRID_GAP, 1068);
+    const expected = expectedLayoutForViewport(1366);
+    assert.equal(expected.content, 1068);
+    assert.ok(items.every((item) => px(getComputedStyle(item).width) === expected.perCard));
+    assert.ok(expected.rowTotal <= expected.content);
     for (const item of items) {
       assert.equal(computedFlexGrow(item), 0, 'grid item wrapper must not stretch (flex-grow must be 0)');
     }
   } finally { await cleanup(); }
 });
 
-await test('736px content, 2 columns, 12px gap gives fixed 362px cards via the rendered screen path', async () => {
-  const { items, cleanup } = await renderScreenAt(768, 4);
+await test('736px content, 6 tile columns, 9px gap gives fixed-width tiles via the rendered screen path', async () => {
+  const { items, cleanup } = await renderScreenAt(768, 6);
   try {
-    assert.equal(expectedLayoutForViewport(768).content, 736);
-    assert.ok(items.every((item) => px(getComputedStyle(item).width) === 362));
-    assert.equal(2 * 362 + GRID_GAP, 736);
+    const expected = expectedLayoutForViewport(768);
+    assert.equal(expected.content, 736);
+    assert.ok(items.every((item) => px(getComputedStyle(item).width) === expected.perCard));
+    assert.ok(expected.rowTotal <= expected.content);
     for (const item of items) {
       assert.equal(computedFlexGrow(item), 0, 'grid item wrapper must not stretch (flex-grow must be 0)');
     }
   } finally { await cleanup(); }
 });
 
-await test('390px mobile renders single-column full-width cards with no horizontal overflow', async () => {
-  const { items, cleanup } = await renderScreenAt(390, 2);
+await test('390px mobile renders the Pen Z6jlE 3-column tile grid (113px tiles) with no horizontal overflow (DIC-1427)', async () => {
+  const { items, cleanup } = await renderScreenAt(390, 3);
   try {
     const expected = expectedLayoutForViewport(390);
-    assert.equal(expected.columns, 1);
-    assert.ok(items.every((item) => px(getComputedStyle(item).width) === expected.content));
+    assert.equal(expected.columns, 3);
+    assert.equal(expected.perCard, 113, 'the Pen tile width at 390 is 113px (frame Z6jlE grid refs)');
+    assert.ok(items.every((item) => px(getComputedStyle(item).width) === expected.perCard));
+    assert.ok(expected.rowTotal <= expected.content, `row ${expected.rowTotal} exceeded content ${expected.content}`);
     assert.equal(document.documentElement.scrollWidth, document.documentElement.clientWidth);
     for (const item of items) {
       assert.equal(computedFlexGrow(item), 0, 'grid item wrapper must not stretch (flex-grow must be 0)');
     }
   } finally { await cleanup(); }
 });
+
+// DIC-1192 heritage / DIC-1427: exact-count mobile renders prove the wrapper
+// is never inflated. On the 3-column grid the wrapper rides a horizontal
+// columnWrapper row, so a numeric flex-basis must equal the tile WIDTH —
+// the 358×358 height-inflation bug cannot come back as long as the basis
+// stays pinned to the 113px tile and flex-grow stays 0 on partial rows.
+for (const count of [1, 2, 4]) {
+  await test(`exact ${count}-card dataset at 390px (3-col tiles) keeps 113px non-stretching wrappers (DIC-1427)`, async () => {
+    const { items, cleanup } = await renderScreenWithExactCount(390, count);
+    try {
+      assert.equal(items.length, count, `seeded dataset must render exactly ${count} grid items`);
+      const expected = expectedLayoutForViewport(390);
+      for (const item of items) {
+        assert.equal(px(getComputedStyle(item).width), expected.perCard, 'tile wrapper must stay at the Pen width');
+        assert.equal(computedFlexGrow(item), 0, 'grid item wrapper must not stretch (flex-grow must be 0)');
+        const flexBasis = getComputedStyle(item).flexBasis;
+        if (/^\d+(?:\.\d+)?px$/.test(String(flexBasis))) {
+          assert.equal(px(flexBasis), expected.perCard, `numeric flex-basis must equal the tile width, got ${flexBasis}`);
+        }
+      }
+    } finally { await cleanup(); }
+  });
+}
 
 // DIC-1150 CR: exact-N datasets rendered through the real screen so the
 // partial row actually exists in the DOM. At numColumns=3, N=1 leaves a
@@ -316,14 +354,15 @@ for (const count of [1, 2, 4, 5]) {
     const { items, cleanup } = await renderScreenWithExactCount(1366, count);
     try {
       assert.equal(items.length, count, `seeded dataset must render exactly ${count} grid items`);
+      const expected = expectedLayoutForViewport(1366);
       const widths = items.map((item) => px(getComputedStyle(item).width));
       assert.ok(
-        widths.every((width) => width === 348),
-        `expected every card 348px, got ${widths.join(', ')}`
+        widths.every((width) => width === expected.perCard),
+        `expected every card ${expected.perCard}px, got ${widths.join(', ')}`
       );
       // The last card is the one that would stretch under `flexGrow: 1`.
       const last = items[items.length - 1];
-      assert.equal(px(getComputedStyle(last).width), 348, 'partial-row card must not stretch its width');
+      assert.equal(px(getComputedStyle(last).width), expected.perCard, 'partial-row card must not stretch its width');
       assert.equal(
         computedFlexGrow(last),
         0,
@@ -354,6 +393,125 @@ for (const count of [1, 3]) {
       for (const item of items) {
         assert.equal(computedFlexGrow(item), 0, 'grid item wrapper must not stretch (flex-grow must be 0)');
       }
+    } finally { await cleanup(); }
+  });
+}
+
+// ── DIC-1192 QA rework: 1440 + 390 hBP04 render cannot fail-close on ◇ ──
+//
+// Root cause reproducer: data/database.json ships hBP04-087 / hBP04-088 with
+// `color: '◇'`, and the pre-fix render at SearchResultsScreen.tsx line 450
+// called t(`color_◇`), which throws because the i18n dictionary only carries
+// `color_colorless` (see src/i18n/index.ts line 24 — missing keys throw, on
+// purpose). At 1440×900 the 3-column grid renders enough items on first paint
+// to reach the ◇ card, whiteouting the whole screen; at 390 mobile
+// virtualisation sometimes hides the bug but a data-shape change trivially
+// re-exposes it. Seed a hand-rolled hBP04 dataset containing the ◇ row and
+// prove BOTH viewports:
+//   1. never throw during render,
+//   2. render the ◇ card with the translated `無色` label (not `color_◇` or
+//      the raw diamond, which would mean the normaliser was bypassed).
+const HBP04_SERIES_NAMES = { hBP04: 'ホロライブ ブースターパック 04' };
+function seedHbp04WithDiamondCard() {
+  const cards = {
+    'hBP04-010_hBP04': {
+      id: 'hBP04-010_hBP04',
+      cardNumber: 'hBP04-010',
+      name: 'Ordinary Card',
+      nameZh: '一般卡',
+      series: 'hBP04',
+      type: 'holomen',
+      rarity: 'R',
+      color: 'purple',
+      sellPrice: 100,
+      prices: [{ name: 'R', sellPrice: 100, rarity: 'R' }],
+    },
+    // The DIC-1192 crash row — same shape as data/database.json's real
+    // hBP04-087_hBP04, whittled down to the fields the render touches.
+    'hBP04-087_hBP04': {
+      id: 'hBP04-087_hBP04',
+      cardNumber: 'hBP04-087',
+      name: 'エリザベス・ローズ・ブラッドフレイム',
+      nameZh: '伊麗莎白',
+      series: 'hBP04',
+      type: 'ホロメン',
+      rarity: 'S',
+      color: '◇',
+      sellPrice: 30,
+      prices: [{ name: 'S', sellPrice: 30, rarity: 'S' }],
+    },
+  };
+  seedCache({ cards, totalCards: 2, lastUpdated: '2026-08-25' }, HBP04_SERIES_NAMES);
+}
+
+async function renderHbp04AtViewport(viewport) {
+  seedHbp04WithDiamondCard();
+  setViewport(viewport, viewport === 390 ? 844 : 900);
+  observedLayoutNodes.clear();
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  const capturedErrors = [];
+  const originalError = console.error;
+  console.error = (...args) => { capturedErrors.push(args.map(String).join(' ')); };
+  try {
+    await act(async () => root.render(React.createElement(SearchResultsScreen, {
+      route: { params: { query: 'hBP04' } },
+      navigation: { navigate() {} },
+    })));
+    await flush();
+    await fireObservedLayouts();
+    await flush();
+  } finally {
+    console.error = originalError;
+  }
+  const items = Array.from(container.querySelectorAll('[data-testid="search-result-grid-item"]'));
+  return {
+    container,
+    items,
+    capturedErrors,
+    cleanup: async () => {
+      await act(async () => root.unmount());
+      container.remove();
+      seedCache(null, null);
+    },
+  };
+}
+
+for (const viewport of [1440, 390]) {
+  await test(`DIC-1192: hBP04 render at ${viewport}px survives a card whose color field is '◇' (no missing-translation-key crash)`, async () => {
+    const { container, items, capturedErrors, cleanup } = await renderHbp04AtViewport(viewport);
+    try {
+      // 1. Render did not fail-close: both cards materialised as grid items.
+      assert.equal(items.length, 2, `hBP04 dataset must render both cards at ${viewport}px, got ${items.length}`);
+      // 2. No React error boundary swallowed a `Missing translation key` throw.
+      const missingKeyError = capturedErrors.find((msg) => /Missing translation key/i.test(msg));
+      assert.equal(
+        missingKeyError, undefined,
+        `render must not throw \`Missing translation key\` for any color token — saw: ${missingKeyError}`,
+      );
+      // 3. The diamond card renders through the normaliser. `無色` is
+      // color_colorless in zh (the default locale for tests). If the render
+      // bypassed the normaliser and passed '◇' through as-is, the label
+      // would be the raw diamond glyph — that's the failure signature.
+      // DIC-1427: at 390 the route renders the Pen Z6jlE Card Tile grid,
+      // which carries name + price only (no card-number / colour label rows),
+      // so the label assertions only apply to the CardListItem layout ≥768.
+      const text = container.textContent;
+      // DIC-1427 QA P1: the Pen tile grid is the layout at EVERY width now, so
+      // the tile's display name is the identity surface at all viewports.
+      assert.ok(
+        text.includes('エリザベス・ローズ・ブラッドフレイム') || text.includes('伊麗莎白'),
+        `crash-row card display name must appear on its Pen tile at ${viewport}px`,
+      );
+      assert.ok(
+        !text.includes('color_◇'),
+        'raw i18n key must never leak into the DOM — that would mean t() ran on an unwhitelisted key',
+      );
+      assert.ok(
+        !text.includes('◇'),
+        'the raw diamond token must not leak into the rendered DOM at any viewport',
+      );
     } finally { await cleanup(); }
   });
 }

@@ -1,0 +1,15 @@
+{
+  "cardId": "hBP08-052",
+  "name": "水宮枢",
+  "nameZh": "水宮樞",
+  "trend": "up",
+  "score": 0.43,
+  "confidence": 0.6,
+  "components": {
+    "priceTrend": 0.67,
+    "ytTrend": 0,
+    "newsSentiment": 0.15
+  },
+  "lastUpdated": "2026-10-03T12:08:42.616Z",
+  "dataPoints": 62
+}

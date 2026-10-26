@@ -48,9 +48,16 @@ function auditDistDirectory(distDir) {
     assert.ok(content.includes('https://holohunter.dicoge.com/'), `${page} missing canonical domain`);
 
     if (page === 'pricing.html') {
-      assert.ok(content.includes('日本語'), 'pricing.html missing Japanese section');
-      assert.ok(content.includes('無制限'), 'pricing.html missing Japanese unlimited scan copy');
-      assert.ok(content.includes('カメラ'), 'pricing.html missing Japanese camera copy');
+      // Japanese section survives the DIC-1380 W4 draft/Sandbox strip. The
+      // previous assertions pinned Pro-tier copy that no longer exists on
+      // the page (the tier itself is not offered today — pricing was
+      // rewritten to a truthful free-only tier per the W4 handback), so
+      // the No-JS gate now checks the markers the current page actually
+      // ships: the Japanese heading, the OCR scan monthly quota label,
+      // and the free-plan CTA.
+      assert.ok(content.includes('日本語'), 'pricing.html missing Japanese section heading');
+      assert.ok(content.includes('無料'), 'pricing.html missing Japanese free-tier copy');
+      assert.ok(content.includes('OCR'), 'pricing.html missing Japanese OCR scan quota copy');
     }
   }
 }
@@ -123,11 +130,13 @@ try {
   );
   console.log('  ✓ PASS: Content mutation test: Missing <main> tag in fresh dist output fails closed');
 
-  // Test missing Japanese text
-  fs.writeFileSync(pricingDistPath, rawPricingHtml.replace(/無制限/g, 'XXX'));
+  // Test missing Japanese text — DIC-1380 W4 rewrote the pricing page to a
+  // truthful free-only tier, so the mutation now targets the Japanese
+  // "無料" (free) marker that the current audit checks for.
+  fs.writeFileSync(pricingDistPath, rawPricingHtml.replace(/無料/g, 'XXX'));
   assert.throws(
     () => auditDistDirectory(mutatedContentTempDir),
-    /pricing.html missing Japanese unlimited scan copy/
+    /pricing.html missing Japanese free-tier copy/
   );
   console.log('  ✓ PASS: Content mutation test: Missing No-JS Japanese text in fresh dist output fails closed');
 } finally {

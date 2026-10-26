@@ -1,40 +1,66 @@
 import { normalizeCardIdentity } from '../src/utils/cardNormalization';
+import { provenanceFromRow } from '../src/utils/printingQuotes';
+import { parseCardNumberToken } from '../src/utils/cardNumberToken';
+import { buildRecognitionTrace, isUnknownWord, readExpectedField, receivedCardText, safeCardText, type ExpectedLabel } from '../src/services/scanTrace';
+import {
+  validateRecognitionImages,
+  type RecognitionImageErrorCode,
+} from '../src/services/recognitionImagePolicy';
 
 /**
- * @version 7
+ * @version 8
  * recognize-card.ts — Gemini Vision + deterministic candidate ranking for Hololive TCG cards.
  *
- * Accepts one or more image data URIs. The web scanner sends both a full-frame image
+ * Accepts one or two image data URIs. The web scanner sends both a full-frame image
  * and a scan-area crop so the model can read tiny bottom-edge card numbers without
- * losing whole-card context.
+ * losing whole-card context; the native app sends one camera / library photo.
  *
- * The vision call is served by the first working provider adapter: Google direct
- * (GEMINI_API_KEY), then OpenRouter (OPENROUTER_API_KEY), then 503.
+ * Every image must pass src/services/recognitionImagePolicy (data:image/{jpeg,png,webp},
+ * strict base64 whose signature matches the type, bounded size) BEFORE a provider is
+ * resolved. A local file:// / content:// path or any other bare string is answered 400 —
+ * it is never wrapped as base64 and forwarded to Gemini (native AI photo upload, 2026-10-14).
+ *
+ * The vision call is served exclusively by Google direct (GEMINI_API_KEY). Any other
+ * provider — in particular OpenRouter — is a hard denylist (DIC-1185 FinOps repair):
+ * an unprovisioned or failing Google leg fails closed at 503, never over to another
+ * host. An inherited OPENROUTER_API_KEY in the runtime environment must not open a
+ * connection to openrouter.ai, ever.
  */
 
 export const config = { runtime: 'edge' };
 
-const GEMINI_MODEL = 'gemini-2.5-flash';
-// Same underlying model as the Google-direct leg, reached through OpenRouter, so a
-// fallback scan ranks identically to a primary one (DIC-1019).
-const OPENROUTER_MODEL = 'google/gemini-2.5-flash';
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const VISION_MAX_TOKENS = 180;
+/**
+ * Owner choice 2026-10-15: speed first. Official model card (read 2026-10-15,
+ * ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite): model code
+ * `gemini-3.5-flash-lite`, Stable, inputs text + image. No fallback to another model —
+ * a failure is a failure (503/502 → the app's local OCR), never a silent switch.
+ */
+export const GEMINI_MODEL = 'gemini-3.5-flash-lite';
+/**
+ * Gemini 3 models think by default; 3.5 Flash-Lite defaults to MINIMAL (thinking guide,
+ * 2026-10-15). The REST GenerationConfig documents thinkingConfig.thinkingLevel
+ * (ai.google.dev/api/generate-content), so MINIMAL is pinned explicitly — the documented
+ * default, now immune to a server-side default change. The answer is ~6 short lines;
+ * the cap leaves room for minimal thinking so the answer is not cut off (180 was sized
+ * for a non-thinking 2.5 call). Temperature is left at the Gemini 3 default (1.0): the
+ * Gemini 3 guide strongly recommends against lowering it (looping / degraded output).
+ */
+export const VISION_GENERATION_CONFIG = Object.freeze({
+  maxOutputTokens: 1024,
+  thinkingConfig: Object.freeze({ thinkingLevel: 'MINIMAL' }),
+});
 
 // The scanner abandons the request after RECOGNITION_REQUEST_TIMEOUT_MS (15s, see
-// src/services/recognitionOutcome). Every provider leg shares ONE budget sized below
-// that, leaving room for the JSON round trip and ranking — otherwise a sequential
-// fallback "succeeds" server-side after the caller has already aborted, which is a
-// fallback the user can never receive (DIC-1020 CR).
+// src/services/recognitionOutcome). The vision call shares ONE budget sized below
+// that, leaving room for the JSON round trip and ranking (DIC-1020 CR).
 export const VISION_TOTAL_BUDGET_MS = 11000;
-// A leg that still has a fallback behind it may not spend the whole budget: it is
-// capped, and must leave at least VISION_FALLBACK_RESERVE_MS for the next provider.
-const VISION_PRIMARY_CAP_MS = 6500;
-const VISION_FALLBACK_RESERVE_MS = 4500;
 // Below this there is no point opening a connection at all.
 const VISION_MIN_LEG_MS = 1500;
-const DATABASE_URL = 'https://holocard-hunter.vercel.app/data/database.json';
-const AUTO_ACCEPT_CONFIDENCE = 0.82;
+// Canonical production database asset (DIC-1245). Kept as a literal so the
+// recognition-provider AST guard can constant-fold the fetch URL against its
+// host allowlist; the value must stay in lock-step with PRODUCTION_ORIGIN in
+// src/config/apiOrigin.ts and is enforced by scripts/test-native-bundle-origin.
+const DATABASE_URL = 'https://holohunter.dicoge.com/data/database.json';
 
 // A card number occupies roughly 3% of a card's height, so a frame shorter than this
 // cannot physically carry a legible one. Asked anyway, the model does not answer NONE —
@@ -69,30 +95,14 @@ async function getDatabase(): Promise<Record<string, any> | null> {
   return dbFetchPromise;
 }
 
-const prefixMap: Record<string, string> = {
-  np: 'hbp', bp: 'hbp', sd: 'hsd', pr: 'hpr',
-  sp: 'hsp', ocg: 'hocg', pc: 'hpc', cs: 'hcs',
-  co: 'hco', wf: 'hwf', ys: 'hys', ent: 'hent', bd: 'hbd',
-};
 
+/**
+ * The model's CARD_NUMBER answer as a canonical catalog number, or null. The whole
+ * answer must be one card number (src/utils/cardNumberToken): `hBP01-0100` is not
+ * hBP01-010, and a reply with extra text is not a number (CR 2026-10-15 P2_2).
+ */
 export function normalizeCardNumber(raw: string | null | undefined): string | null {
-  if (!raw) return null;
-  let cleaned = raw.trim().replace(/^['"`\s]+|['"`\s]+$/g, '').replace(/\.$/, '').toLowerCase();
-  if (!cleaned || cleaned === 'none' || cleaned === 'unknown') return null;
-  cleaned = cleaned
-    .normalize('NFKC')
-    .replace(/[oO〇]/g, '0')
-    .replace(/[lI｜]/g, '1')
-    .replace(/[－‐‑‒–—―−_\s]+/g, '-');
-  const m = cleaned.match(/(h?[a-z]{2,3}\d{0,2}-?\d{1,3})/i);
-  if (!m) return null;
-  let r = m[1].replace(/-+/g, '-');
-  if (!r.includes('-')) r = r.replace(/(\d)(\d{2,3})$/, '$1-$2');
-  if (!r.startsWith('h')) {
-    const p = r.slice(0, 2), rest = r.slice(2);
-    r = (prefixMap[p] || 'h' + p) + rest;
-  }
-  return r;
+  return parseCardNumberToken(raw);
 }
 
 function normalizeText(v: any): string {
@@ -126,10 +136,11 @@ function similarity(a: string, b: string): number {
   return Math.max(0, 1 - editDistance(x, y) / Math.max(x.length, y.length));
 }
 
-function parseField(reply: string, field: string): string {
-  const match = reply.match(new RegExp(`^${field}:\\s*(.+)$`, 'im'));
-  const value = match ? match[1].trim() : '';
-  return /^(none|unknown|n\/a|-)?$/i.test(value) ? '' : value;
+// One shared reader for the expected reply lines (src/services/scanTrace): the ranking
+// and the trace can no longer disagree about an indented / spaced line (CR 2026-10-16 #3).
+function parseField(reply: string, field: ExpectedLabel): string {
+  const value = readExpectedField(reply, field) ?? '';
+  return !value || isUnknownWord(value) ? '' : value;
 }
 
 // Store MVP fail-closed boundary (CR DIC-913 #2): when the client identifies as a
@@ -160,12 +171,29 @@ function stripStoreMvpFields<T extends Record<string, any>>(card: T): T {
 }
 
 function fmt(entry: any, storeMvp = false) {
-  let price = entry.sellPrice;
-  if (entry.rarity === 'SEC' && entry.prices?.length > 0) {
-    price = Math.max(...entry.prices.map((p: any) => p.sellPrice || 0));
-  }
+  // sellPrice is the recognized printing's OWN canonical price, passed through
+  // untouched. There used to be a `rarity === 'SEC'` branch here that replaced
+  // it with Math.max over entry.prices[] — the same cross-printing Math.max the
+  // buyPrice comment below has forbidden since DIC-856, and it was serving a
+  // sibling printing's number for every one of the 12 SEC entries that have
+  // printings: hBP03-003 canonically sells for JPY 1,280 and was emitted as
+  // JPY 128,000, the パラレル/サイン printing's price (DIC-1325 CR).
+  //
+  // Reaching for the most expensive sibling is never right here. The scan path
+  // identifies ONE printing, and quoting a different printing's price is exactly
+  // the cross-printing fallback the product forbids — latent while prices were
+  // hidden, user-visible now that the scan surfaces them (DIC-1319).
+  const price = entry.sellPrice;
   const normalized = normalizeCardIdentity(entry);
   const base = {
+    // Compound printing identity (e.g. hBP01-024_hBP01_C_hBP01-024_C).
+    // The database keys entries by this compound id, and cardRecognition
+    // rehydrates it as `CardInfo.id`; dropping it on the wire collapses the
+    // eight hBP01-024 printings into one at the client boundary — session /
+    // duplicate identity then no longer reflects the printing the user chose
+    // (DIC-1325 / DIC-1339). Fall back to cardNumber only when a legacy
+    // catalog row genuinely has no `id`.
+    id: entry.id || entry.cardNumber,
     cardNumber: entry.cardNumber,
     name: entry.name,
     sellPrice: price,
@@ -178,6 +206,9 @@ function fmt(entry: any, storeMvp = false) {
     prices: entry.prices,
     priceHistory: entry.priceHistory || {},
     ytStats: entry.ytStats ?? null,
+    // v44: product / quote time / shop listing of THIS row's price, so the client can tell
+    // two rows of one card number apart (and prove an aggregation alias). Unknown = null.
+    provenance: provenanceFromRow(entry),
     type: normalized.category || '',
     grade: normalized.stage || '',
     normalized,
@@ -279,15 +310,29 @@ export function isBelowLegibleResolution(images: any[]): boolean {
   return edge !== null && edge < MIN_LEGIBLE_IMAGE_PX;
 }
 
+// Only reached with images validateRecognitionImages accepted, so the head is a known
+// `data:<allowed mime>;base64,` prefix. Slicing at the first comma keeps this bounded.
 function dataUriToGeminiPart(image: string) {
-  const match = image.match(/^data:([^;]+);base64,(.+)$/);
+  const comma = image.indexOf(',');
   return {
     inline_data: {
-      mime_type: match?.[1] || 'image/jpeg',
-      data: match?.[2] || image,
+      mime_type: image.slice('data:'.length, comma - ';base64'.length),
+      data: image.slice(comma + 1),
     },
   };
 }
+
+/** User-safe wording per rejection; the stable `code` is what clients branch on. */
+const IMAGE_REJECTION_MESSAGES: Record<RecognitionImageErrorCode, string> = {
+  IMAGE_MISSING: '未收到照片，請重新拍攝',
+  IMAGE_TOO_MANY: '一次最多只能送出兩張照片',
+  IMAGE_URI_NOT_ALLOWED: '照片格式錯誤，請重新拍攝',
+  IMAGE_NOT_DATA_URL: '照片格式錯誤，請重新拍攝',
+  IMAGE_UNSUPPORTED_TYPE: '僅支援 JPEG、PNG 或 WebP 照片',
+  IMAGE_INVALID_BASE64: '照片資料損毀，請重新拍攝',
+  IMAGE_TYPE_MISMATCH: '照片資料損毀，請重新拍攝',
+  IMAGE_TOO_LARGE: '照片檔案過大，請靠近卡片重新拍攝',
+};
 
 const visionPrompt = `You are identifying a real Hololive OFFICIAL CARD GAME card from camera photos.
 
@@ -295,7 +340,7 @@ You may receive two images: (1) full card/context and (2) a cropped scan area. U
 
 Critical reading order:
 1. CARD_NUMBER: tiny text near the bottom edge/bottom-right. Examples: hBP01-001, hBP08-024, hSD13-014, hBD24-007. Preserve prefix and digits exactly.
-2. CHARACTER: main character/holomem name, usually top area.
+2. CHARACTER: main character/holomem name, usually top area. Transcribe it exactly as printed on the card (normally Japanese); never translate or romanize it.
 3. HP: number in top-right if present.
 4. RARITY: C, U, R, RR, S, SR, SEC, OUR, P, etc. near card number.
 5. BLOOM_LEVEL / card type: Spot, Debut, 1st, 2nd, Buzz, Oshi, Support, Event, etc.
@@ -309,12 +354,14 @@ HP: [number only or NONE]
 RARITY: [rarity or NONE]
 BLOOM_LEVEL: [level/type or NONE]
 CARD_NUMBER: [exact card number or NONE]
-TITLE: [title or NONE]`;
+TITLE: [title or NONE]
+SET: [set / product code printed next to the card number, e.g. hBP01, or NONE]
+LANGUAGE: [JA, EN, ZH or another printed card language code, or NONE]`;
 
 type VisionAdapter = {
   provider: string;
   model: string;
-  request: (images: string[], timeoutMs: number) => Promise<Response>;
+  request: (images: string[], signal: AbortSignal) => Promise<Response>;
   extract: (data: any) => string;
 };
 
@@ -324,7 +371,7 @@ type VisionAdapter = {
 const googleAdapter = (apiKey: string): VisionAdapter => ({
   provider: 'gemini',
   model: GEMINI_MODEL,
-  request: (images, timeoutMs) => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
+  request: (images, signal) => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
     body: JSON.stringify({
@@ -332,102 +379,116 @@ const googleAdapter = (apiKey: string): VisionAdapter => ({
         role: 'user',
         parts: [{ text: visionPrompt }, ...images.map(dataUriToGeminiPart)],
       }],
-      generationConfig: { temperature: 0, maxOutputTokens: VISION_MAX_TOKENS },
+      generationConfig: VISION_GENERATION_CONFIG,
     }),
-    signal: AbortSignal.timeout(timeoutMs),
+    signal,
   }),
-  extract: (data) => (data?.candidates?.[0]?.content?.parts || [])
-    .map((part: any) => part.text || '').join('\n').trim(),
+  extract: (data) => {
+    // A reply cut off at the token cap is not an answer: its CARD_NUMBER line may be
+    // missing or partial. Fail like an upstream error instead of ranking half a reply.
+    if (data?.candidates?.[0]?.finishReason === 'MAX_TOKENS') throw new Error('gemini API error (413)');
+    return (data?.candidates?.[0]?.content?.parts || [])
+      .filter((part: any) => part?.thought !== true)
+      .map((part: any) => part.text || '').join('\n').trim();
+  },
 });
 
-const openRouterAdapter = (apiKey: string): VisionAdapter => ({
-  provider: 'openrouter',
-  model: OPENROUTER_MODEL,
-  request: (images, timeoutMs) => fetch(OPENROUTER_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-      'HTTP-Referer': 'https://holohunter.dicoge.com',
-      'X-Title': 'HoloHunter',
-    },
-    body: JSON.stringify({
-      model: OPENROUTER_MODEL,
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'text', text: visionPrompt },
-          ...images.map(url => ({ type: 'image_url', image_url: { url } })),
-        ],
-      }],
-      temperature: 0,
-      max_tokens: VISION_MAX_TOKENS,
-    }),
-    signal: AbortSignal.timeout(timeoutMs),
-  }),
-  extract: (data) => String(data?.choices?.[0]?.message?.content || '').trim(),
-});
+/**
+ * The provider call is abandoned when the scanner abandons us: the runtime aborts
+ * `request.signal` when the client disconnects (scan cancelled, screen left, client
+ * timeout), and that abort is forwarded to the Gemini fetch so no vision work continues
+ * for a scan nobody is waiting for. Quota is device-local and charged only when the app
+ * commits a card, so an aborted request can never charge — the server holds no quota.
+ */
+export class ClientAbortedError extends Error {}
+
+/**
+ * Why the vision provider leg failed, as far as this handler can PROVE it (v39 user
+ * report 2026-10-16: a 502 logged only "gemini API request failed", so nobody could
+ * tell a timeout from anything else). Bounded codes only — never upstream text.
+ *   PROVIDER_TIMEOUT  our own VISION_TOTAL_BUDGET_MS deadline aborted the call
+ *   PROVIDER_BUSY     the provider answered HTTP 429 or 503
+ *   PROVIDER_ERROR    anything else (other status, transport failure, bad reply)
+ */
+export type ProviderFailureCode = 'PROVIDER_TIMEOUT' | 'PROVIDER_BUSY' | 'PROVIDER_ERROR';
+export class ProviderFailureError extends Error {
+  readonly code: ProviderFailureCode;
+  constructor(message: string, code: ProviderFailureCode) { super(message); this.code = code; }
+}
+
+function withClientAbort(timeout: AbortSignal, clientSignal?: AbortSignal): AbortSignal {
+  if (!clientSignal) return timeout;
+  const anyFn = (AbortSignal as any).any as ((signals: AbortSignal[]) => AbortSignal) | undefined;
+  if (anyFn) return anyFn([timeout, clientSignal]);
+  const controller = new AbortController();
+  const forward = () => controller.abort();
+  if (timeout.aborted || clientSignal.aborted) controller.abort();
+  timeout.addEventListener('abort', forward, { once: true });
+  clientSignal.addEventListener('abort', forward, { once: true });
+  return controller.signal;
+}
+
+/** Random per-request id for correlating a scan's app log with the server verdict. */
+function newRequestId(): string | null {
+  try {
+    const bytes = new Uint8Array(8);
+    globalThis.crypto.getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  } catch {
+    return null;
+  }
+}
 
 function readKey(name: string): string | null {
   const value = process.env[name];
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
-// Runtime priority: Google direct, then OpenRouter, then nothing (→ 503). Both keys
-// present is not ambiguous — Google direct always wins, and OpenRouter is only reached
-// when Google is unconfigured or its leg fails.
+// Only Google direct is a permitted vision provider. OPENROUTER_API_KEY is never
+// read: an inherited key in the runtime environment must not open a connection to
+// openrouter.ai (DIC-1185 FinOps repair).
 function resolveAdapters(): VisionAdapter[] {
-  const adapters: VisionAdapter[] = [];
   const geminiKey = readKey('GEMINI_API_KEY');
-  if (geminiKey) adapters.push(googleAdapter(geminiKey));
-  const openRouterKey = readKey('OPENROUTER_API_KEY');
-  if (openRouterKey) adapters.push(openRouterAdapter(openRouterKey));
-  return adapters;
+  return geminiKey ? [googleAdapter(geminiKey)] : [];
 }
 
-async function callVision(images: string[]): Promise<{ reply: string; provider: string; model: string }> {
-  const imageList = images.filter(Boolean).slice(0, 2).map(img => img.startsWith('data:') ? img : `data:image/jpeg;base64,${img}`);
+async function callVision(images: string[], clientSignal?: AbortSignal): Promise<{ reply: string; provider: string; model: string }> {
+  // Already validated by the handler; nothing is coerced into a data URI here.
+  const imageList = images;
   const adapters = resolveAdapters();
   if (adapters.length === 0) throw new RecognitionUnavailableError('no vision provider key configured');
 
-  const deadline = Date.now() + VISION_TOTAL_BUDGET_MS;
-  let lastError: Error | null = null;
-  for (let i = 0; i < adapters.length; i++) {
-    const adapter = adapters[i];
-    const remaining = deadline - Date.now();
-    // The last leg may use everything that is left; anything before it is capped and has
-    // to hand the reserve on, so its timeout can never starve the fallback behind it.
-    const legBudget = i === adapters.length - 1
-      ? remaining
-      : Math.min(VISION_PRIMARY_CAP_MS, remaining - VISION_FALLBACK_RESERVE_MS);
-    if (legBudget < VISION_MIN_LEG_MS) {
-      lastError = lastError || new Error('vision budget exhausted');
-      console.error(`[recognize-card] provider ${adapter.provider} skipped: vision budget exhausted`);
-      continue;
-    }
+  const adapter = adapters[0];
+  const legBudget = VISION_TOTAL_BUDGET_MS;
+  if (legBudget < VISION_MIN_LEG_MS) {
+    throw new Error(`${adapter.provider} API request failed`);
+  }
 
-    // Upstream bodies and raw transport errors never escape this block: a failing leg is
-    // reduced to provider + HTTP status before it can reach a client response or a log.
-    let reply: string;
-    try {
-      const res = await adapter.request(imageList, legBudget);
-      if (!res.ok) throw new Error(`${adapter.provider} API error (${res.status})`);
-      reply = adapter.extract(await res.json());
-    } catch (e: any) {
-      lastError = e instanceof Error && /^\w+ API error \(\d+\)$/.test(e.message)
-        ? e
-        : new Error(`${adapter.provider} API request failed`);
-      console.error(`[recognize-card] provider ${adapter.provider} failed: ${lastError.message}`);
-      continue;
+  // Upstream bodies and raw transport errors never escape this block: a failing leg is
+  // reduced to provider + HTTP status before it can reach a client response or a log.
+  let reply: string;
+  const deadline = AbortSignal.timeout(legBudget);
+  try {
+    if (clientSignal?.aborted) throw new ClientAbortedError('client aborted');
+    const res = await adapter.request(imageList, withClientAbort(deadline, clientSignal));
+    if (!res.ok) throw new Error(`${adapter.provider} API error (${res.status})`);
+    reply = adapter.extract(await res.json());
+  } catch (e: any) {
+    if (e instanceof ClientAbortedError || clientSignal?.aborted) {
+      console.warn(`[recognize-card] client aborted; provider ${adapter.provider} call abandoned`);
+      throw new ClientAbortedError('client aborted');
     }
-    // An empty reply is a failed leg too, but the last provider's empty answer still has
-    // to surface as the existing "empty response" 502 rather than a transport error.
-    if (reply) return { reply, provider: adapter.provider, model: adapter.model };
-    lastError = null;
+    const status = e instanceof Error ? /^\w+ API error \((\d+)\)$/.exec(e.message)?.[1] : undefined;
+    const code: ProviderFailureCode = deadline.aborted ? 'PROVIDER_TIMEOUT'
+      : status === '429' || status === '503' ? 'PROVIDER_BUSY' : 'PROVIDER_ERROR';
+    const safeError = new ProviderFailureError(status ? `${adapter.provider} API error (${status})` : `${adapter.provider} API request failed`, code);
+    console.error(`[recognize-card] provider ${adapter.provider} failed: ${safeError.message} [${code}]`);
+    throw safeError;
+  }
+  if (!reply) {
     console.error(`[recognize-card] provider ${adapter.provider} returned an empty reply`);
   }
-  if (lastError) throw lastError;
-  return { reply: '', provider: adapters[adapters.length - 1].provider, model: adapters[adapters.length - 1].model };
+  return { reply, provider: adapter.provider, model: adapter.model };
 }
 
 export function rankCandidates(cards: Record<string, any>, extracted: any, storeMvp = false) {
@@ -470,11 +531,20 @@ export function rankCandidates(cards: Record<string, any>, extracted: any, store
     if (hp && entryHp && entryHp === hp) { score += 8; reasons.push('hp'); }
     if (bloom && entryBloom && (entryBloom.includes(bloom) || bloom.includes(entryBloom))) { score += 5; reasons.push('bloom/type'); }
 
+    // Only photo evidence makes a candidate: a card number, or a character / title
+    // reading. Rarity / HP / type alone match hundreds of cards and are tie-breakers,
+    // never grounds for a candidate (scan best-match fix 2026-10-15).
+    const photoEvidence = reasons.some(r => r.startsWith('cardNumber') || r.startsWith('character') || r.startsWith('title'));
+    if (!photoEvidence) return { entry, score: 0, reasons, charScore, titleScore };
+
+    // Series self-consistency is a tie-break between equally evidenced printings
+    // only. It used to be added unconditionally, which let a scan that extracted
+    // nothing still rank every original-print card as a "candidate".
     const prefix = entryNumber.split('-')[0];
     if (String(entry.series || '').toLowerCase() === prefix) score += 1.5;
     else if (String(entry.series || '').toLowerCase() === 'hpr') score -= 1;
 
-    return { entry, score, reasons };
+    return { entry, score, reasons, charScore, titleScore };
   }).filter(c => c.score > 0).sort((a, b) => b.score - a.score);
 
   const topScore = ranked[0]?.score || 0;
@@ -487,12 +557,133 @@ export function rankCandidates(cards: Record<string, any>, extracted: any, store
     score: Math.round(item.score * 10) / 10,
   }));
 
+  const toCandidate = (item: typeof ranked[number]) => ({
+    ...fmt(item.entry, storeMvp),
+    confidence: Math.round(Math.max(0.05, Math.min(0.99, item.score / 118)) * 100) / 100,
+    reason: item.reasons.join(', '),
+    score: Math.round(item.score * 10) / 10,
+  });
+
   return {
     normalizedCardNumber: normalizedNumber,
+    candidateCount: ranked.length,
     confidence: Math.round(confidence * 100) / 100,
     reason: ranked[0]?.reasons.join(', ') || 'no candidate',
     candidates,
+    match: decideMatch(ranked, {
+      normalizedNumber, rarity, hasCharacter: !!character, hasTitle: !!title,
+      characterScript: character ? scriptOf(String(extracted.characterName || '')) : null,
+    }, toCandidate),
   };
+}
+
+type Script = 'japanese' | 'latin' | 'other';
+/** Kana/kanji anywhere → japanese; only ASCII letters/digits/punctuation → latin. */
+function scriptOf(text: string): Script {
+  if (/[\u3040-\u30ff\u3400-\u9fff\uff66-\uff9f]/.test(text)) return 'japanese';
+  if (/^[\x20-\x7e\u00c0-\u024f]+$/.test(text.trim())) return 'latin';
+  return 'other';
+}
+
+export type MatchStatus = 'matched' | 'identity_only' | 'no_match';
+export type NoMatchReason = 'no_evidence' | 'no_card_number' | 'number_not_in_database' | 'number_name_conflict';
+
+export interface MatchVerdict<C = any> {
+  status: MatchStatus;
+  /** matched: the one printing. identity_only: the card (no printing → no price). */
+  best: C | null;
+  /** Printing resolved, so the price on `best` belongs to the card in hand. */
+  printingResolved: boolean;
+  /** no_match: why. identity_only: 'number_name_conflict' when the number was corrected by name. */
+  reason?: NoMatchReason;
+  /** Human-checkable evidence tokens, e.g. ['cardNumber exact', 'rarity']. */
+  evidence: string[];
+  /** Secondary correction options; each carries its own printing id and price. */
+  alternatives: C[];
+}
+
+/**
+ * Highest score is not an answer. A best match needs the card number read off the
+ * photo and found in the catalog, not contradicted by the character reading, and —
+ * to carry a price — one printing singled out (unique, or by the rarity read).
+ * Everything else is an explicit outcome the client can explain.
+ */
+function decideMatch<C>(
+  ranked: { entry: any; score: number; reasons: string[]; charScore: number; titleScore: number }[],
+  read: { normalizedNumber: string | null; rarity: string; hasCharacter: boolean; hasTitle: boolean; characterScript: Script | null },
+  toCandidate: (item: any) => C,
+): MatchVerdict<C> {
+  const none = (reason: NoMatchReason, alternatives: C[] = []): MatchVerdict<C> =>
+    ({ status: 'no_match', best: null, printingResolved: false, reason, evidence: [], alternatives });
+  if (ranked.length === 0) return none(read.normalizedNumber ? 'number_not_in_database' : 'no_evidence');
+
+  // A character reading can only contradict (or corroborate) a catalog name written in
+  // the same script: Gemini may answer in romaji ("Amane Kanata") for a name the
+  // catalog stores in Japanese, and edit distance across scripts says nothing.
+  const comparable = (r: { entry: any }) => read.characterScript !== null
+    && read.characterScript === scriptOf(String(r.entry.name || ''));
+
+  const nameEvidenced = ranked.filter(r => r.charScore >= 0.55 || r.titleScore >= 0.55).slice(0, 5).map(toCandidate);
+  if (!read.normalizedNumber) return none('no_card_number', nameEvidenced);
+
+  const numbered = ranked.filter(r => r.reasons.includes('cardNumber exact'));
+  if (numbered.length === 0) {
+    // Fail closed on any number the catalog does not hold. A one-character-off number
+    // with the same character is NOT promoted to a match: one holomem has many cards per
+    // set, so a valid-but-uncovered card (or a new set) would be fabricated into a
+    // sibling. Known OCR confusions (O/0, l/I/1, dash variants) are already folded in
+    // normalizeCardNumber; near-number cards with name evidence stay correction options.
+    const near = ranked.filter(r => r.reasons.some(x => x.startsWith('cardNumber fuzzy')) && r.charScore >= 0.55);
+    const suggestions = [...near, ...ranked.filter(r => !near.includes(r) && (r.charScore >= 0.55 || r.titleScore >= 0.55))]
+      .slice(0, 5).map(toCandidate);
+    return none('number_not_in_database', suggestions);
+  }
+
+  // A number that names someone else than the character read is a misread, not a match.
+  if (read.hasCharacter && numbered.every(r => comparable(r) && r.charScore < 0.55)
+      && !(read.hasTitle && numbered.some(r => r.titleScore >= 0.55))) {
+    // v39 user logs 2026-10-16 (user-confirmed cards): 風真いろは read as hBP05-081 was
+    // hBP01-051, 宝鐘マリン read as hBP01-014 was hEB01-014 — the number was misread and the
+    // same-script exact name pointed at the right card one or two characters away. Two
+    // independent readings (exact name + near number) may name the card, never its
+    // printing: identity only, no price, the user picks the printing. A third reading must
+    // back it (rarity / HP / bloom of one of its printings), and one near number must have
+    // more of that support than every other near number with the same name — 宝鐘マリン
+    // also has hBP01-099 two characters from hBP01-014, without any of it. A tie, or no
+    // support, stays an explicit no-match.
+    const named = ranked.filter(r => r.charScore >= 0.9 && comparable(r)
+      && r.reasons.some(x => x.startsWith('cardNumber fuzzy')));
+    const support = new Map<string, number>();
+    for (const r of named) {
+      const n = String(r.entry.cardNumber || '').toLowerCase();
+      const s = r.reasons.filter(x => x === 'rarity' || x === 'hp' || x === 'bloom/type').length;
+      support.set(n, Math.max(support.get(n) ?? 0, s));
+    }
+    const top = Math.max(0, ...support.values());
+    const backed = [...support].filter(([, s]) => s === top).map(([n]) => n);
+    if (top >= 1 && backed.length === 1) {
+      const corrected = named.filter(r => String(r.entry.cardNumber || '').toLowerCase() === backed[0]);
+      const rarityRead = (r: { entry: any }) => !!read.rarity && normalizeText(r.entry.rarity).toUpperCase() === read.rarity;
+      const printings = [...corrected.filter(rarityRead), ...corrected.filter(r => !rarityRead(r))].slice(0, 8).map(toCandidate);
+      return {
+        status: 'identity_only', best: printings[0], printingResolved: false, reason: 'number_name_conflict',
+        evidence: corrected[0].reasons.filter(x => x.startsWith('cardNumber') || x.startsWith('character')), alternatives: printings,
+      };
+    }
+    return none('number_name_conflict', [...numbered, ...named].slice(0, 5).map(toCandidate));
+  }
+
+  const evidence = (r: { reasons: string[] }) => r.reasons.filter(x => x !== 'bloom/type');
+  if (numbered.length === 1) {
+    return { status: 'matched', best: toCandidate(numbered[0]), printingResolved: true, evidence: evidence(numbered[0]), alternatives: [] };
+  }
+  const byRarity = read.rarity ? numbered.filter(r => normalizeText(r.entry.rarity).toUpperCase() === read.rarity) : [];
+  if (byRarity.length === 1) {
+    const others = numbered.filter(r => r !== byRarity[0]).slice(0, 4).map(toCandidate);
+    return { status: 'matched', best: toCandidate(byRarity[0]), printingResolved: true, evidence: evidence(byRarity[0]), alternatives: others };
+  }
+  const printings = numbered.slice(0, 8).map(toCandidate);
+  return { status: 'identity_only', best: printings[0], printingResolved: false, evidence: evidence(numbered[0]), alternatives: printings };
 }
 
 
@@ -525,10 +716,23 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204 });
   if (req.method !== 'POST') return json({ success: false, error: 'Method not allowed' }, 405);
 
+  // A parse failure's message can quote the request body (i.e. image data), so it is
+  // never echoed or logged.
+  let body: any;
   try {
-    const body = await req.json();
-    const images = Array.isArray(body.images) ? body.images : [body.image];
-    if (!images[0] || typeof images[0] !== 'string') return json({ success: false, error: 'Invalid image' }, 400);
+    body = await req.json();
+  } catch {
+    return json({ success: false, code: 'INVALID_REQUEST_BODY', error: '請求格式錯誤' }, 400);
+  }
+
+  try {
+    const images = Array.isArray(body?.images) ? body.images : [body?.image];
+    // Image rules run before the provider is resolved: a malformed or oversized image is
+    // the client's fault on every deployment and must not cost a vision call.
+    const imageCheck = validateRecognitionImages(images);
+    if (!imageCheck.ok) {
+      return json({ success: false, code: imageCheck.code, error: IMAGE_REJECTION_MESSAGES[imageCheck.code] }, 400);
+    }
     // Store MVP clients send `storeMvp: true` so forbidden fields never cross the wire.
     const storeMvp = body?.storeMvp === true;
 
@@ -538,7 +742,9 @@ export default async function handler(req: Request): Promise<Response> {
     //
     // The provider check comes first on purpose: a deployment that cannot recognise
     // anything owes the user a 503 even for a bad photo. Answering "retake it" on an
-    // unprovisioned backend is exactly the DIC-1013 defect.
+    // unprovisioned backend is exactly the DIC-1013 defect. (The 400 image-contract
+    // check above is not a photo-quality verdict: a well-formed photo always passes it,
+    // including the deploy probe's 64×89 PNG.)
     if (resolveAdapters().length > 0 && isBelowLegibleResolution(images)) {
       return json({
         success: false,
@@ -548,11 +754,11 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     const [{ reply, provider, model }, cards] = await Promise.all([
-      callVision(images),
+      callVision(images, req.signal),
       getDatabase(),
     ]);
     if (!reply) return json({ success: false, error: '服務回傳空回應', debug: { provider, model } }, 502);
-    if (!cards) return json({ success: false, error: '資料庫載入失敗', raw: reply }, 502);
+    if (!cards) return json({ success: false, error: '資料庫載入失敗' }, 502);
 
     const extracted = {
       characterName: parseField(reply, 'CHARACTER'),
@@ -561,48 +767,99 @@ export default async function handler(req: Request): Promise<Response> {
       bloom: parseField(reply, 'BLOOM_LEVEL'),
       cardNumberRaw: parseField(reply, 'CARD_NUMBER'),
       cardTitle: parseField(reply, 'TITLE'),
+      // Diagnostics only (local scan log); not used for ranking.
+      setCode: parseField(reply, 'SET'),
+      language: parseField(reply, 'LANGUAGE'),
     };
     const ranking = rankCandidates(cards, extracted, storeMvp);
+    const { match } = ranking;
+    // Sanitised diagnostics only: what was read and why, never the image.
+    // Wire copy of what was read: each value through the same safe-text rule as the trace
+    // (unsafe → ''), bounded — the ranking above used the parsed values.
     const debug = {
       provider,
       model,
-      rawModelOutput: reply,
-      extracted,
+      extracted: {
+        characterName: safeCardText('name', extracted.characterName) ?? '',
+        hp: /^\d{1,4}$/.test(extracted.hp) ? extracted.hp : '',
+        rarity: safeCardText('rarity', extracted.rarity) ?? '',
+        bloom: safeCardText('title', extracted.bloom) ?? '',
+        // As received (safe card-code text only), so normalisation stays diagnosable.
+        cardNumberRaw: receivedCardText('number', extracted.cardNumberRaw) ?? '',
+        cardTitle: safeCardText('title', extracted.cardTitle) ?? '',
+        setCode: safeCardText('set', extracted.setCode) ?? '',
+        language: safeCardText('language', extracted.language) ?? '',
+      },
       normalizedCardNumber: ranking.normalizedCardNumber,
-      candidates: ranking.candidates,
-      confidence: ranking.confidence,
       reason: ranking.reason,
+      matchStatus: match.status,
+      matchReason: match.reason ?? null,
+    };
+    // Typed, allowlisted trace (src/services/scanTrace): per-field state from the
+    // expected reply lines, top candidates with evidence, verdict, rejection. Never the
+    // raw reply. requestId is random per request; backendSha is the deployed commit
+    // when Vercel provides it as 40 hex, else null. No other env is read.
+    const trace = buildRecognitionTrace({
+      reply,
+      requestId: newRequestId(),
+      backendSha: process.env.VERCEL_GIT_COMMIT_SHA,
+      model,
+      candidates: ranking.candidates,
+      candidateCount: ranking.candidateCount,
+      verdict: { status: match.status, reason: match.reason ?? null },
+    });
+    const matchWire = {
+      status: match.status,
+      printingResolved: match.printingResolved,
+      reason: match.reason ?? null,
+      evidence: match.evidence,
+      alternatives: match.alternatives,
+      // Deterministic rule score of the best card (diagnostics only — not a probability).
+      ruleScore: typeof (match.best as any)?.score === 'number' ? (match.best as any).score : null,
     };
 
-    if (ranking.candidates.length === 0) {
-      return json({ success: false, error: '無法辨識此卡牌', raw: reply, debug, candidates: [] }, 404);
+    // No valid match is an explicit failure — never a list of filler candidates.
+    // `candidates: []` keeps released clients (which open a picker on any list) honest;
+    // evidence-backed suggestions travel in match.alternatives for the new UI.
+    if (match.status === 'no_match') {
+      return json({ success: false, error: '無法辨識此卡牌', debug, trace, candidates: [], match: matchWire }, 404);
     }
 
-    const best = ranking.candidates[0];
-    if (ranking.confidence < AUTO_ACCEPT_CONFIDENCE) {
+    // Card known, printing not: no price may be shown for it. Released clients see
+    // the legacy low-confidence picker shape; new clients show the identity first.
+    if (match.status === 'identity_only') {
       return json({
         success: false,
         lowConfidence: true,
-        error: '辨識信心不足，請從候選卡中選擇',
-        raw: reply,
-        candidates: ranking.candidates,
+        error: match.reason === 'number_name_conflict'
+          ? '讀到的卡號與角色名稱不符，已依名稱與相近卡號推定卡牌，請確認手上的版本'
+          : '已辨識卡牌，但無法確認版本，請選擇手上的版本',
+        card: match.best,
+        candidates: match.alternatives,
         confidence: ranking.confidence,
         reason: ranking.reason,
         debug,
+        trace,
+        match: matchWire,
       }, 200);
     }
 
     return json({
       success: true,
-      card: best,
-      matchMethod: ranking.reason,
+      card: match.best,
+      matchMethod: match.evidence.join(', '),
       confidence: ranking.confidence,
-      candidates: ranking.candidates,
+      candidates: [match.best, ...match.alternatives],
       reason: ranking.reason,
-      raw: reply,
       debug,
+      trace,
+      match: matchWire,
     });
   } catch (e: any) {
+    if (e instanceof ClientAbortedError) {
+      // Nobody is listening; a stable code for logs / tests, no body content.
+      return json({ success: false, code: 'CLIENT_ABORTED', error: '請求已取消' }, 499);
+    }
     if (e instanceof RecognitionUnavailableError) {
       // Operator-facing detail (which variable is missing) stays in the runtime log;
       // the wire only carries the stable code + a user-safe message.
@@ -613,6 +870,10 @@ export default async function handler(req: Request): Promise<Response> {
         error: '辨識服務暫時無法使用，請稍後再試或改用手動搜尋',
       }, 503);
     }
-    return json({ success: false, error: `Error: ${e.message}` }, 502);
+    // Internal error text can quote request or upstream detail; log the type only.
+    console.error(`[recognize-card] handler failed: ${e?.name || 'Error'}`);
+    // A provider failure carries its bounded category (client: recognitionOutcome).
+    const code = e instanceof ProviderFailureError ? e.code : undefined;
+    return json({ success: false, ...(code ? { code } : {}), error: '辨識服務發生錯誤，請稍後再試' }, 502);
   }
 }

@@ -1,0 +1,81 @@
+{
+  "cardId": "hBP07-004_hBP07_OSR_hBP07-004_OSR",
+  "cardNumber": "hBP07-004",
+  "name": "赤井はあと",
+  "records": [
+    {
+      "date": "2026-09-23",
+      "price": 220,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-004_hBP07_OSR_hBP07-004_OSR",
+      "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-09-26",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-004_hBP07_OSR_hBP07-004_OSR",
+      "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-09-27",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-004_hBP07_OSR_hBP07-004_OSR",
+      "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-10-02",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-004_hBP07_OSR_hBP07-004_OSR",
+      "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-10-03",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-004_hBP07_OSR_hBP07-004_OSR",
+      "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-10-16",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-004_hBP07_OSR_hBP07-004_OSR",
+      "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-10-17",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-004_hBP07_OSR_hBP07-004_OSR",
+      "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-10-18",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-004_hBP07_OSR_hBP07-004_OSR",
+      "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-10-26",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-004_hBP07_OSR_hBP07-004_OSR",
+      "sourceProduct": "hBP07"
+    }
+  ],
+  "lastUpdated": "2026-10-26T02:45:59.697Z",
+  "nameZh": "赤井心"
+}

@@ -33,7 +33,10 @@ if (minSupport != null) config.association = { minSupportCount: Number(minSuppor
 const reports = loadMonthlyReports(tournamentsDir);
 const full = analyzeReports(reports, { generatedAt: generatedAt ?? undefined, config });
 const months = [...new Set(reports.map((entry) => entry.report.month ?? entry.fileName.slice(0, -5)))].sort();
-const monthArtifacts = months.map((month) => analyzeMonth(reports, month, { generatedAt: full.generatedAt, config }));
+// Each month artifact keeps its OWN automatic metadata (analyzeMonth: the month's reports),
+// so adding or refreshing another month never rewrites it; only an explicit --generated-at
+// applies to every artifact. The index carries the global time.
+const monthArtifacts = months.map((month) => analyzeMonth(reports, month, { generatedAt: generatedAt ?? undefined, config }));
 const index = analyticsIndex(monthArtifacts, full.generatedAt);
 
 for (const outDir of outDirs) {

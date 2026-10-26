@@ -1,0 +1,2075 @@
+{
+  "schema": "huntercard.dic1482-fixture/v1",
+  "description": "Real production-sequence rows for the DIC-1482 regression suite: main baseline cfcb0810 vs scrape candidate 1a35e14b. lostHBD24Ids were source-proven priced on main and nulled by the candidate; hbp09SampleIds are candidate-proven recoveries; rejectIds are the three strict-gate rejection exemplars.",
+  "baselineSha": "cfcb081059b5b724d905edeb6c382b4e5ce28930",
+  "candidateSha": "1a35e14b8b2844b92ee39231994f8e0414843e71",
+  "lostHBD24Ids": [
+    "hBD24-001_hPR_P_hBD24-001_P",
+    "hBD24-006_hPR_P_hBD24-006_P",
+    "hBD24-009_hPR_P_hBD24-009_P",
+    "hBD24-010_hPR_P_hBD24-010_P",
+    "hBD24-021_hPR_P_hBD24-021_P",
+    "hBD24-024_hPR_P_hBD24-024_P",
+    "hBD24-025_hPR_P_hBD24-025_P",
+    "hBD24-027_hPR_P_hBD24-027_P",
+    "hBD24-030_hPR_P_hBD24-030_P",
+    "hBD24-033_hPR_P_hBD24-033_P",
+    "hBD24-034_hPR_P_hBD24-034_P",
+    "hBD24-037_hPR_P_hBD24-037_P",
+    "hBD24-039_hPR_P_hBD24-039_P",
+    "hBD24-040_hPR_P_hBD24-040_P",
+    "hBD24-043_hPR_P_hBD24-043_P",
+    "hBD24-044_hPR_P_hBD24-044_P",
+    "hBD24-045_hPR_P_hBD24-045_P",
+    "hBD24-046_hPR_P_hBD24-046_P",
+    "hBD24-047_hPR_P_hBD24-047_P",
+    "hBD24-051_hPR_P_hBD24-051_P",
+    "hBD24-052_hPR_P_hBD24-052_P",
+    "hBD24-053_hPR_P_hBD24-053_P",
+    "hBD24-056_hPR_P_hBD24-056_P",
+    "hBD24-057_hPR_P_hBD24-057_P",
+    "hBD24-061_hPR_P_hBD24-061_P",
+    "hBD24-062_hPR_P_hBD24-062_P",
+    "hBD24-065_hPR_P_hBD24-065_P",
+    "hBD24-066_hPR_P_hBD24-066_P",
+    "hBD24-067_hPR_P_hBD24-067_P"
+  ],
+  "hbp09SampleIds": [
+    "hBP09-001_hBP09_OSR_hBP09-001_OSR",
+    "hBP09-001_hBP09_OUR_hBP09-001_OUR",
+    "hBP09-002_hBP09_OSR_hBP09-002_OSR",
+    "hBP09-002_hBP09_OUR_hBP09-002_OUR",
+    "hBP09-003_hBP09_OSR_hBP09-003_OSR",
+    "hBP09-003_hBP09_OUR_hBP09-003_OUR"
+  ],
+  "rejectIds": [
+    "hBD24-064_ent07",
+    "hBP01-081_hCS01_SR_hBP01-081_02_SR",
+    "hBP09-004_hBP09_SEC_hBP09-004_SEC"
+  ],
+  "baselineCards": {
+    "hBD24-001_hPR_P_hBD24-001_P": {
+      "id": "hBD24-001_hPR_P_hBD24-001_P",
+      "cardNumber": "hBD24-001",
+      "name": "パヴォリア・レイネ",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": 49800,
+      "yuyuName": "パヴォリア・レイネ",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10001.jpg",
+      "timestamp": "2026-08-25T12:11:18.894Z",
+      "prices": [
+        {
+          "name": "パヴォリア・レイネ",
+          "sellPrice": 49800,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10001.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "パヴォリア・レイネ",
+          "sellPrice": 49800,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10001.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-08-28": 49800
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-001_P.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-006_hPR_P_hBD24-006_P": {
+      "id": "hBD24-006_hPR_P_hBD24-006_P",
+      "cardNumber": "hBD24-006",
+      "name": "クレイジー・オリー",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": 39800,
+      "yuyuName": "クレイジー・オリー",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10006.jpg",
+      "timestamp": "2026-08-25T12:11:18.894Z",
+      "prices": [
+        {
+          "name": "クレイジー・オリー",
+          "sellPrice": 39800,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10006.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "クレイジー・オリー",
+          "sellPrice": 39800,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10006.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-08-28": 39800
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-006_P.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-009_hPR_P_hBD24-009_P": {
+      "id": "hBD24-009_hPR_P_hBD24-009_P",
+      "cardNumber": "hBD24-009",
+      "name": "セシリア・イマーグリーン",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": 17800,
+      "yuyuName": "セシリア・イマーグリーン",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10009.jpg",
+      "timestamp": "2026-08-25T12:11:18.894Z",
+      "prices": [
+        {
+          "name": "セシリア・イマーグリーン",
+          "sellPrice": 17800,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10009.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "セシリア・イマーグリーン",
+          "sellPrice": 17800,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10009.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-08-28": 17800
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-009_P.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-010_hPR_P_hBD24-010_P": {
+      "id": "hBD24-010_hPR_P_hBD24-010_P",
+      "cardNumber": "hBD24-010",
+      "name": "雪花ラミィ",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": 9980,
+      "yuyuName": "雪花ラミィ",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10010.jpg",
+      "timestamp": "2026-08-25T12:11:18.894Z",
+      "prices": [
+        {
+          "name": "雪花ラミィ",
+          "sellPrice": 9980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10010.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "雪花ラミィ",
+          "sellPrice": 9980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10010.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-08-28": 9980
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-010_P.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-021_hPR_P_hBD24-021_P": {
+      "id": "hBD24-021_hPR_P_hBD24-021_P",
+      "cardNumber": "hBD24-021",
+      "name": "モココ・アビスガード",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": 7980,
+      "yuyuName": "モココ・アビスガード",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10021.jpg",
+      "timestamp": "2026-08-25T12:11:18.894Z",
+      "prices": [
+        {
+          "name": "モココ・アビスガード",
+          "sellPrice": 7980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10021.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "モココ・アビスガード",
+          "sellPrice": 7980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10021.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-08-28": 7980
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-021_P.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-024_hPR_P_hBD24-024_P": {
+      "id": "hBD24-024_hPR_P_hBD24-024_P",
+      "cardNumber": "hBD24-024",
+      "name": "ムーナ・ホシノヴァ",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": 9980,
+      "yuyuName": "ムーナ・ホシノヴァ",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10024.jpg",
+      "timestamp": "2026-08-25T12:11:18.894Z",
+      "prices": [
+        {
+          "name": "ムーナ・ホシノヴァ",
+          "sellPrice": 9980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10024.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "ムーナ・ホシノヴァ",
+          "sellPrice": 9980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10024.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-08-28": 9980
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-024_P.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-025_hPR_P_hBD24-025_P": {
+      "id": "hBD24-025_hPR_P_hBD24-025_P",
+      "cardNumber": "hBD24-025",
+      "name": "アキ・ローゼンタール",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": 14800,
+      "yuyuName": "アキ・ローゼンタール",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10025.jpg",
+      "timestamp": "2026-08-25T12:11:18.894Z",
+      "prices": [
+        {
+          "name": "アキ・ローゼンタール",
+          "sellPrice": 14800,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10025.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "アキ・ローゼンタール",
+          "sellPrice": 14800,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10025.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-08-28": 14800
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-025_P.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-027_hPR_P_hBD24-027_P": {
+      "id": "hBD24-027_hPR_P_hBD24-027_P",
+      "cardNumber": "hBD24-027",
+      "name": "火威青",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": 5980,
+      "yuyuName": "火威青",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10027.jpg",
+      "timestamp": "2026-08-25T12:11:18.894Z",
+      "prices": [
+        {
+          "name": "火威青",
+          "sellPrice": 5980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10027.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "火威青",
+          "sellPrice": 5980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10027.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-08-28": 5980
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-027_P.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-030_hPR_P_hBD24-030_P": {
+      "id": "hBD24-030_hPR_P_hBD24-030_P",
+      "cardNumber": "hBD24-030",
+      "name": "アーニャ・メルフィッサ",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": 8980,
+      "yuyuName": "アーニャ・メルフィッサ",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10030.jpg",
+      "timestamp": "2026-08-25T12:11:18.894Z",
+      "prices": [
+        {
+          "name": "アーニャ・メルフィッサ",
+          "sellPrice": 8980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10030.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "アーニャ・メルフィッサ",
+          "sellPrice": 8980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10030.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-08-28": 8980
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-030_P.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-033_hPR_P_hBD24-033_P": {
+      "id": "hBD24-033_hPR_P_hBD24-033_P",
+      "cardNumber": "hBD24-033",
+      "name": "IRyS",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": 7980,
+      "yuyuName": "IRyS",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10033.jpg",
+      "timestamp": "2026-08-25T12:11:18.894Z",
+      "prices": [
+        {
+          "name": "IRyS",
+          "sellPrice": 7980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10033.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "IRyS",
+          "sellPrice": 7980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10033.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-08-28": 7980
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-033_P.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-034_hPR_P_hBD24-034_P": {
+      "id": "hBD24-034_hPR_P_hBD24-034_P",
+      "cardNumber": "hBD24-034",
+      "name": "星街すいせい",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": 5980,
+      "yuyuName": "星街すいせい",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10034.jpg",
+      "timestamp": "2026-08-25T12:11:18.894Z",
+      "prices": [
+        {
+          "name": "星街すいせい",
+          "sellPrice": 5980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10034.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "星街すいせい",
+          "sellPrice": 5980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10034.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-08-28": 5980
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-034_P.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-037_hPR_P_hBD24-037_P": {
+      "id": "hBD24-037_hPR_P_hBD24-037_P",
+      "cardNumber": "hBD24-037",
+      "name": "森カリオペ",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": 12800,
+      "yuyuName": "森カリオペ",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10037.jpg",
+      "timestamp": "2026-08-25T12:11:18.894Z",
+      "prices": [
+        {
+          "name": "森カリオペ",
+          "sellPrice": 12800,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10037.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "森カリオペ",
+          "sellPrice": 12800,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10037.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-08-28": 12800
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-037_P.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-039_hPR_P_hBD24-039_P": {
+      "id": "hBD24-039_hPR_P_hBD24-039_P",
+      "cardNumber": "hBD24-039",
+      "name": "音乃瀬奏",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": 6980,
+      "yuyuName": "音乃瀬奏",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10039.jpg",
+      "timestamp": "2026-08-25T12:11:18.894Z",
+      "prices": [
+        {
+          "name": "音乃瀬奏",
+          "sellPrice": 6980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10039.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "音乃瀬奏",
+          "sellPrice": 6980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10039.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-08-28": 6980
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-039_P.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-040_hPR_P_hBD24-040_P": {
+      "id": "hBD24-040_hPR_P_hBD24-040_P",
+      "cardNumber": "hBD24-040",
+      "name": "天音かなた",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": 5980,
+      "yuyuName": "天音かなた",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10040.jpg",
+      "timestamp": "2026-08-25T12:11:18.894Z",
+      "prices": [
+        {
+          "name": "天音かなた",
+          "sellPrice": 5980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10040.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "天音かなた",
+          "sellPrice": 5980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10040.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-08-28": 5980
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-040_P.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-043_hPR_P_hBD24-043_P": {
+      "id": "hBD24-043_hPR_P_hBD24-043_P",
+      "cardNumber": "hBD24-043",
+      "name": "ラオーラ・パンテーラ",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": 8980,
+      "yuyuName": "ラオーラ・パンテーラ",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10043.jpg",
+      "timestamp": "2026-08-25T12:11:18.894Z",
+      "prices": [
+        {
+          "name": "ラオーラ・パンテーラ",
+          "sellPrice": 8980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10043.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "ラオーラ・パンテーラ",
+          "sellPrice": 8980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10043.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-08-28": 8980
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-043_P.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-044_hPR_P_hBD24-044_P": {
+      "id": "hBD24-044_hPR_P_hBD24-044_P",
+      "cardNumber": "hBD24-044",
+      "name": "一条莉々華",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": 6980,
+      "yuyuName": "一条莉々華",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10044.jpg",
+      "timestamp": "2026-08-25T12:11:18.894Z",
+      "prices": [
+        {
+          "name": "一条莉々華",
+          "sellPrice": 6980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10044.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "一条莉々華",
+          "sellPrice": 6980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10044.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-08-28": 6980
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-044_P.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-045_hPR_P_hBD24-045_P": {
+      "id": "hBD24-045_hPR_P_hBD24-045_P",
+      "cardNumber": "hBD24-045",
+      "name": "ときのそら",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": 6980,
+      "yuyuName": "ときのそら",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10045.jpg",
+      "timestamp": "2026-08-25T12:11:18.894Z",
+      "prices": [
+        {
+          "name": "ときのそら",
+          "sellPrice": 6980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10045.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "ときのそら",
+          "sellPrice": 6980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10045.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-08-28": 6980
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-045_P.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-046_hPR_P_hBD24-046_P": {
+      "id": "hBD24-046_hPR_P_hBD24-046_P",
+      "cardNumber": "hBD24-046",
+      "name": "一伊那尓栖",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": 7980,
+      "yuyuName": "一伊那尓栖",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10046.jpg",
+      "timestamp": "2026-08-25T12:11:18.894Z",
+      "prices": [
+        {
+          "name": "一伊那尓栖",
+          "sellPrice": 7980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10046.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "一伊那尓栖",
+          "sellPrice": 7980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10046.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-08-28": 7980
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-046_P.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-047_hPR_P_hBD24-047_P": {
+      "id": "hBD24-047_hPR_P_hBD24-047_P",
+      "cardNumber": "hBD24-047",
+      "name": "ロボ子さん",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": 9980,
+      "yuyuName": "ロボ子さん",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10047.jpg",
+      "timestamp": "2026-08-25T12:11:18.894Z",
+      "prices": [
+        {
+          "name": "ロボ子さん",
+          "sellPrice": 9980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10047.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "ロボ子さん",
+          "sellPrice": 9980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10047.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-08-28": 9980
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-047_P.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-051_hPR_P_hBD24-051_P": {
+      "id": "hBD24-051_hPR_P_hBD24-051_P",
+      "cardNumber": "hBD24-051",
+      "name": "轟はじめ",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": 6980,
+      "yuyuName": "轟はじめ",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10051.jpg",
+      "timestamp": "2026-08-25T12:11:18.894Z",
+      "prices": [
+        {
+          "name": "轟はじめ",
+          "sellPrice": 6980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10051.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "轟はじめ",
+          "sellPrice": 6980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10051.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-08-28": 6980
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-051_P.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-052_hPR_P_hBD24-052_P": {
+      "id": "hBD24-052_hPR_P_hBD24-052_P",
+      "cardNumber": "hBD24-052",
+      "name": "鷹嶺ルイ",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": 7980,
+      "yuyuName": "鷹嶺ルイ",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10052.jpg",
+      "timestamp": "2026-08-25T12:11:18.894Z",
+      "prices": [
+        {
+          "name": "鷹嶺ルイ",
+          "sellPrice": 7980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10052.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "鷹嶺ルイ",
+          "sellPrice": 7980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10052.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-08-28": 7980
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-052_P.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-053_hPR_P_hBD24-053_P": {
+      "id": "hBD24-053_hPR_P_hBD24-053_P",
+      "cardNumber": "hBD24-053",
+      "name": "水宮枢",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": 5980,
+      "yuyuName": "水宮枢",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10053.jpg",
+      "timestamp": "2026-08-25T12:11:18.894Z",
+      "prices": [
+        {
+          "name": "水宮枢",
+          "sellPrice": 5980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10053.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "水宮枢",
+          "sellPrice": 5980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10053.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-08-28": 5980
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-053_P.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-056_hPR_P_hBD24-056_P": {
+      "id": "hBD24-056_hPR_P_hBD24-056_P",
+      "cardNumber": "hBD24-056",
+      "name": "大空スバル",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": 6980,
+      "yuyuName": "大空スバル",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10056.jpg",
+      "timestamp": "2026-08-25T12:11:18.894Z",
+      "prices": [
+        {
+          "name": "大空スバル",
+          "sellPrice": 6980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10056.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "大空スバル",
+          "sellPrice": 6980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10056.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-08-28": 6980
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-056_P.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-057_hPR_P_hBD24-057_P": {
+      "id": "hBD24-057_hPR_P_hBD24-057_P",
+      "cardNumber": "hBD24-057",
+      "name": "小鳥遊キアラ",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": 12800,
+      "yuyuName": "小鳥遊キアラ",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10057.jpg",
+      "timestamp": "2026-08-25T12:11:18.894Z",
+      "prices": [
+        {
+          "name": "小鳥遊キアラ",
+          "sellPrice": 12800,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10057.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "小鳥遊キアラ",
+          "sellPrice": 12800,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10057.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-08-28": 12800
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-057_P.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-061_hPR_P_hBD24-061_P": {
+      "id": "hBD24-061_hPR_P_hBD24-061_P",
+      "cardNumber": "hBD24-061",
+      "name": "宝鐘マリン",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": 5980,
+      "yuyuName": "宝鐘マリン",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10061.jpg",
+      "timestamp": "2026-08-25T12:11:18.894Z",
+      "prices": [
+        {
+          "name": "宝鐘マリン",
+          "sellPrice": 5980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10061.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "宝鐘マリン",
+          "sellPrice": 5980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10061.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-08-28": 5980
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-061_P.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-062_hPR_P_hBD24-062_P": {
+      "id": "hBD24-062_hPR_P_hBD24-062_P",
+      "cardNumber": "hBD24-062",
+      "name": "常闇トワ",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": 8980,
+      "yuyuName": "常闇トワ",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10062.jpg",
+      "timestamp": "2026-08-25T12:11:18.894Z",
+      "prices": [
+        {
+          "name": "常闇トワ",
+          "sellPrice": 8980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10062.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "常闇トワ",
+          "sellPrice": 8980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10062.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-08-28": 8980
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-062_P.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-065_hPR_P_hBD24-065_P": {
+      "id": "hBD24-065_hPR_P_hBD24-065_P",
+      "cardNumber": "hBD24-065",
+      "name": "綺々羅々ヴィヴィ",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": 9980,
+      "yuyuName": "綺々羅々ヴィヴィ",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10065.jpg",
+      "timestamp": "2026-08-25T12:11:18.894Z",
+      "prices": [
+        {
+          "name": "綺々羅々ヴィヴィ",
+          "sellPrice": 9980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10065.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "綺々羅々ヴィヴィ",
+          "sellPrice": 9980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10065.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-08-28": 9980
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-065_P.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-066_hPR_P_hBD24-066_P": {
+      "id": "hBD24-066_hPR_P_hBD24-066_P",
+      "cardNumber": "hBD24-066",
+      "name": "カエラ・コヴァルスキア",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": 14800,
+      "yuyuName": "カエラ・コヴァルスキア",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10066.jpg",
+      "timestamp": "2026-08-25T12:11:18.894Z",
+      "prices": [
+        {
+          "name": "カエラ・コヴァルスキア",
+          "sellPrice": 14800,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10066.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "カエラ・コヴァルスキア",
+          "sellPrice": 14800,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10066.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-08-28": 14800
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-066_P.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-067_hPR_P_hBD24-067_P": {
+      "id": "hBD24-067_hPR_P_hBD24-067_P",
+      "cardNumber": "hBD24-067",
+      "name": "夏色まつり",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": 9980,
+      "yuyuName": "夏色まつり",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10067.jpg",
+      "timestamp": "2026-08-25T12:11:18.894Z",
+      "prices": [
+        {
+          "name": "夏色まつり",
+          "sellPrice": 9980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10067.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "夏色まつり",
+          "sellPrice": 9980,
+          "rarity": "",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10067.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-08-28": 9980
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-067_P.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBP09-001_hBP09_OSR_hBP09-001_OSR": {
+      "id": "hBP09-001_hBP09_OSR_hBP09-001_OSR",
+      "cardNumber": "hBP09-001",
+      "name": "大空スバル",
+      "rarity": "OSR",
+      "series": "hBP09",
+      "sourceProduct": "hBP09",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP09/hBP09-001_OSR.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBP09-001_hBP09_OUR_hBP09-001_OUR": {
+      "id": "hBP09-001_hBP09_OUR_hBP09-001_OUR",
+      "cardNumber": "hBP09-001",
+      "name": "大空スバル",
+      "rarity": "OUR",
+      "series": "hBP09",
+      "sourceProduct": "hBP09",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP09/hBP09-001_OUR.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBP09-002_hBP09_OSR_hBP09-002_OSR": {
+      "id": "hBP09-002_hBP09_OSR_hBP09-002_OSR",
+      "cardNumber": "hBP09-002",
+      "name": "轟はじめ",
+      "rarity": "OSR",
+      "series": "hBP09",
+      "sourceProduct": "hBP09",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP09/hBP09-002_OSR.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBP09-002_hBP09_OUR_hBP09-002_OUR": {
+      "id": "hBP09-002_hBP09_OUR_hBP09-002_OUR",
+      "cardNumber": "hBP09-002",
+      "name": "轟はじめ",
+      "rarity": "OUR",
+      "series": "hBP09",
+      "sourceProduct": "hBP09",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP09/hBP09-002_OUR.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBP09-003_hBP09_OSR_hBP09-003_OSR": {
+      "id": "hBP09-003_hBP09_OSR_hBP09-003_OSR",
+      "cardNumber": "hBP09-003",
+      "name": "白銀ノエル",
+      "rarity": "OSR",
+      "series": "hBP09",
+      "sourceProduct": "hBP09",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP09/hBP09-003_OSR.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBP09-003_hBP09_OUR_hBP09-003_OUR": {
+      "id": "hBP09-003_hBP09_OUR_hBP09-003_OUR",
+      "cardNumber": "hBP09-003",
+      "name": "白銀ノエル",
+      "rarity": "OUR",
+      "series": "hBP09",
+      "sourceProduct": "hBP09",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP09/hBP09-003_OUR.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-064_ent07": {
+      "id": "hBD24-064_ent07",
+      "cardNumber": "hBD24-064",
+      "name": "大神ミオ",
+      "rarity": "P",
+      "series": "ent07",
+      "sourceProduct": "ent07",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-064_P.png",
+      "localImage": "/images/hBD24-064.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBP01-081_hCS01_SR_hBP01-081_02_SR": {
+      "id": "hBP01-081_hCS01_SR_hBP01-081_02_SR",
+      "cardNumber": "hBP01-081",
+      "name": "星街すいせい",
+      "rarity": "SR",
+      "series": "hCS01",
+      "sourceProduct": "hCS01",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hCS01/hBP01-081_02_SR.png",
+      "localImage": "",
+      "type": "Holomen",
+      "color": "blue"
+    },
+    "hBP09-004_hBP09_SEC_hBP09-004_SEC": {
+      "id": "hBP09-004_hBP09_SEC_hBP09-004_SEC",
+      "cardNumber": "hBP09-004",
+      "name": "カエラ・コヴァルスキア",
+      "rarity": "SEC",
+      "series": "hBP09",
+      "sourceProduct": "hBP09",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP09/hBP09-004_SEC.png",
+      "localImage": "",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    }
+  },
+  "candidateCards": {
+    "hBD24-001_hPR_P_hBD24-001_P": {
+      "id": "hBD24-001_hPR_P_hBD24-001_P",
+      "cardNumber": "hBD24-001",
+      "name": "パヴォリア・レイネ",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-001_P.png",
+      "localImage": "/images/hBD24-001.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-006_hPR_P_hBD24-006_P": {
+      "id": "hBD24-006_hPR_P_hBD24-006_P",
+      "cardNumber": "hBD24-006",
+      "name": "クレイジー・オリー",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-006_P.png",
+      "localImage": "/images/hBD24-006.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-009_hPR_P_hBD24-009_P": {
+      "id": "hBD24-009_hPR_P_hBD24-009_P",
+      "cardNumber": "hBD24-009",
+      "name": "セシリア・イマーグリーン",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-009_P.png",
+      "localImage": "/images/hBD24-009.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-010_hPR_P_hBD24-010_P": {
+      "id": "hBD24-010_hPR_P_hBD24-010_P",
+      "cardNumber": "hBD24-010",
+      "name": "雪花ラミィ",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-010_P.png",
+      "localImage": "/images/hBD24-010.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-021_hPR_P_hBD24-021_P": {
+      "id": "hBD24-021_hPR_P_hBD24-021_P",
+      "cardNumber": "hBD24-021",
+      "name": "モココ・アビスガード",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-021_P.png",
+      "localImage": "/images/hBD24-021.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-024_hPR_P_hBD24-024_P": {
+      "id": "hBD24-024_hPR_P_hBD24-024_P",
+      "cardNumber": "hBD24-024",
+      "name": "ムーナ・ホシノヴァ",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-024_P.png",
+      "localImage": "/images/hBD24-024.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-025_hPR_P_hBD24-025_P": {
+      "id": "hBD24-025_hPR_P_hBD24-025_P",
+      "cardNumber": "hBD24-025",
+      "name": "アキ・ローゼンタール",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-025_P.png",
+      "localImage": "/images/hBD24-025.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-027_hPR_P_hBD24-027_P": {
+      "id": "hBD24-027_hPR_P_hBD24-027_P",
+      "cardNumber": "hBD24-027",
+      "name": "火威青",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-027_P.png",
+      "localImage": "/images/hBD24-027.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-030_hPR_P_hBD24-030_P": {
+      "id": "hBD24-030_hPR_P_hBD24-030_P",
+      "cardNumber": "hBD24-030",
+      "name": "アーニャ・メルフィッサ",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-030_P.png",
+      "localImage": "/images/hBD24-030.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-033_hPR_P_hBD24-033_P": {
+      "id": "hBD24-033_hPR_P_hBD24-033_P",
+      "cardNumber": "hBD24-033",
+      "name": "IRyS",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-033_P.png",
+      "localImage": "/images/hBD24-033.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-034_hPR_P_hBD24-034_P": {
+      "id": "hBD24-034_hPR_P_hBD24-034_P",
+      "cardNumber": "hBD24-034",
+      "name": "星街すいせい",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-034_P.png",
+      "localImage": "/images/hBD24-034.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-037_hPR_P_hBD24-037_P": {
+      "id": "hBD24-037_hPR_P_hBD24-037_P",
+      "cardNumber": "hBD24-037",
+      "name": "森カリオペ",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-037_P.png",
+      "localImage": "/images/hBD24-037.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-039_hPR_P_hBD24-039_P": {
+      "id": "hBD24-039_hPR_P_hBD24-039_P",
+      "cardNumber": "hBD24-039",
+      "name": "音乃瀬奏",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-039_P.png",
+      "localImage": "/images/hBD24-039.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-040_hPR_P_hBD24-040_P": {
+      "id": "hBD24-040_hPR_P_hBD24-040_P",
+      "cardNumber": "hBD24-040",
+      "name": "天音かなた",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-040_P.png",
+      "localImage": "/images/hBD24-040.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-043_hPR_P_hBD24-043_P": {
+      "id": "hBD24-043_hPR_P_hBD24-043_P",
+      "cardNumber": "hBD24-043",
+      "name": "ラオーラ・パンテーラ",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-043_P.png",
+      "localImage": "/images/hBD24-043.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-044_hPR_P_hBD24-044_P": {
+      "id": "hBD24-044_hPR_P_hBD24-044_P",
+      "cardNumber": "hBD24-044",
+      "name": "一条莉々華",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-044_P.png",
+      "localImage": "/images/hBD24-044.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-045_hPR_P_hBD24-045_P": {
+      "id": "hBD24-045_hPR_P_hBD24-045_P",
+      "cardNumber": "hBD24-045",
+      "name": "ときのそら",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-045_P.png",
+      "localImage": "/images/hBD24-045.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-046_hPR_P_hBD24-046_P": {
+      "id": "hBD24-046_hPR_P_hBD24-046_P",
+      "cardNumber": "hBD24-046",
+      "name": "一伊那尓栖",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-046_P.png",
+      "localImage": "/images/hBD24-046.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-047_hPR_P_hBD24-047_P": {
+      "id": "hBD24-047_hPR_P_hBD24-047_P",
+      "cardNumber": "hBD24-047",
+      "name": "ロボ子さん",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-047_P.png",
+      "localImage": "/images/hBD24-047.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-051_hPR_P_hBD24-051_P": {
+      "id": "hBD24-051_hPR_P_hBD24-051_P",
+      "cardNumber": "hBD24-051",
+      "name": "轟はじめ",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-051_P.png",
+      "localImage": "/images/hBD24-051.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-052_hPR_P_hBD24-052_P": {
+      "id": "hBD24-052_hPR_P_hBD24-052_P",
+      "cardNumber": "hBD24-052",
+      "name": "鷹嶺ルイ",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-052_P.png",
+      "localImage": "/images/hBD24-052.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-053_hPR_P_hBD24-053_P": {
+      "id": "hBD24-053_hPR_P_hBD24-053_P",
+      "cardNumber": "hBD24-053",
+      "name": "水宮枢",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-053_P.png",
+      "localImage": "/images/hBD24-053.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-056_hPR_P_hBD24-056_P": {
+      "id": "hBD24-056_hPR_P_hBD24-056_P",
+      "cardNumber": "hBD24-056",
+      "name": "大空スバル",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-056_P.png",
+      "localImage": "/images/hBD24-056.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-057_hPR_P_hBD24-057_P": {
+      "id": "hBD24-057_hPR_P_hBD24-057_P",
+      "cardNumber": "hBD24-057",
+      "name": "小鳥遊キアラ",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-057_P.png",
+      "localImage": "/images/hBD24-057.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-061_hPR_P_hBD24-061_P": {
+      "id": "hBD24-061_hPR_P_hBD24-061_P",
+      "cardNumber": "hBD24-061",
+      "name": "宝鐘マリン",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-061_P.png",
+      "localImage": "/images/hBD24-061.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-062_hPR_P_hBD24-062_P": {
+      "id": "hBD24-062_hPR_P_hBD24-062_P",
+      "cardNumber": "hBD24-062",
+      "name": "常闇トワ",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-062_P.png",
+      "localImage": "/images/hBD24-062.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-065_hPR_P_hBD24-065_P": {
+      "id": "hBD24-065_hPR_P_hBD24-065_P",
+      "cardNumber": "hBD24-065",
+      "name": "綺々羅々ヴィヴィ",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-065_P.png",
+      "localImage": "/images/hBD24-065.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-066_hPR_P_hBD24-066_P": {
+      "id": "hBD24-066_hPR_P_hBD24-066_P",
+      "cardNumber": "hBD24-066",
+      "name": "カエラ・コヴァルスキア",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-066_P.png",
+      "localImage": "/images/hBD24-066.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-067_hPR_P_hBD24-067_P": {
+      "id": "hBD24-067_hPR_P_hBD24-067_P",
+      "cardNumber": "hBD24-067",
+      "name": "夏色まつり",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "timestamp": "",
+      "prices": [],
+      "_rawPricesArchive": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-067_P.png",
+      "localImage": "/images/hBD24-067.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBP09-001_hBP09_OSR_hBP09-001_OSR": {
+      "id": "hBP09-001_hBP09_OSR_hBP09-001_OSR",
+      "cardNumber": "hBP09-001",
+      "name": "大空スバル",
+      "rarity": "OSR",
+      "series": "hBP09",
+      "sourceProduct": "hBP09",
+      "sellPrice": 980,
+      "yuyuName": "大空スバル",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10001.jpg",
+      "timestamp": "2026-09-19T12:22:28.373Z",
+      "prices": [
+        {
+          "name": "大空スバル",
+          "sellPrice": 980,
+          "rarity": "OSR",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10001.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "大空スバル",
+          "sellPrice": 980,
+          "rarity": "OSR",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10001.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-09-19": 980
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP09/hBP09-001_OSR.png",
+      "localImage": "/images/hBP09-001.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBP09-001_hBP09_OUR_hBP09-001_OUR": {
+      "id": "hBP09-001_hBP09_OUR_hBP09-001_OUR",
+      "cardNumber": "hBP09-001",
+      "name": "大空スバル",
+      "rarity": "OUR",
+      "series": "hBP09",
+      "sourceProduct": "hBP09",
+      "sellPrice": 19800,
+      "yuyuName": "大空スバル(パラレル)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10002.jpg",
+      "timestamp": "2026-09-19T12:22:28.373Z",
+      "prices": [
+        {
+          "name": "大空スバル(パラレル)",
+          "sellPrice": 19800,
+          "rarity": "OUR",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10002.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "大空スバル(パラレル)",
+          "sellPrice": 19800,
+          "rarity": "OUR",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10002.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-09-19": 19800
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP09/hBP09-001_OUR.png",
+      "localImage": "/images/hBP09-001.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBP09-002_hBP09_OSR_hBP09-002_OSR": {
+      "id": "hBP09-002_hBP09_OSR_hBP09-002_OSR",
+      "cardNumber": "hBP09-002",
+      "name": "轟はじめ",
+      "rarity": "OSR",
+      "series": "hBP09",
+      "sourceProduct": "hBP09",
+      "sellPrice": 420,
+      "yuyuName": "轟はじめ",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10003.jpg",
+      "timestamp": "2026-09-19T12:22:28.373Z",
+      "prices": [
+        {
+          "name": "轟はじめ",
+          "sellPrice": 420,
+          "rarity": "OSR",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10003.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "轟はじめ",
+          "sellPrice": 420,
+          "rarity": "OSR",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10003.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-09-19": 420
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP09/hBP09-002_OSR.png",
+      "localImage": "/images/hBP09-002.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBP09-002_hBP09_OUR_hBP09-002_OUR": {
+      "id": "hBP09-002_hBP09_OUR_hBP09-002_OUR",
+      "cardNumber": "hBP09-002",
+      "name": "轟はじめ",
+      "rarity": "OUR",
+      "series": "hBP09",
+      "sourceProduct": "hBP09",
+      "sellPrice": 17800,
+      "yuyuName": "轟はじめ(パラレル)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10004.jpg",
+      "timestamp": "2026-09-19T12:22:28.373Z",
+      "prices": [
+        {
+          "name": "轟はじめ(パラレル)",
+          "sellPrice": 17800,
+          "rarity": "OUR",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10004.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "轟はじめ(パラレル)",
+          "sellPrice": 17800,
+          "rarity": "OUR",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10004.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-09-19": 17800
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP09/hBP09-002_OUR.png",
+      "localImage": "/images/hBP09-002.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBP09-003_hBP09_OSR_hBP09-003_OSR": {
+      "id": "hBP09-003_hBP09_OSR_hBP09-003_OSR",
+      "cardNumber": "hBP09-003",
+      "name": "白銀ノエル",
+      "rarity": "OSR",
+      "series": "hBP09",
+      "sourceProduct": "hBP09",
+      "sellPrice": 680,
+      "yuyuName": "白銀ノエル",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10006.jpg",
+      "timestamp": "2026-09-19T12:22:28.373Z",
+      "prices": [
+        {
+          "name": "白銀ノエル",
+          "sellPrice": 680,
+          "rarity": "OSR",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10006.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "白銀ノエル",
+          "sellPrice": 680,
+          "rarity": "OSR",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10006.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-09-19": 680
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP09/hBP09-003_OSR.png",
+      "localImage": "/images/hBP09-003.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBP09-003_hBP09_OUR_hBP09-003_OUR": {
+      "id": "hBP09-003_hBP09_OUR_hBP09-003_OUR",
+      "cardNumber": "hBP09-003",
+      "name": "白銀ノエル",
+      "rarity": "OUR",
+      "series": "hBP09",
+      "sourceProduct": "hBP09",
+      "sellPrice": 19800,
+      "yuyuName": "白銀ノエル(パラレル)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10007.jpg",
+      "timestamp": "2026-09-19T12:22:28.373Z",
+      "prices": [
+        {
+          "name": "白銀ノエル(パラレル)",
+          "sellPrice": 19800,
+          "rarity": "OUR",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10007.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "白銀ノエル(パラレル)",
+          "sellPrice": 19800,
+          "rarity": "OUR",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10007.jpg"
+        }
+      ],
+      "priceHistory": {
+        "2026-09-19": 19800
+      },
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP09/hBP09-003_OUR.png",
+      "localImage": "/images/hBP09-003.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBD24-064_ent07": {
+      "id": "hBD24-064_ent07",
+      "cardNumber": "hBD24-064",
+      "name": "大神ミオ",
+      "rarity": "P",
+      "series": "ent07",
+      "sourceProduct": "ent07",
+      "sellPrice": 8980,
+      "yuyuName": "大神ミオ",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10064.jpg",
+      "timestamp": "2026-09-19T12:26:13.660Z",
+      "prices": [
+        {
+          "name": "大神ミオ",
+          "sellPrice": 8980,
+          "rarity": "P",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10064.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "大神ミオ",
+          "sellPrice": 8980,
+          "rarity": "P",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10064.jpg"
+        }
+      ],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-064_P.png",
+      "localImage": "/images/hBD24-064.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    },
+    "hBP01-081_hCS01_SR_hBP01-081_02_SR": {
+      "id": "hBP01-081_hCS01_SR_hBP01-081_02_SR",
+      "cardNumber": "hBP01-081",
+      "name": "星街すいせい",
+      "rarity": "SR",
+      "series": "hCS01",
+      "sourceProduct": "hCS01",
+      "sellPrice": 220,
+      "yuyuName": "星街すいせい(パラレル/hEB01)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/heb01/10098.jpg",
+      "timestamp": "2026-09-19T12:26:26.438Z",
+      "prices": [
+        {
+          "name": "星街すいせい(パラレル/hEB01)",
+          "sellPrice": 220,
+          "rarity": "SR",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/heb01/10098.jpg",
+          "buyPrice": 3600,
+          "buyPriceVersion": "HEB01",
+          "buyPriceSource": "fullahead",
+          "buyPriceTimestamp": "2026-09-19T12:27:40.368Z"
+        },
+        {
+          "name": "星街すいせい(パラレル/1st Anniversary Celebration Set)",
+          "sellPrice": 2480,
+          "rarity": "SR",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10125.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "星街すいせい(パラレル/hEB01)",
+          "sellPrice": 220,
+          "rarity": "SR",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/heb01/10098.jpg"
+        },
+        {
+          "name": "星街すいせい(パラレル/1st Anniversary Celebration Set)",
+          "sellPrice": 2480,
+          "rarity": "SR",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10125.jpg"
+        }
+      ],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hCS01/hBP01-081_02_SR.png",
+      "localImage": "/images/hBP01-081.jpg",
+      "type": "Holomen",
+      "color": "blue"
+    },
+    "hBP09-004_hBP09_SEC_hBP09-004_SEC": {
+      "id": "hBP09-004_hBP09_SEC_hBP09-004_SEC",
+      "cardNumber": "hBP09-004",
+      "name": "カエラ・コヴァルスキア",
+      "rarity": "SEC",
+      "series": "hBP09",
+      "sourceProduct": "hBP09",
+      "sellPrice": 49800,
+      "yuyuName": "カエラ・コヴァルスキア(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/noimage_100_140.jpg",
+      "timestamp": "2026-09-19T12:22:28.373Z",
+      "prices": [
+        {
+          "name": "カエラ・コヴァルスキア(パラレル/サイン)",
+          "sellPrice": 49800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/noimage_100_140.jpg"
+        }
+      ],
+      "_rawPricesArchive": [
+        {
+          "name": "カエラ・コヴァルスキア(パラレル/サイン)",
+          "sellPrice": 49800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/noimage_100_140.jpg"
+        }
+      ],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP09/hBP09-004_SEC.png",
+      "localImage": "/images/hBP09-004.jpg",
+      "type": "OshiHolomen",
+      "color": "colorless"
+    }
+  }
+}

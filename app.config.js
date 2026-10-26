@@ -120,15 +120,111 @@ function appleAndroidAppLinkIntentFilter() {
   };
 }
 
+// Store-MVP Play submission profile (DIC-1259). Both `production` and
+// `production-apk` in eas.json set EXPO_PUBLIC_STORE_MVP=1, and the app compiles
+// push alerts out via FEATURES.pushAlerts (src/config/releaseFlags.ts:52). The
+// feature that would need POST_NOTIFICATIONS is therefore absent from the
+// submitted artifact; keeping the permission on the merged manifest would list a
+// runtime prompt on the Play page for a code path that cannot fire, and force
+// Data safety / App content to over-declare Device IDs and push-token collection
+// against the real artifact. Strip it at the app-manifest layer so Gradle emits
+// tools:node="remove" for the expo-notifications contribution.
+//
+// Resolution mirrors src/config/releaseFlags.ts to keep one truth for the
+// profile: explicit '0'/'false' is off, '1'/'true' is on, anything else is
+// treated as full (no store-mvp additions) — the Expo build gate is the wrong
+// place to fail-closed for an unset env, since native builds already fail-close
+// on the release flag in the app runtime.
+const STORE_MVP_ADDITIONAL_BLOCKED_ANDROID_PERMISSIONS = [
+  'android.permission.POST_NOTIFICATIONS',
+];
+
+function isStoreMvpBuild() {
+  const raw = typeof process.env.EXPO_PUBLIC_STORE_MVP === 'string'
+    ? process.env.EXPO_PUBLIC_STORE_MVP.trim().toLowerCase()
+    : '';
+  return raw === '1' || raw === 'true';
+}
+
+function mergedAndroidBlockedPermissions(baseBlocked) {
+  const startingSet = new Set(Array.isArray(baseBlocked) ? baseBlocked : []);
+  if (isStoreMvpBuild()) {
+    for (const permission of STORE_MVP_ADDITIONAL_BLOCKED_ANDROID_PERMISSIONS) {
+      startingSet.add(permission);
+    }
+  }
+  return [...startingSet];
+}
+
+// Build stage (test-first release flow). Mirrors resolveNativeApiOrigin in
+// src/config/apiOrigin.ts (app.config.js cannot import TypeScript;
+// scripts/test-staging-alpha-flow.mjs checks the two agree). Unset or
+// 'production' changes nothing. 'staging' must name a non-production https
+// origin or the build fails here, before anything is compiled, instead of
+// producing a bundle that would refuse every API call at runtime. Any other
+// value is a typo and fails the build.
+const PRODUCTION_API_HOSTS = ['holohunter.dicoge.com', 'holocard-hunter.vercel.app'];
+
+function isProductionApiHost(host) {
+  const h = String(host).toLowerCase().replace(/\.$/, '');
+  return PRODUCTION_API_HOSTS.includes(h) || /^holocard-hunter-[a-z0-9-]+\.vercel\.app$/.test(h);
+}
+
+// Stage flags read at build time: EXPO_PUBLIC_APP_STAGE (native API origin),
+// EXPO_PUBLIC_APP_ENV (client banner / site URL, src/config/appEnv.ts) and, when
+// the build host sets it, the server APP_ENV. Any one saying 'staging' makes
+// this a staging build; an unknown value, or 'staging' alongside an explicit
+// 'production', fails the build. The client two mirror resolveClientStage in
+// src/config/apiOrigin.ts.
+const STAGE_FLAGS = ['EXPO_PUBLIC_APP_STAGE', 'EXPO_PUBLIC_APP_ENV', 'APP_ENV'];
+
+function resolveBuildStage(env = process.env) {
+  const values = STAGE_FLAGS.map((name) => [name, typeof env[name] === 'string' ? env[name].trim().toLowerCase() : '']);
+  for (const [name, v] of values) {
+    if (v !== '' && v !== 'production' && v !== 'staging') {
+      throw new Error(`${name}="${env[name]}" is not a known stage (expected unset, "production" or "staging").`);
+    }
+  }
+  const set = values.filter(([, v]) => v !== '');
+  if (set.some(([, v]) => v === 'staging') && set.some(([, v]) => v === 'production')) {
+    throw new Error(`Conflicting stage flags: ${set.map(([n, v]) => `${n}=${v}`).join(', ')}. Refusing to guess between staging and production.`);
+  }
+  if (!set.some(([, v]) => v === 'staging')) return { stage: 'production', apiOrigin: 'https://holohunter.dicoge.com' };
+  const origin = env.EXPO_PUBLIC_STAGING_API_ORIGIN;
+  let url = null;
+  try {
+    url = typeof origin === 'string' && origin === origin.trim() ? new URL(origin) : null;
+  } catch {
+    url = null;
+  }
+  const ok = url
+    && url.protocol === 'https:'
+    && !url.username && !url.password
+    && url.pathname === '/' && !url.search && !url.hash
+    && origin.replace(/\/$/, '') === url.origin
+    && !isProductionApiHost(url.hostname);
+  if (!ok) {
+    throw new Error(
+      'A staging build requires EXPO_PUBLIC_STAGING_API_ORIGIN to be a bare https origin that is not a production host ' +
+      `(got ${origin === undefined ? 'unset' : JSON.stringify(origin)}). A staging build must never fall back to the production API.`,
+    );
+  }
+  return { stage: 'staging', apiOrigin: url.origin };
+}
+
 module.exports = () => {
+  resolveBuildStage();
   assertAndroidGoogleClientConfigured();
   assertIosGoogleClientConfigured();
   const expo = { ...base.expo };
   const scheme = reversedGoogleIosScheme();
 
+  const android = { ...(expo.android || {}) };
+  android.blockedPermissions = mergedAndroidBlockedPermissions(android.blockedPermissions);
+  expo.android = android;
+
   const appleIntentFilter = appleAndroidAppLinkIntentFilter();
   if (appleIntentFilter) {
-    const android = { ...(expo.android || {}) };
     const existingFilters = Array.isArray(android.intentFilters) ? android.intentFilters : [];
     const alreadyRegistered = existingFilters.some(
       (f) =>
@@ -168,3 +264,13 @@ module.exports = () => {
 
   return { expo };
 };
+
+// Exported for the DIC-1248/DIC-1259 permission-manifest gate, which needs to
+// evaluate both the store-mvp and non-store-mvp profiles independently of
+// process.env in this shell.
+module.exports.isStoreMvpBuild = isStoreMvpBuild;
+module.exports.mergedAndroidBlockedPermissions = mergedAndroidBlockedPermissions;
+module.exports.STORE_MVP_ADDITIONAL_BLOCKED_ANDROID_PERMISSIONS =
+  STORE_MVP_ADDITIONAL_BLOCKED_ANDROID_PERMISSIONS;
+module.exports.resolveBuildStage = resolveBuildStage;
+module.exports.isProductionApiHost = isProductionApiHost;

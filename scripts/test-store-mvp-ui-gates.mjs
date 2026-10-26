@@ -1,0 +1,769 @@
+#!/usr/bin/env node
+/**
+ * DIC-1256 regression: the Store MVP profile must hide favorites / market data
+ * / external price links / watchlist / paid entry on the SURFACES the review
+ * build renders, not only in the data mapping layer.
+ *
+ * The field-strip and native-export tests already prove the shipped data
+ * artifact carries no forbidden fields. This test proves the RENDER paths that
+ * would otherwise resurface those hidden surfaces (drawer entry, card-detail
+ * price section, external price links, login/settings copy) are all wrapped in
+ * `{FEATURES.<flag> && ...}` — so an accidental removal of a gate breaks the
+ * suite instead of the store review.
+ *
+ * The gates are asserted by parsing the actual source with regexes. Static
+ * checks intentionally, because full component render requires react-native and
+ * a full RN env — the fast suite mustn't take on that boot cost, and the value
+ * we care about is the invariant that the gates STAY on every surface.
+ *
+ * Run: node scripts/test-store-mvp-ui-gates.mjs
+ */
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import * as pathMod from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { execSync } from 'node:child_process';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.join(__dirname, '..');
+
+function read(rel) {
+  return fs.readFileSync(path.join(repoRoot, rel), 'utf-8');
+}
+
+let passed = 0;
+function check(label, cond, detail) {
+  if (cond) {
+    passed += 1;
+    console.log(`  ✓ ${label}`);
+  } else {
+    console.error(`  ✗ ${label}${detail ? ` — ${detail}` : ''}`);
+    process.exitCode = 1;
+  }
+}
+
+// ── 1. FEATURES exposes the three new umbrella flags derived from STORE_MVP ──
+const flags = read('src/config/releaseFlags.ts');
+check(
+  'releaseFlags: FEATURES.favorites is derived from !STORE_MVP',
+  /favorites:\s*!STORE_MVP/.test(flags),
+);
+check(
+  'releaseFlags: FEATURES.marketData is derived from !STORE_MVP',
+  /marketData:\s*!STORE_MVP/.test(flags),
+);
+// DIC-1319: the plain sale price of the printing in hand is the product's
+// primary path, so it is the ONE price flag that is unconditionally on. If it
+// ever becomes STORE_MVP-derived again, the store build ships blank prices —
+// exactly the v21 closed-test defect.
+check(
+  'releaseFlags: FEATURES.sellPrice is unconditionally true (DIC-1319)',
+  /sellPrice:\s*true\s*,/.test(flags),
+);
+check(
+  'releaseFlags: FEATURES.sellPrice is NOT derived from STORE_MVP',
+  !/sellPrice:\s*!?STORE_MVP/.test(flags),
+);
+check(
+  'releaseFlags: FEATURES.externalPriceLinks is derived from !STORE_MVP',
+  /externalPriceLinks:\s*!STORE_MVP/.test(flags),
+);
+check(
+  'releaseFlags: FEATURES.watchlist still gated on !STORE_MVP (regression)',
+  /watchlist:\s*!STORE_MVP/.test(flags),
+);
+// DIC-1481: the Collection ownership-browser route is part of the corrected
+// new-interface release contract and must stay registered in EVERY release
+// profile. If this flag ever becomes STORE_MVP-derived again, production
+// re-ships the exact release blocker CR run edb401bf failed.
+check(
+  'releaseFlags: FEATURES.collection is unconditionally true (DIC-1481)',
+  /collection:\s*true\s*,/.test(flags),
+);
+check(
+  'releaseFlags: FEATURES.collection is NOT derived from STORE_MVP',
+  !/collection:\s*!?STORE_MVP/.test(flags),
+);
+check(
+  'releaseFlags: FEATURES.premium still gated on !STORE_MVP (regression)',
+  /premium:\s*!STORE_MVP/.test(flags),
+);
+
+// ── 2. Drawer routes: since DIC-1481 the Collection route is registered in
+//        EVERY profile behind the constant FEATURES.collection contract
+//        point, while Watchlist (and Favorites) stay unregistered under
+//        Store MVP — removing their Drawer.Screen unregisters the route so
+//        `navigate()` and deep links both fail to arrive ("not only hidden
+//        menus"). ──
+const nav = read('src/navigation/AppNavigator.tsx');
+check(
+  'AppNavigator: Collection Drawer.Screen wrapped in {FEATURES.collection && ...} (DIC-1481)',
+  /\{FEATURES\.collection\s*&&[^}]*<Drawer\.Screen[^>]*name="Collection"/s.test(nav),
+);
+// DIC-1481 supersedes DIC-1256's route-unregistration criterion for this ONE
+// route: re-gating it on FEATURES.favorites / STORE_MVP re-ships the release
+// blocker CR run edb401bf failed.
+check(
+  'AppNavigator: Collection is NOT gated on FEATURES.favorites or STORE_MVP (DIC-1481)',
+  !/\{FEATURES\.favorites\s*&&[^}]*<Drawer\.Screen[^>]*name="Collection"/s.test(nav)
+    && !/\{!?STORE_MVP\s*&&[^}]*<Drawer\.Screen[^>]*name="Collection"/s.test(nav),
+);
+check(
+  'AppNavigator: Collection keeps its visible drawer menu row (no drawerItemStyle hide)',
+  !/name="Collection"[\s\S]{0,400}?drawerItemStyle:/.test(nav),
+);
+check(
+  'AppNavigator: Favorites Drawer.Screen still wrapped in {FEATURES.favorites && ...} (regression)',
+  /\{FEATURES\.favorites\s*&&[^}]*<Drawer\.Screen[^>]*name="Favorites"/s.test(nav),
+);
+check(
+  'AppNavigator: Watchlist Drawer.Screen still wrapped in {FEATURES.watchlist && ...} (regression)',
+  /\{FEATURES\.watchlist\s*&&[^}]*<Drawer\.Screen[^>]*name="Watchlist"/s.test(nav),
+);
+// 賽事月報 is hidden in the FIRST release (owner 2026-10-19): the route is registered only
+// under FEATURES.tournamentReport, which is the constant false — every profile.
+check(
+  'AppNavigator: TournamentReport Drawer.Screen wrapped in {FEATURES.tournamentReport && ...}',
+  /\{FEATURES\.tournamentReport\s*&&\s*\(\s*<Drawer\.Screen[^>]*name="TournamentReport"/s.test(nav),
+);
+{
+  const flags = fs.readFileSync(path.join(repoRoot, 'src/config/releaseFlags.ts'), 'utf8');
+  check('releaseFlags: tournamentReport is the constant false (hidden in the first release, every profile)',
+    /\n\s*tournamentReport:\s*false,/.test(flags));
+  const home = fs.readFileSync(path.join(repoRoot, 'src/screens/HomeScreen.tsx'), 'utf8');
+  check('HomeScreen: the 賽事月報 quick action carries the tournamentReport gate',
+    /key: 'tournament'[^\n]*route: 'TournamentReport', gate: 'tournamentReport'/.test(home)
+      && /QUICK_ACTIONS\.filter\(\(a\) => \(a\.gate \? FEATURES\[a\.gate\] : true\)\)/.test(home));
+  const callers = execSync("grep -rln \"navigate('TournamentReport'\\|route: 'TournamentReport'\" src || true", { cwd: repoRoot }).toString().trim().split('\n').filter(Boolean);
+  check('only gated entries point at TournamentReport (no other navigate to it)',
+    callers.every((f) => f === 'src/screens/HomeScreen.tsx'), callers.join(', '));
+  const landing = fs.readFileSync(path.join(repoRoot, 'src/screens/LandingScreen.tsx'), 'utf8');
+  const ungated = landing.split('\n').filter((l) => l.includes('賽事月報') && !/TOURNAMENT|^\s*\/\//.test(l) && !/key: 'tournament'|title: '賽事月報'/.test(l));
+  check('LandingScreen: every 賽事月報 mention is conditional on FEATURES.tournamentReport', ungated.length === 0, ungated.join(' | '));
+  check('LandingScreen: the 賽事月報 feature tile is filtered by the flag',
+    /const FEATURES = ALL_FEATURES\.filter\(\(f\) => f\.key !== 'tournament' \|\| TOURNAMENT\)/.test(landing));
+  check('the report data is kept (hidden, not deleted)',
+    fs.existsSync(path.join(repoRoot, 'data/tournaments/2026-07.json')) && fs.existsSync(path.join(repoRoot, 'public/data/tournaments/analytics/index.json')));
+}
+// Every other drawer entry (Home / Scan / Search / DeckEditor / Tutorial / Settings)
+// must NOT be wrapped in any FEATURES gate — those are the retained surfaces.
+for (const name of ['Home', 'Scan', 'Search', 'DeckEditor', 'Tutorial', 'Settings']) {
+  const beforeIdx = nav.indexOf(`name="${name}"`);
+  assert.notEqual(beforeIdx, -1, `AppNavigator must still declare ${name}`);
+  // Look at the ~200 chars preceding the name= to confirm no FEATURES.* gate
+  // was accidentally added.
+  const preceding = nav.slice(Math.max(0, beforeIdx - 200), beforeIdx);
+  check(
+    `AppNavigator: ${name} drawer entry is NOT gated under FEATURES.*`,
+    !/\{FEATURES\.[a-zA-Z]+\s*&&\s*\(\s*<Drawer\.Screen[^>]*$/.test(preceding),
+  );
+}
+
+// ── 2b. MeScreen 我的 hub: every control that NAVIGATES to Collection must
+//        carry the same gate that registers the route (DIC-1430's invariant:
+//        a control must never outlive its route — React Navigation drops a
+//        NAVIGATE to an unknown route name silently in production builds).
+//        Since DIC-1481 that shared gate is the constant FEATURES.collection,
+//        so the controls render in every profile AND stay pinned to the
+//        route's registration should the contract ever move again. ──
+const me = read('src/screens/MeScreen.tsx');
+check(
+  'MeScreen: 卡牌收藏 segment entry is gated on FEATURES.collection (DIC-1481)',
+  /key:\s*'collection'[^}]*enabled:\s*FEATURES\.collection/.test(me),
+);
+check(
+  'MeScreen: no Collection-routed segment is hardcoded `enabled: true` (DIC-1430)',
+  !/route:\s*'Collection'[^}]*enabled:\s*true/.test(me),
+);
+check(
+  'MeScreen: 卡牌收藏 segment is NOT still gated on FEATURES.favorites (DIC-1481)',
+  !/key:\s*'collection'[^}]*enabled:\s*FEATURES\.favorites/.test(me),
+);
+check(
+  'MeScreen: me-search-field wrapped in {FEATURES.collection && ...} (DIC-1481)',
+  /\{FEATURES\.collection\s*&&\s*\(\s*<TouchableOpacity[\s\S]{0,400}?testID="me-search-field"/.test(me),
+);
+check(
+  'MeScreen: me-view-all wrapped in {FEATURES.collection && ...} (DIC-1481)',
+  /\{FEATURES\.collection\s*&&\s*\(\s*<TouchableOpacity[\s\S]{0,400}?testID="me-view-all"/.test(me),
+);
+// Restricted segments keep their fail-closed gates: only the Collection
+// boundary moved in DIC-1481.
+check(
+  'MeScreen: 到價提醒 segment stays gated on FEATURES.watchlist (regression)',
+  /key:\s*'watchlist'[^}]*enabled:\s*FEATURES\.watchlist/.test(me),
+);
+check(
+  'MeScreen: 趨勢 segment stays gated on FEATURES.favorites (regression)',
+  /key:\s*'trends'[^}]*enabled:\s*FEATURES\.favorites/.test(me),
+);
+// Mutation sensitivity: prove these predicates actually reject the shipped
+// defect rather than matching any source. Re-introduce the exact pre-fix
+// spellings in memory and assert each assertion flips.
+{
+  const ungatedSegment = me.replace(
+    /key:\s*'collection'([^}]*)enabled:\s*FEATURES\.collection/,
+    "key: 'collection'$1enabled: true",
+  );
+  check(
+    'mutation: an ungated `enabled: true` Collection segment IS rejected (DIC-1430)',
+    !/key:\s*'collection'[^}]*enabled:\s*FEATURES\.collection/.test(ungatedSegment)
+      && /route:\s*'Collection'[^}]*enabled:\s*true/.test(ungatedSegment),
+  );
+  const ungatedSearch = me.replace(
+    /\{FEATURES\.collection\s*&&\s*\(\s*(<TouchableOpacity[\s\S]{0,400}?testID="me-search-field")/,
+    '$1',
+  );
+  check(
+    'mutation: an ungated me-search-field IS rejected (DIC-1430)',
+    !/\{FEATURES\.collection\s*&&\s*\(\s*<TouchableOpacity[\s\S]{0,400}?testID="me-search-field"/.test(ungatedSearch),
+  );
+  const ungatedViewAll = me.replace(
+    /\{FEATURES\.collection\s*&&\s*\(\s*(<TouchableOpacity[\s\S]{0,400}?testID="me-view-all")/,
+    '$1',
+  );
+  check(
+    'mutation: an ungated me-view-all IS rejected (DIC-1430)',
+    !/\{FEATURES\.collection\s*&&\s*\(\s*<TouchableOpacity[\s\S]{0,400}?testID="me-view-all"/.test(ungatedViewAll),
+  );
+}
+
+// ── 3. Card detail: the four gates that had to land ──
+const detail = read('src/screens/CardDetailScreen.tsx');
+check(
+  'CardDetailScreen: per-card 收藏 (ownership) widget wrapped in {FEATURES.favorites && ...}',
+  /\{FEATURES\.favorites\s*&&\s*collectionVersion/.test(detail),
+);
+check(
+  'CardDetailScreen: top price section wrapped in {FEATURES.sellPrice && ...} (DIC-1319)',
+  /\{FEATURES\.sellPrice\s*&&\s*\(\s*<View[^>]*styles\.priceSection/s.test(detail),
+);
+check(
+  'CardDetailScreen: 查即時價 CTA inside the price section is gated on FEATURES.externalPriceLinks (DIC-1319)',
+  /\{FEATURES\.externalPriceLinks\s*&&\s*\(\s*<TouchableOpacity[^>]*styles\.checkPriceBtn/s.test(detail),
+);
+check(
+  'CardDetailScreen: multi-printing hint uses the store variant when marketData is off (DIC-1319 CR)',
+  /!FEATURES\.marketData\s*\?\s*t\('card_detail_variant_hint_store'\)/.test(detail),
+);
+check(
+  'CardDetailScreen: neither market-data-worded hint can render without FEATURES.marketData',
+  // Both original hints tell the user to pick a version in 「市場數據」, which is
+  // gated. They may only be reached from the FEATURES.marketData branch.
+  /!FEATURES\.marketData[\s\S]{0,220}?card_detail_variant_hint_spread[\s\S]{0,120}?card_detail_variant_hint'/.test(detail),
+);
+check(
+  'CardDetailScreen: MarketDataPanel invocation wrapped in {FEATURES.marketData && ...}',
+  /\{FEATURES\.marketData\s*&&\s*<MarketDataPanel/.test(detail),
+);
+check(
+  'CardDetailScreen: yuyu-tei and Carousell external links wrapped in {FEATURES.externalPriceLinks && ...}',
+  /\{FEATURES\.externalPriceLinks\s*&&[\s\S]*?card_detail_yuyu_link[\s\S]*?card_detail_carousell_link/.test(detail),
+);
+{
+  // Scope the official-list assertion to the EXTERNAL LINKS section. Checking
+  // "no FEATURES.externalPriceLinks gate appears anywhere before it" was
+  // over-broad: DIC-1319 added a second externalPriceLinks gate higher up (the
+  // 查即時價 CTA), which made the old regex match across unrelated blocks and
+  // report a retained link as gated.
+  const sectionStart = detail.indexOf("card_detail_external_links");
+  const sectionEnd = detail.indexOf('{FEATURES.watchlist', sectionStart);
+  const externalSection = detail.slice(sectionStart, sectionEnd === -1 ? undefined : sectionEnd);
+  const officialIdx = externalSection.indexOf('card_detail_official_list');
+  const gateIdx = externalSection.indexOf('{FEATURES.externalPriceLinks');
+  check(
+    'CardDetailScreen: 官方卡表 external link is NOT gated (must retain)',
+    /<LinkButton[^/]*text=\{t\('card_detail_official_list'\)\}[^/]*\/>/.test(externalSection)
+      && officialIdx !== -1 && gateIdx !== -1 && officialIdx < gateIdx,
+  );
+}
+check(
+  // DIC-1427 Pen o7WO3r: the top chip + bottom button became ONE 到價提醒
+  // banner (Pen node jB05M) — still wrapped in {FEATURES.watchlist && ...}.
+  'CardDetailScreen: 到價提醒 banner still wrapped in {FEATURES.watchlist && ...} (regression)',
+  /\{FEATURES\.watchlist\s*&&\s*\(\s*<TouchableOpacity\s[\s\S]*?styles\.alertBanner/s.test(detail),
+);
+
+// ── 3b. Scan surfaces (DIC-1258 CR → DIC-1256 → DIC-1319).
+//        The scanned printing's OWN sale price is the primary path and rides on
+//        FEATURES.sellPrice, so it survives the store build. Cross-printing
+//        comparison stays on FEATURES.marketData and stays hidden. ──
+const scanResult = read('src/components/ScanResultCard.tsx');
+check(
+  'ScanResultCard: prices section wrapped in {FEATURES.sellPrice && ...} (DIC-1319)',
+  /\{FEATURES\.sellPrice\s*&&\s*\(\s*<View style=\{styles\.pricesSection\}/s.test(scanResult),
+);
+check(
+  'ScanResultCard: cross-printing variants section still wrapped in {FEATURES.marketData && variants && ...}',
+  /\{FEATURES\.marketData\s*&&\s*variants\s*&&\s*\(\s*<View style=\{styles\.variantsSection\}/s.test(scanResult),
+);
+
+const scanCandidate = read('src/components/ScanCandidateSelector.tsx');
+check(
+  'ScanCandidateSelector: meta price segment gated on FEATURES.sellPrice (DIC-1319)',
+  /FEATURES\.sellPrice\s*\?\s*`\s+\$\{formatPrice\(card\.sellPrice\)\}`\s*:\s*''/.test(scanCandidate),
+);
+
+const scanSession = read('src/components/ScanSessionPanel.tsx');
+check(
+  'ScanSessionPanel: header total price wrapped in {FEATURES.marketData && ...}',
+  /\{FEATURES\.marketData\s*&&\s*\(\s*<Text style=\{styles\.totalPrice\}/s.test(scanSession),
+);
+check(
+  'ScanSessionPanel: currency selector row wrapped in {FEATURES.marketData && ...}',
+  /\{FEATURES\.marketData\s*&&\s*\(\s*<View style=\{styles\.currencyRow\}/s.test(scanSession),
+);
+check(
+  'ScanSessionPanel: summary-card total wrapped in {FEATURES.marketData && ...} (Pen wC1cO Ahd5w)',
+  /\{FEATURES\.marketData\s*&&\s*\(\s*<View testID="scan-session-total-row"/s.test(scanSession),
+);
+check(
+  'ScanSessionPanel: 複製結果 button wrapped in {FEATURES.marketData && ...}',
+  /\{FEATURES\.marketData\s*&&\s*\(\s*<TouchableOpacity[\s\S]*?scan_copy_results/s.test(scanSession),
+);
+check(
+  'ScanSessionPanel: header title swaps to store variant under !FEATURES.marketData',
+  /FEATURES\.marketData\s*\?\s*'scan_session_title'\s*:\s*'scan_session_title_store'/.test(scanSession),
+);
+check(
+  'ScanSessionPanel: version select hint swaps to store variant under !FEATURES.marketData',
+  /FEATURES\.marketData\s*\?\s*'scan_version_select_hint'\s*:\s*'scan_version_select_hint_store'/.test(scanSession),
+);
+check(
+  'ScanSessionPanel: version chip price segment gated on FEATURES.marketData',
+  /FEATURES\.marketData\s*\?\s*`\$\{v\.name\}\s*·\s*\$\{formatPrice\(v\.sellPrice\)\}`\s*:\s*v\.name/.test(scanSession),
+);
+
+const scanScreen = read('src/screens/ScanScreen.tsx');
+check(
+  'ScanScreen: last-scanned toast price wrapped in {FEATURES.sellPrice && ...} (DIC-1319)',
+  /\{FEATURES\.sellPrice\s*&&\s*\(\s*<Text style=\{resultStyles\.toastPrice\}/s.test(scanScreen),
+);
+check(
+  'ScanScreen: search-suggestion price wrapped in {FEATURES.sellPrice && ...} (DIC-1319)',
+  /\{FEATURES\.sellPrice\s*&&\s*\(\s*<Text style=\{resultStyles\.listItemPrice\}/s.test(scanScreen),
+);
+
+// ── 3c. SearchResults + DeckEditor (DIC-1262 CR → DIC-1256 remediation) ──
+// Both are retained routes; only their price / market / watchlist surfaces
+// are gated. Static-source pins live alongside the render probe below.
+const searchResults = read('src/screens/SearchResultsScreen.tsx');
+check(
+  'SearchResultsScreen: card price/no-trade branch wrapped in {FEATURES.sellPrice && (...)} (DIC-1319)',
+  /\{FEATURES\.sellPrice\s*&&\s*\(\s*card\.yuyuPrice/s.test(searchResults),
+);
+check(
+  'SearchResultsScreen: imports FEATURES from releaseFlags',
+  /from '\.\.\/config\/releaseFlags'/.test(searchResults)
+    && /import\s*\{[^}]*FEATURES[^}]*\}\s*from\s*'\.\.\/config\/releaseFlags'/.test(searchResults),
+);
+
+const deckEditor = read('src/screens/DeckEditorScreen.tsx');
+check(
+  'DeckEditorScreen: imports FEATURES from releaseFlags',
+  /import\s*\{\s*FEATURES\s*\}\s*from\s*'\.\.\/config\/releaseFlags'/.test(deckEditor),
+);
+check(
+  'DeckEditorScreen: gap panel header title uses store variant under !FEATURES.marketData',
+  /FEATURES\.marketData\s*\?\s*'deck_gap_title'\s*:\s*'deck_gap_title_store'/.test(deckEditor),
+);
+check(
+  'DeckEditorScreen: per-row gap price wrapped in {FEATURES.marketData && ...}',
+  /\{FEATURES\.marketData\s*&&\s*\(\s*<Text style=\{styles\.gapPrice\}/s.test(deckEditor),
+);
+check(
+  'DeckEditorScreen: gap-totals card wrapped under FEATURES.marketData',
+  /\{FEATURES\.marketData\s*&&\s*\(\s*<Text style=\{styles\.gapPrice\}/s.test(deckEditor)
+    && /FEATURES\.marketData\s*\?\s*\(\s*<View style=\{styles\.totalCard\}/s.test(deckEditor),
+);
+check(
+  'DeckEditorScreen: price-alert row/editor gated by FEATURES.watchlist',
+  /\{FEATURES\.watchlist\s*&&\s*r\.missing\s*>\s*0\s*&&\s*\(/.test(deckEditor),
+);
+
+// ── 4. Settings: price sources section only rendered under FEATURES.marketData;
+//        link-hint and guest-sync copy have a store-only branch. ──
+const settings = read('src/screens/SettingsScreen.tsx');
+check(
+  'SettingsScreen: 價格來源 section wrapped in {FEATURES.marketData && ...}',
+  /\{FEATURES\.marketData\s*&&\s*\(/.test(settings)
+    && /settings_price_sources/.test(settings),
+);
+check(
+  'SettingsScreen: link hint has a store branch (settings_link_hint_store)',
+  /settings_link_hint_store/.test(settings),
+);
+check(
+  'SettingsScreen: guest sync hint has a store branch (settings_guest_sync_store)',
+  /settings_guest_sync_store/.test(settings),
+);
+
+// ── 5. Login: description uses a store-only copy variant. ──
+const login = read('src/screens/LoginScreen.tsx');
+check(
+  'LoginScreen: description picks login_description_store when STORE_MVP',
+  /STORE_MVP\s*\?\s*'login_description_store'\s*:\s*'login_description'/.test(login)
+    || /STORE_MVP\s*\?\s*"login_description_store"\s*:\s*"login_description"/.test(login),
+);
+
+// ── 6. i18n: the three new keys exist in both zh and ja, and their text
+//        does NOT reintroduce the forbidden claims (收藏 / 提醒 / 趨勢 / 價格). ──
+const zh = read('src/i18n/locales/zh.ts');
+const ja = read('src/i18n/locales/ja.ts');
+function extractStoreKey(src, key) {
+  const re = new RegExp(`${key}:\\s*'([^']+)'`);
+  const m = src.match(re);
+  return m ? m[1] : null;
+}
+for (const key of [
+  'login_description_store',
+  'settings_link_hint_store',
+  'settings_guest_sync_store',
+  'scan_session_title_store',
+  'scan_version_select_hint_store',
+  'scan_version_pending_hint_store',
+  'deck_gap_title_store',
+]) {
+  const zhText = extractStoreKey(zh, key);
+  const jaText = extractStoreKey(ja, key);
+  check(`zh locale defines ${key}`, !!zhText);
+  check(`ja locale defines ${key}`, !!jaText);
+  // Guard: store-variant copy must not claim favorites / alerts / price / trend.
+  if (zhText) {
+    check(
+      `zh ${key} does not claim 收藏 / 提醒 / 趨勢 / 價格 (store build compliance)`,
+      !/收藏|提醒|趨勢|價格/.test(zhText),
+      `zh text = "${zhText}"`,
+    );
+  }
+  if (jaText) {
+    check(
+      `ja ${key} does not claim お気に入り / アラート / 価格 / 推移 (store build compliance)`,
+      !/お気に入り|アラート|価格|推移/.test(jaText),
+      `ja text = "${jaText}"`,
+    );
+  }
+}
+
+{
+  const key = 'card_detail_variant_hint_store';
+  const zhText = extractStoreKey(zh, key);
+  const jaText = extractStoreKey(ja, key);
+  check(`zh locale defines ${key}`, !!zhText);
+  check(`ja locale defines ${key}`, !!jaText);
+  if (zhText) {
+    check(
+      `zh ${key} does not claim 收藏 / 提醒 / 趨勢 / 差價, nor name the gated 市場數據 section`,
+      !/收藏|提醒|趨勢|差價|市場數據/.test(zhText),
+      `zh text = "${zhText}"`,
+    );
+  }
+  if (jaText) {
+    check(
+      `ja ${key} does not claim お気に入り / アラート / 推移 / 価格差, nor name the gated 市場データ section`,
+      !/お気に入り|アラート|推移|価格差|市場データ/.test(jaText),
+      `ja text = "${jaText}"`,
+    );
+  }
+}
+
+// ── v41 (2026-10-17, user scope change) — supersedes DIC-1381 W10/W11's
+//    "Store MVP copy must not promise sync". The user asked for the same
+//    Google account to see the same core data on every phone, so the
+//    binding is now installed in EVERY profile and Store MVP syncs exactly the
+//    surfaces it shows (collection counts, decks, settings, scan list). The
+//    truth-source binding is kept, pointed at the new truth:
+//      • App.tsx installs the binding exactly once, unconditionally
+//      • hidden surfaces never push: activeDomainsOnly drops favorites when
+//        !FEATURES.favorites and priceAlerts when !FEATURES.watchlist, and the
+//        binding subscribes to those stores only behind the same flags
+//      • the copy may now say "syncs" but must NOT keep the stale claim that
+//        decks / settings stay on the device (that is the false claim now),
+//        and must not name the hidden surfaces (checked above).
+const appSrcForSync = read('App.tsx');
+const flagsSrcForSync = read('src/config/releaseFlags.ts');
+const orchestratorSrcForSync = read('src/services/accountSyncOrchestrator.ts');
+const bindingSrcForSync = read('src/services/accountSyncBinding.ts');
+const bindingCallLines = appSrcForSync
+  .split('\n')
+  .map((line, idx) => ({ line, idx: idx + 1 }))
+  .filter(({ line }) => /installAccountSyncBinding\s*\(/.test(line))
+  .filter(({ line }) => !/^\s*(import|export)\s/.test(line))
+  .filter(({ line }) => !/^\s*(\/\/|\*|\/\*)/.test(line));
+check(
+  'code sanity: App.tsx calls installAccountSyncBinding() exactly ONCE',
+  bindingCallLines.length === 1,
+  `got ${bindingCallLines.length} call sites`,
+);
+if (bindingCallLines.length === 1) {
+  const linesArr = appSrcForSync.split('\n');
+  const callLineIdx = bindingCallLines[0].idx - 1;
+  let guardLineIdx = -1;
+  for (let i = callLineIdx - 1; i >= 0; i -= 1) {
+    if (/^\s*if\s*\(/.test(linesArr[i])) { guardLineIdx = i; break; }
+    if (/^\s*\}\s*$/.test(linesArr[i]) || /useEffect\(/.test(linesArr[i])) break;
+  }
+  check(
+    'code sanity (v41): the installAccountSyncBinding() call is NOT behind a feature-flag guard (Store MVP syncs its visible data)',
+    guardLineIdx < 0,
+    guardLineIdx >= 0 ? `enclosing if at L${guardLineIdx + 1}: ${linesArr[guardLineIdx].trim()}` : '',
+  );
+}
+for (const flag of ['favorites', 'watchlist']) {
+  check(
+    `code sanity: releaseFlags derives FEATURES.${flag} from !STORE_MVP (hidden in Store MVP)`,
+    new RegExp(`${flag}:\\s*!STORE_MVP`).test(flagsSrcForSync),
+  );
+}
+check(
+  'code sanity (v41): activeDomainsOnly drops favorites unless FEATURES.favorites and priceAlerts unless FEATURES.watchlist',
+  /if\s*\(!FEATURES\.favorites\)\s*delete out\.favorites/.test(orchestratorSrcForSync)
+    && /if\s*\(!FEATURES\.watchlist\)\s*delete out\.priceAlerts/.test(orchestratorSrcForSync)
+    && /snapshotFromLocalStores\(\)[\s\S]{0,400}return activeDomainsOnly\(/.test(orchestratorSrcForSync),
+);
+check(
+  'code sanity (v41): the binding subscribes to price alerts / favorites only behind FEATURES.watchlist / FEATURES.favorites',
+  /if\s*\(FEATURES\.watchlist\)\s*\{\s*subscriptions\.push\(usePriceAlertStore\.subscribe/.test(bindingSrcForSync)
+    && /if\s*\(FEATURES\.favorites\)\s*\{\s*subscriptions\.push\(useFavoritesStore\.subscribe/.test(bindingSrcForSync),
+);
+
+// The stale on-device claim for decks / settings is what is false now.
+const STALE_LOCAL_ZH = /(牌組|設定)[^。；]*(本機儲存|裝置本機|不會跨裝置|不會同步|不同步)/;
+const STALE_LOCAL_JA = /(デッキ|設定)[^。]*(端末内に保存|端末に保存|同期されません|同期しません)/;
+function splitClausesZh(s) {
+  return s.split(/[。！？；;.!?]/).map((c) => c.trim()).filter(Boolean);
+}
+function splitClausesJa(s) {
+  return s.split(/[。！？；;.!?]/).map((c) => c.trim()).filter(Boolean);
+}
+const staleClauses = (text, re, splitFn) => splitFn(text).filter((c) => re.test(c));
+
+const STORE_MVP_ONLY_KEYS = [
+  'login_description_store',
+  'settings_link_hint_store',
+  'settings_guest_sync_store',
+];
+for (const key of STORE_MVP_ONLY_KEYS) {
+  const zhText = extractStoreKey(zh, key) || '';
+  const jaText = extractStoreKey(ja, key) || '';
+  const zhBad = staleClauses(zhText, STALE_LOCAL_ZH, splitClausesZh);
+  const jaBad = staleClauses(jaText, STALE_LOCAL_JA, splitClausesJa);
+  check(`zh ${key} no longer claims decks / settings stay on the device (v41 sync)`, zhBad.length === 0,
+    zhBad.length ? `stale clauses: ${JSON.stringify(zhBad)}` : '');
+  check(`ja ${key} no longer claims decks / settings stay on the device (v41 sync)`, jaBad.length === 0,
+    jaBad.length ? `stale clauses: ${JSON.stringify(jaBad)}` : '');
+  check(`zh ${key} keeps the scan quota per device (never claims it syncs)`,
+    !/額度[^。；]*同步/.test(zhText));
+}
+
+// Mutation probe: the exact pre-v41 copy must be flagged as stale now.
+{
+  const zhOld = '尚未登入。訪客每月可掃描 50 張卡牌，登入不會增加或重置額度。此版本的牌組與設定為裝置本機儲存。';
+  const jaOld = 'ログインしていません。このバージョンではデッキと設定は端末内に保存されます。';
+  check('mutation probe: the pre-v41 zh on-device claim IS flagged', staleClauses(zhOld, STALE_LOCAL_ZH, splitClausesZh).length > 0);
+  check('mutation probe: the pre-v41 ja on-device claim IS flagged', staleClauses(jaOld, STALE_LOCAL_JA, splitClausesJa).length > 0);
+}
+
+// ── DIC-1381 W10 / W11 CR — settings_delete_note must NOT tell the
+//    user that the deletion backend is still under construction / not
+//    live.
+//
+//    Ground truth is the SHIPPING chain the SettingsScreen actually
+//    uses (Mac-Codex W11 CR):
+//      src/screens/SettingsScreen.tsx
+//        └─ useAuthStore from `../store/authStore` (singular)
+//           └─ src/store/authStore.ts.deleteUserAccount
+//              └─ deleteAccount from `../services/authService`
+//                 └─ src/services/authService.ts.deleteAccount
+//                    └─ apiPost('/auth/delete-account', ...)
+//                       └─ api/auth/delete-account.ts
+//    A stale "尚未上線 / under construction / 準備中" note contradicts
+//    this live chain and public/privacy.html §5 / §6 which agree.
+const settingsScreenSrc = read('src/screens/SettingsScreen.tsx');
+const shippingAuthStoreSrc = read('src/store/authStore.ts');
+const shippingAuthServiceSrc = read('src/services/authService.ts');
+const deleteEndpointFile = 'api/auth/delete-account.ts';
+
+check(
+  'shipping chain: SettingsScreen imports useAuthStore from ../store/authStore (the shipping store)',
+  /import\s*\{[^}]*useAuthStore[^}]*\}\s*from\s*['"]\.\.\/store\/authStore['"]/.test(settingsScreenSrc),
+);
+check(
+  'shipping chain: SettingsScreen invokes s.deleteUserAccount() (the store method)',
+  /useAuthStore\(\(s\)\s*=>\s*s\.deleteUserAccount\)/.test(settingsScreenSrc),
+);
+check(
+  'shipping chain: store/authStore imports deleteAccount from ../services/authService (not services/auth)',
+  /import\s*\{[^}]*deleteAccount[^}]*\}\s*from\s*['"]\.\.\/services\/authService['"]/.test(shippingAuthStoreSrc),
+);
+check(
+  'shipping chain: store/authStore.deleteUserAccount awaits deleteAccount(session) inside a try/catch that keeps the session on failure',
+  /deleteUserAccount:[\s\S]*?await\s+deleteAccount\(session\)[\s\S]*?catch[\s\S]*?set\(\{[\s\S]*?isLoading:\s*false[\s\S]*?error:[\s\S]*?throw\s+err/.test(shippingAuthStoreSrc),
+);
+// Fail-closed: authService.deleteAccount must only resolve when the
+// response is ok AND body.deleted === true; ANY other case throws.
+// Mutation probe below verifies this predicate rejects a weakened
+// (no-throw) mutant.
+const svcDeleteMatch = shippingAuthServiceSrc.match(/export async function deleteAccount\(session:[^)]*\):\s*Promise<[^>]*>\s*\{([\s\S]*?)\n\}/);
+check(
+  'shipping chain: authService.deleteAccount posts to /auth/delete-account',
+  svcDeleteMatch && /apiPost\(\s*['"]\/auth\/delete-account['"]/.test(svcDeleteMatch[1]),
+);
+check(
+  'fail-closed: authService.deleteAccount throws unless res.ok AND data.deleted === true (DIC-1381 W11 CR)',
+  svcDeleteMatch
+    && /if\s*\(\s*!res\.ok\s*\|\|\s*data\??\.deleted\s*!==\s*true\s*\)\s*\{\s*throw\s+/.test(svcDeleteMatch[1]),
+  svcDeleteMatch ? `deleteAccount body: ${svcDeleteMatch[1].trim().slice(0, 200)}` : 'no deleteAccount definition matched',
+);
+check(
+  `code sanity: ${deleteEndpointFile} exists on disk (deletion backend implemented)`,
+  existsSync(path.join(repoRoot, deleteEndpointFile)),
+);
+
+// DIC-1381 W11 CR — mutation probe: the exact predicate must reject a
+// weakened `deleteAccount` that resolves normally regardless of status.
+{
+  const weakened = `export async function deleteAccount(session: string): Promise<void> {\n  const res = await apiPost('/auth/delete-account', {}, session);\n  const data = await readJson(res);\n  return;\n}`;
+  const m = weakened.match(/export async function deleteAccount\(session:[^)]*\):\s*Promise<[^>]*>\s*\{([\s\S]*?)\n\}/);
+  const rejectsWeakened = !(
+    m && /if\s*\(\s*!res\.ok\s*\|\|\s*data\??\.deleted\s*!==\s*true\s*\)\s*\{\s*throw\s+/.test(m[1])
+  );
+  check(
+    'mutation probe: a weakened deleteAccount that never throws IS rejected by the fail-closed predicate',
+    rejectsWeakened,
+  );
+}
+
+// DIC-1381 W11 CR — mutation probe: renaming the shipping route away
+// from `/auth/delete-account` fails the shipping-chain predicate. The
+// weakened source uses `/auth/wipe-account` instead.
+{
+  const renamed = `export async function deleteAccount(session: string): Promise<void> {\n  const res = await apiPost('/auth/wipe-account', {}, session);\n  const data = await readJson(res);\n  if (!res.ok || data?.deleted !== true) {\n    throw toAuthError(data, res.status);\n  }\n}`;
+  const m = renamed.match(/export async function deleteAccount\(session:[^)]*\):\s*Promise<[^>]*>\s*\{([\s\S]*?)\n\}/);
+  const routePasses = m && /apiPost\(\s*['"]\/auth\/delete-account['"]/.test(m[1]);
+  check(
+    'mutation probe: renaming the delete route away from /auth/delete-account IS rejected by the route predicate',
+    !routePasses,
+  );
+}
+
+const zhDeleteNote = extractStoreKey(zh, 'settings_delete_note') || '';
+const jaDeleteNote = extractStoreKey(ja, 'settings_delete_note') || '';
+check(
+  'zh settings_delete_note does not claim deletion backend is unbuilt / offline (DIC-1381 W10 CR)',
+  !/(仍在建置|建置中|尚未上線|尚未實作|尚未就緒|尚未建置)/.test(zhDeleteNote),
+  `zh text = "${zhDeleteNote}"`,
+);
+check(
+  'ja settings_delete_note does not claim deletion backend is unbuilt / offline (DIC-1381 W10 CR)',
+  !/(準備中|未実装|未対応|未リリース|建設中|開発中)/.test(jaDeleteNote),
+  `ja text = "${jaDeleteNote}"`,
+);
+// Positive: the note should still describe the fail-closed behavior
+// when a specific attempt fails — that is legitimate and matches the
+// settings_delete_pending / _pending_body strings and the runtime.
+check(
+  'zh settings_delete_note describes the fail-closed "未完成 / 尚未完成" behavior (fail-closed intact)',
+  /(未完成|尚未完成|不會誤示|維持登入狀態)/.test(zhDeleteNote),
+);
+check(
+  'ja settings_delete_note describes the fail-closed "未完了" behavior (fail-closed intact)',
+  /(未完了|ログイン状態を維持|誤って削除済みと表示することはありません)/.test(jaDeleteNote),
+);
+
+// Cross-page parity: privacy.html says deletion is live; the App-side
+// note must not contradict that or a user reading both surfaces sees
+// two different truths.
+const privacyRaw = read('public/privacy.html');
+check(
+  'privacy.html states the deletion backend is implemented and live',
+  /(帳號刪除的[^<]*已實作|已實作並上線|deletion backend[\s\S]*?(is implemented|is live)|Account deletion[\s\S]*?(is implemented|is live)|deletion endpoint[\s\S]*?is deployed)/i.test(privacyRaw),
+  'privacy.html must state deletion is live (matches src/services/authService.ts.deleteAccount)',
+);
+
+// ── 7. eas.json: production / production-apk / preview all set STORE_MVP=1
+//        so the review build resolves fail-closed. ──
+const easRaw = JSON.parse(read('eas.json'));
+check(
+  'eas.json: preview.env.EXPO_PUBLIC_STORE_MVP === "1"',
+  easRaw?.build?.preview?.env?.EXPO_PUBLIC_STORE_MVP === '1',
+);
+check(
+  'eas.json: production.env.EXPO_PUBLIC_STORE_MVP === "1"',
+  easRaw?.build?.production?.env?.EXPO_PUBLIC_STORE_MVP === '1',
+);
+check(
+  'eas.json: production-apk extends production (inherits STORE_MVP=1)',
+  easRaw?.build?.['production-apk']?.extends === 'production',
+);
+
+// ── 8. Mutation sensitivity: if we accidentally dropped a gate, the test
+//        would fail. Prove that by testing an inverted expectation against
+//        an in-memory mutated source snippet — the assertion must FAIL for the
+//        mutated text and PASS for the real text. Prevents "the regex is so
+//        loose the test can never fail" false confidence. ──
+{
+  // DIC-1427: CardDetail now invokes MarketDataPanel once per pane
+  // (market + member), so the mutation must strip EVERY gated call site.
+  const mutated = detail.replace(
+    /\{FEATURES\.marketData\s*&&\s*<MarketDataPanel/g,
+    '<MarketDataPanel',
+  );
+  const mutationBroke = !/\{FEATURES\.marketData\s*&&\s*<MarketDataPanel/.test(mutated);
+  check(
+    'mutation: removing the MarketDataPanel gate in-memory would flip the assertion',
+    mutationBroke,
+  );
+}
+// DIC-1319 mutation: regressing the scan-result price gate back onto
+// FEATURES.marketData is the exact edit that blanked v21's prices. Prove the
+// assertion above actually catches it rather than matching either spelling.
+{
+  const regressed = scanResult.replace(
+    /\{FEATURES\.sellPrice\s*&&\s*\(\s*<View style=\{styles\.pricesSection\}/,
+    '{FEATURES.marketData && (\n          <View style={styles.pricesSection}',
+  );
+  check(
+    'mutation: re-gating the scan-result price on FEATURES.marketData would flip the assertion',
+    !/\{FEATURES\.sellPrice\s*&&\s*\(\s*<View style=\{styles\.pricesSection\}/s.test(regressed),
+  );
+}
+// DIC-1319 mutation: making sellPrice STORE_MVP-derived is the other way to
+// reintroduce the defect.
+{
+  const regressed = flags.replace(/sellPrice:\s*true\s*,/, 'sellPrice: !STORE_MVP,');
+  check(
+    'mutation: making FEATURES.sellPrice STORE_MVP-derived would flip both sellPrice assertions',
+    !/sellPrice:\s*true\s*,/.test(regressed) && /sellPrice:\s*!?STORE_MVP/.test(regressed),
+  );
+}
+// DIC-1481 mutation: re-deriving the Collection route flag from STORE_MVP is
+// the exact edit that re-ships the release blocker (CR run edb401bf).
+{
+  const regressed = flags.replace(/collection:\s*true\s*,/, 'collection: !STORE_MVP,');
+  check(
+    'mutation: making FEATURES.collection STORE_MVP-derived would flip both collection assertions',
+    !/collection:\s*true\s*,/.test(regressed) && /collection:\s*!?STORE_MVP/.test(regressed),
+  );
+}
+// DIC-1481 mutation: re-gating the Collection Drawer.Screen on
+// FEATURES.favorites (the pre-DIC-1481 spelling) must flip section 2.
+{
+  const regressed = nav.replace(
+    /\{FEATURES\.collection\s*&&(\s*\(\s*<Drawer\.Screen[\s\S]{0,200}?name="Collection")/,
+    '{FEATURES.favorites &&$1',
+  );
+  check(
+    'mutation: re-gating the Collection route on FEATURES.favorites IS rejected (DIC-1481)',
+    !/\{FEATURES\.collection\s*&&[^}]*<Drawer\.Screen[^>]*name="Collection"/s.test(regressed)
+      && /\{FEATURES\.favorites\s*&&[^}]*<Drawer\.Screen[^>]*name="Collection"/s.test(regressed),
+  );
+}
+
+if ((process.exitCode ?? 0) === 0) {
+  console.log(`\n✅ Store MVP UI-gates regression: ${passed} checks passed`);
+} else {
+  console.error(`\n❌ Store MVP UI-gates regression failed`);
+}

@@ -1,0 +1,15 @@
+{
+  "cardId": "hBP02-047",
+  "name": "紫咲シオン",
+  "nameZh": "紫咲詩音",
+  "trend": "up",
+  "score": 0.19,
+  "confidence": 0.6,
+  "components": {
+    "priceTrend": 0.27,
+    "ytTrend": 0,
+    "newsSentiment": 0.15
+  },
+  "lastUpdated": "2026-10-03T12:08:42.358Z",
+  "dataPoints": 67
+}

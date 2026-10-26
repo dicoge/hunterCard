@@ -1,0 +1,15 @@
+{
+  "cardId": "hBP08-091",
+  "name": "クリエイターパソコン",
+  "nameZh": "創作者電腦",
+  "trend": "down",
+  "score": -0.31,
+  "confidence": 0.4,
+  "components": {
+    "priceTrend": -0.57,
+    "ytTrend": 0,
+    "newsSentiment": 0.15
+  },
+  "lastUpdated": "2026-10-03T12:08:42.622Z",
+  "dataPoints": 62
+}

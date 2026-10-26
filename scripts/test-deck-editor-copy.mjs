@@ -35,6 +35,15 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { JSDOM } from 'jsdom';
 
+// DIC-1380: `src/config/releaseFlags.ts` now fails closed on unset — the
+// deck-editor render this suite exercises depends on FEATURES.marketData
+// (the gap-subtotal-JPY / deck-gap-totals surface anchored below) and
+// FEATURES.watchlist, so this test must run in the Web Develop / Staging
+// profile just like local `expo start --web`. Pinning the env before any
+// dynamic import of releaseFlags keeps the resolver deterministic and the
+// child leg (DECK_EDITOR_LIVE_DB=1) inherits it through `...process.env`.
+process.env.EXPO_PUBLIC_STORE_MVP = '0';
+
 // ── The DOM must exist before react-native-web is imported: its StyleSheet
 //    installs a real style element at module-evaluation time. ────────────────
 const dom = new JSDOM('<!doctype html><html><body></body></html>', {
@@ -87,14 +96,21 @@ const frozenDb = frozenDatabase(liveDb);
  * render path is the real one.
  */
 const LIVE_MODE = process.env.DECK_EDITOR_LIVE_DB === '1';
-let servedDb = LIVE_MODE ? liveDb : frozenDb;
 
-// The screen loads its catalog over fetch(); serve the shipped file instead of
-// the network so the render path itself is unchanged.
+// The screen loads its catalog through src/utils/staticData, which on native —
+// and in Node, which resolves that same base variant — returns the committed
+// public/data/database.json inlined into the bundle rather than fetched
+// (DIC-1287). The frozen leg pins its dataset by re-pointing that shared JSON
+// module before the first render; it used to re-point a fetch stub. The live leg
+// leaves the shipped bytes alone.
+const bundledDb = (await import('../public/data/database.json')).default;
+if (!LIVE_MODE) bundledDb.cards = frozenDb.cards;
+
+// Nothing in this render may reach the network: a relative fetch is exactly the
+// DIC-1287 defect that emptied the packaged Android picker.
 globalThis.fetch = async (input) => {
   const url = typeof input === 'string' ? input : String(input?.url ?? input);
-  assert.equal(url, '/data/database.json', `unexpected fetch during render: ${url}`);
-  return { ok: true, json: async () => servedDb };
+  assert.fail(`the deck editor must not fetch during render: ${url}`);
 };
 
 const React = (await import('react')).default;
@@ -383,6 +399,9 @@ await test('the migrated deck still explains nothing after a reload', async () =
 
   const reloaded = activeDeck();
   assert.ok(reloaded, 'the deck must come back from storage');
+  // 2026-10-19: after a reload 牌組 opens on the deck list; the player opens the deck.
+  assert.equal(useDeckStore.getState().activeDeckId, null, 'reload opens on the deck list');
+  useDeckStore.getState().setActiveDeck(reloaded.id);
   await assertSilentEditor(reloaded, DESKTOP, 'desktop');
   await assertSilentEditor(reloaded, MOBILE, 'mobile');
 });

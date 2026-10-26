@@ -1,0 +1,65 @@
+{
+  "cardId": "hSD08-007_hEB01_C_hSD08-007_C_02",
+  "cardNumber": "hSD08-007",
+  "name": "角巻わため",
+  "records": [
+    {
+      "date": "2026-09-27",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD08-007_hEB01_C_hSD08-007_C_02",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD08-007_hEB01_C_hSD08-007_C_02",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD08-007_hEB01_C_hSD08-007_C_02",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-16",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD08-007_hEB01_C_hSD08-007_C_02",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-17",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD08-007_hEB01_C_hSD08-007_C_02",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-18",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD08-007_hEB01_C_hSD08-007_C_02",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-26",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD08-007_hEB01_C_hSD08-007_C_02",
+      "sourceProduct": "hEB01"
+    }
+  ],
+  "lastUpdated": "2026-10-26T02:45:59.747Z",
+  "nameZh": "角卷綿芽"
+}

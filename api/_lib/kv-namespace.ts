@@ -75,12 +75,49 @@ export const STAGING_KV_PREFIX = 'staging:';
  * Bare-key defence: empty keys throw; deliberately double-prefixed keys are
  * collapsed to a single prefix.
  */
+export class StagingStoreBindingError extends Error {
+  constructor(detail: string) {
+    super(`staging KV store binding not proven (${detail}) — refusing KV access rather than risk the production store.`);
+    this.name = 'StagingStoreBindingError';
+  }
+}
+
+function storeHost(raw: string): string {
+  try {
+    return new URL(raw).host.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Test-first flow: the `staging:` prefix keeps keys apart only if both lanes
+ * share a store; it does not make the store separate. When a staging
+ * deployment has a KV store configured, its host must equal the
+ * operator-recorded STAGING_KV_STORE_HOST and differ from the recorded
+ * PRODUCTION_KV_STORE_HOST. Both are non-secret hostnames, never tokens. A
+ * missing or mismatched record throws. With no store configured at all, the
+ * KV client itself cannot connect, so nothing is written anywhere.
+ */
+export function assertStagingStoreBinding(env: Record<string, string | undefined> = process.env): void {
+  const url = env.KV_REST_API_URL || env.KV_URL || '';
+  if (!url) return;
+  const bound = storeHost(url);
+  const staging = (env.STAGING_KV_STORE_HOST || '').trim().toLowerCase();
+  const production = (env.PRODUCTION_KV_STORE_HOST || '').trim().toLowerCase();
+  if (!bound) throw new StagingStoreBindingError('configured KV URL has no parseable host');
+  if (!staging || !production) throw new StagingStoreBindingError('STAGING_KV_STORE_HOST and PRODUCTION_KV_STORE_HOST must both be recorded');
+  if (staging === production) throw new StagingStoreBindingError('recorded staging and production store hosts are identical');
+  if (bound !== staging) throw new StagingStoreBindingError('configured KV host is not the recorded staging store');
+}
+
 export function nsKey(key: string): string {
   if (typeof key !== 'string' || key.length === 0) {
     throw new Error('nsKey: key must be a non-empty string');
   }
   const appEnv = resolveAppEnvStrict();
   if (appEnv !== 'staging') return key;
+  assertStagingStoreBinding();
   if (key.startsWith(STAGING_KV_PREFIX)) return key;
   return `${STAGING_KV_PREFIX}${key}`;
 }

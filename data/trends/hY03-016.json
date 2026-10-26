@@ -1,0 +1,15 @@
+{
+  "cardId": "hY03-16",
+  "name": "赤エール(小鳥遊キアラ)",
+  "nameZh": "",
+  "trend": "stable",
+  "score": -0.11,
+  "confidence": 0.2,
+  "components": {
+    "priceTrend": -0.23,
+    "ytTrend": 0,
+    "newsSentiment": 0.15
+  },
+  "lastUpdated": "2026-10-03T12:08:42.707Z",
+  "dataPoints": 4
+}

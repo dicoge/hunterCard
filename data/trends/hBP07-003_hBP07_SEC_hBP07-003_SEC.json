@@ -1,0 +1,15 @@
+{
+  "cardId": "hBP07-003",
+  "name": "大神ミオ",
+  "nameZh": "大神澪",
+  "trend": "stable",
+  "score": -0.11,
+  "confidence": 0.5,
+  "components": {
+    "priceTrend": -0.23,
+    "ytTrend": 0,
+    "newsSentiment": 0.15
+  },
+  "lastUpdated": "2026-10-03T12:08:42.574Z",
+  "dataPoints": 67
+}

@@ -2,14 +2,19 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { assertFreshDatabase, parseRestoreSince, selectTrendAlerts } from './lib/push-freshness.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_DIR = path.resolve(__dirname, '..');
 const DATA_DIR = path.join(PROJECT_DIR, 'data');
-const DATABASE_PATH = path.join(DATA_DIR, 'database.json');
-const TRENDS_DIR = path.join(DATA_DIR, 'trends');
-const NOTIFY_URL = process.env.PUSH_NOTIFY_URL || process.env.VERCEL_PUSH_NOTIFY_URL || 'https://holocard-hunter.vercel.app/api/push/notify';
+// Overridable only so the offline regression can feed controlled data (test:push-freshness).
+const DATABASE_PATH = process.env.PUSH_DATABASE_PATH || path.join(DATA_DIR, 'database.json');
+const TRENDS_DIR = process.env.PUSH_TRENDS_DIR || path.join(DATA_DIR, 'trends');
+// Canonical production notify endpoint (DIC-1245). Overridable via env for
+// preview / staging cron; the default must never be the old vercel.app alias,
+// which no longer hosts /api/push/notify.
+const NOTIFY_URL = process.env.PUSH_NOTIFY_URL || process.env.VERCEL_PUSH_NOTIFY_URL || 'https://holohunter.dicoge.com/api/push/notify';
 const NOTIFY_SECRET = process.env.PUSH_NOTIFY_SECRET;
 const KV_REST_API_URL = process.env.KV_REST_API_URL;
 const KV_REST_API_TOKEN = process.env.KV_REST_API_TOKEN;
@@ -17,8 +22,6 @@ const KV_REST_API_TOKEN = process.env.KV_REST_API_TOKEN;
 // registry set of every token that has a watchlist (DIC-390 CR blocker 1).
 const WATCHLIST_TOKENS_KEY = 'push:watchlist-tokens';
 const WATCHLIST_PREFIX = 'push:watchlist:';
-const THRESHOLD = 0.6;
-const MIN_DATA_POINTS = 3;
 
 function readJson(filePath, fallback) {
   try {
@@ -55,20 +58,6 @@ async function fetchWatchlist() {
   return watchlist;
 }
 
-function yen(value) {
-  return Number.isFinite(value) ? `¥${value.toLocaleString('ja-JP')}` : '價格未定';
-}
-
-function uniqueWatchlistCards(watchlist) {
-  const cards = new Set();
-  for (const list of Object.values(watchlist || {})) {
-    if (!Array.isArray(list)) continue;
-    for (const cardNumber of list) {
-      if (typeof cardNumber === 'string' && cardNumber.trim()) cards.add(cardNumber.trim());
-    }
-  }
-  return [...cards];
-}
 
 function findCard(db, cardNumber) {
   const cards = db.cards || {};
@@ -92,30 +81,23 @@ async function main() {
   if (!NOTIFY_SECRET) {
     throw new Error('PUSH_NOTIFY_SECRET not set — /api/push/notify would reject the request');
   }
-  const watchlist = await fetchWatchlist();
+  // v41 freshness / restoration gate (scripts/lib/push-freshness.mjs): stale local
+  // data never reaches a device — no dormant backlog after the restore.
+  const now = Date.now();
+  const notBefore = parseRestoreSince(process.env.PUSH_RESTORE_SINCE);
   const db = readJson(DATABASE_PATH, { cards: {} });
-  const cardNumbers = uniqueWatchlistCards(watchlist);
-  const alerts = [];
-
-  for (const cardNumber of cardNumbers) {
-    const card = findCard(db, cardNumber);
-    const trend = findTrend(card, cardNumber);
-    const score = Number(trend?.score ?? trend?.trendScore ?? 0);
-    const dataPoints = Number(trend?.dataPoints ?? 0);
-
-    if (!trend || score <= THRESHOLD || dataPoints < MIN_DATA_POINTS) continue;
-
-    const displayName = card?.nameZh || card?.name || trend.nameZh || trend.name || cardNumber;
-    const price = card?.sellPrice ?? card?.buyPrice;
-    alerts.push({
-      cardNumber,
-      title: `入手時機！${displayName} ▲+${Math.round(score * 100)}%`,
-      body: `預測價格上漲，現價 ${yen(price)}，建議考慮入手`,
-    });
-  }
+  assertFreshDatabase(db, now, notBefore);
+  const watchlist = await fetchWatchlist();
+  const { alerts, stale } = selectTrendAlerts({
+    watchlist,
+    findCard: (cardNumber) => findCard(db, cardNumber),
+    findTrend,
+    now,
+    notBefore,
+  });
 
   if (alerts.length === 0) {
-    console.log('[push-alerts] No eligible watchlist alerts');
+    console.log(`[push-alerts] No eligible watchlist alerts (${stale} skipped as not current)`);
     return;
   }
 

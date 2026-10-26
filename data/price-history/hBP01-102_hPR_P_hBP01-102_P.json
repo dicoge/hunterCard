@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP01-102_hPR_P_hBP01-102_P",
+  "cardNumber": "hBP01-102",
+  "name": "アイドルマイク",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-102_hPR_P_hBP01-102_P",
+      "sourceProduct": "hPR"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.361Z",
+  "nameZh": "偶像麥克風"
+}

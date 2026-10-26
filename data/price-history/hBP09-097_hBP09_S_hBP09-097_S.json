@@ -1,0 +1,81 @@
+{
+  "cardId": "hBP09-097_hBP09_S_hBP09-097_S",
+  "cardNumber": "hBP09-097",
+  "name": "コンビプレイ",
+  "records": [
+    {
+      "date": "2026-09-23",
+      "price": 780,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-097_hBP09_S_hBP09-097_S",
+      "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-09-26",
+      "price": 780,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-097_hBP09_S_hBP09-097_S",
+      "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-09-27",
+      "price": 780,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-097_hBP09_S_hBP09-097_S",
+      "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-10-02",
+      "price": 980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-097_hBP09_S_hBP09-097_S",
+      "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-10-03",
+      "price": 780,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-097_hBP09_S_hBP09-097_S",
+      "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-10-16",
+      "price": 680,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-097_hBP09_S_hBP09-097_S",
+      "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-10-17",
+      "price": 680,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-097_hBP09_S_hBP09-097_S",
+      "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-10-18",
+      "price": 680,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-097_hBP09_S_hBP09-097_S",
+      "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-10-26",
+      "price": 680,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-097_hBP09_S_hBP09-097_S",
+      "sourceProduct": "hBP09"
+    }
+  ],
+  "lastUpdated": "2026-10-26T02:46:00.107Z",
+  "nameZh": "雙人聯手"
+}

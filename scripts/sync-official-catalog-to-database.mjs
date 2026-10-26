@@ -1,0 +1,392 @@
+#!/usr/bin/env node
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  buildPreservationIndex,
+  findPreservedMatch,
+  applyPreservedMarketFields,
+  restoreBuyPriceHistory,
+} from './lib/preserve-market-fields.js';
+import { printingId, imageSuffix } from './lib/printing-identity.js';
+import { broadcastYtStats } from './lib/yt-stats-fanout.js';
+import {
+  classifyExactPrintPayload,
+  evaluatePriceRegressionGate,
+  buildPriceRejectionManifest,
+  formatGateViolations,
+  writeJsonAtomic,
+  makeRejection,
+  isPricedRow,
+} from './lib/price-regression-gate.mjs';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repo = path.resolve(__dirname, '..');
+const officialDir = path.join(repo, 'data', 'official');
+const dbPath = path.join(repo, 'data', 'database.json');
+const translationPath = path.join(repo, 'data', 'character-names-zh.json');
+const effectsJpPath = path.join(repo, 'data', 'effects-jp.json');
+const effectsZhPath = path.join(repo, 'data', 'effects-zh.json');
+
+function readJson(file) {
+  return JSON.parse(fs.readFileSync(file, 'utf8'));
+}
+
+// DIC-1415: the sync writer is the single place brand-new printings enter the
+// database, and it MUST enrich them with controlled Traditional-Chinese names
+// from data/character-names-zh.json — the same map add-zh-names.js uses for
+// build-database.js. Carrying only `previous.nameZh` forward works for rows
+// that already exist, but a newly discovered expansion (upstream hBP09
+// 「ボリュームヴォルテックス」) upserts only fresh rows, so every one shipped with
+// no nameZh and the scheduled sync died at the Validate gate. The map is the
+// only source of translations (never an unauthorized translation provider; the
+// DIC-1185 OpenRouter denylist stays in force). Rows whose names have no
+// controlled entry are left without nameZh so the existing Validate gate —
+// `database must fail closed instead of shipping empty Traditional-Chinese
+// names` — keeps tripping and no incomplete publication is ever staged.
+function loadTranslationMap(filepath) {
+  if (!fs.existsSync(filepath)) {
+    throw new Error(`${filepath} missing; cannot enrich new printings with Traditional-Chinese names`);
+  }
+  const raw = readJson(filepath);
+  // DIC-1417: a plain `{}` leaks Object.prototype through `translationMap[key]`
+  // lookups — an untranslated official name such as `__proto__` resolves to the
+  // inherited Object.prototype object (truthy, non-string) and sails past the
+  // `!card.nameZh` fail-closed gate as `nameZh: {}`. A null-prototype object
+  // keeps resolution own-property-only AND stores literal keys like `__proto__`
+  // or `constructor` as real own entries instead of aliasing the prototype.
+  const clean = Object.create(null);
+  for (const [jp, zh] of Object.entries(raw)) {
+    // Match add-zh-names.js: drop entries corrupted with U+FFFD replacement
+    // characters so poisoning cannot leak into the database.
+    if (jp.includes('\uFFFD') || zh.includes('\uFFFD')) continue;
+    clean[jp] = zh;
+  }
+  return clean;
+}
+
+function decodeNameZhCandidate(input = '') {
+  return String(input)
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;|&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+}
+
+function resolveNameZh(name, previousNameZh, translationMap) {
+  // Own-property-only, non-empty-string resolution (DIC-1417): a preserved or
+  // translated nameZh must be a real string — never an inherited prototype
+  // object — so untranslated rows stay fail-closed (`''` trips `!nameZh`).
+  if (typeof previousNameZh === 'string' && previousNameZh.trim()) return previousNameZh;
+  const nameKey = String(name || '');
+  for (const candidate of [nameKey, decodeNameZhCandidate(nameKey)]) {
+    if (!Object.hasOwn(translationMap, candidate)) continue;
+    const zh = translationMap[candidate];
+    if (typeof zh === 'string' && zh.trim()) return zh;
+  }
+  return '';
+}
+
+// DIC-1439: skills have exactly the DIC-1415 defect nameZh had. Sync only
+// carried `previous.skillsJp` / `previous.skillsZh` forward, but skills are
+// keyed by cardNumber, not by printing id — so a brand-new PRINTING of an
+// already-scraped cardNumber (an hBP08/hPR reprint of an hBP01 card) found no
+// previous row and shipped with no skills at all, even though data/effects-*.json
+// held that cardNumber's text the whole time. Mirror build-database.js
+// `mergeSkills()`: prefer freshly scraped effects, fall back to the previous
+// row for either language independently, so a missing or partial effects file
+// can never wipe skills already in the database (the DIC-454 regression).
+function loadEffectsMap(filepath) {
+  // Missing effects file is tolerated exactly as mergeSkills tolerates ENOENT —
+  // resolution then falls back to the previous row and preserves what exists.
+  if (!fs.existsSync(filepath)) return Object.create(null);
+  // Null-prototype for the same DIC-1417 reason as the translation map: a plain
+  // `{}` would resolve cardNumber `constructor` to an inherited function and
+  // sail past the fail-closed completeness gate as a non-empty value.
+  const clean = Object.create(null);
+  for (const [cardNumber, skills] of Object.entries(readJson(filepath))) clean[cardNumber] = skills;
+  return clean;
+}
+
+function nonEmptySkills(value) {
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (value && typeof value === 'object') return Object.keys(value).length > 0;
+  return false;
+}
+
+function resolveSkills(cardNumber, previous, effectsJp, effectsZh) {
+  const fresh = (map) => (cardNumber && Object.hasOwn(map, cardNumber) ? map[cardNumber] : undefined);
+  const pick = (scraped, preserved) => {
+    if (nonEmptySkills(scraped)) return scraped;
+    if (nonEmptySkills(preserved)) return preserved;
+    return undefined;
+  };
+  return {
+    skillsJp: pick(fresh(effectsJp), previous.skillsJp),
+    // No translation provider is ever consulted here: Traditional-Chinese skill
+    // text comes only from the controlled data/effects-zh.json artifact, and a
+    // cardNumber with no entry is left without skillsZh so the completeness gate
+    // keeps tripping rather than shipping fabricated or kana-leaking text
+    // (DIC-1185 OpenRouter denylist, DIC-465 kana cleanliness).
+    skillsZh: pick(fresh(effectsZh), previous.skillsZh),
+  };
+}
+
+function cardSignature(card) {
+  return [
+    card.cardNumber || '',
+    card.sourceProduct || card.expansion || card.series || '',
+    card.rarity || '',
+    imageSuffix(card.imageUrl) || card.id || '',
+  ].join('|');
+}
+
+function dbCardSignature(id, card) {
+  return [
+    card.cardNumber || '',
+    card.sourceProduct || card.series || '',
+    card.rarity || '',
+    imageSuffix(card.officialImage || card.imageUrl || '') || String(id).split('_').slice(3).join('_') || '',
+  ].join('|');
+}
+
+// DIC-1511: localImage is owned by build-database.js Step 2, which derives it
+// from the presence of data/images/<cardNumber>.jpg. The sync used to hardcode
+// '' here, so every official refresh blanked 3,105 rows that the next rebuild
+// restored — pure generated-data churn. Apply the same file-existence rule so
+// both writers produce the same value for the same printing.
+function localImageFor(cardNumber, imagesDirectory) {
+  if (!cardNumber || !imagesDirectory) return '';
+  return fs.existsSync(path.join(imagesDirectory, `${cardNumber}.jpg`)) ? `/images/${cardNumber}.jpg` : '';
+}
+
+function toDatabaseCard(card, id, imagesDirectory) {
+  return {
+    id,
+    cardNumber: card.cardNumber || '',
+    name: card.name || '',
+    type: card.cardType || card.type || '',
+    color: card.color || '',
+    rarity: card.rarity || '',
+    series: card.expansion || card.series || card.sourceProduct || '',
+    sourceProduct: card.sourceProduct || card.expansion || card.series || '',
+    sourceProductName: card.sourceProductName || '',
+    sourceProductText: card.sourceProductText || '',
+    sellPrice: null,
+    yuyuName: '',
+    yuyuImage: '',
+    prices: [],
+    officialImage: card.imageUrl || '',
+    localImage: localImageFor(card.cardNumber, imagesDirectory),
+    hp: card.hp || '',
+    life: card.life || '',
+    arts: card.arts || '',
+    bloomLevel: card.bloomLevel || '',
+    timestamp: '',
+    _rawPricesArchive: [],
+  };
+}
+
+// DIC-1204/1321: exact-id lookups miss rows whose printing IDs get renamed by
+// DIC-1084 canonicalization, wiping their proven sellPrice / priceHistory /
+// ytStats. Preservation now routes through `applyPreservedMarketFields`
+// (matching build-database.js): exact id first, then a strict
+// cardNumber|sourceProduct|rarity signature; ambiguous signatures refuse to
+// guess; and yuyu-derived fields only carry forward when the previous
+// yuyuImage URL provably matches the current sourceProduct (DIC-1227), with a
+// signature fallback onto a SEC signed printing stripping prices[] and yuyu
+// descriptors (DIC-1013/1140 fail-closed).
+
+function canonicalProductsFromMeta(officialDirectory) {
+  const meta = readJson(path.join(officialDirectory, '_meta.json'));
+  const products = new Set((meta.seriesStats || meta.series || [])
+    .map((entry) => typeof entry === 'string' ? entry : entry?.code)
+    .filter(Boolean));
+  if (products.size === 0) throw new Error('data/official/_meta.json missing canonical product list');
+  return products;
+}
+
+export function syncOfficialCatalogToDatabase({
+  databasePath = dbPath,
+  officialDirectory = officialDir,
+  translationPath: nameZhMapPath = translationPath,
+  effectsJpPath: jpEffectsPath = effectsJpPath,
+  effectsZhPath: zhEffectsPath = effectsZhPath,
+} = {}) {
+  const db = readJson(databasePath);
+  const imagesDirectory = path.join(path.dirname(databasePath), 'images');
+  if (!db.cards || typeof db.cards !== 'object') throw new Error('data/database.json missing cards map');
+
+  // DIC-1421: brand-new printings (new id, new sourceProduct) have no previous
+  // row for `applyPreservedMarketFields` to preserve ytStats from — a fresh
+  // hBP09/hPR reprint of an already-tracked holomen shipped without ytStats and
+  // the DIC-1153/1204 audit went red (expected 2136 rows to carry ytStats; got
+  // 2072 on the 2026-09-12 sync PR #191). Snapshot the pre-upsert cards and,
+  // after the upsert pass, run the canonical name-based broadcast
+  // (`lib/yt-stats-fanout.js`) which fans the member's owned, source-proven
+  // ytStats onto every newly added printing whose name/nameZh matches — exactly
+  // the deterministic fan-out `restore-market-fields-post-canonicalization.mjs`
+  // uses for the DIC-1153 pinned row count. Nothing untracked or malformed is
+  // ever broadcast, and preserved ytStats is never displaced (fill-only).
+  const previousCards = { ...db.cards };
+  const zhNames = loadTranslationMap(nameZhMapPath);
+  const effectsJp = loadEffectsMap(jpEffectsPath);
+  const effectsZh = loadEffectsMap(zhEffectsPath);
+  const canonicalProducts = canonicalProductsFromMeta(officialDirectory);
+  const officialFiles = fs.readdirSync(officialDirectory)
+    .filter((f) => f.endsWith('.json') && !f.startsWith('_') && !f.startsWith('all-') && !f.startsWith('cardList_'));
+
+  // DIC-1204: index the previous DB by both exact id AND strict
+  // cardNumber|sourceProduct|rarity signature so a canonical-id rename does
+  // not silently drop that row's proven sellPrice / priceHistory / ytStats.
+  const preservationIndex = buildPreservationIndex(db.cards);
+  let upserted = 0;
+  let sellPreserved = 0;
+  const canonicalSignatures = new Set();
+  for (const file of officialFiles) {
+    const cards = readJson(path.join(officialDirectory, file));
+    if (!Array.isArray(cards)) continue;
+    for (const card of cards) {
+      if (!card?.sourceProduct || !canonicalProducts.has(card.sourceProduct)) continue;
+      canonicalSignatures.add(cardSignature(card));
+      const id = printingId(card);
+      if (!id || !card.cardNumber) continue;
+      const preview = toDatabaseCard(card, id, imagesDirectory);
+      const match = findPreservedMatch(preservationIndex, id, preview);
+      const previous = match?.card || db.cards[id] || {};
+      const matchKind = match?.matchKind || 'exact-id';
+      // DIC-1321: route preservation through `applyPreservedMarketFields`
+      // (the same path build-database.js uses) instead of the ungated
+      // `preservedMarketPayload` spread. The old path flattened the previous
+      // row's prices[] / sellPrice / priceHistory onto the fresh row without
+      // the `yuyuPayloadMatchesSource` gate, so an official-sync running on a
+      // 0-priced snapshot would blindly re-inflate every row — the 0↔1547
+      // oscillation (local scheduler writes 0; official-sync ungated-restores
+      // 1547; repeat). The gated path keeps printing/product isolation:
+      // sellPrice / prices[] / priceHistory only carry forward when the
+      // previous yuyuImage URL provably matches this row's sourceProduct, and
+      // prices[] survives only entry-by-entry on provable matches. Fresh
+      // non-null fields still win. ytStats/skills stay preserved as before.
+      // applyPreservedMarketFields mutates `preview` in place with the gated
+      // payload, so preview is the final row.
+      const summary = applyPreservedMarketFields(preview, previous, {
+        matchKind,
+        preserveYuyuPayload: true,
+      });
+      if (summary.sellPrice || summary.prices || summary.priceHistory || summary.ytStats || summary.yuyu) sellPreserved++;
+      const skills = resolveSkills(card.cardNumber, previous, effectsJp, effectsZh);
+      db.cards[id] = {
+        ...preview,
+        // DIC-1439: join skills by cardNumber (effects-*.json) with fallback to
+        // the preserved row, so new printings of known cardNumbers are no longer
+        // published skill-less.
+        skillsJp: skills.skillsJp,
+        skillsZh: skills.skillsZh,
+        // DIC-1415: brand-new printings have no previous row to preserve nameZh
+        // from — resolve a controlled Traditional-Chinese name or stay
+        // fail-closed so the Validate gate still refuses incomplete names.
+        nameZh: resolveNameZh(card.name, previous.nameZh, zhNames),
+      };
+      for (const key of ['skillsJp', 'skillsZh', 'nameZh', 'ytStats']) {
+        if (db.cards[id][key] == null) delete db.cards[id][key];
+      }
+      upserted++;
+    }
+  }
+
+  // DIC-1421: broadcast owned ytStats onto every newly added printing whose
+  // normalized character name maps to a tracked holomen (fill-only, seeds from
+  // current then pre-sync rows). Runs before pruning so a to-be-pruned row can
+  // still serve as the proven seed for its member's surviving printings.
+  const ytStatsBroadcast = broadcastYtStats(db.cards, previousCards);
+
+  // DIC-1511: every upserted row is rebuilt from `toDatabaseCard`, which has no
+  // `buyPriceHistory`, and `applyPreservedMarketFields` only carries yuyu sell
+  // fields. #239 taught build-database.js to carry the cumulative buy series
+  // (DIC-1167 CR 2660774f) but this writer was missed, so the scheduled sync on
+  // PR #212 (b2f7a0d) dropped 1,279 dated observations on 651 printings and
+  // regen-buy-alignment then re-seeded only the snapshot date. Carry the series
+  // by EXACT printing id with the same cardNumber+rarity identity check (no
+  // signature / cross-printing fallback); current dates win and the stale
+  // scalar `buyPrice` / `prices[].buyPrice` claims are never restored — the
+  // buy-alignment step re-derives those from the committed sources.
+  const buyPriceHistory = restoreBuyPriceHistory(db.cards, previousCards);
+
+  let pruned = 0;
+  const prunedIds = new Set();
+  for (const [id, card] of Object.entries(db.cards)) {
+    const sourceProduct = card?.sourceProduct || card?.series || '';
+    if (!canonicalProducts.has(sourceProduct)) continue;
+    if (canonicalSignatures.has(dbCardSignature(id, card))) continue;
+    delete db.cards[id];
+    prunedIds.add(id);
+    pruned++;
+  }
+
+  // DIC-1482: the official catalog refresh must ATOMICALLY preserve the last
+  // source-proven exact-print payload — any priced printing that comes out of
+  // the upsert+prune passes unpriced (or deleted) needs a per-print,
+  // re-verifiable rejection, otherwise the sync throws BEFORE any byte
+  // reaches disk. Combined with the temp-file+rename write below, a refresh
+  // can only ever move the snapshot from one complete, gate-clean state to
+  // another — the 0↔N priced-snapshot oscillation has no path left.
+  const dic1482Rejections = [];
+  for (const [prevId, prevCard] of Object.entries(previousCards)) {
+    if (!isPricedRow(prevCard)) continue;
+    const nextCard = db.cards[prevId];
+    if (nextCard && isPricedRow(nextCard)) continue;
+    if (!nextCard) {
+      // DIC-1484 CR blocker 1: the prune pass above is the ONLY lawful way a
+      // row leaves this artifact, and `prunedIds` is its independently derived
+      // record. A row that vanished without being pruned gets no rejection
+      // label — the gate reports it as an uncovered removal and the sync
+      // throws before any byte reaches disk.
+      if (prunedIds.has(prevId)) {
+        dic1482Rejections.push(makeRejection(prevId, prevCard, 'pruned-not-in-official-catalog'));
+      }
+      continue;
+    }
+    const verdict = classifyExactPrintPayload(prevCard);
+    if (!verdict.proven && verdict.reason !== 'unpriced') {
+      dic1482Rejections.push(makeRejection(prevId, prevCard, verdict.reason));
+    }
+  }
+  const gate = evaluatePriceRegressionGate({
+    previousCards,
+    nextCards: db.cards,
+    rejections: dic1482Rejections,
+    prunedIds,
+  });
+  if (!gate.ok) {
+    throw new Error(formatGateViolations('official catalog sync refused to write', gate.violations));
+  }
+
+  db.lastUpdated = new Date().toISOString();
+  db.totalCards = Object.keys(db.cards).length;
+  writeJsonAtomic(databasePath, db);
+  const manifest = buildPriceRejectionManifest({
+    label: 'sync-official-catalog',
+    previousCards,
+    nextCards: db.cards,
+    rejections: dic1482Rejections,
+  });
+  writeJsonAtomic(path.join(path.dirname(databasePath), 'price-rejections.json'), manifest);
+  return {
+    upserted,
+    sellPreserved,
+    pruned,
+    ytStatsBroadcast,
+    buyPriceHistory,
+    totalCards: db.totalCards,
+    priceGate: { before: gate.before, after: gate.after, rejections: dic1482Rejections.length },
+  };
+}
+
+function main() {
+  const result = syncOfficialCatalogToDatabase();
+  console.log(`✓ synced ${result.upserted} official sourceProduct printings into data/database.json (totalCards=${result.totalCards}; preservedSell=${result.sellPreserved}; pruned=${result.pruned}; ytStatsBroadcast=${result.ytStatsBroadcast})`);
+  console.log(`[buyPriceHistory] Carried ${result.buyPriceHistory.observations} observations onto ${result.buyPriceHistory.cards} rebuilt printings (identity mismatches refused: ${result.buyPriceHistory.skippedIdentityMismatch})`);
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) main();

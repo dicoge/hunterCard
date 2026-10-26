@@ -87,6 +87,42 @@ const namedFromMap = [...catalog.boosters, ...catalog.starters, ...catalog.speci
   (item) => seriesNames[item.label] && item.name === seriesNames[item.label],
 );
 assert.ok(namedFromMap, 'buildSeriesCatalog must apply the series-name map, not only fall back to the code');
+
+// v41 (2026-10-17, user report "hBP08 shows its series name, hBP09 does not"): every
+// series the home derives must carry a mapped name — never the bare code — and that
+// name must agree with the official product name the official-catalog sync stores on
+// the cards (sourceProductName). Booster names drop the 「ブースターパック」 wrapper; a
+// leading 【…】 retail tag is dropped. Several entries used to name the wrong member
+// (hSD02 「白上フブキ」 for 「赤 百鬼あやめ」) or the wrong set (hBP03).
+{
+  const productsBySeries = {};
+  for (const c of cards) {
+    if (!c.series || !c.sourceProductName) continue;
+    const m = (productsBySeries[c.series] ||= {});
+    m[c.sourceProductName] = (m[c.sourceProductName] || 0) + 1;
+  }
+  const officialDisplay = (prod) => {
+    const x = prod.replace(/^【[^】]*】/, '').trim();
+    const m = x.match(/^ブースターパック「(.+)」$/) || x.match(/^ブースターパック\s+(.+)$/);
+    return m ? m[1] : x;
+  };
+  const unnamed = [];
+  const contradicting = [];
+  for (const item of [...catalog.boosters, ...catalog.starters, ...catalog.special]) {
+    const code = item.label;
+    if (!seriesNames[code]) { unnamed.push(code); continue; }
+    const products = productsBySeries[code];
+    if (!products) continue;
+    const top = Object.entries(products).sort((x, y) => y[1] - x[1])[0][0];
+    const name = seriesNames[code];
+    if (!(top.includes(name) || name.includes(officialDisplay(top)))) contradicting.push(`${code}: "${name}" vs official "${top}"`);
+  }
+  assert.deepEqual(unnamed, [], `every series on the home carries a name (missing: ${unnamed.join(', ')})`);
+  assert.deepEqual(contradicting, [], `series names agree with the official product names:\n${contradicting.join('\n')}`);
+  assert.equal(seriesNames.hBP09, 'ボリュームヴォルテックス');
+  assert.equal(seriesNames.hBP03, 'エリートスパーク');
+  console.log(`Series names: all ${totalSeries} named, consistent with official product names.`);
+}
 console.log(
   `Guest home populates via shared extraction: ${totalSeries} series ` +
     `(${catalog.boosters.length} boosters, ${catalog.starters.length} starters, ${catalog.special.length} special).`,

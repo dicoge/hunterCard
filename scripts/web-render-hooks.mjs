@@ -61,9 +61,28 @@ export async function resolve(specifier, context, next) {
   return next(specifier, context);
 }
 
+// Image asset stub — Metro/Webpack resolves `require('./foo.jpg')` to a
+// per-platform representation (object on native, hashed URL on web). Under
+// Node we synthesize a source string whose value contains the ORIGINAL
+// filename so a regression can prove that a specific catalog card artwork
+// reached the shipped surface (DIC-1381 W9 CR — the Landing hero cards).
+// react-native-web's <Image source="…"> renders <img src="…"> unchanged, so
+// the DOM `src` attribute carries the filename anchor test-landing-pen-
+// render.mjs derives from the Pen `image` fill URL.
+function imageStubSource(url) {
+  const p = fileURLToPath(url);
+  const name = p.split(/[\/\\]/).pop() || 'asset';
+  return `export default ${JSON.stringify('/__test-asset__/' + name)};`;
+}
+const IMAGE_ASSET_RE = /\.(jpg|jpeg|png|gif|webp|svg)$/i;
+
 export async function load(url, context, next) {
   if (url.endsWith('.json')) {
     return { format: 'json', source: readFileSync(fileURLToPath(url), 'utf8'), shortCircuit: true };
+  }
+
+  if (IMAGE_ASSET_RE.test(url)) {
+    return { format: 'module', source: imageStubSource(url), shortCircuit: true };
   }
 
   if (url.endsWith('.ts') || url.endsWith('.tsx')) {

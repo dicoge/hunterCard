@@ -1,0 +1,15 @@
+{
+  "cardId": "hY05-11",
+  "name": "紫エール(綺々羅々ヴィヴィ)",
+  "nameZh": "",
+  "trend": "up",
+  "score": 0.15,
+  "confidence": 0.3,
+  "components": {
+    "priceTrend": 0.2,
+    "ytTrend": 0,
+    "newsSentiment": 0.15
+  },
+  "lastUpdated": "2026-10-03T12:08:42.707Z",
+  "dataPoints": 4
+}

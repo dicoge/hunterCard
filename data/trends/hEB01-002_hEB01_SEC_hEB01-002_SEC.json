@@ -1,0 +1,15 @@
+{
+  "cardId": "hEB01-002",
+  "name": "宝鐘マリン",
+  "nameZh": "寶鍾瑪琳",
+  "trend": "stable",
+  "score": -0.02,
+  "confidence": 0.3,
+  "components": {
+    "priceTrend": -0.08,
+    "ytTrend": 0,
+    "newsSentiment": 0.15
+  },
+  "lastUpdated": "2026-10-03T12:08:42.636Z",
+  "dataPoints": 2
+}

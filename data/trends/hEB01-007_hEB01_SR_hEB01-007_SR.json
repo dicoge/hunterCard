@@ -1,0 +1,15 @@
+{
+  "cardId": "hEB01-007",
+  "name": "ときのそら",
+  "nameZh": "時乃空",
+  "trend": "stable",
+  "score": -0.1,
+  "confidence": 0.3,
+  "components": {
+    "priceTrend": -0.21,
+    "ytTrend": 0,
+    "newsSentiment": 0.15
+  },
+  "lastUpdated": "2026-10-03T12:08:42.636Z",
+  "dataPoints": 2
+}

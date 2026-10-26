@@ -1,0 +1,65 @@
+{
+  "cardId": "hSD02-006_hEB01_C_hSD02-006_C_02",
+  "cardNumber": "hSD02-006",
+  "name": "百鬼あやめ",
+  "records": [
+    {
+      "date": "2026-09-27",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD02-006_hEB01_C_hSD02-006_C_02",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-02",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD02-006_hEB01_C_hSD02-006_C_02",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-03",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD02-006_hEB01_C_hSD02-006_C_02",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-16",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD02-006_hEB01_C_hSD02-006_C_02",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-17",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD02-006_hEB01_C_hSD02-006_C_02",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-18",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD02-006_hEB01_C_hSD02-006_C_02",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-26",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD02-006_hEB01_C_hSD02-006_C_02",
+      "sourceProduct": "hEB01"
+    }
+  ],
+  "lastUpdated": "2026-10-26T02:46:00.129Z",
+  "nameZh": "百鬼綾目"
+}

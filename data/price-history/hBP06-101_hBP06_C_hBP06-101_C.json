@@ -1,0 +1,81 @@
+{
+  "cardId": "hBP06-101_hBP06_C_hBP06-101_C",
+  "cardNumber": "hBP06-101",
+  "name": "ムーナびと",
+  "records": [
+    {
+      "date": "2026-09-23",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-101_hBP06_C_hBP06-101_C",
+      "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-09-26",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-101_hBP06_C_hBP06-101_C",
+      "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-09-27",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-101_hBP06_C_hBP06-101_C",
+      "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-10-02",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-101_hBP06_C_hBP06-101_C",
+      "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-10-03",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-101_hBP06_C_hBP06-101_C",
+      "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-10-16",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-101_hBP06_C_hBP06-101_C",
+      "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-10-17",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-101_hBP06_C_hBP06-101_C",
+      "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-10-18",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-101_hBP06_C_hBP06-101_C",
+      "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-10-26",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-101_hBP06_C_hBP06-101_C",
+      "sourceProduct": "hBP06"
+    }
+  ],
+  "lastUpdated": "2026-10-26T02:45:59.987Z",
+  "nameZh": "姆娜人"
+}

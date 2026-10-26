@@ -2,9 +2,18 @@ name: CI
 
 on:
   push:
-    branches: [main]
-    paths-ignore:
-      - "data/**"
+    # Test-first flow: every push to staging runs the full gates, code AND
+    # data, so a staging commit can be proven green before a staging-alpha
+    # build or a promotion to main. There is no paths-ignore: data commits are
+    # exactly what the price/catalog gates exist for. Main is INTENDED to
+    # receive data only through promotion once the retargeted bots and local
+    # scheduler are active from the default branch and branch protection
+    # requires "Stage promotion proof"; until then this is not enforced.
+    # Pushes made with GITHUB_TOKEN start no run: a maintainer then dispatches
+    # this workflow on staging (validation only, deploy_production=false).
+    # Deploying stays unreachable from push (deploy-production is
+    # workflow_dispatch + main only).
+    branches: [main, staging]
   pull_request:
     # DIC-1189: `staging` added so PRs into the isolated staging branch get
     # the same Validate gate as PRs into `main`. The main-side contract is
@@ -12,11 +21,161 @@ on:
     # gate); this only ADDS an equivalent gate for the staging lane so
     # PR #150-class isolation PRs no longer land without CI.
     branches: [main, staging]
+  # DIC-1430 CI/CD recovery: a manual entry point for the case where a merge
+  # to main produced no PushEvent and therefore no CI run at all (PR #193
+  # merged as defa9592… and Actions never fired; cause still unknown). The
+  # operator must name the exact commit, so a recovery run can never be
+  # aimed at "whatever main happens to be right now".
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: "Full lowercase 40-hex commit SHA that MUST be the current tip of the dispatched branch (main: recovery; staging: validation only, deploy_production must stay false)"
+        type: string
+        required: true
+      # DIC-1430 Actions registry recovery: explicit, separate deploy intent.
+      # It defaults to FALSE and is readable only on a workflow_dispatch, so
+      # an ordinary push or pull_request cannot set it and an operator who
+      # just wants a manual CI run never touches Production. Deploying is a
+      # second, deliberate decision — never a side effect of running CI.
+      deploy_production:
+        description: "Deploy the verified expected_sha to Production after all gates pass"
+        type: boolean
+        required: false
+        default: false
 
 jobs:
+  # DIC-1430: gate for manual recovery dispatches.
+  #
+  # This job has NO job-level `if:` on purpose. A skipped job counts as
+  # "not successful" for everything that `needs:` it, so an event-gated
+  # preflight would silently skip Validate and the APK guard on every
+  # ordinary push and pull request — CI would report green without having
+  # run. Instead the job always runs and no-ops INTERNALLY for push/PR,
+  # which keeps the existing push/PR contract byte-for-byte intact while
+  # still letting both real jobs depend on it.
+  preflight:
+    name: Recovery preflight (exact-main dispatch gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # Full history: the staging validation branch below proves that
+          # origin/main is an ancestor of the dispatched staging commit.
+          fetch-depth: 0
+
+      - name: Gate manual dispatches on the exact current tip of main
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_REF: ${{ github.ref }}
+          DISPATCH_SHA: ${{ github.sha }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          DEPLOY_PRODUCTION: ${{ inputs.deploy_production }}
+        run: |
+          set -euo pipefail
+
+          # Normal push / pull_request runs: explicit, successful no-op.
+          if [ "$EVENT_NAME" != "workflow_dispatch" ]; then
+            echo "Event '${EVENT_NAME}' is an ordinary push/pull_request run — preflight is a deliberate no-op."
+            exit 0
+          fi
+
+          echo "Manual recovery dispatch — verifying the requested commit."
+
+          if ! printf '%s' "$EXPECTED_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::expected_sha must be a full lowercase 40-hex commit SHA (got a value of length ${#EXPECTED_SHA})."
+            exit 1
+          fi
+
+          # Test-first flow: a VALIDATION-ONLY run of the exact live staging
+          # tip. Pushes made with GITHUB_TOKEN (bots) start no workflow, so a
+          # maintainer dispatches this to give such a tip its full Validate +
+          # APK-guard run. It can never deploy: deploy_production must be
+          # exactly "false" (anything else fails here, and deploy-production
+          # needs this job to succeed; its callee also re-proves the main tip).
+          if [ "$DISPATCH_REF" = "refs/heads/staging" ]; then
+            if [ "$DEPLOY_PRODUCTION" != "false" ]; then
+              echo "::error::A staging validation dispatch requires deploy_production=false (got '${DEPLOY_PRODUCTION}'). Staging is never deployed to Production."
+              exit 1
+            fi
+            if [ "$EXPECTED_SHA" != "$DISPATCH_SHA" ]; then
+              echo "::error::expected_sha does not match the dispatched staging commit (${DISPATCH_SHA})."
+              exit 1
+            fi
+            staging_sha=$(git ls-remote origin refs/heads/staging | awk '{print $1}')
+            if [ "$EXPECTED_SHA" != "$staging_sha" ]; then
+              echo "::error::expected_sha is not the live tip of origin/staging (live tip is ${staging_sha})."
+              exit 1
+            fi
+            if ! git fetch --no-tags --quiet origin +refs/heads/main:refs/remotes/origin/main +refs/heads/staging:refs/remotes/origin/staging; then
+              echo "::error::Unable to fetch origin/main and origin/staging to verify the staging validation commit."
+              exit 1
+            fi
+            if [ "$(git rev-parse --verify --quiet refs/remotes/origin/staging || true)" != "$EXPECTED_SHA" ]; then
+              echo "::error::origin/staging moved during the check; re-dispatch on the current staging tip."
+              exit 1
+            fi
+            if ! git merge-base --is-ancestor refs/remotes/origin/main "$EXPECTED_SHA"; then
+              echo "::error::origin/main is not contained in staging @ ${EXPECTED_SHA}. Merge main into staging first."
+              exit 1
+            fi
+            echo "Verified: ${EXPECTED_SHA} is the exact current tip of staging and contains main (validation only; never deployed)."
+            exit 0
+          fi
+
+          if [ "$DISPATCH_REF" != "refs/heads/main" ]; then
+            echo "::error::Recovery dispatches are only valid against refs/heads/main (got ${DISPATCH_REF})."
+            exit 1
+          fi
+
+          if [ "$EXPECTED_SHA" != "$DISPATCH_SHA" ]; then
+            echo "::error::expected_sha does not match the dispatched commit (${DISPATCH_SHA})."
+            exit 1
+          fi
+
+          # The dispatched SHA can already be stale by the time the runner
+          # starts. The live remote tip is the only authority on what main is.
+          remote_sha=$(git ls-remote origin refs/heads/main | awk '{print $1}')
+          if [ "$EXPECTED_SHA" != "$remote_sha" ]; then
+            echo "::error::expected_sha is not the live tip of origin/main (live tip is ${remote_sha})."
+            exit 1
+          fi
+
+          echo "Verified: ${EXPECTED_SHA} is the exact current tip of main."
+
+  # Test-first flow: a pull request into main must be a promotion of the live
+  # staging tip whose own staging push CI already passed. No job-level `if:`
+  # on purpose (a skipped required check counts as passing): the script is an
+  # explicit no-op for every other event and fails closed on unknown ones.
+  # Name is stable so branch protection on main can require it. Read-only.
+  stage-promotion-proof:
+    name: Stage promotion proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prove a promotion to main is the CI-verified staging tip
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/stage-promotion-proof.sh
+
   validate:
     name: Validate
     runs-on: ubuntu-latest
+    needs: [preflight]
     
     steps:
       - name: Checkout code
@@ -28,7 +187,9 @@ jobs:
           # Node 22.6+ is required for `node --experimental-strip-types`, used by the
           # mapper I/O regression in test:market-fields (and test:scan-dedup). Node 20
           # rejects the flag with "bad option", so the Validate job must run on 22.
-          node-version: '22'
+          # Security floor (Render eMudhra advisory, Node 22.23.4 NSS root update):
+          # semver range = >=22.23.4 <23, so a stale cached 22.x is never used.
+          node-version: '22.23.4 - 22'
           cache: 'npm'
       
       - name: Install dependencies
@@ -36,7 +197,19 @@ jobs:
 
       - name: Verify Expo native-module compatibility (DIC-969)
         run: npm run test:expo-native-compat
-      
+
+      - name: Verify release APK pipeline invariants (DIC-1193)
+        run: npm run test:release-apk-pipeline
+
+      - name: Verify release APK size + content guards (DIC-1266)
+        run: npm run test:release-apk-size-optim
+
+      - name: Verify effective generated Gradle from real prebuild (DIC-1266 CR blocker 1/2)
+        run: npm run test:release-apk-prebuild-effective
+
+      - name: Verify post-package APK guard fails closed on size/manifest mutations (DIC-1266 CR round-6)
+        run: npm run test:release-apk-postpackage-mutations
+
       - name: Check TypeScript types
         run: npx tsc --noEmit
 
@@ -57,6 +230,9 @@ jobs:
 
       - name: Verify native/web API base resolution (DIC-922)
         run: npm run test:api-base
+
+      - name: Guard native bundle from old vercel.app origin (DIC-1245)
+        run: npm run test:native-bundle-origin
 
       - name: Verify deterministic web OAuth redirect URI (DIC-922)
         run: npm run test:web-redirect
@@ -85,6 +261,9 @@ jobs:
       - name: Verify native Google Sign-In logout / account switch (DIC-665)
         run: npm run test:google-signout
 
+      - name: Verify native Android Google Sign-In error-code mapping (DIC-1318)
+        run: npm run test:google-native-android
+
       - name: Verify server-side ID-token single-use replay protection (DIC-665)
         run: npm run test:token-replay
 
@@ -94,11 +273,56 @@ jobs:
       - name: Verify buy-price regeneration is deterministic (DIC-856)
         run: npm run test:buy-price-regen
 
+      - name: Verify daily rebuild keeps cumulative buyPriceHistory per exact printing (DIC-1167 CR 2660774f)
+        run: npm run test:dic1167-buy-price-history
+
+      - name: Verify official catalog sync keeps cumulative buyPriceHistory + localImage per exact printing (DIC-1511)
+        run: npm run test:dic1511-official-sync-buy-history
+
       - name: Verify scrape pipeline fail-fast + atomic commit ordering (DIC-989)
         run: npm run test:scrape-pipeline
 
+      - name: Verify HTTP fallback carries trustworthy exact-print provenance (DIC-1349)
+        run: npm run test:dic1349-fallback-provenance
+
+      - name: Verify hung/crashed yuyu price stage never blocks official catalog publication (DIC-1167)
+        run: npm run test:dic1167-yuyu-stage-budget
+
+      - name: Verify standalone yuyu scraper crash recovery + group restarts (DIC-442/DIC-1167)
+        run: npm run test:yuyu-crash-recovery
+
       - name: Verify scan/search market data fields (DIC-361)
         run: npm run test:market-fields
+
+      - name: Verify deployment data cannot ship catalog-only regression (DIC-1167)
+        run: npm run test:deployment-data
+
+      - name: Verify deployment freshness gate exercises Production branch across every flag value (DIC-1380 W4)
+        run: npm run test:deployment-freshness-gate
+
+      - name: Verify staging Alpha ref isolation and stage-to-production API leak controls
+        run: npm run test:staging-alpha-flow
+
+      - name: Verify staging-first promotion proof, data-bot targets, store binding and stage flags
+        run: npm run test:staging-first-isolation
+
+      - name: Verify official-catalog-sync workflow hands off through a PR (DIC-1291)
+        run: npm run test:official-catalog-sync-workflow
+
+      - name: Verify official-catalog-sync ingestion, sell preservation, and Traditional-Chinese name enrichment (DIC-1167/DIC-1204/DIC-1415)
+        run: npm run test:official-catalog-sync
+
+      - name: Verify new official printings get source-backed JP + controlled-map TC skill text (DIC-1468)
+        run: npm run test:dic1468-effects-enrichment
+
+      - name: Verify canonical printing-ID rebuilds preserve market fields (DIC-1204)
+        run: npm run test:market-field-preservation
+
+      - name: Verify exact-print price-regression gate, last-known-good preservation, and canonical/public/native parity (DIC-1482)
+        run: npm run test:dic1482-price-gate
+
+      - name: Verify every scraped cardNumber reconciles against the shipped artifact and fallback refusals are recorded (DIC-1167)
+        run: npm run test:dic1167-price-coverage-reconciliation
 
       - name: Audit normalized card labels, subscriber provenance, and exact-printing trends (DIC-1084)
         run: npm run test:card-data-audit
@@ -111,6 +335,99 @@ jobs:
 
       - name: Verify Bloom Level scraper preserves canonical + overlay loader fails closed (DIC-1141 CR)
         run: npm run test:dic1141-scrape-bloom-safety
+
+      # DIC-1192 CR add-on: the hBP02-003 signed-row provenance regression + the
+      # DIC-1084 yuyu-tei short-suffix canonicalizer sit inside one suite that
+      # was previously not on the Validate path — a stale $62,000/yuyu assertion
+      # from before the 18h freshness contract went red only when Codex ran it
+      # by hand at PR #153 exact-head. Wiring it into Validate is the guard.
+      - name: Verify canonical-printings + card-number canonicalizer regression (DIC-1139/1140/1084)
+        run: npm run test:canonical-printings
+
+      # DIC-1150 + DIC-1192 mobile/desktop grid + colour token normalisation.
+      # The three suites move together: uniform-card-grid locks the row-math
+      # helper, search-results-layout renders the real screen at 390/1440 to
+      # prove the `flex-basis:auto` single-column fix AND the `◇ → colorless`
+      # normalisation, and dic1192-color-normalization locks the shared
+      # normaliser contract + i18n key parity.
+      - name: Verify uniform grid item row math (DIC-1088 + DIC-1150)
+        run: npm run test:uniform-card-grid
+
+      - name: Verify real SearchResultsScreen grid geometry + colour render (DIC-1150 + DIC-1192)
+        run: npm run test:search-results-layout
+
+      # DIC-1427: Pen App/02 搜尋結果 (frame Z6jlE) contract on the shipped
+      # route — jsdom parity (function/tokens/width math) plus real-browser
+      # measured geometry (vertical row pitch, no blank/crop inflation,
+      # search/filter/sort bounds, tab-bar + scan-FAB placement).
+      - name: Verify Pen Z6jlE search-results parity (DIC-1427)
+        run: npm run test:search-pen-parity
+
+      - name: Verify Pen Z6jlE search-results real-browser geometry (DIC-1427)
+        run: npm run test:search-pen-geometry
+
+      # DIC-1427 QA P0: Pen App/03 卡牌詳情 (frame o7WO3r) IA on the shipped
+      # CardDetail — hero geometry, 技能/市場/成員 tab swapping, Pen price-card
+      # anatomy, 到價提醒 banner, and the 收藏/加入牌組 action bar with real
+      # favorites-store + DeckEditor navigation wiring.
+      - name: Verify Pen o7WO3r card-detail parity (DIC-1427)
+        run: npm run test:detail-pen-parity
+
+      # DIC-1427 QA P0: Pen App/12–14 tutorial IA + REAL progression — hero
+      # progress from useTutorialStore, chapter states, step navigator,
+      # 開始模擬 CTA, simulation turn bar / hint banner / action row.
+      - name: Verify Pen DAQIq/rV4Za/I6WwjY tutorial parity (DIC-1427)
+        run: npm run test:tutorial-pen-parity
+
+      # DIC-1427 QA P0: Pen App/10 賽事月報 — month navigator, 熱門卡 hero,
+      # color-distribution bars and podium bound to the real report pipeline.
+      - name: Verify Pen wRgD8 tournament parity (DIC-1427)
+        run: npm run test:tournament-pen-parity
+
+      # DIC-1427 QA P0: Pen App/04–05 scan — Pen shutter row with the REAL
+      # 估值清單 count box, capability-gated 自動掃描 pill, and the Pen
+      # session-list summary/items/繼續掃描 on the real session store.
+      - name: Verify Pen eurld/wC1cO scan parity (DIC-1427)
+        run: npm run test:scan-pen-parity
+
+      # DIC-1427 QA P0: Pen App/16 登入 must be REAL and REACHABLE — Landing
+      # 登入 entries push AuthLogin inside the unauthenticated stack; no fake
+      # email button, Apple stays behind the real gate.
+      - name: Verify Pen p28zL login reachability + parity (DIC-1427)
+        run: npm run test:login-pen-parity
+
+      # DIC-1427 QA re-audit: Pen App/08 收藏 stats hero on the REAL
+      # ownership store + exact-printing prices, App/09 我的最愛 rows with
+      # real identity/price/sort + CardDetail nav, App/11 到價提醒 banner
+      # hit-count + tinted status badges from the real evaluator.
+      - name: Verify Pen ej9RF/sSDxQ/VyzfW hub parity (DIC-1427)
+        run: npm run test:hub-pen-parity
+
+      # DIC-1409 Phase 2–6: Pen v2 tokens/shell parity and the App 01–16
+      # screens rendering the shared shell with real data + navigation wiring.
+      - name: Verify Pen v2 shell tokens + App 01–16 shell parity (DIC-1409)
+        run: npm run test:shell-tokens && npm run test:app-shell && npm run test:app47-shell && npm run test:app812-shell && npm run test:app1316-shell && npm run test:shell-tab-navigation && npm run test:scan-search-shell
+
+      # DIC-1430 Production P0: the 我的 Collection entry points and the
+      # Collection route must agree in BOTH release profiles — under Store MVP
+      # the route stays unregistered (DIC-1256) and none of the three controls
+      # render; with the profile off, all three render and actually arrive.
+      # The suites above all pin EXPO_PUBLIC_STORE_MVP=0, which is exactly why
+      # Preview QA passed while Production shipped dead entry points.
+      - name: Verify 我的 Collection controls match route registration in both profiles (DIC-1430)
+        run: npm run test:collection-nav
+
+      - name: Verify colour token normaliser + KNOWN_COLOR_KEYS ↔ i18n parity (DIC-1192)
+        run: npm run test:dic1192-color-normalization
+
+      # The visual card picker shares uniformGridItemStyle with the search
+      # results grid; a mutation in gridLayout that only breaks CardPicker
+      # would slip past search-results-layout otherwise.
+      - name: Verify visual card picker deck-building surface (DIC-1067)
+        run: npm run test:card-picker
+
+      - name: Verify SearchResults/CardDetail color label survives ◇/blue_red source values (DIC-1159)
+        run: npm run test:dic1159-unknown-color
 
       - name: Verify production /api/* is not swallowed by SPA (DIC-886)
         run: npm run test:vercel-routing
@@ -151,6 +468,15 @@ jobs:
       - name: Verify the deck editor renders no explanatory copy (DIC-1064)
         run: npm run test:deck-editor-copy
 
+      - name: Verify 牌組 opens on the deck list, back returns to it, no phantom deck, open deck not persisted (2026-10-19)
+        run: npm run test:deck-list-flow
+
+      - name: Verify 牌組 list/editor routes through the real navigator (tab, ‹, stack pop, web back, re-entry, handoffs) (2026-10-19)
+        run: npm run test:deck-navigation
+
+      - name: Verify the native deck editor renders its card picker grid (DIC-1287)
+        run: npm run test:native-deck-editor-grid
+
       - name: Verify strict card-number series filter + numeric ordering (DIC-1117)
         run: npm run test:series-filter
 
@@ -190,8 +516,127 @@ jobs:
       - name: Verify push notification backend (DIC-390)
         run: npm run test:push-backend
 
+      - name: Verify push restoration gate — stale / pre-restoration trend or price data never sends (v41)
+        run: npm run test:push-freshness
+
+      - name: Verify account remote-sync backend (DIC-1156)
+        run: npm run test:account-sync-backend
+
+      - name: Verify account remote-sync client boundary (DIC-1380)
+        run: npm run test:account-sync-client
+
+      - name: Verify account remote-sync orchestrator hydrate/push/conflict (DIC-1380 W4)
+        run: npm run test:account-sync-orchestrator
+
+      - name: Verify account remote-sync store binding (DIC-1380 W4)
+        run: npm run test:account-sync-binding
+
+      - name: Verify same-account sync across two simulated phones on the real sync handler — Store MVP, guest merge, deletions, offline restart, 409 merge, logout / account-switch isolation (v41)
+        run: npm run test:account-sync-two-device
+
+      - name: Verify shared card name resolver (DIC-1380 naming consistency)
+        run: npm run test:card-display-name
+
+      - name: Verify DeckEditor routes card names through the shared resolver + Pen mobile UI (DIC-1380 W4)
+        run: npm run test:deck-editor-name-resolver
+
+      - name: Verify mobile DeckEditor matches accepted Pen frame uXuqo at 390px (DIC-1380 W5)
+        run: npm run test:deck-editor-pen-mobile-layout
+
+      - name: Verify LandingScreen renders the accepted Pen landing at 390 and 1440 (DIC-1380 W5b)
+        run: npm run test:landing-pen-render
+
+      - name: Verify Landing feature statements match the production build (account sync, photo upload, Google sign-in; v41)
+        run: npm run test:landing-copy-truth
+
+      - name: Verify favorites store is wired into real product UI (DIC-1380 W6)
+        run: npm run test:favorites-ui-wiring
+
+      - name: Verify nav_favorites routes to FavoritesScreen (DIC-1380 W7 CR)
+        run: npm run test:favorites-nav-route
+
+      - name: Verify Favorites hands CardDetail the full canonical payload (DIC-1430)
+        run: npm run test:favorites-canonical-payload
+
+      - name: Verify a tap during canonical loading never leaks a reduced payload (DIC-1430 CR2)
+        run: npm run test:favorites-canonical-loading-race
+
+      - name: Verify each exact printing resolves its own artwork + price (DIC-1430 CR2)
+        run: npm run test:exact-printing-artwork
+
+      - name: Verify one CardDetail uses one proven exact-print identity end to end (DIC-1430)
+        run: npm run test:exact-print-favorite-identity
+
+      # DIC-1430 CI/CD recovery: pins the manual-CI preflight contract AND the
+      # exact-SHA Production deploy workflow, including the deny-list of every
+      # Vercel call shape that could green-light a commit nobody asked for.
+      - name: Verify exact-SHA CI/CD recovery contracts (DIC-1430)
+        run: npm run test:exact-sha-production-recovery
+
+      # The structural suite above describes the alias gate; this one EXECUTES
+      # it. The deploy workflow's alias validator is a committed module, and
+      # these fixtures run that exact module — a missing required top-level
+      # deploymentId once passed 89 green structural checks because none of
+      # them ran the code.
+      - name: Verify canonical alias binding validator behaviour (DIC-1430)
+        run: npm run test:alias-binding-validator
+
+      # Same lesson, applied to the DIC-P0 hBP09 provisioning module: the
+      # structural suite pins the workflow wiring, and this suite EXECUTES
+      # scripts/ci/provision-gemini-key.mjs against a mock transport — the
+      # exact endpoint/target contract, fail-closed ordering, and the
+      # no-secret-in-logs/argv/URL property are all proven by running it.
+      - name: Verify GEMINI_API_KEY Production provisioning behaviour (DIC-P0 hBP09)
+        run: npm run test:gemini-provisioning
+
+      # PR #216 security CR d90a82ad: the deploy workflow's Vercel calls go
+      # through scripts/ci/vercel-curl.sh so VERCEL_TOKEN is never in any
+      # process argv. This suite EXECUTES the wrapper (recording fake curl +
+      # real curl against a local server) rather than grepping it.
+      - name: Verify VERCEL_TOKEN never reaches a process argv (PR #216 CR)
+        run: npm run test:vercel-curl
+
+      - name: Verify tournament collector discovery is fail-closed + writes a stub (DIC-1380 W7 CR)
+        run: npm run test:tournament-discovery-acquisition
+
+      - name: Verify legal-page claims match actual STORE_MVP behavior (DIC-1380 W7 CR)
+        run: npm run test:legal-copy-vs-behavior
+
+      - name: Verify guest scan + shared 50/month device allowance (guest-scan-50)
+        run: npm run test:guest-scan-quota
+
+      - name: Verify Apple-linked delete + copy match the shipping stub (DIC-1380 W12 CR)
+        run: npm run test:apple-delete-truth-copy
+
+      - name: Verify Store MVP UI gates + Login/Settings sync copy + deletion parity (DIC-1381 W11 CR)
+        run: npm run test:store-mvp-ui-gates
+
+      - name: Verify YT + tournament scheduled refresh workflows stay wired (DIC-1380 W5)
+        run: npm run test:scheduled-refresh-workflows
+
       - name: Verify card-lookup version alignment is source-proven (DIC-1013)
         run: npm run test:version-alignment
+
+      - name: Verify per-cardNumber row order keeps CardDetail == deck (DIC-1167)
+        run: npm run test:detail-deck-alignment-order
+
+      - name: Verify price-history provenance rejects cross-product records (DIC-1219)
+        run: npm run test:price-history-provenance
+
+      - name: Verify scheduler fails closed on tracked/staged/untracked residue (DIC-1219)
+        run: npm run test:scheduler-dirty-precondition
+
+      - name: Verify the deployed scheduler launcher only ever runs origin/staging's committed scheduler (DIC-1167, test-first flow)
+        run: npm run test:scheduler-launcher
+
+      - name: Verify yuyu-provenance gate blocks cross-product preservation (DIC-1227)
+        run: npm run test:yuyu-provenance-preservation
+
+      - name: Verify every committed series has a yuyu scrape page (DIC-1167 hEB01)
+        run: npm run test:yuyu-series-pages
+
+      - name: Verify unproven printings cannot ship priceHistory (DIC-1229)
+        run: npm run test:dic1229-history-provenance
 
       - name: Verify scan totals fail closed on unresolved versions (DIC-1013)
         run: npm run test:scan-fail-closed
@@ -205,11 +650,131 @@ jobs:
       - name: Verify an illegible photo is refused instead of matched (DIC-1021)
         run: npm run test:recognition-image-quality
 
+      - name: Verify the Production recognition availability probe against the real handler (DIC-P0 hBP09)
+        run: npm run test:recognition-availability-validator
+
+      - name: Verify the hBP09 recognition regression corpus against the committed catalog (DIC-P0 hBP09)
+        run: npm run test:hbp09-recognition-corpus
+
       - name: Verify commercialization static HTML No-JS and copy-assets manifest (DIC-1157)
         run: npm run test:dist-nojs
 
       - name: Verify AdSlot real component render and fail-closed safety (DIC-1157)
         run: npm run test:adslot-render
+
+      - name: Verify the Play release manifest requests no unjustified permission (DIC-1248 / DIC-1259)
+        run: npm run test:play-manifest
+
+      - name: Verify Play store-listing assets are dimensioned AND in the right PNG colour type (DIC-1259)
+        run: npm run test:play-store-assets
+
+      - name: Verify the privacy policy matches what the code actually sends off-device (DIC-1248, re-derived 2026-10-14)
+        run: npm run test:privacy-disclosure
+
+      - name: Verify legal / pricing / terms / support pages stay consistent (DIC-1380)
+        run: npm run test:legal-pages-consistency
+
+      - name: Verify a native scan uploads only validated photo bytes, never charges on failure/cancel (native AI photo upload 2026-10-14)
+        run: npm run test:native-scan-no-upload
+
+      - name: Verify recognize-card image contract, client-abort forwarding, consent gate and disclosure copy (native AI photo upload 2026-10-14)
+        run: npm run test:native-ai-photo-upload
+
+      - name: Verify leaving the Scan screen cancels the running scan — no off-screen commit or charge (CR 2026-10-14 P2)
+        run: npm run test:scan-cancel-lifecycle
+
+      - name: Verify scan best-match — aligned portrait frame/crop, explicit verdicts, preview before commit, one charge per confirmed card (2026-10-15)
+        run: npm run test:scan-best-match
+
+      - name: Verify the v38 client presents v37-backend (no match verdict) responses by evidence, not as no-match (scan regression 2026-10-16)
+        run: npm run test:scan-legacy-backend
+
+      - name: Verify the typed scan trace — field states, provenance, safe names vs hostile values, old-server/new-client log shape, timeline (2026-10-16)
+        run: npm run test:scan-trace
+
+      - name: Verify CR 2026-10-16 recovery — legacy acceptance judged by evidence on every route, verdict kept without trace, shared reply-line reader, received vs normalised fields
+        run: npm run test:scan-recovery-cr
+
+      - name: Verify the NATIVE ScanScreen branch crops to the measured frame and OCRs the crop (CR 2026-10-15 P2_1)
+        run: npm run test:scan-native-crop-render
+
+      - name: Verify v39 user logs — misread number recovered to the user-confirmed card as identity only (no price), negatives, bounded service-failure categories never shown as no-match, readable summary (2026-10-16)
+        run: npm run test:scan-v39-recovery
+
+      - name: Verify the native Scan ✕ clears the status bar / 48dp target / top layer, Android back, service-failure retry of the same photo charged once (2026-10-16)
+        run: npm run test:scan-v39-native-render
+
+      - name: Verify web auto-scan stays paused on a service failure until the user acts (2026-10-16)
+        run: npm run test:scan-v39-web-autoscan
+
+      - name: Verify native automatic capture trigger rules — one stable card number in the frame, no repeat, re-arm on removal, idle pause (v41)
+        run: npm run test:auto-capture
+
+      - name: Verify iOS / legacy still-photo automatic capture on the real ScanScreen — on-device probes only, one request per round, no repeat / no auto-retry / no background probing, charge only on add (v41; Android never uses it since v43)
+        run: npm run test:scan-native-auto-capture
+
+      - name: Verify the installed expo-camera / expo-ocr-kit Android contract the scanner relies on (v42 automatic-scan flashing)
+        run: npm run test:scan-android-camera-contract
+
+      - name: Verify automatic scan measures the card number's own line/element box, not the ML Kit text block (v42)
+        run: npm run test:scan-ocr-geometry
+
+      - name: Verify the Android automatic scan reads PREVIEW FRAMES on the real ScanScreen (no stills while empty/moving; one still per held card; lifecycle races) (v42)
+        run: npm run test:scan-android-frame-scanner
+
+      - name: Verify the frame-scanner field-of-view mapping (CameraX view-port crop, rotations, aspect fallback) (v42)
+        run: npm run test:scan-frame-geometry
+
+      - name: Verify Android automatic-scan CAMERA STARTUP on the real ScanScreen (permission entry, streaming-preview ready, never-ready → 重試 / 改用手動拍照, resume) (v43)
+        run: npm run test:scan-android-camera-startup
+
+      - name: Verify the Android card-region detector on decoded number-free card images (v44)
+        run: npm run test:scan-card-detector
+
+      - name: Verify the 21 prepared card frame traces on the real ScanScreen — pixels → detector → stability → one still → one request → explicit 加入 (v44)
+        run: npm run test:scan-android-card-trace
+
+      - name: Verify printing versions / quote provenance through catalog, API and the chooser (v44)
+        run: npm run test:printing-quote-identity
+
+      - name: Verify hBP03-029 printings show zh version labels, own pictures and zh product names; same printing collapses, SR/R never merged (2026-10-19)
+        run: npm run test:printing-display
+
+      - name: Verify the printing version / quote END TO END — native scan → handler → chooser → 加入 → session, latest and same-time conflict (v44)
+        run: npm run test:scan-printing-version-flow
+
+      - name: Verify every quote entry resolves the proven version — cold single-card API, exact-id lookup, search suggestions, catalog failure (v44)
+        run: npm run test:printing-quote-entries
+
+      - name: Verify the native splash uses the approved new H brand (v44)
+        run: npm run test:native-splash-brand
+
+      - name: Verify local scan / sign-in diagnostics — allowlist + redaction on write and export, 100/7-day retention, real clear, never affects scan or quota (2026-10-15)
+        run: npm run test:scan-diagnostics
+
+      - name: Verify Scan screen fails safe on native crashes (DIC-1286)
+        run: npm run test:scan-screen-fail-safe
+
+      - name: Verify the scan viewfinder stays a focused primary path (DIC-1319)
+        run: npm run test:scan-primary-path
+
+      - name: Verify recognition quotes the recognized printing's own price (DIC-1325)
+        run: npm run test:scan-printing-isolation
+
+      - name: Verify scan recovery never quotes a sibling printing's price (DIC-1325)
+        run: npm run test:scan-exact-printing-identity
+
+      - name: Verify an unresolved printing reaches the picker and commits nothing (DIC-1325)
+        run: npm run test:scan-ambiguous-printing-flow
+
+      - name: Verify the native bundled catalog ships real sale prices (DIC-1319)
+        run: npm run test:native-price-artifact
+
+      - name: Verify Store MVP UI gates stay on every surface (DIC-1256 / DIC-1319)
+        run: npm run test:store-mvp-ui-gates
+
+      - name: Verify Store MVP render behavior across both build profiles (DIC-1256 / DIC-1319)
+        run: npm run test:store-mvp-behavior
 
       - name: Verify DIC-1189 staging isolation suite (mutation-sensitive)
         run: npm run test:dic1189-staging-isolation
@@ -224,3 +789,130 @@ jobs:
             echo "Warning: Found console.log statements:"
             echo "$CONSOLE_LOGS"
           fi
+
+  release-apk-postpackage-guard:
+    # DIC-1266 CR round 7 / DIC-1277 QA blocker: generated Gradle text
+    # can pass the fast static suite while the packaged APK still ships
+    # every ABI, because the RN gradle plugin's
+    # NdkConfiguratorUtils.kt calls
+    # `abiFilters.addAll(reactNativeArchitectures)` — unioning the
+    # gradle.properties list onto the DSL filter. The ONLY check that
+    # is not fooled by that is a real `./gradlew app:assembleRelease`
+    # against the plugin, followed by a byte-level inspection of the
+    # produced APK's lib/<abi>/ directories and total size. Runs in
+    # parallel with Validate.
+    name: Release-APK post-package guard (DIC-1266 / DIC-1277)
+    runs-on: ubuntu-latest
+    needs: [preflight]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          # Security floor (Render eMudhra advisory, Node 22.23.4 NSS root update):
+          # semver range = >=22.23.4 <23, so a stale cached 22.x is never used.
+          node-version: '22.23.4 - 22'
+          cache: 'npm'
+
+      - name: Setup Java 17 (Temurin — matches EAS build image)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK (pinned; no legacy `tools` package, DIC-1443)
+        run: |
+          set -euo pipefail
+          ANDROID_HOME=${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          # `android-actions/setup-android@v3` asked sdkmanager for the legacy
+          # `tools` package, which Google removed from the repository
+          # (`Warning: Failed to find package 'tools'`, DIC-1443). Pin the
+          # explicit packages the release build needs instead; gradle
+          # auto-provisions NDK/CMake under $ANDROID_HOME as before.
+          "$SDKMANAGER" --sdk_root="$ANDROID_HOME" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prebuild for production-apk profile
+        env:
+          EAS_BUILD_PROFILE: production-apk
+          EAS_BUILD_PLATFORM: android
+          # Placeholder — the plugin's Android build assertion in
+          # app.config.js needs the env set; the value is never read at
+          # release time by the guard itself.
+          EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: dic1266-postpackage-guard-placeholder
+        run: npx expo prebuild --platform android --no-install --clean
+
+      - name: Assemble release APK
+        env:
+          # Set on the JVM so gradle daemons never leak between jobs.
+          _JAVA_OPTIONS: "-Xmx4g -Dfile.encoding=UTF-8"
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew app:assembleRelease --no-daemon --console=plain --stacktrace
+
+      - name: Verify packaged ABI set + size (DIC-1277 blocker)
+        run: npm run test:release-apk-postpackage
+
+      - name: Upload built APK for provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-apk-release
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: warn
+
+  # DIC-1430 Actions registry recovery — the registered-CI trampoline.
+  #
+  # `.github/workflows/holohunter-exact-sha-deploy.yml` exists on the default
+  # branch at a reviewed blob and actionlint reports it clean, but GitHub's
+  # Actions workflow registry never registered it: its filename endpoint 404s
+  # and it cannot be dispatched directly. This workflow IS registered, so it
+  # becomes the entry point and CALLS the reviewed production workflow.
+  #
+  # What this job is NOT: a copy of the deployment logic. It declares no steps
+  # and no runner. Every exact-main check, the fresh pinned Vercel deployment,
+  # the READY/target/source-SHA proof, the canonical-alias binding gate and
+  # all the log-injection defences stay in the reviewed file and are invoked
+  # from here unchanged.
+  #
+  # Why the `if:` names all three results explicitly: adding a job-level `if:`
+  # REMOVES the implicit `success()` that `needs:` would otherwise apply, so a
+  # bare `needs:` plus a condition would let this job run after a FAILED gate.
+  # The event and intent terms make it unreachable on push/pull_request, where
+  # `inputs` does not exist and nobody can set the flag.
+  deploy-production:
+    name: Deploy the exact SHA to Production (DIC-1430)
+    needs: [preflight, validate, release-apk-postpackage-guard]
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      && inputs.deploy_production
+      && needs.preflight.result == 'success'
+      && needs.validate.result == 'success'
+      && needs['release-apk-postpackage-guard'].result == 'success'
+    uses: ./.github/workflows/holohunter-exact-sha-deploy.yml
+    with:
+      # Forwarded verbatim. The callee re-proves it is 40 lowercase hex, equal
+      # to github.sha, equal to the checked-out HEAD, and the live tip of
+      # origin/main before it creates anything.
+      expected_sha: ${{ inputs.expected_sha }}
+    # Explicit, not `inherit`: the callee declares exactly these three as
+    # required, and `inherit` would hand it every secret in the repository.
+    # GEMINI_API_KEY is the DIC-P0 hBP09 recognition credential the callee
+    # provisions into Vercel Production before it creates any deployment.
+    secrets:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}

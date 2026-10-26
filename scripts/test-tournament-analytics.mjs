@@ -215,6 +215,28 @@ const aug = analyzeMonth(twoMonths, '2026-08', { generatedAt: '2026-09-01T00:00:
 assert.equal(aug.clusters[0].representativeArchetype, 'alpha');
 assert(!stableStringify(aug).includes('BONLY'));
 
+// ── Month artifacts are stable against OTHER months (2026-10-18) ────────────
+// analyzeMonth's automatic generatedAt was the latest generatedAt across ALL input
+// reports: adding September moved July's artifact to 2026-09-29. A month artifact must be
+// byte-identical whether or not unrelated earlier / later months are in the input.
+const withGeneratedAt = (entry, generatedAt) => ({ ...entry, report: { ...entry.report, generatedAt } });
+const julyOnly = withGeneratedAt(report([deck('decklog:J1', 'july', [...shared(), card('main', 'JONLY', 'R', 2)])], '2026-07'), '2026-07-01T00:00:00.000Z');
+const septLater = withGeneratedAt(sepReport, '2026-09-29T00:00:00.000Z');
+const juneEarlier = withGeneratedAt(report([deck('decklog:U1', 'june', shared())], '2026-06'), '2026-06-15T00:00:00.000Z');
+const julyAlone = stableStringify(analyzeMonth([julyOnly], '2026-07'));
+assert.equal(JSON.parse(julyAlone).generatedAt, '2026-07-01T00:00:00.000Z', 'automatic metadata = the month\'s own report');
+assert.equal(stableStringify(analyzeMonth([julyOnly, septLater], '2026-07')), julyAlone, 'July artifact byte-identical after a later month is added');
+assert.equal(stableStringify(analyzeMonth([juneEarlier, julyOnly, septLater], '2026-07')), julyAlone, '… and an earlier one');
+assert.equal(stableStringify(analyzeMonth([septLater, julyOnly], '2026-07')), julyAlone, '… in any input order');
+// The month is taken from report.month, else from the file name ("2026-07.json").
+const julyNoMonthField = { ...julyOnly, report: { ...julyOnly.report, month: undefined } };
+const fromFileName = analyzeMonth([julyNoMonthField, septLater], '2026-07');
+assert.equal(fromFileName.generatedAt, '2026-07-01T00:00:00.000Z', 'file-name month fallback keeps month-local metadata');
+assert.deepEqual(fromFileName.inputReports.map((r) => [r.file, r.month]), [['2026-07.json', '2026-07']]);
+// Explicit override and the global analysis are unchanged.
+assert.equal(analyzeMonth([julyOnly, septLater], '2026-07', { generatedAt: '2030-01-01T00:00:00.000Z' }).generatedAt, '2030-01-01T00:00:00.000Z', 'explicit generatedAt wins');
+assert.equal(analyzeReports([julyOnly, septLater]).generatedAt, '2026-09-29T00:00:00.000Z', 'the GLOBAL analysis still uses the latest report');
+
 // ── Core cards are a definition, not a top-N preview (DIC-1045) ─────────────
 // `coreCards` means "present in every member deck". A silent slice(0, 20)
 // published that definition while omitting valid members of the set, so a
@@ -266,6 +288,43 @@ assert.deepEqual(
   ['2026-09', '2026-08'],
   'index lists every generated month',
 );
+
+// ── The actual CLI keeps each month artifact's automatic metadata month-local (2026-10-19) ──
+// analyzeMonth's own default was fixed (PR253), but the CLI passed the GLOBAL generatedAt
+// into every month: adding an unrelated September moved July's artifact to 2026-09-29.
+{
+  const JULY_AT = '2026-07-01T00:00:00.000Z';
+  const SEPT_AT = '2026-09-29T00:00:00.000Z';
+  const JUNE_AT = '2026-06-15T00:00:00.000Z';
+  const julyReport = { ...report(decks6, '2026-07').report, generatedAt: JULY_AT };
+  const septReport = { ...sepReport.report, generatedAt: SEPT_AT };
+  const juneReport = { ...report(decks6.slice(0, 3), '2026-06').report, generatedAt: JUNE_AT };
+  const runCli = (files, extraArgs = []) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hocg-cli-month-'));
+    fs.mkdirSync(path.join(dir, 'in'));
+    for (const [name, body] of Object.entries(files)) fs.writeFileSync(path.join(dir, 'in', name), JSON.stringify(body, null, 2));
+    execFileSync(process.execPath, [script, '--tournaments-dir', path.join(dir, 'in'), '--out-dir', path.join(dir, 'out'), ...extraArgs], { cwd: process.cwd(), stdio: 'pipe' });
+    const read = (f) => fs.readFileSync(path.join(dir, 'out', f), 'utf8');
+    return { july: read('2026-07.json'), index: JSON.parse(read('index.json')) };
+  };
+  const alone = runCli({ '2026-07.json': julyReport });
+  assert.equal(JSON.parse(alone.july).generatedAt, JULY_AT, 'CLI: July artifact carries July\'s own report time');
+  const withLater = runCli({ '2026-07.json': julyReport, '2026-09.json': septReport });
+  assert.equal(withLater.july, alone.july, 'CLI: the July artifact is byte-identical after an unrelated later month is added');
+  const withBoth = runCli({ '2026-06.json': juneReport, '2026-07.json': julyReport, '2026-09.json': septReport });
+  assert.equal(withBoth.july, alone.july, 'CLI: … and after an earlier month too');
+  assert.equal(withLater.index.generatedAt, SEPT_AT, 'CLI: the index keeps the global (latest) time');
+  // month from the file name when the report has no `month` field
+  const { month: _drop, ...noMonth } = julyReport;
+  const fallback = JSON.parse(runCli({ '2026-07.json': noMonth, '2026-09.json': septReport }).july);
+  assert.equal(fallback.month, '2026-07', 'CLI: file-name month fallback');
+  assert.equal(fallback.generatedAt, JULY_AT, 'CLI: file-name month keeps month-local time');
+  // an explicit --generated-at still applies to every artifact and the index
+  const OVERRIDE = '2030-01-01T00:00:00.000Z';
+  const forced = runCli({ '2026-07.json': julyReport, '2026-09.json': septReport }, ['--generated-at', OVERRIDE]);
+  assert.equal(JSON.parse(forced.july).generatedAt, OVERRIDE, 'CLI: explicit override on the month artifact');
+  assert.equal(forced.index.generatedAt, OVERRIDE, 'CLI: explicit override on the index');
+}
 
 // ── Committed-artifact consistency (DIC-1065 / CR fix) ──────────────────────
 // The analytics file must record the live content SHA-256 of every report it

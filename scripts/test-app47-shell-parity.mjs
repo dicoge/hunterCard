@@ -1,0 +1,287 @@
+#!/usr/bin/env node
+// DIC-1409 Phase 4 mutation-sensitive tests: App 04 掃描卡牌 / App 05
+// 掃描估值清單 / App 06 牌組編輯器 / App 07 我的 carry the shared Pen v2
+// shell/tokens with their real stores and navigation wiring.
+//
+// Assertions are pinned to the Pen file (`docs/pen-v2/
+// holohunter-landing-v2-updated.pen`, frames eurld / wC1cO / uXuqo / siVsa)
+// and to shipped store/navigation contracts.
+
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { JSDOM } from 'jsdom';
+
+// Full profile (same pattern as test-store-mvp-behavior): the 我的 stats
+// tiles and 估值清單 price surfaces only exist with Store MVP off.
+process.env.EXPO_PUBLIC_STORE_MVP = '0';
+
+const dom = new JSDOM('<!doctype html><html><body></body></html>', {
+  url: 'https://holohunter.dicoge.com/',
+  pretendToBeVisual: true,
+});
+globalThis.window = dom.window;
+globalThis.document = dom.window.document;
+for (const key of Object.getOwnPropertyNames(dom.window)) {
+  if (key in globalThis) continue;
+  try { globalThis[key] = dom.window[key]; } catch {}
+}
+Object.defineProperty(globalThis, 'navigator', { value: dom.window.navigator, configurable: true });
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+class TestResizeObserver { observe() {} unobserve() {} disconnect() {} }
+globalThis.ResizeObserver = TestResizeObserver;
+dom.window.ResizeObserver = TestResizeObserver;
+Object.defineProperty(dom.window.document.documentElement, 'clientWidth', { value: 390, configurable: true });
+Object.defineProperty(dom.window.document.documentElement, 'clientHeight', { value: 844, configurable: true });
+Object.defineProperty(dom.window, 'innerWidth', { value: 390, configurable: true });
+Object.defineProperty(dom.window, 'innerHeight', { value: 844, configurable: true });
+
+const React = (await import('react')).default;
+const { act } = await import('react');
+const { createRoot } = await import('react-dom/client');
+const rn = await import('react-native');
+const { PALETTE } = await import('../src/theme/tokensV2.ts');
+
+async function flush() {
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+}
+async function render(element) {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  await act(async () => root.render(element));
+  await flush();
+  return {
+    container,
+    cleanup: async () => { await act(async () => root.unmount()); container.remove(); },
+  };
+}
+function hexToRgb(hex) {
+  const v = hex.replace('#', '');
+  return `rgb(${parseInt(v.slice(0, 2), 16)}, ${parseInt(v.slice(2, 4), 16)}, ${parseInt(v.slice(4, 6), 16)})`;
+}
+
+let passed = 0;
+async function test(name, fn) {
+  await fn();
+  passed += 1;
+  console.log(`  ✓ ${name}`);
+}
+
+console.log('── DIC-1409 Phase 4 · App 04–07 shell parity ──');
+
+// ── App / 04 掃描卡牌 (Pen frame eurld) — ScanOverlay ─────────────────────
+
+const overlaySource = readFileSync(new URL('../src/components/ScanOverlay.tsx', import.meta.url), 'utf8');
+
+await test('ScanOverlay scan frame is a portrait card window at the real 63:88 ratio (Pen scan v38 USowC)', async () => {
+  // Since 2026-10-15 the frame is sized per viewport by computeScanFrameSize
+  // (docs/pen-scan/holohunter-scan-best-match.pen); behaviour pinned in test:scan-best-match.
+  assert.match(overlaySource, /computeScanFrameSize\(/, 'overlay sizes the frame from the shared geometry');
+  const { CARD_ASPECT } = await import('../src/utils/scanFrame.ts');
+  assert.ok(Math.abs(CARD_ASPECT - 88 / 63) < 1e-9, 'card ratio 63 × 88 mm');
+  assert.match(overlaySource, /borderRadius:\s*16/, 'Pen r16 frame corner');
+  assert.match(overlaySource, /width:\s*32,\s*\n\s*height:\s*32,\s*\n\s*borderColor:\s*'#FFFFFF'/, 'Pen 32px white corner brackets');
+});
+
+async function renderOverlay(props = {}) {
+  const { default: ScanOverlay } = await import('../src/components/ScanOverlay.tsx');
+  const base = {
+    scanLineAnim: new rn.Animated.Value(0),
+    pulseAnim: new rn.Animated.Value(1),
+    borderAnim: new rn.Animated.Value(0),
+    isScanning: false,
+    flash: false,
+    autoScanActive: false,
+    isCameraReady: true,
+    cameraError: null,
+    onFlash: () => {},
+    onScan: () => {},
+    onGallery: () => {},
+    onRetry: () => {},
+  };
+  return render(React.createElement(ScanOverlay, { ...base, ...props }));
+}
+
+await test('ScanOverlay renders the three Pen tip chips and the focused primary controls row', async () => {
+  const { container, cleanup } = await renderOverlay();
+  try {
+    const tips = container.querySelector('[data-testid="scan-tips-row"]');
+    assert.ok(tips, 'tips row (Pen node Cc84X)');
+    assert.equal(tips.children.length, 3, 'three tip chips');
+    // DIC-1319: the segmented mode switch stays removed — the auto-scan loop
+    // is web-only, so the switch was inert on Android. The focused primary
+    // controls row (scan + gallery) replaces it under the viewfinder.
+    assert.equal(container.querySelector('[data-testid="scan-mode-switch"]'), null, 'mode switch stays removed (DIC-1319)');
+    assert.ok(container.querySelector('[data-testid="scan-primary-controls"]'), 'primary controls row mounts');
+    assert.ok(container.querySelector('[data-testid="scan-primary-action"]'), 'primary scan action mounts');
+    assert.ok(container.querySelector('[data-testid="scan-gallery-action"]'), 'gallery entry mounts (DIC-1336)');
+  } finally { await cleanup(); }
+});
+
+// ── App / 05 掃描估值清單 (Pen frame wC1cO) — ScanSessionPanel ────────────
+
+await test('ScanSessionPanel carries Pen v2 tokens on the real session store', async () => {
+  const { useScanSessionStore } = await import('../src/stores/scanSessionStore.ts');
+  const { default: ScanSessionPanel } = await import('../src/components/ScanSessionPanel.tsx');
+  const added = useScanSessionStore.getState().addCard({
+    id: 'hBP01-081',
+    name: '星街すいせい',
+    rarity: 'UR',
+    series: 'hBP01',
+    prices: [{ name: 'UR', sellPrice: 3600, rarity: 'UR' }],
+  });
+  assert.equal(added, true, 'real store accepts the scanned card');
+  const { container, cleanup } = await render(
+    React.createElement(ScanSessionPanel, { onContinueScanning: () => {}, preferredCurrency: 'JPY' }),
+  );
+  try {
+    const header = container.querySelector('[data-testid="scan-session-header"]');
+    assert.ok(header, 'session header renders');
+    const total = container.querySelector('[data-testid="scan-session-total-price"]');
+    assert.ok(total, 'session total renders on the full profile');
+    const style = dom.window.getComputedStyle(total);
+    assert.equal(style.color, hexToRgb(PALETTE.accent2), 'Pen $accent-2 price (was legacy green)');
+    await act(async () => header.click());
+    assert.ok(
+      container.querySelector('[data-testid="scan-session-total-row"]'),
+      'expanded total row (Pen Summary node Ahd5w)',
+    );
+    assert.ok(
+      container.querySelector('[data-testid="scan-session-copy-results"]'),
+      'copy-results action (Pen node aEGHU)',
+    );
+  } finally {
+    useScanSessionStore.getState().clearSession();
+    await cleanup();
+  }
+});
+
+// ── App / 06 牌組編輯器 (Pen frame uXuqo) — DeckEditorScreen ──────────────
+
+await test('DeckEditor renders inside the shared shell with 牌組 tab active (Pen uXuqo editor-first entry)', async () => {
+  const { default: DeckEditorScreen } = await import('../src/screens/DeckEditorScreen.tsx');
+  const { useDeckStore } = await import('../src/store/deckStore.ts');
+  const { container, cleanup } = await render(React.createElement(DeckEditorScreen));
+  try {
+    assert.ok(container.querySelector('[data-testid="deck-shell"]'), 'shared shell root');
+    assert.equal(container.querySelector('[data-testid="shell-status-bar"]'), null, 'no simulated status chrome (DIC-1452)');
+    const deckTab = container.querySelector('[data-testid="shell-bottom-tab-deck"]');
+    assert.ok(deckTab, '牌組 tab renders');
+    assert.equal(deckTab.getAttribute('aria-selected'), 'true', '牌組 tab active');
+    // DIC-1427 QA P0 (Pen uXuqo): a fresh visit must land in the FULL
+    // functional editor (zone tabs + grid), never a bare create form over a
+    // blank region. The library (DIC-1088 grid) stays reachable via the
+    // 返回牌組庫 menu action once decks exist.
+    await act(async () => { await new Promise((r) => setTimeout(r, 250)); });
+    assert.ok(
+      container.querySelector('[data-testid="deck-zone-tabs"]')
+        || container.querySelector('[data-testid="deck-mobile-primary-tabs"]')
+        || container.querySelector('[data-testid="deck-library-grid"]'),
+      'fresh entry lands in the functional editor (desktop zone tabs or DIC-1380 mobile tabs; library only when decks already exist) — never a blank create form',
+    );
+  } finally {
+    // Drop the auto-created starter deck so later tests see a clean store.
+    const store = useDeckStore.getState();
+    for (const deck of [...store.decks]) store.deleteDeck(deck.id);
+    store.setActiveDeck(null);
+    await cleanup();
+  }
+});
+
+// ── App / 07 我的 (Pen frame siVsa) — MeScreen collection hub (DIC-1427) ──
+
+async function renderSettings(navigate = () => {}) {
+  const { default: SettingsScreen } = await import('../src/screens/SettingsScreen.tsx');
+  return render(React.createElement(SettingsScreen, { navigation: { navigate } }));
+}
+
+async function renderMe(navigate = () => {}) {
+  const { default: MeScreen } = await import('../src/screens/MeScreen.tsx');
+  return render(React.createElement(MeScreen, { navigation: { navigate } }));
+}
+
+await test('我的 renders the Pen siVsa COLLECTION HUB — account card, live stat cells, hub segments, 我的 tab active', async () => {
+  const calls = [];
+  const { container, cleanup } = await renderMe((route) => calls.push(route));
+  try {
+    assert.ok(container.querySelector('[data-testid="me-shell"]'), 'hub shell root');
+    assert.equal(
+      container.querySelector('[data-testid="shell-app-bar-title"]').textContent,
+      '我的',
+      'Pen App/07 app bar title (node l66Pu)',
+    );
+    const meTab = container.querySelector('[data-testid="shell-bottom-tab-me"]');
+    assert.equal(meTab.getAttribute('aria-selected'), 'true', '我的 tab active');
+    const card = container.querySelector('[data-testid="me-account-card"]');
+    assert.ok(card, 'account card (Pen node ZYJRw)');
+    const style = dom.window.getComputedStyle(card);
+    assert.equal(style.backgroundColor, hexToRgb(PALETTE.appSurface), 'Pen $app-surface card');
+    assert.ok(container.querySelector('[data-testid="me-stat-owned"]'), '收藏張數 stat cell (Pen QvuBt, live deck store)');
+    assert.ok(container.querySelector('[data-testid="me-stat-value"]'), '收藏市值 stat cell (Pen q9kyqp, exact-printing prices)');
+    assert.ok(container.querySelector('[data-testid="me-stat-alerts"]'), '到價提醒 stat cell (Pen hELzd, live watchlist store)');
+    // The hub must NOT be the settings surface (the old wrong-IA P0).
+    assert.equal(container.querySelector('[data-testid="settings-shell"]'), null, 'settings page must not impersonate 我的');
+    // Pen oaxgt segments route to the REAL hub destinations.
+    for (const [seg, route] of [['collection', 'Collection'], ['watchlist', 'Watchlist'], ['trends', 'Favorites']]) {
+      const node = container.querySelector(`[data-testid="me-segment-${seg}"]`);
+      assert.ok(node, `${seg} segment renders on the full profile`);
+      await act(async () => node.click());
+      assert.ok(calls.includes(route), `${seg} segment navigates to ${route}`);
+    }
+    // Gear action (Pen amD3P) opens the dedicated Settings route (Pen x44r8t).
+    const gear = container.querySelector('[data-testid="me-settings-action"]');
+    assert.ok(gear, 'settings gear action renders');
+    await act(async () => gear.click());
+    assert.ok(calls.includes('Settings'), 'gear opens the Settings route');
+  } finally { await cleanup(); }
+});
+
+await test('Settings keeps its own route identity (Pen x44r8t): 設定 title, settings-* surface', async () => {
+  const { container, cleanup } = await renderSettings();
+  try {
+    assert.ok(container.querySelector('[data-testid="settings-shell"]'), 'settings shell root');
+    assert.equal(
+      container.querySelector('[data-testid="shell-app-bar-title"]').textContent,
+      '設定',
+      'Settings app bar carries its own title, not 我的',
+    );
+    assert.ok(container.querySelector('[data-testid="settings-account-card"]'), 'account card stays on Settings');
+  } finally { await cleanup(); }
+});
+
+await test('設定 keeps the functional settings surface on the Pen x44r8t group rows (language / currency / account auth)', async () => {
+  const { container, cleanup } = await renderSettings();
+  try {
+    // Pen 偏好 group rows show the live store value and disclose the real
+    // selectors on press — the language options must actually render.
+    const langRow = container.querySelector('[data-testid="settings-row-language"]');
+    assert.ok(langRow, '語言 row renders (Pen s8nLRw)');
+    assert.ok(container.querySelector('[data-testid="settings-language-value"]'), '語言 row carries the live value');
+    await act(async () => langRow.click());
+    assert.ok(container.querySelector('[data-testid="settings-language-zh"]'), 'language selector discloses on press');
+    const currencyRow = container.querySelector('[data-testid="settings-row-currency"]');
+    assert.ok(currencyRow, '貨幣 row renders (Pen r5vO5)');
+    await act(async () => currencyRow.click());
+    assert.ok(container.querySelector('[data-testid="settings-currency-TWD"]'), 'currency selector discloses on press');
+    assert.ok(container.querySelector('[data-testid="settings-row-about"]'), '關於 row carries the real version (Pen f9oQT)');
+    assert.ok(
+      container.textContent.includes('Google'),
+      'auth surface retained (guest login or linked providers)',
+    );
+  } finally { await cleanup(); }
+});
+
+await test('我的 bottom tab dispatches every shell destination (nested MainDrawer form)', async () => {
+  // DIC-1409 CR fix: presses use navigate('MainDrawer', { screen }) so
+  // they also resolve from root-stack screens.
+  const calls = [];
+  const { container, cleanup } = await renderSettings((route, params) => calls.push(params?.screen ?? route));
+  try {
+    for (const key of ['home', 'search', 'deck']) {
+      await act(async () => container.querySelector(`[data-testid="shell-bottom-tab-${key}"]`).click());
+    }
+    assert.deepEqual(calls, ['Home', 'Search', 'DeckEditor']);
+  } finally { await cleanup(); }
+});
+
+console.log(`\nPassed ${passed} tests.`);

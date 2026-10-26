@@ -8,10 +8,14 @@
  */
 
 import type { CardInfo, RecognitionResult, RecognizedCandidate } from './cardRecognition';
-import { isRecognitionInfrastructureFailure, RECOGNITION_UNAVAILABLE_MESSAGE } from './recognitionOutcome';
+import { classifyHttpFailure, isRecognitionInfrastructureFailure, RECOGNITION_UNAVAILABLE_MESSAGE, type RecognitionFailureKind } from './recognitionOutcome';
+import { legacyReceivedNumber, matchFromWire, presentCandidates, presentMatch, verifyLegacyNumberEvidence, type ScanPresentation } from './scanPresentation';
 
 /** 本地 OCR 也讀不到字時的一般引導；服務本身掛掉時不得使用。 */
 export const NO_TEXT_GUIDANCE = '無法自動辨識卡牌文字。請使用手動搜尋或從下方搜尋結果中選擇。';
+
+/** The photo was refused before upload (too large / unsupported) and local OCR read nothing either. */
+export const PHOTO_NOT_UPLOADED_GUIDANCE = '這張照片無法送出辨識（檔案過大或格式不支援），本機文字辨識也沒有讀到卡號。請靠近卡片重新拍攝，或改用手動搜尋。';
 
 export interface RecognitionApiResponse {
   status: number;
@@ -41,6 +45,115 @@ export interface ScanFlowUi {
   showLowConfidenceCandidates(candidates: RecognizedCandidate[]): void;
   onRecognized(card: CardInfo, confidence: number, candidates?: RecognizedCandidate[]): void;
   onVisionRecognized(card: CardInfo, confidence: number): void;
+  /**
+   * Show a recognition outcome (best preview / identity / explicit no-match). When
+   * present, the flow uses it for every backend verdict instead of the legacy
+   * commit / picker callbacks, so nothing is committed without a user action.
+   */
+  showPresentation?(presentation: ScanPresentation): void;
+  /**
+   * The recognition service could not answer and local OCR found nothing either. Never
+   * a "no match": the screen offers a manual retry of the same photo (v39 user report).
+   */
+  onServiceFailure?(kind: RecognitionFailureKind): void;
+}
+
+/** Without an onServiceFailure handler: the generic service message, never a no-match. */
+function reportServiceFailure(ui: ScanFlowUi, kind: RecognitionFailureKind | undefined): void {
+  if (ui.onServiceFailure) ui.onServiceFailure(kind ?? 'unavailable');
+  else ui.setScanError(RECOGNITION_UNAVAILABLE_MESSAGE);
+}
+
+/**
+ * An ambiguous-printing result LOOKS like success — `success: true` with a card
+ * — because the card identity is genuinely known. Only the printing is not, so
+ * the result deliberately carries no price and lists every printing as a
+ * candidate (DIC-1325, cardRecognition.resolvePrintingByCardNumber).
+ *
+ * Every branch below used to test `success && card` first, which committed that
+ * priceless placeholder before anything looked at `lowConfidence`. On native it
+ * went straight to onVisionRecognized; on web/local the >= 0.85 auto-add caught
+ * it. Either way the user got a card with no price added to their session
+ * instead of the printing chooser.
+ *
+ * So this runs BEFORE every success branch: if the printing is unresolved, hand
+ * the candidates to the picker and commit nothing.
+ */
+export function isAmbiguousPrinting(result: RecognitionResult): boolean {
+  return result?.success === true
+    && !!result.card
+    && result.lowConfidence === true
+    && (result.candidates?.length ?? 0) > 1;
+}
+
+/**
+ * Pure decision extracted from ScanScreen.handleRecognized so the gallery /
+ * scan / OCR paths all share ONE tested classifier, and a Node harness can
+ * drive it end-to-end without booting the camera screen (DIC-1339 regression).
+ *
+ * The rules:
+ *   - `ambiguous-picker`: the printing is not resolved — open the picker,
+ *     never commit at any confidence.
+ *   - `commit`: confidence at or above auto-add — commit the identified card.
+ *   - `picker`: mid/low confidence — open the picker with the candidate list
+ *     so the user picks explicitly.
+ */
+export type HandleRecognizedDecision =
+  | { action: 'ambiguous-picker'; candidates: RecognizedCandidate[] }
+  | { action: 'commit'; card: CardInfo; confidence: number }
+  | { action: 'picker'; tier: 'mid' | 'low'; candidates: RecognizedCandidate[] };
+
+export interface RecognizedThresholds {
+  /** ≥ this → auto-commit. */
+  autoAdd: number;
+  /** ≥ this (and below autoAdd) → picker at `mid` tier; below → `low`. */
+  minCandidate: number;
+}
+
+export const DEFAULT_RECOGNIZED_THRESHOLDS: RecognizedThresholds = {
+  autoAdd: 0.85,
+  minCandidate: 0.55,
+};
+
+export function decideRecognizedOutcome(
+  card: CardInfo,
+  confidence: number,
+  candidates: RecognizedCandidate[] | undefined,
+  ambiguousPrinting: boolean,
+  thresholds: RecognizedThresholds = DEFAULT_RECOGNIZED_THRESHOLDS,
+): HandleRecognizedDecision {
+  if (ambiguousPrinting) {
+    return {
+      action: 'ambiguous-picker',
+      candidates: (candidates && candidates.length > 0 ? candidates : [{ card, confidence }]).slice(0, 5),
+    };
+  }
+  if (confidence >= thresholds.autoAdd) {
+    return { action: 'commit', card, confidence };
+  }
+  const list = candidates && candidates.length > 0 ? candidates : [{ card, confidence }];
+  return {
+    action: 'picker',
+    tier: confidence >= thresholds.minCandidate ? 'mid' : 'low',
+    candidates: list.slice(0, 5),
+  };
+}
+
+function routeAmbiguousPrinting(result: RecognitionResult, ui: ScanFlowUi): boolean {
+  if (!isAmbiguousPrinting(result)) return false;
+  ui.setBusy(false);
+  ui.setStatus('請選擇版本', 4);
+  ui.setCandidateReason('同一張卡號有多個版本，售價不同，請選擇手上的版本');
+  // Candidates keep their own compound printing ids and their own prices, so
+  // whichever the user picks resolves to an exact printing.
+  ui.showLowConfidenceCandidates(result.candidates!);
+  return true;
+}
+
+/** Candidates of a web-flow response; a no-verdict response's exact claims are verified. */
+function bodyCandidates(io: ScanFlowIo, body: any): RecognizedCandidate[] | undefined {
+  const mapped = io.mapApiCandidates(body?.candidates);
+  return body?.match ? mapped : verifyLegacyNumberEvidence(mapped, legacyReceivedNumber(body));
 }
 
 export async function runWebCameraScan(imageUri: string, io: ScanFlowIo, ui: ScanFlowUi): Promise<void> {
@@ -49,6 +162,7 @@ export async function runWebCameraScan(imageUri: string, io: ScanFlowIo, ui: Sca
   let apiBody: any = null;
   let apiNetworkError = false;
   let backendFailed = false;
+  let failure: RecognitionFailureKind | undefined;
   try {
     const response = await io.callRecognitionApi();
     apiBody = response.body;
@@ -56,15 +170,46 @@ export async function runWebCameraScan(imageUri: string, io: ScanFlowIo, ui: Sca
     // 不是「這張照片不好」。status 必須留到這裡判斷，先前把它丟掉，才會讓後端故障叫使用者
     // 去調光線（DIC-1013）。只有 404 才是排序器真的比對不到這張圖。
     backendFailed = isRecognitionInfrastructureFailure(response.status, apiBody);
+    if (backendFailed) failure = classifyHttpFailure(response.status, apiBody);
   } catch (e: any) {
     apiNetworkError = true;
-    console.warn('[scanFlow] recognition API unreachable:', e?.message);
+    // TimeoutError: our own deadline (ScanScreen io). Any other rejection: no response.
+    failure = e?.name === 'TimeoutError' ? 'timeout' : 'network';
+    console.warn('[scanFlow] recognition API unreachable:', e?.name || 'Error');
+  }
+
+  if (apiBody?.match && !backendFailed && ui.showPresentation) {
+    const presentation = presentMatch({
+      match: matchFromWire(apiBody.match, io.mapApiCandidates),
+      card: apiBody.card ? io.mapApiCard(apiBody.card) : undefined,
+      candidates: io.mapApiCandidates(apiBody.candidates),
+    });
+    if (presentation) {
+      ui.setBusy(false);
+      ui.setStatus(presentation.kind === 'none' ? '' : '✅ 辨識完成', presentation.kind === 'none' ? 0 : 4);
+      if (apiBody.raw) ui.setRecognizedText(apiBody.raw);
+      ui.showPresentation(presentation);
+      return;
+    }
+  }
+
+  // CR 2026-10-16 #1: a no-verdict (older backend) acceptance is judged by the
+  // candidates' evidence, never trusted as-is.
+  if (apiBody?.success && apiBody?.card && !apiBody?.match && ui.showPresentation) {
+    const evidenced = bodyCandidates(io, apiBody)?.filter((c) => c.evidence);
+    if (evidenced?.length) {
+      ui.setBusy(false);
+      const p = presentCandidates(evidenced);
+      ui.setStatus(p.kind === 'none' ? '' : '✅ 辨識完成', p.kind === 'none' ? 0 : 4);
+      ui.showPresentation(p);
+      return;
+    }
   }
 
   if (apiBody?.success && apiBody?.card) {
     ui.setStatus('✅ 辨識完成', 4);
     const confidence = typeof apiBody.confidence === 'number' ? apiBody.confidence : 0.9;
-    ui.onRecognized(io.mapApiCard(apiBody.card), confidence, io.mapApiCandidates(apiBody.candidates));
+    ui.onRecognized(io.mapApiCard(apiBody.card), confidence, bodyCandidates(io, apiBody));
     ui.setBusy(false);
     return;
   }
@@ -74,7 +219,7 @@ export async function runWebCameraScan(imageUri: string, io: ScanFlowIo, ui: Sca
     ui.setStatus('', 0);
     ui.setBusy(false);
     if (apiBody.raw) ui.setRecognizedText(apiBody.raw);
-    const weakCandidates = io.mapApiCandidates(apiBody.candidates);
+    const weakCandidates = bodyCandidates(io, apiBody);
     if (weakCandidates && weakCandidates.length > 0) {
       ui.showLowConfidenceCandidates(weakCandidates.slice(0, 5));
     } else {
@@ -92,46 +237,74 @@ export async function runWebCameraScan(imageUri: string, io: ScanFlowIo, ui: Sca
   }
 
   // 後端不可用（掛掉或未佈署）→ 本地 OCR 仍要跑，它是這時唯一還能辨識的路。
-  await runWebLocalFallback(imageUri, io, ui, backendFailed);
+  await runWebLocalFallback(imageUri, io, ui, failure);
 }
 
 async function runWebLocalFallback(
   imageUri: string,
   io: ScanFlowIo,
   ui: ScanFlowUi,
-  backendFailed: boolean,
+  failure: RecognitionFailureKind | undefined,
 ): Promise<void> {
-  const result = await io.recognizeFromImage(imageUri);
-  ui.setBusy(false);
-
-  if (result.success && result.card) {
-    ui.onRecognized(result.card, result.confidence ?? 0.85, result.candidates);
-    return;
-  }
-
-  const trimmedText = (await io.ocrText(imageUri)).trim();
-  ui.setRecognizedText(trimmedText);
-
-  if (trimmedText.length > 0) {
-    const fallbackResult = await io.recognizeFromOcr(trimmedText);
-    if (fallbackResult.success && fallbackResult.card) {
-      ui.onRecognized(fallbackResult.card, fallbackResult.confidence ?? 0.85, fallbackResult.candidates);
-      return;
+  // Local only (v39 PM review): this used to call io.recognizeFromImage, i.e. upload the
+  // same photo to the service a SECOND time inside one scan (and one manual retry).
+  // After a known service failure only on-device text recognition runs.
+  // CR 717c3fe P2 #1: a throwing OCR worker (Tesseract load / run) is "OCR found
+  // nothing" here — it must not escape and lose the typed service failure, or the
+  // screen drops the retry panel and web auto-scan resumes uploading.
+  try {
+    const trimmedText = (await io.ocrText(imageUri)).trim();
+    ui.setRecognizedText(trimmedText);
+    if (trimmedText.length > 0) {
+      const fallbackResult = await io.recognizeFromOcr(trimmedText);
+      if (routeAmbiguousPrinting(fallbackResult, ui)) { ui.setBusy(false); return; }
+      if (fallbackResult.success && fallbackResult.card) {
+        ui.setBusy(false);
+        ui.onRecognized(fallbackResult.card, fallbackResult.confidence ?? 0.85, fallbackResult.candidates);
+        return;
+      }
     }
-    ui.setSearchError(fallbackResult.error || '找不到匹配的卡牌');
-    ui.setSearchResults(await io.searchCards(trimmedText, 10));
-    return;
+  } catch (e: any) {
+    console.warn('[scanFlow] local OCR failed after a service failure:', e?.name || 'Error');
   }
-
-  ui.setScanError(backendFailed || result.serviceUnavailable ? RECOGNITION_UNAVAILABLE_MESSAGE : NO_TEXT_GUIDANCE);
+  ui.setBusy(false);
+  // Only reached after the service failed: local OCR found no card, and that is not a
+  // verdict about the photo — no 「找不到匹配的卡牌」, no search list in its place.
+  reportServiceFailure(ui, failure);
 }
 
 export async function runNativeCameraScan(imageUri: string, io: ScanFlowIo, ui: ScanFlowUi): Promise<void> {
   ui.setStatus('🤖 AI 辨識中…', 3);
 
   const vision = await io.recognizeFromImage(imageUri);
+  // Cancelled (screen left / scan superseded): stop here. No OCR, no commit, no quota.
+  if (vision.cancelled) {
+    ui.setBusy(false);
+    ui.setStatus('', 0);
+    return;
+  }
+  const presentation = ui.showPresentation ? presentMatch(vision) : null;
+  if (presentation) {
+    ui.setBusy(false);
+    ui.setStatus(presentation.kind === 'none' ? '' : '✅ 辨識完成', presentation.kind === 'none' ? 0 : 4);
+    if (vision.raw) ui.setRecognizedText(vision.raw);
+    ui.showPresentation!(presentation);
+    return;
+  }
+
+  if (routeAmbiguousPrinting(vision, ui)) return;
+
   if (vision.success && vision.card) {
     ui.setBusy(false);
+    // CR 2026-10-16 #1 (native parity): an older backend's acceptance with candidate
+    // evidence goes through the same exact-number / conflict rules.
+    const evidenced = vision.candidates?.filter((c) => c.evidence);
+    if (ui.showPresentation && evidenced?.length) {
+      const p = presentCandidates(evidenced);
+      ui.setStatus(p.kind === 'none' ? '' : '✅ 辨識完成', p.kind === 'none' ? 0 : 4);
+      ui.showPresentation(p);
+      return;
+    }
     ui.setStatus('✅ 辨識完成', 4);
     ui.onVisionRecognized(vision.card, vision.confidence ?? 0.9);
     return;
@@ -139,32 +312,64 @@ export async function runNativeCameraScan(imageUri: string, io: ScanFlowIo, ui: 
 
   if (vision.lowConfidence || vision.suggestions?.length) {
     ui.setBusy(false);
+    if (vision.raw) ui.setRecognizedText(vision.raw);
+    if (ui.showPresentation && vision.candidates?.length) {
+      ui.showPresentation(presentCandidates(vision.candidates));
+      return;
+    }
     const candidateCards = vision.suggestions || [];
     ui.setSearchResults(candidateCards);
     ui.setSuggestions(candidateCards);
-    ui.setSearchError(vision.error || '辨識信心不足，請從候選卡中選擇');
-    ui.setCandidateReason(`信心 ${Math.round((vision.confidence || 0) * 100)}%：${vision.reason || '需要人工確認'}`);
-    if (vision.raw) ui.setRecognizedText(vision.raw);
+    ui.setSearchError(vision.error || '無法確定是哪一張卡，請從下方選擇或手動搜尋');
+    // The ranker's score is not a calibrated probability: no percentage is shown.
+    ui.setCandidateReason(vision.reason ? `依據：${vision.reason}` : '需要人工確認');
     return;
   }
 
-  // 後端不可用時這段本地 OCR 仍照跑；它失敗只代表本地讀不到字，不代表照片有問題。
+  // 後端不可用、逾時、或照片未通過上傳前檢查時，這段本地 OCR（expo-ocr-kit）仍照跑；
+  // 它失敗只代表本地讀不到字，不代表照片有問題。Tesseract 不會在 native 執行。
   ui.setStatus('🔍 OCR 辨識中…');
-  const trimmedText = (await io.ocrText(imageUri)).trim();
+  let trimmedText: string;
+  try {
+    trimmedText = (await io.ocrText(imageUri)).trim();
+  } catch (e) {
+    // CR 717c3fe P2 #1 (native parity): after a service failure a throwing local OCR
+    // keeps the typed failure and the retry of the same photo.
+    if (!vision.serviceUnavailable) throw e;
+    ui.setBusy(false);
+    reportServiceFailure(ui, vision.failure);
+    return;
+  }
   ui.setRecognizedText(trimmedText);
   ui.setBusy(false);
 
   if (trimmedText.length > 0) {
-    const result = await io.recognizeFromOcr(trimmedText);
+    let result: RecognitionResult;
+    try {
+      result = await io.recognizeFromOcr(trimmedText);
+    } catch (e) {
+      if (!vision.serviceUnavailable) throw e;
+      reportServiceFailure(ui, vision.failure);
+      return;
+    }
+    if (routeAmbiguousPrinting(result, ui)) return;
     if (result.success && result.card) {
       ui.setStatus('✅ 辨識完成', 4);
       ui.onRecognized(result.card, result.confidence ?? 0.85, result.candidates);
       return;
     }
-    ui.setSearchError(result.error || '找不到匹配的卡牌');
-    ui.setSearchResults(await io.searchCards(trimmedText, 10));
-    return;
+    // v39 user report (12:16:32, 503 → 「找不到匹配的卡牌」): when the service never looked
+    // at the photo, a local OCR miss is not a no-match.
+    if (!vision.serviceUnavailable) {
+      ui.setSearchError(result.error || '找不到匹配的卡牌');
+      ui.setSearchResults(await io.searchCards(trimmedText, 10));
+      return;
+    }
   }
 
-  ui.setScanError(vision.serviceUnavailable ? RECOGNITION_UNAVAILABLE_MESSAGE : NO_TEXT_GUIDANCE);
+  if (vision.serviceUnavailable) {
+    reportServiceFailure(ui, vision.failure);
+    return;
+  }
+  ui.setScanError(vision.imageRejected ? PHOTO_NOT_UPLOADED_GUIDANCE : NO_TEXT_GUIDANCE);
 }

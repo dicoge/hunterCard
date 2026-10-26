@@ -14,34 +14,66 @@ import {
   Modal,
   SafeAreaView,
   LayoutChangeEvent,
+  BackHandler,
+  AppState,
 } from 'react-native';
 import { CameraView, useCameraPermissions, CameraType } from 'expo-camera';
 import WebCamera, { WebCameraHandle } from '../components/WebCamera';
+import CameraPermissionDeniedView from '../components/CameraPermissionDeniedView';
 import ScanSessionPanel from '../components/ScanSessionPanel';
+import { nativeOcrProbe, nativeOcrRecognize } from '../services/nativeOcr';
+import { FRAME_ANALYSIS_INTERVAL_MS, FRAME_SCANNER_STARTUP_TIMEOUT_MS, frameCropInFrame, loadNativeCardScannerView, visibleUprightRect, type FrameTextEvent } from '../services/nativeCardScanner';
 import { useScanSessionStore } from '../stores/scanSessionStore';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, convertPrice } from '../constants';
-import { recognizeCard, recognizeCardFromOcr, recognizeCardFromImage, searchCards, CardInfo, RecognizedCandidate } from '../services/cardRecognition';
-import { RECOGNITION_REQUEST_TIMEOUT_MS } from '../services/recognitionOutcome';
+import { recognizeCard, recognizeCardFromOcr, recognizeCardFromImage, searchCards, candidateEvidence, consolidateCandidates, CardInfo, RecognizedCandidate } from '../services/cardRecognition';
+import { classifyHttpFailure, isRecognitionInfrastructureFailure, RECOGNITION_REQUEST_TIMEOUT_MS, type RecognitionFailureKind } from '../services/recognitionOutcome';
+import { chooseRecognitionPictureSize, validateRecognitionImages } from '../services/recognitionImagePolicy';
+import { ensurePhotoUploadConsent, hasPhotoUploadConsent } from '../services/photoUploadDisclosure';
+import { usePhotoUploadConsentStore } from '../store/photoUploadConsentStore';
+import {
+  bindScanLifecycleToNavigation,
+  createScanLifecycle,
+  guardForJob,
+  type ScanJob,
+} from '../services/scanLifecycle';
+import { showAlert } from '../utils/platformAlert';
 import {
   runWebCameraScan,
   runNativeCameraScan,
+  isAmbiguousPrinting,
+  decideRecognizedOutcome,
   type ScanFlowIo,
   type ScanFlowUi,
 } from '../services/scanRecognitionFlow';
 import { recognizeTextWeb } from '../services/webOcr';
 import ScanOverlay from '../components/ScanOverlay';
+import ScanTopBar, { SCAN_TOP_BAR_HEIGHT, useScanTopInset } from '../components/ScanTopBar';
+import { PALETTE, SEMANTIC, LAYOUT } from '../theme/tokensV2';
 import ScanResultCard from '../components/ScanResultCard';
 import ScanCandidateSelector from '../components/ScanCandidateSelector';
+import ScanMatchSheet from '../components/ScanMatchSheet';
+import {
+  presentCandidates,
+  presentLegacyDecision,
+  presentMatch,
+  type ScanPresentation,
+} from '../services/scanPresentation';
+import { CROP_PAD, defaultScanFrameRect, planNativeCrop } from '../utils/scanFrame';
+import { cropProbeToFrame, deleteProbeFiles, nativeAutoCaptureAvailable, prepareNativeScanImages, PROBE_JPEG_QUALITY } from '../services/nativeScanCapture';
+import { AUTO_CAPTURE_PROBE_INTERVAL_MS, CARD_REGION_AUTO_CAPTURE, CARD_REGION_TOKEN, DEFAULT_FRAME_REGION, createAutoCaptureMachine, observationsFromProbeText, type ProbeObservation } from '../services/autoCapture';
+import { detectCardRegion } from '../utils/cardRegionDetector';
+import { findCardNumberTokens } from '../utils/cardNumberToken';
+import { useScanDiagnosticsStore } from '../store/scanDiagnosticsStore';
+import { diagnosticsFromResult, type ScanOutcome } from '../services/scanDiagnostics';
 import { analyzeFrameWithStability, resetAutoScan } from '../services/autoScanService';
 import { useSettingsStore } from '../store/settingsStore';
 import { mapViewportRectToSource, Rect } from '../utils/scanGeometry';
 import { mapApiCardToCardInfo } from '../utils/apiCardMapper';
 import { useAuthStore } from '../store/authStore';
 import { useScanQuotaStore } from '../store/scanQuotaStore';
-import { effectiveRole } from '../services/permissionService';
+import { canScanWithRemaining } from '../services/permissionService';
 import { stripDisabledCardFields } from '../utils/cardReleaseFilter';
-import ScanQuotaBanner from '../components/ScanQuotaBanner';
 import { FEATURES, releaseCardFlags, STORE_MVP } from '../config/releaseFlags';
 import { useTranslation, type TranslationKey } from '../i18n';
 
@@ -58,21 +90,171 @@ const CONFIDENCE_AUTO_ADD = 0.85;
 const CONFIDENCE_MIN_CANDIDATE = 0.55;
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const SCAN_AREA_SIZE = SCREEN_WIDTH * 0.75;
+
+/**
+ * DIC-1409 CR fix — the EXACT native pre-camera surface ScanScreen ships
+ * on Android/iOS, exported so the regression suite can render it directly
+ * (react-native-web pins Platform.OS to 'web', so the platform branch
+ * itself cannot be flipped in the harness). Both states carry the Pen
+ * App/04 top action row (`x7iIL`): close works, flash is inert until the
+ * camera is up. `permission === null` → loading; otherwise the denied
+ * recovery surface (DIC-1286 contract preserved via
+ * CameraPermissionDeniedView).
+ */
+export function ScanNativePermissionGate({
+  permission,
+  onClose,
+  onRequestPermission,
+  openSettingsImpl,
+  refreshPermission,
+  onPickGallery,
+}: {
+  permission: { granted: boolean; canAskAgain?: boolean } | null;
+  onClose: () => void;
+  onRequestPermission: () => void;
+  openSettingsImpl: () => void;
+  refreshPermission?: () => void;
+  /** DIC-1336: denial must not become a dead end — the gallery scan path
+      stays reachable from the denied surface. */
+  onPickGallery?: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <View style={styles.container} testID="scan-native-gate">
+      <ScanTopBar onClose={onClose} flashDisabled />
+      {!permission ? (
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>{t('scan_camera_loading')}</Text>
+        </View>
+      ) : (
+        <CameraPermissionDeniedView
+          permission={permission}
+          onRequestPermission={onRequestPermission}
+          openSettingsImpl={openSettingsImpl}
+          refreshPermission={refreshPermission}
+          onPickGallery={onPickGallery}
+        />
+      )}
+    </View>
+  );
+}
+
+/** Window-space rect of a mounted native view (null when it cannot be measured). */
+function measureInWindow(ref: React.RefObject<View | null>): Promise<Rect | null> {
+  return new Promise((resolve) => {
+    const node: any = ref.current;
+    if (!node || typeof node.measureInWindow !== 'function') { resolve(null); return; }
+    try {
+      node.measureInWindow((x: number, y: number, width: number, height: number) => {
+        resolve(width > 0 && height > 0 ? { x, y, width, height } : null);
+      });
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+/**
+ * Resolves true once the app is in the foreground (immediately if it already is), false
+ * if the scan job is cancelled first. The system gallery picker can hand its result back
+ * while the app is still in the background (CR 1419441): nothing may be uploaded or
+ * previewed until the user is back.
+ */
+function waitForForeground(signal: AbortSignal): Promise<boolean> {
+  if (signal.aborted) return Promise.resolve(false);
+  if (AppState.currentState === 'active' || AppState.currentState == null) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const done = (ok: boolean) => {
+      sub.remove();
+      signal.removeEventListener('abort', onAbort);
+      resolve(ok);
+    };
+    const onAbort = () => done(false);
+    const sub = AppState.addEventListener('change', (next) => { if (next === 'active') done(!signal.aborted); });
+    signal.addEventListener('abort', onAbort);
+  });
+}
+
+/** The photo of a scan whose recognition hit a service failure, held for a manual retry. */
+type RetryPayload =
+  | { mode: 'native'; ocrUri: string; base64?: string | null; cropBase64?: string | null }
+  | { mode: 'web'; uri: string; images: string[] }
+  | { mode: 'gallery'; uri: string; base64?: string | null };
 
 export default function ScanScreen({ navigation }: any) {
   const { t } = useTranslation();
   // iOS web 不用 expo-camera 權限系統（避免 getUserMedia 手勢鏈中斷）
-  const [permission, requestPermission] = isWeb ? [null, null] as any : useCameraPermissions();
+  // DIC-1301 CR fix: also destructure the third element — expo-camera's
+  // silent GETTER (get-without-prompting). Passed to
+  // CameraPermissionDeniedView so it can re-query CAMERA on AppState
+  // 'active' transitions after the user grants CAMERA in system settings,
+  // without ever surfacing a duplicate OS prompt.
+  const [permission, requestPermission, getCameraPermissions] = isWeb
+    ? [null, null, null] as any
+    : useCameraPermissions();
   const [webCameraStarted, setWebCameraStarted] = useState(false);
+  // Everything this screen layers over the camera starts below the top bar, so the ✕
+  // stays reachable while the camera initialises and after a card was added.
+  const belowTopBar = { top: useScanTopInset() + SCAN_TOP_BAR_HEIGHT };
   // Web 相簿上傳模式：相機無法使用（權限卡住/裝置無鏡頭）時的 fallback，不掛載 WebCamera
   const [webGalleryMode, setWebGalleryMode] = useState(false);
-  const [facing, setFacing] = useState<CameraType>('back');
+  // Card scanning always uses the rear camera; the flip control was removed from
+  // the focused scan flow (DIC-1319), so this is a constant rather than state.
+  const facing: CameraType = 'back';
   const cameraRef = useRef<CameraView>(null);
   const webCameraRef = useRef<WebCameraHandle>(null);
   const scanAreaViewportRef = useRef<Rect | null>(null);
+  // Native crop: the camera preview box and the scan frame, both measured in window
+  // coordinates at capture time (planNativeCrop maps the frame through cover-fit).
+  const cameraBoxRef = useRef<View>(null);
+  const scanFrameRef = useRef<View>(null);
+  // The recognition outcome on screen (best preview / identity / no match). Nothing is
+  // added or charged until the user acts on it.
+  const [matchSheet, setMatchSheet] = useState<ScanPresentation | null>(null);
+  // Service failure (v39 user report 2026-10-16): the service could not answer, which is
+  // never shown as a no-match. The photo already taken stays in memory for a manual
+  // retry — the same bytes this scan was holding anyway, never written anywhere, and
+  // dropped on a result, a new scan, close, blur or unmount. Retrying charges nothing:
+  // only an explicit add commits (commitCard), once.
+  const [serviceFailure, setServiceFailure] = useState<RecognitionFailureKind | null>(null);
+  const retryRef = useRef<RetryPayload | null>(null);
+  const clearRetry = () => { retryRef.current = null; setServiceFailure(null); };
+  // Local diagnostic log (src/services/scanDiagnostics): one entry per scan, keyed by a
+  // random correlation id; the preview / correction / add of that scan update the SAME
+  // entry. Every call is best-effort and can never affect the scan or the quota.
+  const diagIdRef = useRef<string | null>(null);
+  const diagStartRef = useRef(0);
+  const diagStart = (source: 'camera' | 'gallery') => {
+    diagStartRef.current = Date.now();
+    try {
+      diagIdRef.current = useScanDiagnosticsStore.getState().start('scan', { source });
+    } catch {
+      diagIdRef.current = null;
+    }
+    return diagIdRef.current;
+  };
+  const diagUpdate = (id: string | null, patch: Record<string, any>) => {
+    try { useScanDiagnosticsStore.getState().update(id, patch); } catch { /* best-effort */ }
+  };
+  const diagResult = (id: string | null, r: any) => {
+    const d = diagnosticsFromResult(r);
+    diagUpdate(id, { model: d.model, extracted: d.extracted as any, match: d.match as any, errors: d.errors, trace: d.trace });
+  };
+  const diagOutcome = (outcome: ScanOutcome, extra: Record<string, any> = {}) => {
+    const id = diagIdRef.current;
+    if (!id) return;
+    diagUpdate(id, { outcome, ...extra, timeline: [{ e: outcome, t: Date.now() - diagStartRef.current }] });
+    if (outcome !== 'no_match') diagIdRef.current = null;
+  };
   // 在手勢鏈中取得的 stream，避免 iOS Safari 阻擋 getUserMedia
   const webStreamRef = useRef<MediaStream | null>(null);
+  // Scan jobs (src/services/scanLifecycle): leaving the screen — blur, close, unmount —
+  // cancels the running scan and retires it, so a late result can never commit (or
+  // charge) off-screen, and re-focusing never revives it.
+  const mountedRef = useRef(true);
+  const lifecycle = useRef(createScanLifecycle()).current;
+  // Native capture size chosen from the device's list so one JPEG fits the upload cap.
+  const [nativePictureSize, setNativePictureSize] = useState<string | undefined>(undefined);
   const addCard = useScanSessionStore(s => s.addCard);
   const [lastScannedCard, setLastScannedCard] = useState<CardInfo | null>(null);
   
@@ -112,8 +294,87 @@ export default function ScanScreen({ navigation }: any) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const borderAnim = useRef(new Animated.Value(0)).current;
 
-	// Auto-scan state & refs
-  const [autoScanEnabled, setAutoScanEnabled] = useState<boolean>(true);
+	// Auto-scan refs. Auto-scan is a web-only frame-stability loop, so whether it
+  // runs is decided by the platform, not by a user-facing mode switch — the
+  // toggle that used to sit under the viewfinder did nothing on Android
+  // (DIC-1319).
+  // DIC-1427 Pen Cys7V: the mode pill is a REAL toggle on web (the only
+  // platform running the frame-stability loop). Native keeps no pill at all.
+  const [autoScanEnabled, setAutoScanEnabled] = useState(true);
+  // v41: native has automatic capture too (src/services/autoCapture) when this build
+  // carries the frame crop + on-device text reader; otherwise only the shutter.
+  // v42: on Android the automatic scan reads PREVIEW FRAMES through the native
+  // HoloHunterCardScanner view (src/services/nativeCardScanner) — no still photos while it
+  // looks. Without that module (iOS, other builds) the v41 still-photo probes remain.
+  const FrameScannerView = useRef(isWeb ? null : loadNativeCardScannerView()).current;
+  // v43 (CR dee6f4b): on Android the automatic scan IS the frame scanner. If its view is
+  // missing or failed to load, automatic detection is unavailable — the manual camera with a
+  // short explanation, never the old periodic still-photo probes. iOS keeps those probes.
+  const isAndroid = Platform.OS === 'android';
+  const nativeAutoAvailable = useRef(!isWeb && (!!FrameScannerView || (!isAndroid && nativeAutoCaptureAvailable()))).current;
+  const autoScanUnavailableOnAndroid = isAndroid && !FrameScannerView;
+  const autoScanSupported = isWeb || nativeAutoAvailable;
+  const autoScanActive = autoScanSupported && autoScanEnabled;
+  const useFrameScanner = !isWeb && !!FrameScannerView && autoScanActive;
+  const useFrameScannerRef = useRef(useFrameScanner);
+  useFrameScannerRef.current = useFrameScanner;
+  const frameScannerRef = useRef<any>(null);
+  // The camera the next still comes from: the frame scanner while it is shown, else expo-camera.
+  const nativeStillCamera = () => (useFrameScannerRef.current
+    ? { takePictureAsync: (o: { quality?: number; base64?: boolean } = {}) => frameScannerRef.current?.takePicture(o.quality ?? 0.7, !!o.base64) }
+    : cameraRef.current);
+  // Re-evaluates the frame-analysis gate when focus / app state change (refs, not state).
+  const [gateTick, setGateTick] = useState(0);
+  const frameGeometryRef = useRef<{ preview: any; frame: any } | null>(null);
+  // Analysis session (v42 CR fea33de): bumped whenever frame analysis turns on or off.
+  // The native view tags every frame with the session it STARTED in; an event from any
+  // other session (e.g. an ML Kit result from before background → foreground) is dropped,
+  // and the "held still" streak is reset at every transition.
+  const analysisSessionRef = useRef(0);
+  const analysisOpenRef = useRef(false);
+  // Explicit camera retry after a mount error remounts the native scanner (a fresh bind).
+  const [scannerKey, setScannerKey] = useState(0);
+  const autoMachine = useRef(createAutoCaptureMachine(FrameScannerView ? CARD_REGION_AUTO_CAPTURE : undefined)).current;
+  const probeBusyRef = useRef(false);
+  // Bumped whenever a probe in flight must not count any more (background, blur,
+  // cancel, close, unmount): its late reading is dropped, never fed to the trigger.
+  // The frame-analysis session is retired at the same moment, INSIDE the callback (CR
+  // f7d8774): background → foreground delivered before the next render must still drop a
+  // pre-background ML Kit result and the streak. The next render passes the new session on.
+  const probeEpochRef = useRef(0);
+  const invalidateProbes = () => {
+    probeEpochRef.current += 1;
+    analysisSessionRef.current += 1;
+    autoMachine.resetStability();
+  };
+  const [autoPaused, setAutoPaused] = useState(false);
+  // Web: after a round the frame must move (a card taken away / a new one) before the
+  // next automatic capture — a card left still in front of the camera is not re-scanned.
+  const webNeedMotionRef = useRef(false);
+  // Re-renders when the disclosure is accepted (from the auto button, the shutter or the
+  // gallery), so the hint never claims "automatic" while nothing can be captured.
+  const consentVersion = usePhotoUploadConsentStore((st) => st.acceptedVersion);
+  const autoScanNeedsConsent = autoScanActive && !hasPhotoUploadConsent(consentVersion);
+  const autoScanEnabledRef = useRef(autoScanEnabled);
+  const setAutoScan = (on: boolean) => {
+    // Android: automatic and manual use different camera views (frame scanner / expo-camera);
+    // the new one reports readiness itself. A scan running on the old camera is cancelled:
+    // its still may never arrive (the view is destroyed) and must not keep the screen busy.
+    // Compared with the latest choice (a ref), and the camera view is always a fresh mount:
+    // two switches before a render (manual → auto) must not leave a view that never
+    // reports ready again (CR f7d8774).
+    if (FrameScannerView && on !== autoScanEnabledRef.current) {
+      invalidateProbes();
+      if (lifecycle.cancel()) resetScanUi();
+      setIsCameraReady(false);
+      setScannerKey((k) => k + 1);
+    }
+    autoScanEnabledRef.current = on;
+    setAutoScanEnabled(on);
+    if (on) { autoMachine.resume(); setAutoPaused(false); }
+  };
+  // DIC-1427 Pen AQf9b: the 估值清單 count box asks the session panel to open.
+  const [sessionOpenRequest, setSessionOpenRequest] = useState(0);
   const autoScanRef = useRef<number | null>(null);
   const lastScanTimeRef = useRef<number>(0);
 
@@ -142,6 +403,9 @@ export default function ScanScreen({ navigation }: any) {
   // quota should be charged in future — only confirmed/high-confidence adds count,
   // never error retries. Guards against recording the same card twice in one session.
   const commitCard = (card: CardInfo): boolean => {
+    // Nothing is committed (or charged) while the screen is not focused — a result that
+    // lands after the user left belongs to a cancelled scan.
+    if (!mountedRef.current || !lifecycle.isFocused()) return false;
     const existing = useScanSessionStore.getState().cards;
     if (existing.some(c => c.id === card.id)) {
       Alert.alert(
@@ -161,10 +425,24 @@ export default function ScanScreen({ navigation }: any) {
   };
 
   // Route a recognition result through the confidence tiers.
+  //
+  // The classification itself lives in `decideRecognizedOutcome` so a Node
+  // harness can drive the SAME rules end-to-end without booting the screen
+  // (DIC-1339). This wrapper handles the setState side effects only.
+  //
+  // Rules:
+  //  - Unresolved printing → picker, never commit at ANY confidence (DIC-1325).
+  //    The confidence describes how sure we are of the CARD; when a cardNumber
+  //    carries several printings it says nothing about which one is in hand,
+  //    and the result deliberately has no price. Auto-adding here is what put
+  //    a priceless placeholder into the session instead of showing the chooser.
+  //  - High confidence → auto-add and show the floating result card.
+  //  - Mid/low → require explicit confirmation via the candidate picker.
   const handleRecognized = (
     card: CardInfo,
     confidence: number,
     candidates?: RecognizedCandidate[],
+    ambiguousPrinting = false,
   ) => {
     setSearchResults([]);
     setSearchError(null);
@@ -173,23 +451,57 @@ export default function ScanScreen({ navigation }: any) {
     setCapturedPhotoUri(null);
     resetAutoScan();
 
-    // High confidence → auto-add and show the floating result card.
-    if (confidence >= CONFIDENCE_AUTO_ADD) {
-      if (commitCard(card)) {
-        setResultCard({ visible: true, card, confidence });
-      }
-      return;
-    }
-
-    // Mid/low → require explicit confirmation via the candidate picker.
-    const list = candidates && candidates.length > 0
-      ? candidates
-      : [{ card, confidence }];
-    setCandidateSelector({
-      visible: true,
-      tier: confidence >= CONFIDENCE_MIN_CANDIDATE ? 'mid' : 'low',
-      candidates: list.slice(0, 5),
+    const decision = decideRecognizedOutcome(card, confidence, candidates, ambiguousPrinting, {
+      autoAdd: CONFIDENCE_AUTO_ADD,
+      minCandidate: CONFIDENCE_MIN_CANDIDATE,
     });
+
+    // Scan best-match fix (2026-10-15): a decision is SHOWN, never committed or forced
+    // into a picker. Commit (and the quota charge) only happens from the sheet's 加入
+    // or from picking a correction — one explicit action, one charge.
+    showPresentation(presentLegacyDecision(decision, undefined, candidates ?? []));
+  };
+
+  // Shows the result sheet for any recognition outcome.
+  const showPresentation = (presentation: ScanPresentation) => {
+    setSearchResults([]);
+    setSearchError(null);
+    setSuggestions([]);
+    setScanError(null);
+    resetAutoScan();
+    clearRetry();
+    setMatchSheet(presentation);
+    diagUpdate(diagIdRef.current, {
+      stagesMs: { total: Date.now() - diagStartRef.current },
+      // The app's own decision, kept apart from the server verdict in `trace`.
+      presentation: {
+        kind: presentation.kind,
+        reason: presentation.kind === 'none' ? presentation.reason
+          : presentation.kind === 'identity' && presentation.numberCorrected ? 'number_name_conflict' : 'none',
+        source: presentation.source ?? 'unknown',
+      },
+      timeline: [{ e: 'presented', t: Date.now() - diagStartRef.current }],
+    });
+    if (presentation.kind === 'none') diagOutcome('no_match');
+  };
+
+  const openCorrection = (candidates: RecognizedCandidate[]) => {
+    setMatchSheet(null);
+    if (candidates.length === 0) { setShowSearch(true); return; }
+    setCandidateSelector({ visible: true, tier: 'mid', candidates: candidates.slice(0, 8) });
+  };
+
+  const handleSheetAdd = (card: CardInfo) => {
+    setMatchSheet(null);
+    if (commitCard(card)) {
+      diagOutcome('added', { correctedTo: card.id });
+      setResultCard({ visible: true, card, confidence: 1 });
+    }
+  };
+  const handleSheetCorrect = () => {
+    if (!matchSheet) return;
+    openCorrection(matchSheet.kind === 'best' ? matchSheet.alternatives
+      : matchSheet.kind === 'identity' ? matchSheet.printings : matchSheet.suggestions);
   };
 
   // Map a raw API card payload to CardInfo via the single shared mapper so the
@@ -198,12 +510,15 @@ export default function ScanScreen({ navigation }: any) {
 
   const mapApiCandidates = (raw: any): RecognizedCandidate[] | undefined => {
     if (!Array.isArray(raw) || raw.length === 0) return undefined;
-    return raw
+    const mapped: RecognizedCandidate[] = raw
       .filter((c: any) => c && c.cardNumber)
       .map((c: any) => ({
         card: mapApiCard(c),
         confidence: typeof c.confidence === 'number' ? c.confidence : 0,
+        evidence: candidateEvidence(c.reason),
       }));
+    // v44: rows proven to be one printing are one candidate (shared with cardRecognition).
+    return consolidateCandidates(mapped);
   };
 
   const closeCandidateSelector = () =>
@@ -212,9 +527,73 @@ export default function ScanScreen({ navigation }: any) {
   const handleConfirmCandidate = (card: CardInfo) => {
     closeCandidateSelector();
     if (commitCard(card)) {
+      diagOutcome('corrected', { correctedTo: card.id });
       setResultCard({ visible: true, card, confidence: 1 });
     }
   };
+
+  // Clears the busy / progress UI of a scan that was cancelled by leaving the screen,
+  // so coming back never shows a stuck spinner.
+  const resetScanUi = () => {
+    invalidateProbes();
+    diagOutcome('cancelled');
+    clearRetry();
+    setMatchSheet(null);
+    setIsProcessingOCR(false);
+    setIsScanning(false);
+    setScanningStatus('');
+    setScanProgress(0);
+    resetAutoScan();
+  };
+
+  useEffect(() => {
+    mountedRef.current = true;
+    const unbind = bindScanLifecycleToNavigation(navigation, lifecycle, () => {
+      if (mountedRef.current) resetScanUi();
+    });
+    // A result preview / correction list belongs to the visit that produced it: leaving
+    // the screen discards it, so nothing can be added later from a stale preview.
+    const offBlur = typeof navigation?.addListener === 'function'
+      ? navigation.addListener('blur', () => {
+        if (!mountedRef.current) return;
+        invalidateProbes();
+        diagOutcome('cancelled');
+        clearRetry();
+        setMatchSheet(null);
+        setCandidateSelector({ visible: false, tier: 'mid', candidates: [] });
+      })
+      : undefined;
+    return () => {
+      if (typeof offBlur === 'function') offBlur();
+      unbind();
+      retryRef.current = null;
+      mountedRef.current = false;
+      lifecycle.setFocused(false);
+    };
+  }, [navigation]);
+
+  // CR 717c3fe P2 #2: leaving the app (inactive / background) usually keeps this route
+  // focused, so navigation blur never fired. Treat it like leaving the screen: cancel the
+  // running scan (its late result is dropped by the job guard, nothing previewed, added
+  // or charged) and drop the held retry photo, the preview and the photo-derived text.
+  // The system gallery picker backgrounds the app by itself — that is part of the scan,
+  // not leaving it. Back in the foreground the scanner is ready for a fresh scan.
+  const pickerOpenRef = useRef(false);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active' || pickerOpenRef.current || !mountedRef.current) return;
+      invalidateProbes();
+      lifecycle.cancel();
+      resetScanUi();
+      setCandidateSelector({ visible: false, tier: 'mid', candidates: [] });
+      setCapturedPhotoUri(null);
+      setRecognizedText('');
+      setScanError(null);
+      setSearchError(null);
+      setSearchResults([]);
+    });
+    return () => sub.remove();
+  }, []);
 
   // 显式请求相机权限 - 修复 Android/iOS 权限问题（web 版跳過，由 WebCamera 直接處理）
   useEffect(() => {
@@ -294,19 +673,18 @@ export default function ScanScreen({ navigation }: any) {
 
   // Auto-scan rAF loop (web only) — detects card in frame and auto-triggers OCR
   useEffect(() => {
-    // Auto-scan only works on web; native keeps manual scan
-    if (!isWeb) return;
-    if (!isCameraReady || !autoScanEnabled) return;
+    // Web frame-stability loop; native uses the probe loop below.
+    if (!isWeb || !autoScanActive) return;
+    if (!isCameraReady) return;
     if (isScanning || isProcessingOCR) return;
-    if (candidateSelector.visible || resultCard.visible) return;
+    if (candidateSelector.visible || resultCard.visible || matchSheet) return;
+    // A service failure waits for the user (retry the held photo, search, or back):
+    // auto-scan must not capture a new photo and upload again by itself (v39 PM review).
+    if (serviceFailure) return;
 
     let mounted = true;
-    const scanArea = {
-      x: Math.round((SCREEN_WIDTH - SCAN_AREA_SIZE) / 2),
-      y: Math.round(SCREEN_HEIGHT * 0.15),
-      width: Math.round(SCAN_AREA_SIZE),
-      height: Math.round(SCAN_AREA_SIZE * 0.63),
-    };
+    const scanArea = scanAreaViewportRef.current
+      ?? defaultScanFrameRect({ width: SCREEN_WIDTH, height: SCREEN_HEIGHT });
 
     const loop = () => {
       if (!mounted) return;
@@ -314,12 +692,14 @@ export default function ScanScreen({ navigation }: any) {
       const video = document.querySelector('video');
       if (video && video.readyState >= 2) {
         const result = analyzeFrameWithStability(video, scanArea);
-        // Gate auto-scan through the same role/quota check as manual scan so a
-        // guest / over-quota user in the scanner UI can't auto-record cards.
-        if (result.isStable && result.confidence > 0.85 && canScanNow()) {
+        if (!result.isStable) webNeedMotionRef.current = false;
+        // Gate auto-scan through the same role/quota check as manual scan so an
+        // over-quota user (guest or free) in the scanner UI can't auto-record cards.
+        if (result.isStable && result.confidence > 0.85 && !webNeedMotionRef.current && canScanNow()) {
           const now = Date.now();
           if (now - lastScanTimeRef.current > SCAN_COOLDOWN_MS) {
             lastScanTimeRef.current = now;
+            webNeedMotionRef.current = true;
             captureAndRecognize();
           }
         }
@@ -335,20 +715,165 @@ export default function ScanScreen({ navigation }: any) {
         cancelAnimationFrame(autoScanRef.current);
       }
     };
-  }, [isCameraReady, autoScanEnabled, isScanning, isProcessingOCR, facing, candidateSelector.visible, resultCard.visible]);
+  }, [isCameraReady, autoScanActive, isScanning, isProcessingOCR, candidateSelector.visible, resultCard.visible, matchSheet, serviceFailure]);
 
-  const toggleCameraFacing = () => {
-    setFacing(current => (current === 'back' ? 'front' : 'back'));
-    resetAutoScan();
+  // Native automatic capture (v41, src/services/autoCapture): a silent low-res probe,
+  // cropped to the frame and read ON THE DEVICE; only a card number held still in the
+  // frame starts the normal scan (one recognition request). Probes never upload and
+  // never run while anything is on screen, the app is in the background, the screen
+  // is not focused, the photo disclosure is not accepted or the allowance is used up.
+  const probeCardNumbers = async (): Promise<ProbeObservation[]> => {
+    let shotUri: string | null = null;
+    let cropUri: string | null = null;
+    try {
+      const shot = await cameraRef.current?.takePictureAsync({ quality: PROBE_JPEG_QUALITY, base64: false, shutterSound: false });
+      if (!shot?.uri) return [];
+      shotUri = shot.uri;
+      const [preview, frameRect] = await Promise.all([measureInWindow(cameraBoxRef), measureInWindow(scanFrameRef)]);
+      const plan = planNativeCrop(preview, frameRect, shot.width && shot.height ? { width: shot.width, height: shot.height } : null);
+      const crop = await cropProbeToFrame(shot, plan);
+      if (!crop) return [];
+      cropUri = crop.uri;
+      // Each readable card number with WHERE the number itself is (its element / line
+      // box, normalised to the crop — v42), so the trigger can require it inside the frame
+      // and held still (src/services/autoCapture).
+      return observationsFromProbeText(await nativeOcrProbe(crop.uri), findCardNumberTokens, crop.width, crop.height);
+    } finally {
+      // Probe files are this probe's alone: delete them on every path (no accumulation).
+      void deleteProbeFiles([shotUri, cropUri]);
+    }
   };
+  useEffect(() => {
+    if (isWeb || !autoScanActive || !permission?.granted) return;
+    if (useFrameScanner) return;   // v42: preview frames, not still probes
+    if (!isCameraReady || isScanning || isProcessingOCR || autoPaused) return;
+    if (candidateSelector.visible || resultCard.visible || matchSheet || serviceFailure || scanError || showSearch) return;
+    let stopped = false;
+    const probeAllowed = () => mountedRef.current && lifecycle.isFocused() && !lifecycle.hasLiveJob()
+      && AppState.currentState === 'active' && canScanNow() && hasUploadConsent();
+    const tick = async () => {
+      if (stopped || probeBusyRef.current) return;
+      if (!probeAllowed()) return;
+      probeBusyRef.current = true;
+      const epoch = probeEpochRef.current;
+      try {
+        const observations = await probeCardNumbers();
+        // Everything is re-checked AFTER the awaits: the app may have gone to the
+        // background (no navigation blur), the screen may have lost focus, a scan may
+        // have started — a late reading of a probe from before that never triggers.
+        if (stopped || epoch !== probeEpochRef.current || !probeAllowed()) return;
+        const decision = autoMachine.onProbe(observations);
+        if (autoMachine.state().paused) setAutoPaused(true);
+        if (decision === 'trigger') captureAndRecognize();
+      } catch {
+        // A failed probe is just "nothing readable"; the shutter always works.
+      } finally {
+        probeBusyRef.current = false;
+      }
+    };
+    const id = setInterval(tick, AUTO_CAPTURE_PROBE_INTERVAL_MS);
+    return () => { stopped = true; invalidateProbes(); clearInterval(id); };
+  }, [autoScanActive, useFrameScanner, permission?.granted, isCameraReady, isScanning, isProcessingOCR, autoPaused, candidateSelector.visible, resultCard.visible, matchSheet, serviceFailure, scanError, showSearch]);
+
+  // v42 Android: preview-frame analysis. The native view analyses frames only while this
+  // gate is open, and every frame event is re-checked here (a late event after background,
+  // blur, a scan starting or a result appearing is dropped). A card number held still
+  // inside the frame starts ONE normal scan — the only still photo the automatic scan takes.
+  const frameAnalysisOpen = () => useFrameScanner && !!permission?.granted && isCameraReady && !isScanning && !isProcessingOCR
+    && !autoPaused && !candidateSelector.visible && !resultCard.visible && !matchSheet && !serviceFailure && !scanError
+    && !showSearch && lifecycle.isFocused() && !lifecycle.hasLiveJob() && AppState.currentState === 'active'
+    && canScanNow() && hasUploadConsent();
+  // Evaluated at render: a gate change starts a new session and drops the streak.
+  const frameAnalysisSession = () => {
+    const open = frameAnalysisOpen();
+    if (open !== analysisOpenRef.current) {
+      analysisOpenRef.current = open;
+      analysisSessionRef.current += 1;
+      autoMachine.resetStability();
+    }
+    return { open, session: analysisSessionRef.current };
+  };
+  const refreshFrameGeometry = async () => {
+    const [preview, frame] = await Promise.all([measureInWindow(cameraBoxRef), measureInWindow(scanFrameRef)]);
+    if (preview && frame && mountedRef.current) frameGeometryRef.current = { preview, frame };
+  };
+  const handleFrameText = (event: FrameTextEvent | undefined) => {
+    if (!event || !useFrameScannerRef.current || !frameAnalysisOpen()) return;
+    if (event.session !== analysisSessionRef.current) return;   // started in another session
+    if (!mountedRef.current || !lifecycle.isFocused() || lifecycle.hasLiveJob() || AppState.currentState !== 'active') return;
+    const geometry = frameGeometryRef.current;
+    void refreshFrameGeometry();
+    if (!geometry) return;
+    // The scan frame inside this analysed frame, through the shared CameraX view port.
+    const plan = frameCropInFrame(geometry.preview, geometry.frame, event);
+    if (!plan.ok) return;
+    const { crop } = plan;
+    // v44: the card itself, found in the preview pixels — no card number has to be readable
+    // first (that is read from the one still). The luminance grid covers the visible frame.
+    const observations: ProbeObservation[] = [];
+    const grid = event.luma;
+    const visible = visibleUprightRect(event);
+    if (grid && grid.width > 0 && grid.height > 0 && visible.width > 0 && visible.height > 0) {
+      const sx = grid.width / visible.width;
+      const sy = grid.height / visible.height;
+      const cropGrid = { x: (crop.x - visible.x) * sx, y: (crop.y - visible.y) * sy, width: crop.width * sx, height: crop.height * sy };
+      const r = DEFAULT_FRAME_REGION;
+      const frameGrid = { x: cropGrid.x + r.x * cropGrid.width, y: cropGrid.y + r.y * cropGrid.height, width: r.width * cropGrid.width, height: r.height * cropGrid.height };
+      const region = detectCardRegion(grid, cropGrid, frameGrid);
+      if (region.status === 'card' && region.box) observations.push({ token: CARD_REGION_TOKEN, box: region.box });
+    }
+    const decision = autoMachine.onProbe(observations);
+    if (autoMachine.state().paused) setAutoPaused(true);
+    if (decision === 'trigger') captureAndRecognize();
+  };
+  // v43 (user device: automatic scan showed no camera): the frame scanner reports ready only
+  // once its preview STREAMS. A start failure, or no streaming preview within a bounded wait
+  // while the screen is in front, becomes a short error with 重試 and 改用手動拍照 — never a
+  // silent 「相機初始化中」 and never a capture (the timer only surfaces the failure).
+  // A failure is terminal for THAT native view (CR c5acd45: also after it was streaming):
+  // ownership is retired at once, a running scan is cancelled (0 charge), and a late
+  // ready / frame from the same mount can neither clear the error nor take a photo. Only
+  // 重試 (a new mount) or the manual camera leave it.
+  const frameFailedKeyRef = useRef<number | null>(null);
+  const frameReadyKeyRef = useRef<number | null>(null);
+  const handleFrameScannerError = (nativeMessage?: string) => {
+    if (!mountedRef.current) return;
+    if (nativeMessage) console.warn('[scan] frame scanner failed:', nativeMessage);
+    const wasStreaming = frameReadyKeyRef.current === scannerKey;
+    frameFailedKeyRef.current = scannerKey;
+    frameReadyKeyRef.current = null;
+    invalidateProbes();
+    if (lifecycle.cancel()) resetScanUi();
+    setCameraError(t(wasStreaming ? 'scan_camera_stopped' : 'scan_camera_start_failed'));
+    setIsCameraReady(false);
+  };
+  const handleFrameScannerReady = () => {
+    if (frameFailedKeyRef.current === scannerKey) return;   // late ready from the failed view
+    frameReadyKeyRef.current = scannerKey;
+    handleCameraReady();
+    void refreshFrameGeometry();
+  };
+  useEffect(() => {
+    if (!useFrameScanner || !permission?.granted || isCameraReady || cameraError) return;
+    if (!lifecycle.isFocused() || AppState.currentState !== 'active') return;
+    const id = setTimeout(() => {
+      if (!mountedRef.current || !lifecycle.isFocused() || AppState.currentState !== 'active') return;
+      handleFrameScannerError('no streaming preview');
+    }, FRAME_SCANNER_STARTUP_TIMEOUT_MS);
+    return () => clearTimeout(id);
+  }, [useFrameScanner, permission?.granted, isCameraReady, cameraError, scannerKey, gateTick]);
+  useEffect(() => {
+    if (!FrameScannerView) return;
+    // Every app-state / focus change retires frame ownership now, not at the next render.
+    const bump = () => { invalidateProbes(); setGateTick((n) => n + 1); };
+    const sub = AppState.addEventListener('change', bump);
+    const offFocus = typeof navigation?.addListener === 'function' ? navigation.addListener('focus', bump) : undefined;
+    const offBlur = typeof navigation?.addListener === 'function' ? navigation.addListener('blur', bump) : undefined;
+    return () => { sub.remove(); if (typeof offFocus === 'function') offFocus(); if (typeof offBlur === 'function') offBlur(); };
+  }, [navigation]);
 
   const toggleFlash = () => {
     setFlash(current => !current);
-  };
-
-  const toggleAutoScan = () => {
-    setAutoScanEnabled(prev => !prev);
-    resetAutoScan();
   };
 
   const handleScanAreaLayout = (event: LayoutChangeEvent) => {
@@ -368,16 +893,20 @@ export default function ScanScreen({ navigation }: any) {
     scanAreaViewportRef.current = { x, y, width, height };
   };
 
-  // Web 版無法使用 expo-ocr-kit，用 Tesseract.js 兜底
+  // Web 版無法使用 expo-ocr-kit，用 Tesseract.js 兜底。
+  // Native branch delegates to nativeOcrRecognize (src/services/nativeOcr.ts)
+  // so the require-throw / missing-export / recognizeText-throws /
+  // recognizeText-rejects failure modes each resolve to '' from ONE tested
+  // choke point. DIC-1289 CR called out that inline try/catch shape here
+  // was not mutation-sensitive; the extracted module is covered by
+  // behavioural tests in scripts/test-scan-screen-fail-safe.mjs that
+  // invoke every branch through injected requireImpl mocks.
   const performOcr = async (uri: string): Promise<string> => {
     if (isWeb) {
       const result = await recognizeTextWeb(uri);
       return typeof result?.text === 'string' ? result.text : '';
-    } else {
-      const { recognizeText } = require('expo-ocr-kit');
-      const ocrResult = await recognizeText(uri);
-      return typeof ocrResult?.text === 'string' ? ocrResult.text : '';
     }
+    return nativeOcrRecognize(uri);
   };
 
   const captureWebRecognitionImages = async (photoUri: string): Promise<string[]> => {
@@ -412,17 +941,21 @@ export default function ScanScreen({ navigation }: any) {
 
     const fullImage = makeDataUrl(0, 0, video.videoWidth, video.videoHeight, 2048);
     const videoRect = video.getBoundingClientRect();
+    // Same frame geometry as the overlay; the measured rect wins once onLayout ran.
+    const fallbackFrame = defaultScanFrameRect({
+      width: videoRect.width || SCREEN_WIDTH,
+      height: videoRect.height || SCREEN_HEIGHT,
+    });
     const overlayRect = scanAreaViewportRef.current || {
-      x: videoRect.left + (videoRect.width - SCAN_AREA_SIZE) / 2,
-      y: videoRect.top + SCREEN_HEIGHT * 0.15,
-      width: SCAN_AREA_SIZE,
-      height: SCAN_AREA_SIZE * 0.63,
+      ...fallbackFrame,
+      x: videoRect.left + fallbackFrame.x,
+      y: videoRect.top + fallbackFrame.y,
     };
     const crop = mapViewportRectToSource(
       { x: videoRect.left, y: videoRect.top, width: videoRect.width || SCREEN_WIDTH, height: videoRect.height || SCREEN_HEIGHT },
       { width: video.videoWidth, height: video.videoHeight },
       overlayRect,
-      { padXRatio: 0.14, padYRatio: 0.28 },
+      CROP_PAD,
     );
     const cropImage = makeDataUrl(crop.x, crop.y, crop.width, crop.height, 1536);
     return [fullImage, cropImage];
@@ -431,25 +964,14 @@ export default function ScanScreen({ navigation }: any) {
   // Single role/quota gate, read from live store state (no stale closures — the
   // auto-scan rAF loop calls this outside the render cycle).
   const canScanNow = (): boolean => {
-    // effectiveRole collapses subscriber→free_user in Store MVP, so unlimited
-    // scan is never granted when premium is disabled (CR DIC-913 #2).
-    const currentRole = effectiveRole(useAuthStore.getState().role);
-    if (currentRole === 'guest') return false;
-    if (currentRole === 'subscriber') return true;
-    return getRemaining() > 0;
+    // canScanWithRemaining applies effectiveRole (subscriber→free_user in Store
+    // MVP, CR DIC-913 #2). Guests share the free users' monthly device allowance.
+    return canScanWithRemaining(useAuthStore.getState().role, getRemaining());
   };
 
+  // Only reached when the shared monthly allowance is used up. Guests get the same
+  // quota prompt as free users — signing in does not add scans, so no login CTA.
   const promptScanBlocked = () => {
-    const currentRole = effectiveRole(useAuthStore.getState().role);
-    if (currentRole === 'guest') {
-      // Route to the real login flow: clearing the guest session drops the app
-      // back to LoginScreen (no-op CTA removed — CR DIC-913 #4).
-      Alert.alert(t('scan_login_title'), t('scan_login_body'), [
-        { text: t('common_cancel'), style: 'cancel' },
-        { text: t('scan_login_action'), onPress: () => useAuthStore.getState().logout() },
-      ]);
-      return;
-    }
     // Store MVP 不賣訂閱，額度已滿時不露出升級/付費入口（DIC-908）。
     if (FEATURES.premium) {
       Alert.alert(t('scan_quota_title'), t('scan_quota_premium_body'), [
@@ -463,12 +985,79 @@ export default function ScanScreen({ navigation }: any) {
     ]);
   };
 
+  // Prominent disclosure before any photo is uploaded (our backend → Google Gemini).
+  // Uses the existing Alert (window.confirm on web via showAlert); declining uploads
+  // nothing and charges nothing.
+  const requestPhotoUploadConsent = () => ensurePhotoUploadConsent({
+    acceptedVersion: () => usePhotoUploadConsentStore.getState().acceptedVersion,
+    recordAcceptance: (version) => usePhotoUploadConsentStore.getState().accept(version),
+    prompt: () => new Promise<boolean>((resolve) => {
+      showAlert(t('scan_ai_disclosure_title'), t('scan_ai_disclosure_body'), [
+        { text: t('scan_ai_disclosure_decline'), style: 'cancel', onPress: () => resolve(false) },
+        { text: t('scan_ai_disclosure_accept'), onPress: () => resolve(true) },
+      ]);
+    }),
+  });
+  const hasUploadConsent = () => hasPhotoUploadConsent(usePhotoUploadConsentStore.getState().acceptedVersion);
+  // First use of automatic mode: show the same disclosure the shutter shows — no
+  // picture is taken here; probing starts only once the user accepted.
+  const enableAutoScan = async () => {
+    if (await requestPhotoUploadConsent()) {
+      autoMachine.resume();
+      setAutoPaused(false);
+    }
+  };
+
+
   // 相機辨識流程本身住在 scanRecognitionFlow，這兩個 adapter 只把 I/O 與 setState 接上，
   // 所以 Node 回歸能執行到與相機完全相同的分支。
-  const buildScanFlowIo = (recognitionImages?: string[]): ScanFlowIo => ({
+  const buildScanFlowIo = (
+    recognitionImages?: string[],
+    scanInput?: { base64?: string | null; cropBase64?: string | null; signal?: AbortSignal; diagId?: string | null },
+  ): ScanFlowIo => {
+    const diagId = scanInput?.diagId ?? null;
+    const timed = async <T,>(stage: 'request' | 'fallback', run: () => Promise<T>, record?: (v: T) => void): Promise<T> => {
+      const t0 = Date.now();
+      try {
+        const v = await run();
+        record?.(v);
+        return v;
+      } catch (e: any) {
+        diagUpdate(diagId, { errors: [e?.name === 'AbortError' ? 'CANCELLED' : e?.name === 'TimeoutError' ? 'TIMEOUT' : stage === 'request' ? 'NETWORK_ERROR' : 'LOCAL_OCR_FAILED'] });
+        throw e;
+      } finally {
+        diagUpdate(diagId, { stagesMs: { [stage]: Date.now() - t0 } });
+      }
+    };
+    const io = buildScanFlowIoRaw(recognitionImages, scanInput);
+    return {
+      ...io,
+      callRecognitionApi: () => timed('request', io.callRecognitionApi, (r) => {
+        const failed = isRecognitionInfrastructureFailure(r.status, r.body);
+        diagResult(diagId, {
+          ...r.body,
+          serviceUnavailable: failed,
+          ...(failed ? { failure: classifyHttpFailure(r.status, r.body), httpStatus: r.status } : {}),
+        });
+      }),
+      recognizeFromImage: (uri) => timed('request', () => io.recognizeFromImage(uri), (r) => diagResult(diagId, r)),
+      ocrText: (uri) => timed('fallback', () => io.ocrText(uri)),
+    };
+  };
+
+  const buildScanFlowIoRaw = (
+    recognitionImages?: string[],
+    scanInput?: { base64?: string | null; cropBase64?: string | null; signal?: AbortSignal },
+  ): ScanFlowIo => ({
     callRecognitionApi: async () => {
+      // Same rules the handler enforces; a frame that would be refused is not sent and
+      // the flow takes its local-OCR fallback instead.
+      if (!validateRecognitionImages(recognitionImages).ok) throw new Error('IMAGE_REJECTED');
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), RECOGNITION_REQUEST_TIMEOUT_MS);
+      let timedOut = false;
+      const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, RECOGNITION_REQUEST_TIMEOUT_MS);
+      const forwardAbort = () => controller.abort();
+      scanInput?.signal?.addEventListener('abort', forwardAbort);
       try {
         const resp = await fetch(window.location.origin + '/api/recognize-card', {
           method: 'POST',
@@ -480,12 +1069,22 @@ export default function ScanScreen({ navigation }: any) {
           }),
           signal: controller.signal,
         });
-        return { status: resp.status, body: await resp.json() };
+        // A non-JSON error page (proxy / platform) still carries a real status.
+        return { status: resp.status, body: await resp.json().catch(() => null) };
+      } catch (e: any) {
+        // Our own deadline is a timeout, not a network failure (recognitionOutcome).
+        if (timedOut && !scanInput?.signal?.aborted) throw Object.assign(new Error('recognition timeout'), { name: 'TimeoutError' });
+        throw e;
       } finally {
         clearTimeout(timeoutId);
+        scanInput?.signal?.removeEventListener('abort', forwardAbort);
       }
     },
-    recognizeFromImage: (uri) => recognizeCardFromImage(uri),
+    recognizeFromImage: (uri) => recognizeCardFromImage(uri, {
+      base64: scanInput?.base64,
+      cropBase64: scanInput?.cropBase64,
+      signal: scanInput?.signal,
+    }),
     ocrText: (uri) => performOcr(uri),
     recognizeFromOcr: (text) => recognizeCardFromOcr(text),
     searchCards: (text, limit) => searchCards(text, limit),
@@ -493,7 +1092,9 @@ export default function ScanScreen({ navigation }: any) {
     mapApiCandidates,
   });
 
-  const scanFlowUi: ScanFlowUi = {
+  // Every callback of a scan's flow is bound to that scan's job: once the job is
+  // retired (screen left, new scan), late results are dropped before they reach state.
+  const buildScanFlowUi = (job: ScanJob): ScanFlowUi => guardForJob<ScanFlowUi>(job, {
     setStatus: (label, progress) => {
       setScanningStatus(label);
       if (progress !== undefined) setScanProgress(progress);
@@ -502,44 +1103,61 @@ export default function ScanScreen({ navigation }: any) {
       setIsProcessingOCR(busy);
       setIsScanning(busy);
     },
-    setScanError,
+    setScanError: (message: string) => {
+      setScanError(message);
+      diagOutcome('failed');
+    },
     setSearchError,
     setSearchResults,
     setSuggestions,
     setRecognizedText,
     setCandidateReason,
-    showLowConfidenceCandidates: (candidates) => {
-      resetAutoScan();
-      setCandidateSelector({ visible: true, tier: 'low', candidates });
-    },
+    // No forced picker: same-number candidates show the identity, anything else an
+    // explicit no-match with the candidates behind a secondary action.
+    showLowConfidenceCandidates: (candidates) => showPresentation(presentCandidates(candidates)),
+    showPresentation,
     onRecognized: handleRecognized,
-    onVisionRecognized: (card, confidence) => {
-      if (!commitCard(card)) return;
-      setResultCard({ visible: true, card, confidence });
-      setSearchResults([]);
-      setSearchError(null);
-      setSuggestions([]);
-      setCapturedPhotoUri(null);
-      resetAutoScan();
+    onServiceFailure: (kind) => {
+      setScanError(null);
+      setServiceFailure(kind);
+      diagOutcome('failed');
     },
-  };
+    // Only reached for a backend without a match verdict: preview, not commit.
+    onVisionRecognized: (card) => {
+      setCapturedPhotoUri(null);
+      showPresentation({ kind: 'best', card, evidence: [], alternatives: [] });
+    },
+  });
 
   // OCR 識別功能（支援 web/native，自動降級）
   const captureAndRecognize = async () => {
     // Enforce the same role/quota gate as handleScan. Auto-scan and retry paths
-    // funnel through here, so guests / over-quota users can't trigger recognition.
+    // funnel through here, so over-quota users (guest or free) can't trigger recognition.
     // Silent by design — auto-scan must not spam alerts; interactive callers
     // prompt via handleScan.
     if (!canScanNow()) return;
+    // No upload without the disclosure accepted; handleScan asks, auto-scan never does.
+    if (!hasUploadConsent()) return;
     if (isWeb) {
       if (!webCameraRef.current) {
         Alert.alert(t('scan_error_title'), t('scan_camera_not_ready'));
         return;
       }
-    } else if (!cameraRef.current) {
+    } else if (!(useFrameScannerRef.current ? frameScannerRef.current : cameraRef.current)) {
+      // The camera that takes this still: the frame scanner in Android automatic mode.
       Alert.alert(t('scan_error_title'), t('scan_camera_not_ready'));
       return;
     }
+
+    if (lifecycle.hasLiveJob()) return;
+    const job = lifecycle.begin();
+    if (!job) return;
+    const { signal } = job;
+    // One camera capture at a time: let a running probe finish first (bounded).
+    for (let i = 0; i < 40 && probeBusyRef.current; i++) await new Promise((r) => setTimeout(r, 50));
+    if (!job.isCurrent()) { lifecycle.end(job); return; }
+    const diagId = diagStart('camera');
+    let stageT0 = Date.now();
 
     try {
       setIsProcessingOCR(true);
@@ -548,6 +1166,7 @@ export default function ScanScreen({ navigation }: any) {
       setScanProgress(1);
       setScanError(null);
       setCapturedPhotoUri(null);
+      clearRetry();
 
       // 拍攝照片
       let photo;
@@ -556,8 +1175,11 @@ export default function ScanScreen({ navigation }: any) {
           quality: 0.8,
         });
       } else {
-        photo = await cameraRef.current?.takePictureAsync({
-          quality: 0.8,
+        // The bytes come from the capture itself: the uri is a device-local path and is
+        // never what gets uploaded (recognitionImagePolicy refuses it).
+        photo = await nativeStillCamera()?.takePictureAsync({
+          quality: 0.7,
+          base64: true,
         });
       }
 
@@ -567,17 +1189,41 @@ export default function ScanScreen({ navigation }: any) {
 
       // 儲存照片 uri 用於預覽
       setCapturedPhotoUri(photo.uri);
+      diagUpdate(diagId, { stagesMs: { capture: Date.now() - stageT0 } });
+      stageT0 = Date.now();
 
       if (isWeb) {
         setScanningStatus(t('scan_processing_image'));
         setScanProgress(2);
         const recognitionImages = await captureWebRecognitionImages(photo.uri);
-        await runWebCameraScan(photo.uri, buildScanFlowIo(recognitionImages), scanFlowUi);
+        diagUpdate(diagId, { stagesMs: { prepare: Date.now() - stageT0 } });
+        if (!job.isCurrent()) return;
+        retryRef.current = { mode: 'web', uri: photo.uri, images: recognitionImages };
+        await runWebCameraScan(photo.uri, buildScanFlowIo(recognitionImages, { signal, diagId }), buildScanFlowUi(job));
       } else {
-        await runNativeCameraScan(photo.uri, buildScanFlowIo(), scanFlowUi);
+        setScanningStatus(t('scan_processing_image'));
+        const shot = photo as { uri: string; width?: number; height?: number; base64?: string };
+        const [preview, frameRect] = await Promise.all([measureInWindow(cameraBoxRef), measureInWindow(scanFrameRef)]);
+        const plan = planNativeCrop(preview, frameRect, shot.width && shot.height ? { width: shot.width, height: shot.height } : null);
+        const images = await prepareNativeScanImages(shot, plan);
+        diagUpdate(diagId, {
+          stagesMs: { prepare: Date.now() - stageT0 },
+          errors: images.cropSkipped ? [`CROP_${images.cropSkipped.toUpperCase()}`] : [],
+        });
+        if (!job.isCurrent()) return;
+        retryRef.current = { mode: 'native', ocrUri: images.cropUri || shot.uri, base64: images.base64, cropBase64: images.cropBase64 };
+        await runNativeCameraScan(
+          // Local OCR fallback reads the frame crop when there is one.
+          images.cropUri || shot.uri,
+          buildScanFlowIo(undefined, { base64: images.base64, cropBase64: images.cropBase64, signal, diagId }),
+          buildScanFlowUi(job),
+        );
       }
     } catch (error) {
-      console.error('OCR Error:', error);
+      if (!job.isCurrent()) return;
+      console.error(`OCR Error: ${(error as any)?.name || 'Error'}`);
+      diagUpdate(diagId, { errors: ['SCAN_FAILED'] });
+      diagOutcome('failed');
       setIsProcessingOCR(false);
       setIsScanning(false);
       setScanningStatus('');
@@ -585,6 +1231,7 @@ export default function ScanScreen({ navigation }: any) {
 
       setScanError(t('scan_failed_retry_manual'));
     } finally {
+      lifecycle.end(job);
       // Reset auto-scan stability buffer on every exit (success or failure) so the
       // same still frame can't immediately re-trigger a scan. Combined with the
       // store-level dedup, this keeps a single card from being recorded twice.
@@ -598,123 +1245,238 @@ export default function ScanScreen({ navigation }: any) {
       promptScanBlocked();
       return;
     }
+    if (!(await requestPhotoUploadConsent())) return;
+    if (lifecycle.hasLiveJob()) return;
+    const job = lifecycle.begin();
+    if (!job) return;
+    const { signal } = job;
     try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        quality: 0.8,
-      });
+      pickerOpenRef.current = true;
+      let result: ImagePicker.ImagePickerResult;
+      try {
+        result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: true,
+          quality: 0.7,
+          // Native uploads these bytes; on web the picker already yields a data URL.
+          base64: !isWeb,
+        });
+      } finally {
+        pickerOpenRef.current = false;
+      }
+      if (!job.isCurrent()) return;
 
       if (!result.canceled && result.assets[0]?.uri) {
-        setIsProcessingOCR(true);
-        setIsScanning(true);
-
-        setScanError(null);
-        setCapturedPhotoUri(result.assets[0].uri);
-
-        const galleryVisionResult = await recognizeCardFromImage(result.assets[0].uri);
-        if (galleryVisionResult.success && galleryVisionResult.card) {
-          setIsProcessingOCR(false);
-          setIsScanning(false);
-          if (commitCard(galleryVisionResult.card)) {
-            setResultCard({
-              visible: true,
-              card: galleryVisionResult.card,
-              confidence: galleryVisionResult.confidence ?? 0.9,
-            });
-            setSearchResults([]);
-            setSearchError(null);
-            setSuggestions([]);
-            setCapturedPhotoUri(null);
-            resetAutoScan();
-          }
-          return;
-        }
-        if (galleryVisionResult.lowConfidence || galleryVisionResult.suggestions?.length) {
-          setIsProcessingOCR(false);
-          setIsScanning(false);
-          const candidateCards = galleryVisionResult.suggestions || [];
-          setSearchResults(candidateCards);
-          setSuggestions(candidateCards);
-          setSearchError(localizedError(galleryVisionResult.error, 'scan_confidence_low'));
-          setCandidateReason(t('scan_confidence_reason', {
-            percent: Math.round((galleryVisionResult.confidence || 0) * 100),
-            reason: preferredLanguage === 'ja' ? t('scan_manual_review') : (galleryVisionResult.reason || t('scan_manual_review')),
-          }));
-          if (galleryVisionResult.raw) setRecognizedText(galleryVisionResult.raw);
-          return;
-        }
-
-        // When the recognition backend is unavailable the local OCR passes below are
-        // only a best-effort fallback, so their failure says nothing about the photo.
-        const noTextError = galleryVisionResult.serviceUnavailable
-          ? t('scan_service_unavailable')
-          : t('scan_no_text_guidance');
-
-        if (isWeb) {
-          // Web: 卡號優先 OCR
-          const cardResult = await recognizeCardFromImage(result.assets[0].uri);
-
-          setIsProcessingOCR(false);
-          setIsScanning(false);
-
-          if (cardResult.success && cardResult.card) {
-            handleRecognized(cardResult.card, cardResult.confidence ?? 0.85, cardResult.candidates);
-          } else {
-            // Fallback 到全圖 OCR
-            const recognizedText = await recognizeTextWeb(result.assets[0].uri);
-            const trimmedText = recognizedText.text.trim();
-            setRecognizedText(trimmedText);
-
-            if (trimmedText.length > 0) {
-              const fallbackResult = await recognizeCardFromOcr(trimmedText);
-              if (fallbackResult.success && fallbackResult.card) {
-                handleRecognized(fallbackResult.card, fallbackResult.confidence ?? 0.85, fallbackResult.candidates);
-                return;
-              }
-              setSearchError(localizedError(fallbackResult.error, 'scan_no_match'));
-              const searchResult = await searchCards(trimmedText, 10);
-              setSearchResults(searchResult);
-            } else {
-              setScanError(noTextError);
-            }
-          }
-        } else {
-          const recognizedText = await performOcr(result.assets[0].uri);
-          const trimmedText = recognizedText.trim();
-          setRecognizedText(trimmedText);
-
-          setIsProcessingOCR(false);
-          setIsScanning(false);
-
-          if (trimmedText.length > 0) {
-            const cardResult = await recognizeCardFromOcr(trimmedText);
-            if (cardResult.success && cardResult.card) {
-              handleRecognized(cardResult.card, cardResult.confidence ?? 0.85, cardResult.candidates);
-            } else {
-              setSearchError(localizedError(cardResult.error, 'scan_no_match'));
-              const searchResult = await searchCards(trimmedText, 10);
-              setSearchResults(searchResult);
-            }
-          } else {
-            setScanError(noTextError);
-          }
-        }
+        // Back in the foreground first, and still the same live scan — a close, back,
+        // blur or unmount meanwhile cancelled the job and the picked photo is dropped.
+        if (!(await waitForForeground(signal)) || !job.isCurrent()) return;
+        clearRetry();
+        await recognizeGalleryPhoto({ mode: 'gallery', uri: result.assets[0].uri, base64: result.assets[0].base64 }, job, signal);
       }
-    } catch (error) {
-      console.error('Gallery OCR Error:', error);
+    } catch (error: any) {
+      if (!job.isCurrent()) return;
+      console.error(`Gallery OCR Error: ${error?.name || 'Error'}`);
       setIsProcessingOCR(false);
       setIsScanning(false);
       setScanError(t('scan_image_failed'));
+    } finally {
+      lifecycle.end(job);
     }
   };
 
-  const handleScan = () => {
-    if (isScanning || isProcessingOCR) return;
+  // One gallery photo through recognition. Also the manual retry of a gallery photo
+  // whose recognition hit a service failure (same bytes, still in memory).
+  const recognizeGalleryPhoto = async (photo: Extract<RetryPayload, { mode: 'gallery' }>, job: ScanJob, signal: AbortSignal) => {
+    const { uri } = photo;
+    const recognizeOptions = { base64: photo.base64, signal };
+    setIsProcessingOCR(true);
+    setIsScanning(true);
+
+    setScanError(null);
+    setCapturedPhotoUri(uri);
+
+    const galleryDiagId = diagStart('gallery');
+    const galleryT0 = Date.now();
+    const galleryVisionResult = await recognizeCardFromImage(uri, recognizeOptions);
+    diagUpdate(galleryDiagId, { stagesMs: { request: Date.now() - galleryT0 } });
+    diagResult(galleryDiagId, galleryVisionResult);
+    if (!job.isCurrent()) return;
+    if (galleryVisionResult.cancelled) return;
+    if (galleryVisionResult.serviceUnavailable) retryRef.current = photo;
+    const galleryPresentation = presentMatch(galleryVisionResult);
+    if (galleryPresentation) {
+      setIsProcessingOCR(false);
+      setIsScanning(false);
+      if (galleryVisionResult.raw) setRecognizedText(galleryVisionResult.raw);
+      showPresentation(galleryPresentation);
+      return;
+    }
+    if (galleryVisionResult.success && galleryVisionResult.card) {
+      setIsProcessingOCR(false);
+      setIsScanning(false);
+      // Route through handleRecognized rather than committing here. This
+      // branch used to call commitCard directly, ahead of its own
+      // lowConfidence check below, so an unresolved printing was auto-added
+      // before anything could offer the picker (DIC-1325). handleRecognized
+      // is the single place that decides commit-vs-confirm, and it already
+      // clears the search/suggestion state this block used to reset by hand.
+      handleRecognized(
+        galleryVisionResult.card,
+        galleryVisionResult.confidence ?? 0.9,
+        galleryVisionResult.candidates,
+        isAmbiguousPrinting(galleryVisionResult),
+      );
+      return;
+    }
+    if (galleryVisionResult.lowConfidence || galleryVisionResult.suggestions?.length) {
+      setIsProcessingOCR(false);
+      setIsScanning(false);
+      // Route through handleRecognized so the exact-printing picker opens
+      // and commitCard stays at zero until the user picks — same decision
+      // point the success branch above uses (DIC-1325 / DIC-1339). The
+      // typed candidates carry their own compound printing ids so
+      // whichever the user picks resolves to an exact printing at commit.
+      const typedCandidates = galleryVisionResult.candidates;
+      if (typedCandidates && typedCandidates.length > 0) {
+        const first = typedCandidates[0];
+        handleRecognized(
+          first.card,
+          galleryVisionResult.confidence ?? first.confidence ?? 0,
+          typedCandidates,
+          isAmbiguousPrinting(galleryVisionResult),
+        );
+        return;
+      }
+      // The API always populates candidates alongside `lowConfidence`, so
+      // this fallback only fires for legacy shapes (local-OCR suggestions
+      // without a typed candidate list). Still no commit — surface the
+      // suggestions in the search panel for manual selection.
+      // No typed candidates (legacy local-OCR shape): an explicit no-match, the
+      // suggestions are only offered as a correction. No score/percentage shown.
+      if (galleryVisionResult.raw) setRecognizedText(galleryVisionResult.raw);
+      showPresentation({
+        kind: 'none',
+        reason: 'low_evidence',
+        suggestions: (galleryVisionResult.suggestions || []).map((card) => ({ card, confidence: 0 })),
+      });
+      return;
+    }
+
+    // When the recognition backend could not answer, the local OCR passes below are
+    // only a best-effort fallback: a miss says nothing about the photo, so it ends in the
+    // service-failure state with a manual retry — never 「找不到匹配的卡牌」 (v39 report).
+    const serviceFailed = !!galleryVisionResult.serviceUnavailable;
+    const failGallery = () => {
+      setServiceFailure(galleryVisionResult.failure ?? 'unavailable');
+      diagOutcome('failed');
+    };
+
+    // recognizeCardFromImage above already ran the card-number OCR pass on web; v37
+    // called it a second time here, re-uploading the same photo.
+    if (isWeb) {
+      setIsProcessingOCR(false);
+      setIsScanning(false);
+    }
+    // Fallback 到全圖 OCR
+    let trimmedText: string;
+    try {
+      trimmedText = isWeb ? (await recognizeTextWeb(uri)).text.trim() : (await performOcr(uri)).trim();
+    } catch (e) {
+      // CR 717c3fe P2 #1: after a service failure a throwing OCR keeps the typed failure
+      // and the retry of this photo instead of a generic image error.
+      if (!serviceFailed) throw e;
+      trimmedText = '';
+    }
+    if (!job.isCurrent()) return;
+    setRecognizedText(trimmedText);
+    setIsProcessingOCR(false);
+    setIsScanning(false);
+
+    if (trimmedText.length > 0) {
+      let fallbackResult: Awaited<ReturnType<typeof recognizeCardFromOcr>>;
+      try {
+        fallbackResult = await recognizeCardFromOcr(trimmedText);
+      } catch (e) {
+        if (!serviceFailed) throw e;
+        if (job.isCurrent()) failGallery();
+        return;
+      }
+      if (!job.isCurrent()) return;
+      if (fallbackResult.success && fallbackResult.card) {
+        handleRecognized(fallbackResult.card, fallbackResult.confidence ?? 0.85, fallbackResult.candidates, isAmbiguousPrinting(fallbackResult));
+        return;
+      }
+      if (serviceFailed) { failGallery(); return; }
+      setSearchError(localizedError(fallbackResult.error, 'scan_no_match'));
+      const searchResult = await searchCards(trimmedText, 10);
+      if (!job.isCurrent()) return;
+      setSearchResults(searchResult);
+    } else if (serviceFailed) {
+      failGallery();
+    } else {
+      setScanError(t('scan_no_text_guidance'));
+    }
+  };
+
+  // Manual retry after a service failure: the same photo, never a new capture. One live
+  // scan job at a time, so a double tap sends one request; nothing is charged here.
+  const retryRecognition = async () => {
+    const photo = retryRef.current;
+    if (!photo || lifecycle.hasLiveJob()) return;
     if (!canScanNow()) {
       promptScanBlocked();
       return;
     }
+    if (!hasUploadConsent()) return;
+    const job = lifecycle.begin();
+    if (!job) return;
+    const { signal } = job;
+    setServiceFailure(null);
+    setScanError(null);
+    try {
+      if (photo.mode === 'gallery') {
+        await recognizeGalleryPhoto(photo, job, signal);
+        return;
+      }
+      const diagId = diagStart('camera');
+      setIsProcessingOCR(true);
+      setIsScanning(true);
+      setScanningStatus(t('scan_processing_image'));
+      if (photo.mode === 'web') {
+        await runWebCameraScan(photo.uri, buildScanFlowIo(photo.images, { signal, diagId }), buildScanFlowUi(job));
+      } else {
+        await runNativeCameraScan(
+          photo.ocrUri,
+          buildScanFlowIo(undefined, { base64: photo.base64, cropBase64: photo.cropBase64, signal, diagId }),
+          buildScanFlowUi(job),
+        );
+      }
+    } catch (error: any) {
+      if (!job.isCurrent()) return;
+      console.error(`Retry Error: ${error?.name || 'Error'}`);
+      diagOutcome('failed');
+      setIsProcessingOCR(false);
+      setIsScanning(false);
+      setScanningStatus('');
+      setScanProgress(0);
+      setScanError(t('scan_failed_retry_manual'));
+    } finally {
+      lifecycle.end(job);
+    }
+  };
+
+  const handleScan = async () => {
+    if (isScanning || isProcessingOCR || lifecycle.hasLiveJob()) return;
+    // A manual round: automatic capture waits until the frame is empty again, and an
+    // idle pause ends (the user is here).
+    autoMachine.roundStarted(null);
+    setAutoPaused(false);
+    webNeedMotionRef.current = true;
+    if (!canScanNow()) {
+      promptScanBlocked();
+      return;
+    }
+    if (!(await requestPhotoUploadConsent())) return;
     captureAndRecognize();
   };
 
@@ -731,6 +1493,16 @@ export default function ScanScreen({ navigation }: any) {
   const handleCameraReady = () => {
     setIsCameraReady(true);
     setCameraError(null);
+    if (!isWeb && !nativePictureSize) {
+      // Best effort: an unknown list keeps the device default, and the payload is
+      // size-checked after capture either way.
+      cameraRef.current?.getAvailablePictureSizesAsync?.()
+        .then((sizes) => {
+          const chosen = chooseRecognitionPictureSize(sizes);
+          if (chosen && mountedRef.current) setNativePictureSize(chosen);
+        })
+        .catch(() => {});
+    }
   };
 
   // 相機載入錯誤的回調
@@ -740,6 +1512,18 @@ export default function ScanScreen({ navigation }: any) {
       : (error?.message || t('scan_camera_load_failed'));
     setCameraError(errorMessage);
     setIsCameraReady(false);
+  };
+
+  // Explicit camera retry on Android/iOS: a FRESH native camera view (new key → new bind),
+  // for the automatic frame scanner and the manual camera alike. Clearing the error alone
+  // keeps the failed view (black, and a failed mount never re-arms the startup wait).
+  // Only on the user's tap — never automatically.
+  const retryNativeCamera = () => {
+    invalidateProbes();
+    setCameraError(null);
+    setIsCameraReady(false);
+    frameGeometryRef.current = null;
+    setScannerKey((k) => k + 1);
   };
 
   const handleRetry = () => {
@@ -810,22 +1594,79 @@ export default function ScanScreen({ navigation }: any) {
     setScanComplete(false);
   };
 
+  // DIC-1286 CR fix: use RN's cross-platform Linking.openSettings() so the
+  // "打開設定 / 設定を開く" button really opens the app settings screen on
+  // Android too (Linking.openURL('app-settings:') is an iOS-only URL
+  // scheme, and did nothing on Android — leaving users with
+  // canAskAgain === false unable to recover). Wrapped in try/catch so a
+  // rare native throw from a broken Linking module never bubbles out of
+  // an event handler. Non-Android/iOS platforms (web) still fall through
+  // via the iOS scheme for backwards compatibility.
   const openSettings = () => {
-    if (Platform.OS === 'ios') {
+    try {
+      if (Platform.OS === 'ios' || Platform.OS === 'android') {
+        const maybe = Linking.openSettings();
+        if (maybe && typeof (maybe as Promise<void>).catch === 'function') {
+          (maybe as Promise<void>).catch((err) => {
+            console.warn('[ScanScreen] Linking.openSettings rejected', err);
+          });
+        }
+        return;
+      }
       Linking.openURL('app-settings:');
+    } catch (err) {
+      console.warn('[ScanScreen] openSettings failed', err);
     }
   };
+
+  // Pen `x7iIL` Close — dismisses the scan flow back to Home. Nested form
+  // so it resolves regardless of which navigator owns the current screen.
+  const handleSheetRetake = () => { diagOutcome('discarded'); setMatchSheet(null); };
+  // No-match 重試 (v41): end the failed round the same way, then start a new capture
+  // through the normal shutter path (its live-job / quota / consent guards apply).
+  const handleNoMatchRetry = () => { handleSheetRetake(); void handleScan(); };
+
+  const handleClose = () => {
+    // Cancel first: the drawer keeps this screen mounted, so the running scan must be
+    // retired before navigating (the blur that follows is then a no-op).
+    if (lifecycle.cancel()) resetScanUi();
+    invalidateProbes();
+    clearRetry();
+    navigation.navigate('MainDrawer', { screen: 'Home' });
+  };
+
+  // Android hardware back (v39 user report 2026-10-16): close what is on top first —
+  // the correction list, the result preview (nothing added), the service-failure panel —
+  // and otherwise leave exactly like ✕ (cancel the running scan, drop any held photo).
+  // The drawer keeps this screen mounted, so an unfocused Scan never handles back.
+  const backRef = useRef<() => boolean>(() => false);
+  backRef.current = () => {
+    if (!lifecycle.isFocused()) return false;
+    if (candidateSelector.visible) { closeCandidateSelector(); return true; }
+    if (matchSheet) { handleSheetRetake(); return true; }
+    if (serviceFailure) { clearRetry(); return true; }
+    handleClose();
+    return true;
+  };
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => backRef.current());
+    return () => sub.remove();
+  }, []);
 
   // === Web 版：不用 expo-camera 權限，直接讓 WebCamera 處理 getUserMedia ===
   if (isWeb && !webCameraStarted) {
     return (
       <View style={styles.container}>
+        {/* Pen App/04 top action row — present on the pre-camera state too */}
+        <ScanTopBar onClose={handleClose} flashDisabled />
         <View style={styles.permissionContainer}>
           <Text style={styles.permissionIcon}>📷</Text>
           <Text style={styles.permissionTitle}>{t('scan_permission_title')}</Text>
           <Text style={styles.permissionText}>{t('scan_permission_web_body')}</Text>
           <TouchableOpacity 
             style={styles.permissionButton}
+            testID="scan-permission-allow"
             onPress={async () => {
               // iOS Safari 的 getUserMedia 必須在點擊事件手勢鏈中直接呼叫
               // 先等 stream 拿到再 mount WebCamera，避免 timing 競爭
@@ -871,51 +1712,33 @@ export default function ScanScreen({ navigation }: any) {
 
   // === Native 版：用 expo-camera 權限系統 ===
   if (!isWeb) {
-    // 权限请求中
-    if (!permission) {
+    // DIC-1409 CR fix: both native pre-camera states render through the
+    // exported ScanNativePermissionGate (Pen top bar + v2 chrome) so the
+    // exact shipped surface is directly regression-testable.
+    if (!permission || !permission.granted) {
       return (
-        <View style={styles.container}>
-          <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>{t('scan_camera_loading')}</Text>
-          </View>
-        </View>
-      );
-    }
-
-    // 权限被拒绝
-    if (!permission.granted) {
-      return (
-        <View style={styles.container}>
-          <View style={styles.permissionContainer}>
-            <Text style={styles.permissionIcon}>📷</Text>
-            <Text style={styles.permissionTitle}>{t('scan_permission_title')}</Text>
-            <Text style={styles.permissionText}>{t('scan_permission_native_body')}</Text>
-            <TouchableOpacity 
-              style={styles.permissionButton}
-              onPress={requestPermission}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.permissionButtonText}>{t('scan_permission_allow')}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.settingsButton}
-              onPress={openSettings}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.settingsButtonText}>{t('scan_open_settings')}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+        <ScanNativePermissionGate
+          permission={permission}
+          onClose={handleClose}
+          onRequestPermission={requestPermission}
+          openSettingsImpl={openSettings}
+          refreshPermission={getCameraPermissions}
+          onPickGallery={pickFromGallery}
+        />
       );
     }
   }
 
   return (
     <View style={styles.container}>
-      <ScanQuotaBanner />
-      {/* 初始化中遮罩 — 相機在下面照常 mount，讓 getUserMedia 有機會啟動 */}
-      {!isCameraReady && !webGalleryMode && (
-        <View style={styles.loadingOverlay}>
+      {/* Quota now rides the Pen top bar: inside ScanOverlay when the
+          camera is up, and on the gallery surface's own top bar below. */}
+      {/* 初始化中遮罩 — 相機在下面照常 mount，讓 getUserMedia 有機會啟動。WEB ONLY (v43 native
+          FAIL 2026-10-18): on Android/iOS this full-screen layer sat ABOVE the camera and its
+          ScanOverlay, hiding the real recovery panel (重試 that remounts + 改用手動拍照) behind
+          a retry that never rebound the camera. Native cameras show ScanOverlay's own layer. */}
+      {isWeb && !isCameraReady && !webGalleryMode && (
+        <View style={[styles.loadingOverlay, belowTopBar]}>
           <View style={styles.loadingContainer}>
             <Text style={styles.loadingText}>{t('scan_camera_initializing')}</Text>
             {cameraError && (
@@ -941,6 +1764,8 @@ export default function ScanScreen({ navigation }: any) {
       )}
       {/* 相机预览 — 一定會 mount，不會被初始化中判斷擋住 */}
 {isWeb && webGalleryMode ? (
+        <View style={styles.camera}>
+        <ScanTopBar onClose={handleClose} flashDisabled />
         <View style={[styles.camera, styles.galleryModeContainer]}>
           <Text style={styles.galleryModeIcon}>🖼️</Text>
           <Text style={styles.galleryModeTitle}>{t('scan_gallery_title')}</Text>
@@ -963,6 +1788,7 @@ export default function ScanScreen({ navigation }: any) {
             <Text style={styles.settingsButtonText}>{t('scan_back_to_camera')}</Text>
           </TouchableOpacity>
         </View>
+        </View>
       ) : isWeb ? (
         <WebCamera
           ref={webCameraRef}
@@ -978,16 +1804,20 @@ export default function ScanScreen({ navigation }: any) {
             borderAnim={borderAnim}
             isScanning={isScanning}
             flash={flash}
-            autoScanEnabled={autoScanEnabled}
+            autoScanActive={autoScanActive}
+            autoScanSupported={isWeb}
+            onToggleAutoScan={setAutoScan}
+            autoScanNeedsConsent={autoScanNeedsConsent}
+            onEnableAutoScan={enableAutoScan}
+            onOpenSession={() => setSessionOpenRequest((n) => n + 1)}
             isCameraReady={isCameraReady}
             cameraError={cameraError}
             onFlash={toggleFlash}
             onScan={handleScan}
-            onFlip={toggleCameraFacing}
             onGallery={pickFromGallery}
-            onManualSearch={() => setShowSearch(true)}
-            onToggleAutoScan={toggleAutoScan}
+            onClose={handleClose}
             onScanAreaLayout={handleScanAreaLayout}
+            scanAreaRef={scanFrameRef}
             onRetry={() => {
               setCameraError(null);
               if (webCameraRef.current) webCameraRef.current.retry();
@@ -996,11 +1826,66 @@ export default function ScanScreen({ navigation }: any) {
           />
         </WebCamera>
       ) : (
+        useFrameScanner ? (
+        <View ref={cameraBoxRef} style={styles.camera} collapsable={false} testID="scan-camera-box">
+          {/* v42 Android automatic mode: continuous preview, frames read on the device. */}
+          <FrameScannerView
+            ref={frameScannerRef}
+            style={StyleSheet.absoluteFill}
+            key={`frame-scanner-${scannerKey}`}
+            active={frameAnalysisSession().open}
+            session={frameAnalysisSession().session}
+            torch={flash}
+            analysisIntervalMs={FRAME_ANALYSIS_INTERVAL_MS}
+            onCameraReady={handleFrameScannerReady}
+            onMountError={(e: any) => handleFrameScannerError(e?.nativeEvent?.message)}
+            onFrameText={(e: any) => handleFrameText(e?.nativeEvent)}
+            testID="scan-frame-scanner"
+          />
+          <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+            <ScanOverlay
+              scanLineAnim={scanLineAnim}
+              pulseAnim={pulseAnim}
+              borderAnim={borderAnim}
+              isScanning={isScanning}
+              flash={flash}
+              autoScanActive={autoScanActive}
+              autoScanSupported={nativeAutoAvailable}
+              onToggleAutoScan={setAutoScan}
+              autoScanNeedsConsent={autoScanNeedsConsent}
+              onEnableAutoScan={enableAutoScan}
+              autoScanPaused={autoPaused}
+              // Native crop (CR 2026-10-15 P2_1): the frame is measured in window coords at
+              // capture; without this ref every native capture fell back to the full photo.
+              scanAreaRef={scanFrameRef}
+              onOpenSession={() => setSessionOpenRequest((n) => n + 1)}
+              isCameraReady={isCameraReady}
+              cameraError={cameraError}
+              onFlash={toggleFlash}
+              onScan={handleScan}
+              onGallery={pickFromGallery}
+              onClose={handleClose}
+              onRetry={retryNativeCamera}
+              onManualCamera={() => { setCameraError(null); setAutoScan(false); }}
+            />
+          </View>
+        </View>
+        ) : (
+        <View ref={cameraBoxRef} style={styles.camera} collapsable={false} testID="scan-camera-box">
         <CameraView
+          key={`camera-${scannerKey}`}
           ref={cameraRef}
           style={styles.camera}
           facing={facing}
-          flash={flash ? 'on' : 'off'}
+          // v42 (Android 41 "一直閃"): expo-camera paints the whole view white on every
+          // capture unless animateShutter is false — with a silent probe every ~1.3 s that
+          // was a constant flashing. No capture ever animates the shutter now.
+          animateShutter={false}
+          // In automatic mode the light is a continuous torch, never a per-capture flash,
+          // so the silent probes cannot strobe the LED. Manual mode keeps the flash.
+          flash={flash && !autoScanActive ? 'on' : 'off'}
+          enableTorch={flash && autoScanActive}
+          pictureSize={nativePictureSize}
           onCameraReady={handleCameraReady}
           onMountError={handleMountError}
         >
@@ -1010,22 +1895,28 @@ export default function ScanScreen({ navigation }: any) {
             borderAnim={borderAnim}
             isScanning={isScanning}
             flash={flash}
-            autoScanEnabled={autoScanEnabled}
+            autoScanActive={autoScanActive}
+            autoScanSupported={nativeAutoAvailable}
+            autoScanUnavailable={autoScanUnavailableOnAndroid}
+            onToggleAutoScan={setAutoScan}
+            autoScanNeedsConsent={autoScanNeedsConsent}
+            onEnableAutoScan={enableAutoScan}
+            autoScanPaused={autoPaused}
+            // Native crop (CR 2026-10-15 P2_1): the frame is measured in window coords at
+            // capture; without this ref every native capture fell back to the full photo.
+            scanAreaRef={scanFrameRef}
+            onOpenSession={() => setSessionOpenRequest((n) => n + 1)}
             isCameraReady={isCameraReady}
             cameraError={cameraError}
             onFlash={toggleFlash}
             onScan={handleScan}
-            onFlip={toggleCameraFacing}
             onGallery={pickFromGallery}
-            onManualSearch={() => setShowSearch(true)}
-            onToggleAutoScan={toggleAutoScan}
-            onRetry={() => {
-              setCameraError(null);
-              if (webCameraRef.current) webCameraRef.current.retry();
-              else setIsCameraReady(false);
-            }}
+            onClose={handleClose}
+            onRetry={retryNativeCamera}
           />
         </CameraView>
+        </View>
+        )
       )}
       
       {/* Floating result card */}
@@ -1035,10 +1926,24 @@ export default function ScanScreen({ navigation }: any) {
         confidence={resultCard.confidence}
         preferredCurrency={preferredCurrency}
         preferredLanguage={preferredLanguage}
+        top={belowTopBar.top + 4}
         onDismiss={() => { setResultCard({ visible: false, card: null, confidence: 0 }); }}
       />
 
-      {/* 中/低信心候選確認選擇器 */}
+      {/* 掃描結果（Pen B/C/D）：預設顯示最佳結果預覽，更正為次要動作 */}
+      <ScanMatchSheet
+        presentation={matchSheet}
+        preferredCurrency={preferredCurrency}
+        preferredLanguage={preferredLanguage}
+        onAdd={handleSheetAdd}
+        onCorrect={handleSheetCorrect}
+        onPickPrinting={handleSheetCorrect}
+        onManualSearch={() => { setMatchSheet(null); setShowSearch(true); }}
+        onRetake={handleSheetRetake}
+        onRetry={handleNoMatchRetry}
+      />
+
+      {/* 更正：使用者主動開啟的候選清單 */}
       <ScanCandidateSelector
         visible={candidateSelector.visible}
         tier={candidateSelector.tier}
@@ -1053,7 +1958,7 @@ export default function ScanScreen({ navigation }: any) {
 
       {/* 最後掃描的卡牌確認提示 */}
       {lastScannedCard && (
-        <View style={resultStyles.toastContainer}>
+        <View style={[resultStyles.toastContainer, { top: belowTopBar.top + 4 }]}>
           <View style={resultStyles.toast}>
             <View style={resultStyles.toastContent}>
               <Text style={resultStyles.toastIcon}>✅</Text>
@@ -1061,14 +1966,18 @@ export default function ScanScreen({ navigation }: any) {
                 <Text style={resultStyles.toastName} numberOfLines={1}>
                   {lastScannedCard.name}
                 </Text>
-                <Text style={resultStyles.toastPrice}>
-                  {(() => {
-                    if (lastScannedCard.sellPrice == null) return '—';
-                    if (preferredCurrency === 'JPY') return `¥${lastScannedCard.sellPrice.toLocaleString()}`;
-                    const { value, symbol } = convertPrice(lastScannedCard.sellPrice, preferredCurrency);
-                    return `${symbol}${value?.toLocaleString() || '—'}`;
-                  })()}
-                </Text>
+                {/* 「最後掃描」toast 的售價 — Store MVP 也顯示 (DIC-1319)：這是
+                    剛掃到那張卡自己的售價，掃描→查價的主路徑回饋。 */}
+                {FEATURES.sellPrice && (
+                  <Text style={resultStyles.toastPrice} testID="scan-toast-price">
+                    {(() => {
+                      if (lastScannedCard.sellPrice == null) return '—';
+                      if (preferredCurrency === 'JPY') return `¥${lastScannedCard.sellPrice.toLocaleString()}`;
+                      const { value, symbol } = convertPrice(lastScannedCard.sellPrice, preferredCurrency);
+                      return `${symbol}${value?.toLocaleString() || '—'}`;
+                    })()}
+                  </Text>
+                )}
               </View>
             </View>
             <TouchableOpacity
@@ -1156,27 +2065,61 @@ export default function ScanScreen({ navigation }: any) {
         </View>
       ) : null}
 
+      {/* 辨識服務無法回應（v39）：不是「找不到卡」。簡短原因＋重試（同一張照片）／取消 */}
+      {serviceFailure && !scanError && (
+        <View style={resultStyles.errorContainer} testID="scan-service-failure">
+          <Text style={resultStyles.errorText}>⚠️ {t(`scan_failure_${serviceFailure}` as TranslationKey)}</Text>
+          <View style={resultStyles.errorActions}>
+            {retryRef.current ? (
+              <TouchableOpacity
+                style={[resultStyles.retryButton, isScanning && { opacity: 0.5 }]}
+                onPress={retryRecognition}
+                disabled={isScanning}
+                accessibilityRole="button"
+                testID="scan-service-retry"
+              >
+                <Text style={resultStyles.retryText}>{t('scan_retry_recognition')}</Text>
+              </TouchableOpacity>
+            ) : null}
+            {/* 取消：丟掉暫存的照片、收起面板，回到可掃描狀態（不上傳、不扣次）。 */}
+            <TouchableOpacity
+              style={resultStyles.retryButton}
+              onPress={clearRetry}
+              accessibilityRole="button"
+              testID="scan-service-cancel"
+            >
+              <Text style={resultStyles.retryText}>{t('scan_service_cancel')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       {/* 掃描失敗提示（OCR 回傳空） */}
+      {/* 辨識失敗（v42）：辨識失敗，請再試一次＋重試（重新拍攝）／取消；手動搜尋保留為連結 */}
       {scanError && (
-        <View style={resultStyles.errorContainer}>
+        <View style={resultStyles.errorContainer} testID="scan-error">
           <Text style={resultStyles.errorText}>⚠️ {scanError}</Text>
           <View style={resultStyles.errorActions}>
             <TouchableOpacity
               style={resultStyles.retryButton}
-              onPress={() => {
-                setScanError(null);
-                setShowSearch(true);
-              }}
+              onPress={() => { setScanError(null); void handleScan(); }}
+              accessibilityRole="button"
+              testID="scan-error-retry"
             >
-              <Text style={resultStyles.retryText}>{t('scan_manual_search')}</Text>
+              <Text style={resultStyles.retryText}>{t('scan_retry_recognition')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={resultStyles.retryButton}
-              onPress={handleScan}
+              onPress={() => setScanError(null)}
+              accessibilityRole="button"
+              testID="scan-error-cancel"
             >
-              <Text style={resultStyles.retryText}>{t('scan_retry_scan')}</Text>
+              <Text style={resultStyles.retryText}>{t('scan_service_cancel')}</Text>
             </TouchableOpacity>
           </View>
+          <TouchableOpacity onPress={() => { setScanError(null); setShowSearch(true); }} testID="scan-error-manual">
+            <Text style={resultStyles.retryText}>{t('scan_manual_search')}</Text>
+          </TouchableOpacity>
         </View>
       )}
       
@@ -1193,9 +2136,13 @@ export default function ScanScreen({ navigation }: any) {
               >
                 <Text style={resultStyles.listItemName}>{card.name}</Text>
                 <Text style={resultStyles.listItemMeta}>{card.cardNumber} · {card.rarity} · {card.series}</Text>
-                <Text style={resultStyles.listItemPrice}>
-                  ¥{card.sellPrice?.toLocaleString() || t('scan_no_trade')}
-                </Text>
+                {/* 手動搜尋建議列的售價 — Store MVP 也顯示 (DIC-1319)，與掃描
+                    結果同一種單卡售價。 */}
+                {FEATURES.sellPrice && (
+                  <Text style={resultStyles.listItemPrice} testID="scan-search-suggestion-price">
+                    ¥{card.sellPrice?.toLocaleString() || t('scan_no_trade')}
+                  </Text>
+                )}
               </TouchableOpacity>
             ))}
           </ScrollView>
@@ -1244,6 +2191,7 @@ export default function ScanScreen({ navigation }: any) {
       {/* 掃描估值面板 */}
       <ScanSessionPanel
         preferredCurrency={preferredCurrency}
+        expandRequest={sessionOpenRequest}
         onViewCard={(card) => navigation?.navigate('CardDetail', { card })}
         onContinueScanning={() => {
           setLastScannedCard(null);
@@ -1254,10 +2202,13 @@ export default function ScanScreen({ navigation }: any) {
   );
 }
 
+// DIC-1409 CR fix — the pre-camera surfaces (permission gate, gallery
+// mode, loading) render on the Pen v2 tokens, matching the App/04 frame's
+// dark full-bleed chrome instead of the legacy COLORS palette.
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: PALETTE.appBg,
   },
   camera: {
     flex: 1,
@@ -1266,29 +2217,30 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 40,
-    backgroundColor: COLORS.background,
+    backgroundColor: PALETTE.appBg,
   },
   galleryModeIcon: {
-    fontSize: 64,
+    fontSize: 56,
     marginBottom: 20,
   },
   galleryModeTitle: {
-    color: COLORS.text,
+    color: SEMANTIC.onBg,
     fontSize: 22,
-    fontWeight: 'bold',
+    fontWeight: '700',
     marginBottom: 12,
   },
   galleryModeText: {
-    color: COLORS.textSecondary,
+    color: SEMANTIC.onBgMuted,
     fontSize: 14,
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 30,
+    maxWidth: 320,
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 10,
-    backgroundColor: COLORS.background,
+    backgroundColor: PALETTE.appBg,
   },
   loadingContainer: {
     flex: 1,
@@ -1296,7 +2248,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   loadingText: {
-    color: COLORS.textSecondary,
+    color: SEMANTIC.onBgMuted,
     fontSize: 16,
   },
   permissionContainer: {
@@ -1306,28 +2258,31 @@ const styles = StyleSheet.create({
     padding: 40,
   },
   permissionIcon: {
-    fontSize: 64,
+    fontSize: 56,
     marginBottom: 20,
   },
   permissionTitle: {
-    color: COLORS.text,
+    color: SEMANTIC.onBg,
     fontSize: 22,
-    fontWeight: 'bold',
+    fontWeight: '700',
     marginBottom: 12,
   },
   permissionText: {
-    color: COLORS.textSecondary,
+    color: SEMANTIC.onBgMuted,
     fontSize: 14,
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 30,
+    maxWidth: 320,
   },
   permissionButton: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: PALETTE.accent,
     paddingVertical: 14,
     paddingHorizontal: 40,
-    borderRadius: 25,
+    borderRadius: 26,
     marginBottom: 12,
+    minHeight: LAYOUT.minTouch,
+    justifyContent: 'center',
   },
   permissionButtonText: {
     color: '#fff',
@@ -1337,9 +2292,11 @@ const styles = StyleSheet.create({
   settingsButton: {
     paddingVertical: 12,
     paddingHorizontal: 30,
+    minHeight: LAYOUT.minTouch,
+    justifyContent: 'center',
   },
   settingsButtonText: {
-    color: COLORS.textSecondary,
+    color: SEMANTIC.onBgMuted,
     fontSize: 14,
   },
   overlay: {
@@ -1356,15 +2313,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
   },
-  scanArea: {
-    width: SCAN_AREA_SIZE,
-    height: SCAN_AREA_SIZE * 0.63, // 卡片比例
-    position: 'relative',
-    borderWidth: 2,
-    borderColor: COLORS.primary,
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
+
   scanLine: {
     position: 'absolute',
     left: 10,

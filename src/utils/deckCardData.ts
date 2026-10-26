@@ -1,12 +1,14 @@
 // Loads the card database for the deck editor and adapts it to the editor's
-// DeckCard / PriceRecord shapes. Mirrors the fetch('/data/database.json')
-// pattern already used by HomeScreen (web serves data from public/). Kept out of
+// DeckCard / PriceRecord shapes. Reads through the platform-split staticData
+// loader HomeScreen uses (DIC-972): web fetches /data/database.json same-origin,
+// native reads the pre-sanitized copy it ships in its own bundle. Kept out of
 // the screen component so it can be reused and reasoned about independently.
 
 import type { DeckCard, PriceRecord } from './deckRules';
+import { loadDatabaseJson } from './staticData';
 import { eligibleZone } from './deckRules';
 import {
-  BASE_PRINTING, buildSourcePrintings, type SourceListing, type SourcePrinting,
+  BASE_PRINTING, buildSourcePrintings, printingFromLabel, type SourceListing, type SourcePrinting,
 } from './printingIdentity';
 import { buildFacetIndex, type CardFacets } from './cardCatalog';
 
@@ -113,7 +115,25 @@ export function adaptCardNumber(rows: RawCard[]): AdaptedCards {
   const resolvedPrintings = hasUnlistedBase && !hasListedBase
     ? [UNLISTED, ...printings]
     : printings;
-  const timestamp = rep.timestamp || '';
+  // Price time provenance (v41): a record's timestamp is the OLDEST timestamp of the
+  // rows that actually list THAT printing at THAT price — never the representative's
+  // or a sibling printing's date (an August parallel price must not look current
+  // because the base row was scraped today). Unknown provenance stays '' (not current).
+  const priceTimestamp = (printing: string, price: number): string => {
+    let oldest: string | null = null;
+    let found = false;
+    for (const row of rows) {
+      const lists = (row.prices ?? []).some((l) => l
+        && printingFromLabel((l.name ?? '').trim()) === printing
+        && typeof l.sellPrice === 'number' && l.sellPrice === price);
+      if (!lists) continue;
+      found = true;
+      const t = typeof row.timestamp === 'string' ? row.timestamp : '';
+      if (!t || !Number.isFinite(Date.parse(t))) return '';
+      if (oldest === null || Date.parse(t) < Date.parse(oldest)) oldest = t;
+    }
+    return found && oldest ? oldest : '';
+  };
 
   const cards: DeckCard[] = [];
   const priceRecords: PriceRecord[] = [];
@@ -126,7 +146,7 @@ export function adaptCardNumber(rows: RawCard[]): AdaptedCards {
         price: printing.sellPrice,
         currency: PRICE_CURRENCY,
         source: PRICE_SOURCE,
-        timestamp,
+        timestamp: priceTimestamp(printing.printing, printing.sellPrice),
       });
     }
   }
@@ -171,23 +191,19 @@ export function adaptDatabase(rawCards: RawCard[]): CardDatabase {
   };
 }
 
+// A root-relative fetch('/data/database.json') here is what left the packaged
+// Android picker empty (DIC-1287): React Native has no page origin to resolve it
+// against, so the request rejected and the editor fell back to an empty catalog.
+// The loader is platform-split instead — see src/utils/staticData.ts.
 export async function loadCardDatabase(): Promise<CardDatabase> {
   if (cache) return cache;
   if (inflight) return inflight;
 
   inflight = (async () => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-    try {
-      const res = await fetch('/data/database.json', { signal: controller.signal });
-      if (!res.ok) throw new Error('Failed to load card database');
-      const db = await res.json();
-      const rawCards = Object.values(db.cards || {}) as RawCard[];
-      cache = adaptDatabase(rawCards);
-      return cache;
-    } finally {
-      clearTimeout(timeoutId);
-    }
+    const db = await loadDatabaseJson();
+    const rawCards = Object.values(db.cards || {}) as RawCard[];
+    cache = adaptDatabase(rawCards);
+    return cache;
   })();
 
   return inflight;

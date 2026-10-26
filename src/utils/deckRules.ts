@@ -342,6 +342,11 @@ export interface GapRow {
   /** the source's own listing label for that printing */
   versionLabel: string;
   name: string;
+  /** Chinese translation, propagated from `DeckCard.nameZh` so downstream
+   *  renderers can route the shortage row through the shared card-name
+   *  resolver (DIC-1380 W4). Optional so existing gap builders that never
+   *  set it still typecheck. */
+  nameZh?: string;
   required: number;
   owned: number;
   missing: number;
@@ -427,6 +432,7 @@ export function computeGap(
     const row: GapRow = {
       cardNumber: card.cardNumber, version: card.printing,
       versionLabel: card.printingLabel ?? '', name: card.name,
+      nameZh: card.nameZh,
       required: qty, owned: have, missing, price,
     };
     if (missing > 0) {

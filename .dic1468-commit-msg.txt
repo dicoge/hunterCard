@@ -1,0 +1,40 @@
+fix(DIC-1468): acquire skill text for newly ingested official printings
+
+Official Catalog Sync ingested six new hBP09 SY printings (hY01-015,
+hY02-013, hY03-017, hY04-014, hY05-012, hY06-012) and then failed its own
+completeness gate with 12 failures on run 35276519463. Nothing in the
+pipeline ever acquired skill text for a NEW cardNumber: data/effects-jp.json
+only grew when a human ran scripts/scrape-effects.js by hand, so DIC-1439's
+cardNumber join had nothing to join to.
+
+Add scripts/enrich-official-effects.mjs between the catalog scrape and the
+database merge.
+
+Japanese is source-backed: each unacquired official cardNumber's own detail
+page is fetched and parsed with the audited parseCardPage() already used by
+scripts/scrape-effects.js. That parser takes cardNumber/name from the
+REQUEST row, so the page must first declare the requested cardNumber via its
+own "カードナンバー：<span>" anchor or the card is refused -- a re-pointed
+detail id can never stamp one card's rules text onto another's number. Any
+cardNumber that cannot be acquired exits non-zero; no text is invented.
+
+Traditional Chinese is derived only for entries carrying no rules text
+(oshiSkill/spOshiSkill/arts/keywords/abilityText), and only from committed
+controlled maps: name from data/character-names-zh.json, cardType via
+canonicalizeTerms(), color verbatim. The rule reproduces all six
+already-committed rules-text-free effects-zh entries byte for byte.
+Everything carrying rules text stays fail-closed on the reviewed baseline,
+and no inference provider is contacted (DIC-1185).
+
+Both newly translatable cardNumbers were already pinned, so the fail-closed
+baseline RATCHETS DOWN 229 -> 227 with maxEntries lowered to match, exactly
+as that file's own note requires. The ratchet is shrink-only by assertion:
+the script cannot add an entry or raise the cap.
+
+The sync-path set gains data/effects-jp.json, data/effects-zh.json and
+data/official-skills-zh-gap.json in all three places that must agree
+(workflow env, handoff SYNC_PATHS, workflow-test EXPECTED_SYNC_PATHS). The
+workflow test's git-diff mock key is now derived from that list instead of
+hardcoded, so it cannot silently stop matching again.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>

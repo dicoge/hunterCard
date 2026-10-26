@@ -409,7 +409,10 @@ export function analyzeReports(monthlyReports, options = {}) {
 // recomputed from the month subset.
 export function analyzeMonth(monthlyReports, month, options = {}) {
   const config = mergeConfig(DEFAULT_CONFIG, options.config ?? {});
-  const generatedAt = options.generatedAt ?? deterministicGeneratedAt(monthlyReports);
+  const monthReports = monthlyReports.filter((entry) => (entry.report.month ?? entry.fileName.slice(0, -5)) === month);
+  // Month-local metadata: adding or refreshing ANOTHER month's report must not change this
+  // month's artifact (generatedAt was the latest across all months).
+  const generatedAt = options.generatedAt ?? deterministicGeneratedAt(monthReports);
   const { decks, excludedIncompleteDecks } = extractDecks(monthlyReports);
   return analyzeDeckSet(
     decks.filter((deck) => deck.month === month),
@@ -417,7 +420,7 @@ export function analyzeMonth(monthlyReports, month, options = {}) {
       config,
       generatedAt,
       month,
-      inputReports: monthlyReports.filter((entry) => (entry.report.month ?? entry.fileName.slice(0, -5)) === month),
+      inputReports: monthReports,
       excludedIncompleteDecks: excludedIncompleteDecks.filter((deck) => deck.month === month),
     },
   );

@@ -51,10 +51,17 @@ await test('deletion persists after reload', async () => {
   const deleted = useDeckStore.getState().createDeck('重新載入後消失');
   useDeckStore.getState().deleteDeck(deleted);
   const persisted = platformStorage.getItem(STORE_KEY);
-  assert.ok(persisted?.includes(kept));
-  assert.ok(!persisted?.includes(deleted));
+  const parsed = JSON.parse(persisted);
+  assert.ok(parsed?.state?.decks?.some((d) => d.id === kept), 'kept deck stays in persisted decks array');
+  assert.ok(!parsed?.state?.decks?.some((d) => d.id === deleted), 'deleted deck is gone from the persisted decks array');
+  // DIC-1380 W6: the deleted deck id ALSO lands in the persisted
+  // `deletedDeckIds` tombstone map so the account-sync 409 merge can
+  // honor the deletion across a reload. That is not the same as the
+  // deck still being in `decks` — the deck is gone; only the delete
+  // proof-of-write survives.
+  assert.ok(parsed?.state?.deletedDeckIds?.[deleted], 'delete tombstone persists (DIC-1380 W6)');
 
-  useDeckStore.setState({ decks: [], activeDeckId: null, collection: {} });
+  useDeckStore.setState({ decks: [], activeDeckId: null, collection: {}, deletedDeckIds: {}, collectionChangedKeys: {} });
   platformStorage.setItem(STORE_KEY, persisted);
   await useDeckStore.persist.rehydrate();
 

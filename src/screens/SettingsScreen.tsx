@@ -1,20 +1,53 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView } from 'react-native';
-import { COLORS, APP_NAME, APP_VERSION, CURRENCIES } from '../constants';
+import React, { useMemo, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import { COLORS, APP_VERSION, CURRENCIES } from '../constants';
 import { FEATURES } from '../config/releaseFlags';
 import { useSettingsStore, CurrencyCode, LanguageCode } from '../store/settingsStore';
 import { useAuthStore } from '../store/authStore';
 import { APPLE_LOGIN_ENABLED } from '../services/authService';
 import { friendlyAuthErrorMessage, isCancelAuthError } from '../services/authErrorMessages';
 import { showAlert } from '../utils/platformAlert';
+import { useScanDiagnosticsStore } from '../store/scanDiagnosticsStore';
+import { exportDiagnosticsText } from '../services/diagnosticsExport';
+import { MAX_ENTRIES, buildReadableSummary, pruneEntries } from '../services/scanDiagnostics';
 import { useTranslation } from '../i18n';
 import type { AuthProvider } from '../types/auth';
+import { AppShell, buildShellTabs, SHELL_TAB_LABELS } from '../components/shell';
+import { PALETTE, SEMANTIC, FONTS, GRADIENTS } from '../theme/tokensV2';
 
 const PROVIDER_LABEL: Record<AuthProvider, string> = { apple: 'Apple', google: 'Google' };
 const ALL_PROVIDERS: AuthProvider[] = ['google', 'apple'];
 
-export default function SettingsScreen() {
+/** Lines of the diagnostics summary shown on screen; the export carries all of it. */
+const SUMMARY_PREVIEW_LINES = 80;
+
+export default function SettingsScreen({ navigation }: any) {
   const { t } = useTranslation();
+  const diagnosticsCount = useScanDiagnosticsStore((st) => st.entries.length);
+  // Readable Traditional Chinese summary of the same sanitised entries the export carries
+  // (v39 user request: the raw log was unreadable). Shown on demand, bounded on screen.
+  const diagnosticsEntries = useScanDiagnosticsStore((st) => st.entries);
+  const [showDiagnosticsSummary, setShowDiagnosticsSummary] = useState(false);
+  const diagnosticsSummary = useMemo(() => {
+    if (!showDiagnosticsSummary) return [];
+    const lines = buildReadableSummary(pruneEntries(diagnosticsEntries));
+    return lines.length > SUMMARY_PREVIEW_LINES
+      ? [...lines.slice(0, SUMMARY_PREVIEW_LINES), t('settings_diagnostics_summary_more')]
+      : lines;
+  }, [showDiagnosticsSummary, diagnosticsEntries, t]);
+  const handleExportDiagnostics = async () => {
+    try {
+      await exportDiagnosticsText(useScanDiagnosticsStore.getState().exportText());
+    } catch {
+      showAlert(t('settings_diagnostics_title'), t('settings_diagnostics_export_failed'));
+    }
+  };
+  const handleClearDiagnostics = () => {
+    showAlert(t('settings_diagnostics_clear'), t('settings_diagnostics_clear_confirm'), [
+      { text: t('common_cancel'), style: 'cancel' },
+      { text: t('settings_diagnostics_clear'), style: 'destructive', onPress: () => useScanDiagnosticsStore.getState().clear() },
+    ]);
+  };
   const { preferredCurrency, preferredLanguage, setCurrency, setLanguage } = useSettingsStore();
   const user = useAuthStore((s) => s.user);
   const signOut = useAuthStore((s) => s.logout);
@@ -31,6 +64,24 @@ export default function SettingsScreen() {
   const unlinkedProviders = ALL_PROVIDERS.filter(
     (p) => !linkedSet.has(p) && !(p === 'apple' && !APPLE_LOGIN_ENABLED),
   );
+
+  // DIC-1427 — Pen `App / 15 設定` (frame x44r8t): AccountCard (node mVopl)
+  // over the real auth store, then the Pen 偏好 / 帳號 / 應用 group cards.
+  // The App/07 stat tiles that used to render here belong to the MeScreen hub
+  // (Pen siVsa) and are no longer duplicated on Settings.
+  const shellTabs = useMemo(() => buildShellTabs({ navigation: navigation ?? { navigate: () => {} } }), [navigation]);
+  const displayNameForCard = user?.displayName || user?.primaryEmail || t('me_guest_name');
+  const avatarInitial = (displayNameForCard || 'H').trim().charAt(0).toUpperCase() || 'H';
+  // Pen 偏好 rows disclose their real option chips in place: the row shows
+  // the live store value, tapping expands the existing selectors.
+  const [expandedRow, setExpandedRow] = useState<'language' | 'currency' | null>(null);
+  const toggleRow = (row: 'language' | 'currency') =>
+    setExpandedRow((current) => (current === row ? null : row));
+  const accountMeta = isAuthenticated && user
+    ? [user.primaryEmail, linkedProviders.map((p) => PROVIDER_LABEL[p.provider]).join(' / ')]
+        .filter(Boolean)
+        .join(' ・ ')
+    : t('settings_guest_meta');
 
   const handleGoogleLogin = async () => {
     try {
@@ -117,79 +168,40 @@ export default function SettingsScreen() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background }}>
-      <ScrollView style={styles.container}>
-        <Text style={styles.title}>{APP_NAME}</Text>
-        <Text style={styles.version}>{t('settings_app_version', { version: APP_VERSION })}</Text>
-
-        {/* ── 語言設定 ── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('settings_language_section')}</Text>
-          <View style={styles.optionRow}>
-            <TouchableOpacity
-              style={[styles.optionBtn, preferredLanguage === 'zh' && styles.optionBtnActive]}
-              onPress={() => setLanguage('zh')}
-            >
-              <Text style={[styles.optionText, preferredLanguage === 'zh' && styles.optionTextActive]}>
-                {t('settings_language_zh')}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.optionBtn, preferredLanguage === 'ja' && styles.optionBtnActive]}
-              onPress={() => setLanguage('ja')}
-            >
-              <Text style={[styles.optionText, preferredLanguage === 'ja' && styles.optionTextActive]}>
-                {t('settings_language_ja')}
-              </Text>
-            </TouchableOpacity>
+    <AppShell
+      appBar={{
+        showBrand: false,
+        // DIC-1427 QA P0: Settings is its own Pen frame (x44r8t 設定) —
+        // the 我的 identity moved to MeScreen (Pen siVsa collection hub).
+        title: t('nav_settings'),
+        onLeadingPress: () => navigation?.openDrawer?.(),
+      }}
+      bottomTabBar={{ items: shellTabs, activeKey: 'me' }}
+      testID="settings-shell"
+    >
+        {/* Pen x44r8t AccountCard (node mVopl): gradient avatar + name +
+            email ・ provider meta, backed by the real auth store. */}
+        <View style={styles.accountCard} testID="settings-account-card">
+          <View style={styles.avatar}>
+            <Text style={styles.avatarInitial}>{avatarInitial}</Text>
           </View>
-          <Text style={styles.hint}>
-            {t('settings_language_hint')}
-          </Text>
-        </View>
-
-        {/* ── 幣別設定 ── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('settings_currency_section')}</Text>
-          <View style={styles.optionRow}>
-            {CURRENCIES.map((cur) => (
-              <TouchableOpacity
-                key={cur.code}
-                style={[styles.optionBtn, preferredCurrency === cur.code && styles.optionBtnActive]}
-                onPress={() => setCurrency(cur.code as CurrencyCode)}
-              >
-                <Text style={[styles.optionText, preferredCurrency === cur.code && styles.optionTextActive]}>
-                  {cur.symbol} {cur.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
+          <View style={styles.accountText}>
+            <Text style={styles.accountName} numberOfLines={1} testID="settings-account-name">
+              {displayNameForCard}
+            </Text>
+            <Text style={styles.accountMeta} numberOfLines={1} testID="settings-account-meta">
+              {accountMeta}
+            </Text>
           </View>
-          <Text style={styles.hint}>
-            {preferredCurrency === 'TWD' && t('settings_currency_hint_twd')}
-            {preferredCurrency === 'JPY' && t('settings_currency_hint_jpy')}
-            {preferredCurrency === 'USD' && t('settings_currency_hint_usd')}
-          </Text>
         </View>
 
-        {/* ── 價格來源資訊 ── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('settings_price_sources')}</Text>
-          <Text style={styles.item}>{t('settings_price_yuyu')}</Text>
-          <Text style={styles.item}>{t('settings_price_carousell')}</Text>
-          <Text style={styles.item}>{t('settings_exchange_rate')}</Text>
-        </View>
-
-        {/* ── 帳號 ── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('settings_account_section')}</Text>
+        {/* ── 帳號 (Pen group Qpkox) — the real linked-auth surface. The Pen
+            變更密碼 / 訂閱管理 rows have no real backing feature (OAuth-only
+            auth, subscription gated off) and are honestly omitted. ── */}
+        <Text style={styles.groupHeading}>{t('settings_group_account')}</Text>
+        <View style={styles.groupCard} testID="settings-group-account">
           {isAuthenticated && user ? (
             <>
-              {!!(user.displayName || user.primaryEmail) && (
-                <Text style={styles.item}>
-                  {user.displayName ?? user.primaryEmail}
-                </Text>
-              )}
-
               <Text style={styles.subheading}>{t('settings_account_linked_auth')}</Text>
               {linkedProviders.map((p) => (
                 <View key={p.provider} style={styles.providerRow}>
@@ -220,9 +232,12 @@ export default function SettingsScreen() {
                 </TouchableOpacity>
               ))}
               <Text style={styles.hint}>
+                {/* Store MVP: no 收藏 / 提醒 claim in the link hint (DIC-1256). */}
                 {FEATURES.watchlist
                   ? t('settings_link_hint_watchlist')
-                  : t('settings_link_hint')}
+                  : FEATURES.favorites
+                    ? t('settings_link_hint')
+                    : t('settings_link_hint_store')}
               </Text>
 
               <TouchableOpacity style={styles.accountBtn} onPress={confirmSignOut}>
@@ -239,9 +254,12 @@ export default function SettingsScreen() {
           ) : (
             <>
               <Text style={styles.hint}>
+                {/* Store MVP: no 收藏 / 提醒 claim in the guest hint (DIC-1256). */}
                 {FEATURES.watchlist
                   ? t('settings_guest_sync_watchlist')
-                  : t('settings_guest_sync')}
+                  : FEATURES.favorites
+                    ? t('settings_guest_sync')
+                    : t('settings_guest_sync_store')}
               </Text>
               <TouchableOpacity
                 style={[styles.googleBtn, isLoading && styles.btnDisabled]}
@@ -265,41 +283,263 @@ export default function SettingsScreen() {
           )}
         </View>
 
+        {/* ── 偏好 (Pen group Vp4g7): 語言 / 貨幣 rows showing the live store
+            value; tapping a row discloses the real selector in place. The Pen
+            深色模式 / 價格通知 / 賽事快訊 toggles have no real switchable
+            backing (single dark theme, no push channel) and are honestly
+            omitted rather than rendered as dead controls. ── */}
+        <Text style={styles.groupHeading}>{t('settings_group_preferences')}</Text>
+        <View style={styles.groupCard} testID="settings-group-preferences">
+          <TouchableOpacity
+            style={styles.rowItem}
+            onPress={() => toggleRow('language')}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: expandedRow === 'language' }}
+            testID="settings-row-language"
+          >
+            <Text style={styles.rowLabel}>{t('settings_row_language')}</Text>
+            <Text style={styles.rowValue} testID="settings-language-value">
+              {preferredLanguage === 'zh' ? t('settings_language_zh') : t('settings_language_ja')}
+            </Text>
+            <Text style={styles.rowChevron}>{expandedRow === 'language' ? '▾' : '›'}</Text>
+          </TouchableOpacity>
+          {expandedRow === 'language' && (
+            <View style={styles.rowExpand}>
+              <View style={styles.optionRow}>
+                {(['zh', 'ja'] as LanguageCode[]).map((code) => (
+                  <TouchableOpacity
+                    key={code}
+                    style={[styles.optionBtn, preferredLanguage === code && styles.optionBtnActive]}
+                    onPress={() => setLanguage(code)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: preferredLanguage === code }}
+                    testID={`settings-language-${code}`}
+                  >
+                    <Text style={[styles.optionText, preferredLanguage === code && styles.optionTextActive]}>
+                      {code === 'zh' ? t('settings_language_zh') : t('settings_language_ja')}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={styles.hint}>{t('settings_language_hint')}</Text>
+            </View>
+          )}
+          <View style={styles.rowDivider} />
+          <TouchableOpacity
+            style={styles.rowItem}
+            onPress={() => toggleRow('currency')}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: expandedRow === 'currency' }}
+            testID="settings-row-currency"
+          >
+            <Text style={styles.rowLabel}>{t('settings_row_currency')}</Text>
+            <Text style={styles.rowValue} testID="settings-currency-value">
+              {CURRENCIES.find((cur) => cur.code === preferredCurrency)?.symbol ?? preferredCurrency}
+            </Text>
+            <Text style={styles.rowChevron}>{expandedRow === 'currency' ? '▾' : '›'}</Text>
+          </TouchableOpacity>
+          {expandedRow === 'currency' && (
+            <View style={styles.rowExpand}>
+              <View style={styles.optionRow}>
+                {CURRENCIES.map((cur) => (
+                  <TouchableOpacity
+                    key={cur.code}
+                    style={[styles.optionBtn, preferredCurrency === cur.code && styles.optionBtnActive]}
+                    onPress={() => setCurrency(cur.code as CurrencyCode)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: preferredCurrency === cur.code }}
+                    testID={`settings-currency-${cur.code}`}
+                  >
+                    <Text style={[styles.optionText, preferredCurrency === cur.code && styles.optionTextActive]}>
+                      {cur.symbol} {cur.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={styles.hint}>
+                {preferredCurrency === 'TWD' && t('settings_currency_hint_twd')}
+                {preferredCurrency === 'JPY' && t('settings_currency_hint_jpy')}
+                {preferredCurrency === 'USD' && t('settings_currency_hint_usd')}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* ── 應用 (Pen group phxwj): price-source disclosure (Store MVP hides
+            the whole block, DIC-1256) + the real version on the 關於 row. The
+            Pen 離線資料 row has no real sync-state source and is omitted. ── */}
+        <Text style={styles.groupHeading}>{t('settings_group_app')}</Text>
+        <View style={styles.groupCard} testID="settings-group-app">
+          {FEATURES.marketData && (
+            <>
+              <Text style={styles.subheading}>{t('settings_price_sources')}</Text>
+              <Text style={styles.item}>{t('settings_price_yuyu')}</Text>
+              <Text style={styles.item}>{t('settings_price_carousell')}</Text>
+              <Text style={styles.item}>{t('settings_exchange_rate')}</Text>
+              <View style={styles.rowDivider} />
+            </>
+          )}
+          {/* Local scan / sign-in diagnostics (2026-10-15): device-only, user exports. */}
+          <View testID="settings-row-diagnostics">
+            <View style={styles.rowItem}>
+              <Text style={styles.rowLabel}>{t('settings_diagnostics_title')}</Text>
+              <Text style={styles.rowValue} testID="settings-diagnostics-count">
+                {t('settings_diagnostics_count', { count: diagnosticsCount })}
+              </Text>
+            </View>
+            <Text style={styles.diagnosticsNote}>{t('settings_diagnostics_note', { max: MAX_ENTRIES })}</Text>
+            <View style={styles.diagnosticsActions}>
+              <TouchableOpacity
+                style={styles.diagnosticsBtn}
+                onPress={handleExportDiagnostics}
+                disabled={diagnosticsCount === 0}
+                testID="settings-diagnostics-export"
+              >
+                <Text style={styles.diagnosticsBtnText}>{t('settings_diagnostics_export')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.diagnosticsBtn}
+                onPress={handleClearDiagnostics}
+                disabled={diagnosticsCount === 0}
+                testID="settings-diagnostics-clear"
+              >
+                <Text style={styles.diagnosticsBtnText}>{t('settings_diagnostics_clear')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.diagnosticsBtn}
+                onPress={() => setShowDiagnosticsSummary((v) => !v)}
+                disabled={diagnosticsCount === 0}
+                testID="settings-diagnostics-summary-toggle"
+              >
+                <Text style={styles.diagnosticsBtnText}>
+                  {t(showDiagnosticsSummary ? 'settings_diagnostics_summary_hide' : 'settings_diagnostics_summary_show')}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            {showDiagnosticsSummary && diagnosticsSummary.length ? (
+              <View style={styles.diagnosticsSummary} testID="settings-diagnostics-summary">
+                {diagnosticsSummary.map((line, i) => (
+                  <Text key={i} style={styles.diagnosticsSummaryLine} selectable>{line}</Text>
+                ))}
+              </View>
+            ) : null}
+          </View>
+          <View style={styles.rowDivider} />
+          <View style={styles.rowItem} testID="settings-row-about">
+            <Text style={styles.rowLabel}>{t('settings_row_about')}</Text>
+            <Text style={styles.rowValue}>{t('settings_app_version', { version: APP_VERSION })}</Text>
+          </View>
+        </View>
+
         <Text style={styles.footer}>{t('settings_footer')}</Text>
-      </ScrollView>
-    </SafeAreaView>
+    </AppShell>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  // Pen App/07 account card (node ZYJRw: $app-surface r16 p14, 44px gradient
+  // avatar, 15/700 name, badge chips)
+  accountCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: PALETTE.appSurface,
+    borderRadius: 16,
+    padding: 14,
+    gap: 12,
+    marginTop: 6,
+    marginBottom: 14,
+  },
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 999,
+    backgroundColor: GRADIENTS.brandPinkPurple.colors[0],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitial: {
+    fontFamily: Platform.OS === 'web' ? FONTS.display : undefined,
+    color: '#FFFFFF',
+    fontSize: 19,
+    fontWeight: '700',
+  },
+  accountText: {
     flex: 1,
-    backgroundColor: COLORS.background,
-    padding: 20,
+    minWidth: 0,
+    gap: 4,
   },
-  title: {
-    color: COLORS.primary,
-    fontSize: 32,
-    fontWeight: 'bold',
-    marginBottom: 4,
-    marginTop: 20,
+  accountName: {
+    fontFamily: Platform.OS === 'web' ? FONTS.body : undefined,
+    color: SEMANTIC.onBg,
+    fontSize: 15,
+    fontWeight: '700',
   },
-  version: {
-    color: COLORS.textSecondary,
+  accountMeta: {
+    fontFamily: Platform.OS === 'web' ? FONTS.body : undefined,
+    color: SEMANTIC.onBgDim,
+    fontSize: 11,
+  },
+  // Pen x44r8t group IA: an 11 muted heading OUTSIDE each $app-surface r14
+  // group card (headings 帳號/偏好/應用; cards Qpkox/Vp4g7/phxwj), rows as
+  // 13 label + 12 muted value + chevron.
+  groupHeading: {
+    color: SEMANTIC.onBgDim,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    marginBottom: 8,
+    marginLeft: 4,
+  },
+  groupCard: {
+    marginBottom: 16,
+    backgroundColor: PALETTE.appSurface,
+    borderRadius: 14,
+    padding: 14,
+  },
+  rowItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    minHeight: 44,
+  },
+  rowLabel: {
+    flex: 1,
+    minWidth: 0,
+    color: SEMANTIC.onBg,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  rowValue: {
+    color: SEMANTIC.onBgDim,
+    fontSize: 12,
+  },
+  rowChevron: {
+    color: SEMANTIC.onBgDim,
     fontSize: 14,
-    marginBottom: 30,
   },
-  section: {
-    marginBottom: 28,
+  rowExpand: {
+    paddingBottom: 10,
   },
-  sectionTitle: {
-    color: COLORS.text,
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 12,
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+  diagnosticsNote: {
+    color: SEMANTIC.onBgDim,
+    fontSize: 11,
+    lineHeight: 16,
+    marginBottom: 8,
+  },
+  diagnosticsActions: { flexDirection: 'row', gap: 10, marginBottom: 6 },
+  diagnosticsSummary: { backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 10, padding: 10, marginBottom: 8, gap: 2 },
+  diagnosticsSummaryLine: { color: SEMANTIC.onBgDim, fontSize: 11, lineHeight: 16 },
+  diagnosticsBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  diagnosticsBtnText: { color: SEMANTIC.onBg, fontSize: 13, fontWeight: '600' },
+  rowDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    marginVertical: 4,
   },
   optionRow: {
     flexDirection: 'row',

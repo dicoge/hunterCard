@@ -22,6 +22,7 @@ import { buildPriceVersions, resolveVersionForCard } from '../src/utils/versionA
 import { printingFromLabel, isPlainPrinting } from '../src/utils/printingIdentity.ts';
 import { adaptDatabase } from '../src/utils/deckCardData.ts';
 import { groupVariantsByCardNumber, buildLowCostIndex } from '../src/utils/deckVariants.ts';
+import { dedupeListings } from '../src/utils/canonicalCardRecord.ts';
 import { frozenRawCards } from './lib/frozen-price-fixture.mjs';
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -153,37 +154,86 @@ console.log('\n=== 來源無法辨識時 fail closed ===');
   check('預設版本代碼有多筆掛牌 → confident=false', !r.confident, `got ${JSON.stringify(r)}`);
 }
 
-console.log('\n=== 全庫掃描（多版本卡，真實出貨資料）===');
-const multi = Object.entries(liveCards).filter(
+// 卡片頁吃的不是單一列：同卡號每個印次各佔一列、且各列只帶自己的掛牌（DIC-1482），
+// 所以搜尋結果與 canonicalCardRecord.resolve() 都先把所有兄弟列的掛牌以 dedupeListings
+// 併進代表列，再交給 buildPriceVersions。全庫掃描與跨消費端比對都必須餵同一份輸入 ——
+// 只讀單一列時，每列至多一筆掛牌，「多版本卡」永遠是 0 筆，掃描就空轉通過；較便宜的
+// 重印（例：hBP01-050 的 (hEB01) ¥50）在另一列上，檢查看到的也不是使用者看到的。
+const rowsByNumber = new Map();
+for (const c of Object.values(liveCards)) {
+  const list = rowsByNumber.get(c.cardNumber);
+  if (list) list.push(c);
+  else rowsByNumber.set(c.cardNumber, [c]);
+}
+const rowFor = new Map();
+for (const [num, rows] of rowsByNumber) {
+  rowFor.set(num, { ...rows[0], prices: dedupeListings(rows.flatMap((r) => r.prices ?? [])) });
+}
+
+console.log('\n=== 全庫掃描（多版本卡，兄弟列併檔後的真實出貨資料）===');
+const multi = [...rowFor].filter(
   ([, c]) => buildPriceVersions(c).filter((v) => (v.sellPrice ?? 0) > 0).length > 1
 );
 let badIndex = 0;
 let premiumDefault = 0;
 let waitCount = 0;
-for (const [, c] of multi) {
+let mixedTier = 0; // 同時有原印與溢價版的卡號 —— 「不落在溢價版」這條斷言真正被測到的母體
+let priceChecked = 0;
+const wrongDefault = [];
+for (const [num, c] of multi) {
   const versions = buildPriceVersions(c);
   const r = resolveVersionForCard(versions);
-  if (r.index < 0 || r.index >= versions.length) badIndex++;
+  if (r.index < 0 || r.index >= versions.length) { badIndex++; continue; }
   if (!r.confident) waitCount++;
   const hasPlain = versions.some((v) => isPlainPrinting(v.printing));
-  if (hasPlain && !isPlainPrinting(versions[r.index].printing)) premiumDefault++;
+  if (hasPlain && versions.some((v) => !isPlainPrinting(v.printing))) mixedTier++;
+  const selected = versions[r.index];
+  if (hasPlain && !isPlainPrinting(selected.printing)) premiumDefault++;
+
+  // 獨立於 pickDefaultPrintingIndex 的期望值：原印層優先；層內只有「同代碼只有一個價」的
+  // 版本可比價（同代碼多價 = 來源無法辨識，不計價）；預設必須是該層最低價。
+  const pricesByPrinting = new Map();
+  for (const v of versions) {
+    const set = pricesByPrinting.get(v.printing) ?? new Set();
+    set.add(v.sellPrice);
+    pricesByPrinting.set(v.printing, set);
+  }
+  const tier = versions.filter((v) => !hasPlain || isPlainPrinting(v.printing));
+  const identifiable = tier.filter((v) => pricesByPrinting.get(v.printing).size === 1);
+  const selectedAmbiguous = pricesByPrinting.get(selected.printing).size > 1;
+  if (r.confident === selectedAmbiguous) {
+    wrongDefault.push(`${num}: confident=${r.confident} 但 ${selected.printing} 有 ${pricesByPrinting.get(selected.printing).size} 個價`);
+  } else if (identifiable.length > 0) {
+    priceChecked++;
+    const expected = Math.min(...identifiable.map((v) => v.sellPrice));
+    if (!r.confident || selected.sellPrice !== expected) {
+      wrongDefault.push(`${num}: 選到 ${selected.printing} ¥${selected.sellPrice}，應為 ¥${expected}`);
+    }
+  }
 }
-console.log(`  多版本卡：${multi.length}｜版本待確認：${waitCount}`);
+console.log(`  多版本卡：${multi.length}｜原印＋溢價並存：${mixedTier}｜比價驗證：${priceChecked}｜版本待確認：${waitCount}`);
+// 覆蓋率本身是斷言：掃描對象為 0 時下面每一條都會空轉通過，必須當成失敗。
+check('全庫掃描實際涵蓋多版本卡號', multi.length > 0, `只找到 ${multi.length} 筆多版本卡`);
+check('全庫掃描實際涵蓋原印＋溢價並存的卡號', mixedTier > 0, `只找到 ${mixedTier} 筆`);
+check('全庫掃描實際驗證了預設價格', priceChecked > 0, `只驗證 ${priceChecked} 筆`);
 check('所有解析的 index 皆合法', badIndex === 0, `${badIndex} 筆越界`);
 check('有原印掛牌時，預設一律不落在パラレル/サイン 版', premiumDefault === 0, `${premiumDefault} 筆誤選溢價版`);
+check(
+  '預設版本 = 優先層內可辨識版本的最低價，且 confident 恰等於該代碼可辨識',
+  wrongDefault.length === 0,
+  `${wrongDefault.length} 筆不符，例如 ${wrongDefault.slice(0, 3).join('；')}`,
+);
 
 console.log('\n=== 跨消費端一致性（卡片頁／掃描 vs 組牌搜尋／遷移）===');
 
 // 卡片頁與掃描讀的是來源掛牌順序，組牌搜尋讀的是排序後的版本清單。同價時若讓輸入順序
 // 決定勝負，兩邊就會對同一張卡給出不同的版本代碼 —— 那是不同的擁有權／持久化／缺卡鍵。
-// 這裡跑的是真正的兩條產線，不是重寫的簡化版。
+// 這裡跑的是真正的兩條產線，不是重寫的簡化版；卡片頁那側吃上面同一份兄弟列併檔 rowFor。
 {
   const db = adaptDatabase(Object.values(liveCards));
   const deckPick = new Map(
     groupVariantsByCardNumber(db.cards, db.priceRecords).map((g) => [g.cardNumber, g.card.printing]),
   );
-  const rowFor = new Map();
-  for (const c of Object.values(liveCards)) if (!rowFor.has(c.cardNumber)) rowFor.set(c.cardNumber, c);
 
   const detailPick = (row) => {
     const versions = buildPriceVersions(row);

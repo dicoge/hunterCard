@@ -1,0 +1,81 @@
+{
+  "cardId": "hBP09-083_hBP09_UR_hBP09-083_UR",
+  "cardNumber": "hBP09-083",
+  "name": "雪花ラミィ",
+  "records": [
+    {
+      "date": "2026-09-23",
+      "price": 12800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-083_hBP09_UR_hBP09-083_UR",
+      "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-09-26",
+      "price": 9980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-083_hBP09_UR_hBP09-083_UR",
+      "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-09-27",
+      "price": 9980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-083_hBP09_UR_hBP09-083_UR",
+      "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-10-02",
+      "price": 9980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-083_hBP09_UR_hBP09-083_UR",
+      "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-10-03",
+      "price": 9980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-083_hBP09_UR_hBP09-083_UR",
+      "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-10-16",
+      "price": 7980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-083_hBP09_UR_hBP09-083_UR",
+      "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-10-17",
+      "price": 7980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-083_hBP09_UR_hBP09-083_UR",
+      "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-10-18",
+      "price": 7980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-083_hBP09_UR_hBP09-083_UR",
+      "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-10-26",
+      "price": 7980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-083_hBP09_UR_hBP09-083_UR",
+      "sourceProduct": "hBP09"
+    }
+  ],
+  "lastUpdated": "2026-10-26T02:46:00.102Z",
+  "nameZh": "雪花菈米"
+}

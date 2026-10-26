@@ -1,0 +1,65 @@
+{
+  "cardId": "hEB01-022_hEB01_R_hEB01-022_R",
+  "cardNumber": "hEB01-022",
+  "name": "博衣こより",
+  "records": [
+    {
+      "date": "2026-09-27",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hEB01-022_hEB01_R_hEB01-022_R",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hEB01-022_hEB01_R_hEB01-022_R",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hEB01-022_hEB01_R_hEB01-022_R",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-16",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hEB01-022_hEB01_R_hEB01-022_R",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-17",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hEB01-022_hEB01_R_hEB01-022_R",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-18",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hEB01-022_hEB01_R_hEB01-022_R",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-26",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hEB01-022_hEB01_R_hEB01-022_R",
+      "sourceProduct": "hEB01"
+    }
+  ],
+  "lastUpdated": "2026-10-26T02:46:00.123Z",
+  "nameZh": "博衣可佑理"
+}

@@ -84,6 +84,7 @@ for (const rel of [
   'api/_lib/apple-exchange-store.ts',
   'api/_lib/node-adapter.ts',
   'api/auth/[action].ts',
+  'src/utils/scanSessionSync.ts',   // imported by account-sync-store (v41)
 ]) {
   compileTs(rel);
 }
@@ -91,7 +92,7 @@ for (const rel of [
 // bridged through node-adapter.ts).
 const nodeHandler = require(path.join(outDir, 'api/auth/[action].js')).default;
 
-const HOST = 'holocard-hunter.vercel.app';
+const HOST = 'holohunter.dicoge.com';
 
 // A request descriptor, NOT a Web Request: the Node boundary receives a relative
 // url + pre-parsed body, so tests describe intent and `handler()` reconstructs the

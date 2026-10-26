@@ -1,0 +1,81 @@
+{
+  "cardId": "hBP04-013_hBP04_SR_hBP04-013_SR",
+  "cardNumber": "hBP04-013",
+  "name": "博衣こより",
+  "records": [
+    {
+      "date": "2026-09-23",
+      "price": 580,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-013_hBP04_SR_hBP04-013_SR",
+      "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-09-26",
+      "price": 580,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-013_hBP04_SR_hBP04-013_SR",
+      "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-09-27",
+      "price": 580,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-013_hBP04_SR_hBP04-013_SR",
+      "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-10-02",
+      "price": 580,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-013_hBP04_SR_hBP04-013_SR",
+      "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-10-03",
+      "price": 580,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-013_hBP04_SR_hBP04-013_SR",
+      "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-10-16",
+      "price": 580,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-013_hBP04_SR_hBP04-013_SR",
+      "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-10-17",
+      "price": 580,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-013_hBP04_SR_hBP04-013_SR",
+      "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-10-18",
+      "price": 580,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-013_hBP04_SR_hBP04-013_SR",
+      "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-10-26",
+      "price": 580,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-013_hBP04_SR_hBP04-013_SR",
+      "sourceProduct": "hBP04"
+    }
+  ],
+  "lastUpdated": "2026-10-26T02:45:59.893Z",
+  "nameZh": "博衣可佑理"
+}

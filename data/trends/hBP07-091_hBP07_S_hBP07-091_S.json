@@ -1,0 +1,15 @@
+{
+  "cardId": "hBP07-091",
+  "name": "ライブスタッフ",
+  "nameZh": "演唱會工作人員",
+  "trend": "up",
+  "score": 0.33,
+  "confidence": 0.5,
+  "components": {
+    "priceTrend": 0.5,
+    "ytTrend": 0,
+    "newsSentiment": 0.15
+  },
+  "lastUpdated": "2026-10-03T12:08:42.597Z",
+  "dataPoints": 67
+}

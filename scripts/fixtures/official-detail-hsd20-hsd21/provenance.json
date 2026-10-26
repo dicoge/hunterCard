@@ -1,0 +1,97 @@
+{
+  "description": "Verbatim byte excerpts of saved official card-detail pages: from <div class=\"cardlist-Detail\"> up to (excluding) <div class=\"cardlist-Detail_Products\">. official-rows.json holds the matching parsed cardsearch rows.",
+  "excerptStart": "<div class=\"cardlist-Detail\">",
+  "excerptEnd": "<div class=\"cardlist-Detail_Products\">",
+  "files": [
+    {
+      "file": "hSD20-001.html",
+      "cardNumber": "hSD20-001",
+      "officialId": "3028",
+      "url": "https://hololive-official-cardgame.com/cardlist/?id=3028",
+      "retrievedAtUtc": "2026-10-24T01:33:52.345Z",
+      "httpStatus": 200,
+      "page": {
+        "bytes": 36953,
+        "sha256": "73b3b73c14924f968c2b6042d43a791ef28faf19ff58edf08e2090712dfa3819"
+      },
+      "excerpt": {
+        "startByte": 21557,
+        "endByte": 23203,
+        "bytes": 1646,
+        "sha256": "e77b52d885a0420eb619f83110ff9310a2758b5d23f234e4ae06aa16f9560d7f"
+      }
+    },
+    {
+      "file": "hSD20-007.html",
+      "cardNumber": "hSD20-007",
+      "officialId": "3034",
+      "url": "https://hololive-official-cardgame.com/cardlist/?id=3034",
+      "retrievedAtUtc": "2026-10-24T01:33:58.572Z",
+      "httpStatus": 200,
+      "page": {
+        "bytes": 36508,
+        "sha256": "1deb5ff1b8f60b940799c7540a9b400f6010dde64a0f59512dbd57c6a3f3d751"
+      },
+      "excerpt": {
+        "startByte": 21557,
+        "endByte": 23810,
+        "bytes": 2253,
+        "sha256": "c3194e124ce6cff7ee5cf7f5f06a0ec713d3a7d41639e6f69d5beb38e707c520"
+      }
+    },
+    {
+      "file": "hSD20-011.html",
+      "cardNumber": "hSD20-011",
+      "officialId": "3038",
+      "url": "https://hololive-official-cardgame.com/cardlist/?id=3038",
+      "retrievedAtUtc": "2026-10-24T01:34:01.506Z",
+      "httpStatus": 200,
+      "page": {
+        "bytes": 38585,
+        "sha256": "d8cbba990d86ab2e5bfdd205b785d5e001699bc83ddcb56a832932ff9dd5570b"
+      },
+      "excerpt": {
+        "startByte": 21551,
+        "endByte": 23932,
+        "bytes": 2381,
+        "sha256": "7537246ff5b82dd04c34d6891537ca4958714052ee5e10d98f515497371cbcc8"
+      }
+    },
+    {
+      "file": "hSD21-001.html",
+      "cardNumber": "hSD21-001",
+      "officialId": "3043",
+      "url": "https://hololive-official-cardgame.com/cardlist/?id=3043",
+      "retrievedAtUtc": "2026-10-24T01:34:04.422Z",
+      "httpStatus": 200,
+      "page": {
+        "bytes": 38113,
+        "sha256": "15c719a299ac71182074bbc159a65c1d29c59833faaeb5bc7fb8397351f7abac"
+      },
+      "excerpt": {
+        "startByte": 21545,
+        "endByte": 23291,
+        "bytes": 1746,
+        "sha256": "2cc33f58b929d081ad851457f353ad96c4b44371ae6b3fdf8c5eea57a922dacf"
+      }
+    },
+    {
+      "file": "hSD21-007.html",
+      "cardNumber": "hSD21-007",
+      "officialId": "3049",
+      "url": "https://hololive-official-cardgame.com/cardlist/?id=3049",
+      "retrievedAtUtc": "2026-10-24T01:34:08.942Z",
+      "httpStatus": 200,
+      "page": {
+        "bytes": 36420,
+        "sha256": "a7a71dab939d25b317699fb07e3a3b2806cbe65ee04f83c1b9ea225989a65c84"
+      },
+      "excerpt": {
+        "startByte": 21545,
+        "endByte": 23728,
+        "bytes": 2183,
+        "sha256": "4c3d106b96f6db193f12cf7c230dcc5180e22f65d3d9f5f56234ccd7caa059ef"
+      }
+    }
+  ]
+}

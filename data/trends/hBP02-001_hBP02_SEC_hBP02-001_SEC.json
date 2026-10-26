@@ -1,0 +1,15 @@
+{
+  "cardId": "hBP02-001",
+  "name": "白上フブキ",
+  "nameZh": "白上吹雪",
+  "trend": "up",
+  "score": 0.26,
+  "confidence": 0.6,
+  "components": {
+    "priceTrend": 0.39,
+    "ytTrend": 0,
+    "newsSentiment": 0.15
+  },
+  "lastUpdated": "2026-10-03T12:08:42.343Z",
+  "dataPoints": 65
+}

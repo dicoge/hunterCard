@@ -1,0 +1,15 @@
+{
+  "cardId": "hBP04-059",
+  "name": "ラプラス・ダークネス",
+  "nameZh": "拉普拉斯·達克尼斯",
+  "trend": "down",
+  "score": -0.16,
+  "confidence": 0.5,
+  "components": {
+    "priceTrend": -0.31,
+    "ytTrend": 0,
+    "newsSentiment": 0.15
+  },
+  "lastUpdated": "2026-10-03T12:08:42.501Z",
+  "dataPoints": 65
+}

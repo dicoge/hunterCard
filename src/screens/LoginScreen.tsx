@@ -6,14 +6,26 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   SafeAreaView,
+  Platform,
 } from 'react-native';
 import { COLORS, APP_NAME } from '../constants';
-import { FEATURES } from '../config/releaseFlags';
+import { FEATURES, STORE_MVP } from '../config/releaseFlags';
 import { useAuthStore } from '../store/authStore';
 import { APPLE_LOGIN_ENABLED } from '../services/authService';
 import { useTranslation } from '../i18n';
+import { PALETTE, SEMANTIC, FONTS, GRADIENTS } from '../theme/tokensV2';
 
-export default function LoginScreen() {
+/**
+ * DIC-1409 Phase 6 — Pen `App / 16 登入` (frame p28zL). Full-bleed auth flow
+ * on the v2 tokens: no in-app status chrome (DIC-1452 — the OS draws the only
+ * status bar) and no tab bar in the Pen frame, gradient
+ * logo tile (node FTEuu, 104×104 r26), brand label on $accent-2 (node c9cMr),
+ * white Google button (node ilZGG, r14), dark Apple button (node TU4oT),
+ * divider (node y24cJ), guest link on $accent-2 (node qfrcy), terms footer
+ * (node d7fA7X). All auth-store actions, the Store-MVP description swap, and
+ * the APPLE_LOGIN_ENABLED gate are unchanged.
+ */
+export default function LoginScreen({ navigation }: any = {}) {
   const { t } = useTranslation();
   const {
     loginWithGoogle,
@@ -37,16 +49,37 @@ export default function LoginScreen() {
   }, [loginWithApple]);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} testID="login-shell">
+      <View style={styles.glow} pointerEvents="none" />
+      {/* Pushed from the Landing (Pen p28zL is full-bleed, but a pushed auth
+          state needs a way back to the gate's landing surface). */}
+      {navigation?.goBack ? (
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel={t('common_back')}
+          testID="login-back"
+        >
+          <Text style={styles.backGlyph}>‹</Text>
+        </TouchableOpacity>
+      ) : null}
       <View style={styles.content}>
         <View style={styles.brand}>
+          <View style={styles.logoTile} testID="login-logo-tile">
+            <Text style={styles.logoGlyph}>⌖</Text>
+          </View>
           <Text style={styles.appName}>{APP_NAME}</Text>
+          <Text style={styles.welcome}>{t('login_welcome')}</Text>
           <Text style={styles.tagline}>{t('login_tagline')}</Text>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.welcome}>{t('login_welcome')}</Text>
-          <Text style={styles.description}>{t('login_description')}</Text>
+          {/* Store MVP: don't promise favorites / price trend / cross-device
+              alerts on the login screen (DIC-1256). */}
+          <Text style={styles.description}>
+            {t(STORE_MVP ? 'login_description_store' : 'login_description')}
+          </Text>
 
           {error && (
             <View style={styles.errorBox}>
@@ -62,13 +95,14 @@ export default function LoginScreen() {
             onPress={handleGoogleLogin}
             disabled={isLoading}
             activeOpacity={0.8}
+            testID="login-google"
           >
             {isLoading ? (
-              <ActivityIndicator color="#fff" size="small" />
+              <ActivityIndicator color={PALETTE.appBg} size="small" />
             ) : (
               <>
                 <Text style={styles.googleIcon}>G</Text>
-                <Text style={styles.buttonText}>{t('settings_google_login')}</Text>
+                <Text style={styles.googleButtonText}>{t('settings_google_login')}</Text>
               </>
             )}
           </TouchableOpacity>
@@ -79,8 +113,9 @@ export default function LoginScreen() {
             onPress={handleAppleLogin}
             disabled={isLoading}
             activeOpacity={0.8}
+            testID="login-apple"
           >
-            <Text style={styles.appleIcon}></Text>
+            <Text style={styles.appleIcon}></Text>
             <Text style={styles.buttonText}>{t('settings_apple_login')}</Text>
           </TouchableOpacity>
           )}
@@ -95,8 +130,9 @@ export default function LoginScreen() {
             style={styles.guestButton}
             onPress={continueAsGuest}
             activeOpacity={0.8}
+            testID="login-guest"
           >
-            <Text style={styles.guestButtonText}>{t('login_guest_button')}</Text>
+            <Text style={styles.guestButtonText}>{t('login_guest_button')} ›</Text>
           </TouchableOpacity>
 
           <Text style={styles.guestHint}>{t('login_guest_hint')}</Text>
@@ -111,7 +147,17 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: PALETTE.appBg,
+  },
+  // Pen radial glow (node wPWUr) — soft $accent-3 wash behind the logo.
+  glow: {
+    position: 'absolute',
+    top: 60,
+    alignSelf: 'center',
+    width: 270,
+    height: 270,
+    borderRadius: 999,
+    backgroundColor: PALETTE.accent3 + '1F',
   },
   content: {
     flex: 1,
@@ -121,40 +167,78 @@ const styles = StyleSheet.create({
   },
   brand: {
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: 28,
   },
+  // Pen logo tile (node FTEuu): gradient square r26 with glyph.
+  logoTile: {
+    width: 104,
+    height: 104,
+    borderRadius: 26,
+    backgroundColor: GRADIENTS.brandPinkPurple.colors[0],
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 18,
+    shadowColor: PALETTE.accent,
+    shadowOpacity: 0.35,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
+  },
+  // Pen FTEuu carries the crosshair glyph, not a blank inner square.
+  logoGlyph: {
+    color: '#FFFFFF',
+    fontSize: 52,
+    lineHeight: 58,
+    fontWeight: '400',
+  },
+  backButton: {
+    position: 'absolute',
+    top: 54,
+    left: 12,
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 5,
+  },
+  backGlyph: {
+    color: SEMANTIC.onBgMuted,
+    fontSize: 26,
+    lineHeight: 28,
+  },
+  // Pen brand label (node c9cMr): 14/700 on $accent-2.
   appName: {
-    fontSize: 48,
-    fontWeight: 'bold',
-    color: COLORS.primary,
+    fontFamily: Platform.OS === 'web' ? FONTS.display : undefined,
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 1,
+    color: PALETTE.accent2,
+    marginBottom: 6,
+  },
+  // Pen headline (node tumk0): 26/700 $text-primary.
+  welcome: {
+    fontFamily: Platform.OS === 'web' ? FONTS.body : undefined,
+    fontSize: 26,
+    fontWeight: '700',
+    color: SEMANTIC.onBg,
     marginBottom: 8,
   },
   tagline: {
-    fontSize: 16,
-    color: COLORS.textSecondary,
+    fontFamily: Platform.OS === 'web' ? FONTS.body : undefined,
+    fontSize: 13,
+    color: SEMANTIC.onBgMuted,
   },
   card: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 16,
-    padding: 28,
     width: '100%',
     maxWidth: 400,
-    borderWidth: 1,
-    borderColor: COLORS.border,
     alignItems: 'center',
   },
-  welcome: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginBottom: 10,
-  },
   description: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
+    fontSize: 13,
+    color: SEMANTIC.onBgMuted,
     textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 24,
+    lineHeight: 20,
+    marginBottom: 20,
   },
   errorBox: {
     backgroundColor: COLORS.error + '22',
@@ -179,60 +263,60 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     paddingLeft: 12,
   },
+  // Pen Google button (node ilZGG): white fill, r14, dark 14/700 label.
   googleButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#4285F4',
+    backgroundColor: '#FFFFFF',
     paddingVertical: 14,
     paddingHorizontal: 24,
-    borderRadius: 24,
+    borderRadius: 14,
     width: '100%',
-    gap: 12,
+    gap: 10,
     marginBottom: 12,
   },
+  // Pen Apple button (node TU4oT): #101018 fill, r14.
   appleButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#000',
+    backgroundColor: '#101018',
     paddingVertical: 14,
     paddingHorizontal: 24,
-    borderRadius: 24,
+    borderRadius: 14,
     width: '100%',
-    gap: 12,
+    gap: 10,
   },
   buttonDisabled: {
     opacity: 0.5,
   },
-  appleHint: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-    textAlign: 'center',
-    marginTop: 8,
-    opacity: 0.8,
-  },
   googleIcon: {
-    fontSize: 18,
+    fontSize: 14,
     fontWeight: 'bold',
-    color: '#4285F4',
-    backgroundColor: '#fff',
-    width: 30,
-    height: 30,
-    lineHeight: 30,
+    color: '#FFFFFF',
+    backgroundColor: PALETTE.accent3,
+    width: 22,
+    height: 22,
+    lineHeight: 22,
     textAlign: 'center',
-    borderRadius: 15,
+    borderRadius: 11,
     overflow: 'hidden',
   },
   appleIcon: {
-    fontSize: 22,
+    fontSize: 20,
     color: '#fff',
-    lineHeight: 30,
+    lineHeight: 24,
+  },
+  googleButtonText: {
+    color: PALETTE.appBg,
+    fontSize: 14,
+    fontWeight: '700',
   },
   buttonText: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '700',
   },
   divider: {
     flexDirection: 'row',
@@ -243,37 +327,36 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: COLORS.border,
+    backgroundColor: PALETTE.border,
   },
   dividerText: {
-    color: COLORS.textSecondary,
-    fontSize: 13,
+    color: SEMANTIC.onBgDim,
+    fontSize: 11,
     marginHorizontal: 12,
   },
+  // Pen guest link (node qfrcy): $accent-2 text action, no boxed border.
   guestButton: {
-    paddingVertical: 14,
+    paddingVertical: 8,
     paddingHorizontal: 24,
-    borderRadius: 24,
-    width: '100%',
-    borderWidth: 1,
-    borderColor: COLORS.border,
     alignItems: 'center',
   },
   guestButtonText: {
-    color: COLORS.textSecondary,
-    fontSize: 15,
+    color: PALETTE.accent2,
+    fontSize: 13,
     fontWeight: '600',
   },
   guestHint: {
-    color: COLORS.textSecondary,
+    color: SEMANTIC.onBgDim,
     fontSize: 12,
     textAlign: 'center',
-    marginTop: 10,
-    opacity: 0.8,
+    marginTop: 8,
+    opacity: 0.9,
   },
+  // Pen terms footer (node d7fA7X): 10.5 $text-muted.
   footer: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
+    color: SEMANTIC.onBgDim,
+    fontSize: 10.5,
     marginTop: 24,
+    textAlign: 'center',
   },
 });

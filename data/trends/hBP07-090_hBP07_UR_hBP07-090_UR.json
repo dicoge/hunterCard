@@ -1,0 +1,15 @@
+{
+  "cardId": "hBP07-090",
+  "name": "虎金妃笑虎",
+  "nameZh": "虎金妃笑虎",
+  "trend": "down",
+  "score": -0.17,
+  "confidence": 0.5,
+  "components": {
+    "priceTrend": -0.33,
+    "ytTrend": 0,
+    "newsSentiment": 0.15
+  },
+  "lastUpdated": "2026-10-03T12:08:42.597Z",
+  "dataPoints": 67
+}

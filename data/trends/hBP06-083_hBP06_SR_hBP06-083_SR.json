@@ -1,0 +1,15 @@
+{
+  "cardId": "hBP06-083",
+  "name": "ラムダック",
+  "nameZh": "蓮達",
+  "trend": "stable",
+  "score": -0.08,
+  "confidence": 0.5,
+  "components": {
+    "priceTrend": -0.18,
+    "ytTrend": 0,
+    "newsSentiment": 0.15
+  },
+  "lastUpdated": "2026-10-03T12:08:42.569Z",
+  "dataPoints": 67
+}

@@ -65,7 +65,7 @@ globalThis.fetch = async (url) => {
 
 const post = (body) =>
   handler(
-    new Request('https://holocard-hunter.vercel.app/api/recognize-card', {
+    new Request('https://holohunter.dicoge.com/api/recognize-card', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -79,9 +79,9 @@ const check = (label, fn) => {
 };
 
 // ── 1. No key → the exact production failure, now classified ──────────────────
-// "Unprovisioned" now means NO provider key at all: since DIC-1019 an OpenRouter key
-// alone is enough to serve recognition, so this suite must own both names rather than
-// inherit whatever the developer happens to have exported.
+// "Unprovisioned" means no GEMINI_API_KEY. DIC-1185 removed the OpenRouter fallback;
+// an inherited OPENROUTER_API_KEY must NOT rescue this path — the suite scrubs it
+// so a developer's local env cannot mask the true 503 contract.
 const savedKey = process.env.GEMINI_API_KEY;
 const savedOpenRouterKey = process.env.OPENROUTER_API_KEY;
 delete process.env.OPENROUTER_API_KEY;
@@ -238,7 +238,8 @@ delete process.env.GEMINI_API_KEY;
   await runWebCameraScan(PHOTO, deps, ui);
 
   check('web camera: a 503 from the real handler still runs the local OCR fallback', () => {
-    assert.equal(spy.visionCalls, 1, 'local vision fallback must run');
+    // v39: the fallback after a service failure is local only — no second upload.
+    assert.equal(spy.visionCalls, 0, 'no second remote recognition after a service failure');
     assert.equal(spy.ocrCalls, 1, 'local OCR must not be skipped');
   });
   check('web camera: an unavailable backend never blames the photo', () => {
@@ -266,7 +267,7 @@ delete process.env.GEMINI_API_KEY;
   check('web camera: the OCR fallback can still recognise while the backend is down', () => {
     assert.deepEqual(calls.recognized, [CARD]);
     assert.deepEqual(calls.scanError, []);
-    assert.equal(spy.visionCalls, 1);
+    assert.equal(spy.visionCalls, 0, 'found by local OCR alone, no second upload');
   });
 }
 
@@ -297,21 +298,24 @@ geminiReply = 'CARD_NUMBER: hZZ99-999\nCHARACTER: 不存在\nRARITY: C';
       return { status: res.status, body: await res.json() };
     },
   });
-  // The ranker always emits a top-5, so a card it cannot place surfaces as
-  // 200 + lowConfidence rather than the handler's 404 arm.
+  // Scan best-match fix (2026-10-15): a number that is not in the catalog is an
+  // explicit no-match — 404 with no filler candidates — never a top-5 of guesses.
   const unmatched = await post({ image: PIXEL });
   const unmatchedBody = await unmatched.json();
-  check('the real handler hands back a candidate list for a card it cannot place', () => {
-    assert.equal(unmatched.status, 200);
+  check('the real handler answers an unplaceable card with an explicit no-match, not filler', () => {
+    assert.equal(unmatched.status, 404);
     assert.equal(unmatchedBody.success, false);
-    assert.ok(unmatchedBody.candidates.length > 0);
+    assert.deepEqual(unmatchedBody.candidates, []);
+    assert.equal(unmatchedBody.match.status, 'no_match');
+    assert.equal(unmatchedBody.match.reason, 'number_not_in_database');
     assert.equal(isRecognitionInfrastructureFailure(unmatched.status, unmatchedBody), false);
   });
 
   await runWebCameraScan(PHOTO, deps, ui);
-  check('web camera: an unplaced card opens the candidate picker, not an outage notice', () => {
-    assert.equal(calls.candidates.length, 1);
-    assert.deepEqual(calls.scanError, []);
+  check('web camera: an unplaced card gets photo guidance, not an outage notice or a picker', () => {
+    assert.equal(calls.candidates.length, 0);
+    assert.equal(calls.scanError.length, 1);
+    assert.ok(!calls.scanError[0].includes('暫時無法使用'), calls.scanError[0]);
     assert.equal(spy.ocrCalls, 0, 'the backend answered about this photo; OCR must not re-run');
   });
 }
@@ -352,7 +356,7 @@ geminiStatus = 500;
 
   await runWebCameraScan(PHOTO, deps, ui);
   check('web camera: a real upstream 502 still runs the local OCR fallback', () => {
-    assert.equal(spy.visionCalls, 1);
+    assert.equal(spy.visionCalls, 0, 'no second remote recognition after a service failure');
     assert.equal(spy.ocrCalls, 1, 'an infrastructure outage must not skip OCR');
   });
   check('web camera: a real upstream 502 never blames the photo', () => {

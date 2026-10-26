@@ -1,0 +1,81 @@
+{
+  "cardId": "hBP01-001_hBP01_OSR_hBP01-001_OSR",
+  "cardNumber": "hBP01-001",
+  "name": "天音かなた",
+  "records": [
+    {
+      "date": "2026-09-23",
+      "price": 680,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-001_hBP01_OSR_hBP01-001_OSR",
+      "sourceProduct": "hBP01"
+    },
+    {
+      "date": "2026-09-26",
+      "price": 680,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-001_hBP01_OSR_hBP01-001_OSR",
+      "sourceProduct": "hBP01"
+    },
+    {
+      "date": "2026-09-27",
+      "price": 680,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-001_hBP01_OSR_hBP01-001_OSR",
+      "sourceProduct": "hBP01"
+    },
+    {
+      "date": "2026-10-02",
+      "price": 680,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-001_hBP01_OSR_hBP01-001_OSR",
+      "sourceProduct": "hBP01"
+    },
+    {
+      "date": "2026-10-03",
+      "price": 680,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-001_hBP01_OSR_hBP01-001_OSR",
+      "sourceProduct": "hBP01"
+    },
+    {
+      "date": "2026-10-16",
+      "price": 680,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-001_hBP01_OSR_hBP01-001_OSR",
+      "sourceProduct": "hBP01"
+    },
+    {
+      "date": "2026-10-17",
+      "price": 680,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-001_hBP01_OSR_hBP01-001_OSR",
+      "sourceProduct": "hBP01"
+    },
+    {
+      "date": "2026-10-18",
+      "price": 680,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-001_hBP01_OSR_hBP01-001_OSR",
+      "sourceProduct": "hBP01"
+    },
+    {
+      "date": "2026-10-26",
+      "price": 680,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-001_hBP01_OSR_hBP01-001_OSR",
+      "sourceProduct": "hBP01"
+    }
+  ],
+  "lastUpdated": "2026-10-26T02:45:59.749Z",
+  "nameZh": "天音彼方"
+}

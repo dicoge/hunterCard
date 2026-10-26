@@ -1,0 +1,81 @@
+{
+  "cardId": "hBP01-104_hSD18_C_hBP01-104_06_C",
+  "cardNumber": "hBP01-104",
+  "name": "ふつうのパソコン",
+  "records": [
+    {
+      "date": "2026-09-23",
+      "price": 420,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-104_hSD18_C_hBP01-104_06_C",
+      "sourceProduct": "hSD18"
+    },
+    {
+      "date": "2026-09-26",
+      "price": 420,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-104_hSD18_C_hBP01-104_06_C",
+      "sourceProduct": "hSD18"
+    },
+    {
+      "date": "2026-09-27",
+      "price": 420,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-104_hSD18_C_hBP01-104_06_C",
+      "sourceProduct": "hSD18"
+    },
+    {
+      "date": "2026-10-02",
+      "price": 500,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-104_hSD18_C_hBP01-104_06_C",
+      "sourceProduct": "hSD18"
+    },
+    {
+      "date": "2026-10-03",
+      "price": 500,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-104_hSD18_C_hBP01-104_06_C",
+      "sourceProduct": "hSD18"
+    },
+    {
+      "date": "2026-10-16",
+      "price": 500,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-104_hSD18_C_hBP01-104_06_C",
+      "sourceProduct": "hSD18"
+    },
+    {
+      "date": "2026-10-17",
+      "price": 500,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-104_hSD18_C_hBP01-104_06_C",
+      "sourceProduct": "hSD18"
+    },
+    {
+      "date": "2026-10-18",
+      "price": 500,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-104_hSD18_C_hBP01-104_06_C",
+      "sourceProduct": "hSD18"
+    },
+    {
+      "date": "2026-10-26",
+      "price": 500,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-104_hSD18_C_hBP01-104_06_C",
+      "sourceProduct": "hSD18"
+    }
+  ],
+  "lastUpdated": "2026-10-26T02:45:59.777Z",
+  "nameZh": "普通電腦"
+}

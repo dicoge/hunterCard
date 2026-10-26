@@ -2,17 +2,20 @@
  * ScanSessionPanel — 掃描估值面板
  * 累計掃描的卡牌清單與總價值，支援展開/收起
  */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  Image,
   Platform,
 } from 'react-native';
 import { useScanSessionStore, SessionCard, getEffectivePrice } from '../stores/scanSessionStore';
 import { COLORS, convertPrice, CURRENCIES } from '../constants';
+import { PALETTE } from '../theme/tokensV2';
+import { FEATURES } from '../config/releaseFlags';
 import { useSettingsStore } from '../store/settingsStore';
 import { useTranslation } from '../i18n';
 
@@ -20,15 +23,24 @@ interface ScanSessionPanelProps {
   onContinueScanning?: () => void;
   onViewCard?: (card: SessionCard) => void;
   preferredCurrency?: string;
+  /** DIC-1427 Pen AQf9b: bump to ask the panel to expand (估值清單 box). */
+  expandRequest?: number;
+  /** Test/evidence harness convenience: start expanded. */
+  initialExpanded?: boolean;
 }
 
 export default function ScanSessionPanel({
   onContinueScanning,
   onViewCard,
   preferredCurrency = 'TWD',
+  expandRequest = 0,
+  initialExpanded = false,
 }: ScanSessionPanelProps) {
   const { t } = useTranslation();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(initialExpanded);
+  useEffect(() => {
+    if (expandRequest > 0) setExpanded(true);
+  }, [expandRequest]);
   const { cards, totalValue, cardCount, removeCard, setCardVersion, clearSession } = useScanSessionStore();
   const { setCurrency } = useSettingsStore();
 
@@ -51,52 +63,72 @@ export default function ScanSessionPanel({
         style={styles.header}
         onPress={() => setExpanded(!expanded)}
         activeOpacity={0.7}
+        testID="scan-session-header"
       >
         <View style={styles.headerLeft}>
           <Text style={styles.headerIcon}>📋</Text>
           <Text style={styles.headerText}>
             {cardCount > 0
               ? t('scan_session_count', { count: cardCount })
-              : t('scan_session_title')}
+              /* Store MVP 隱藏「估值」字樣 (DIC-1256)。 */
+              : t(FEATURES.marketData ? 'scan_session_title' : 'scan_session_title_store')}
           </Text>
         </View>
         <View style={styles.headerRight}>
           {cardCount > 0 && (
             <>
-              <Text style={styles.totalPrice}>
-                {totalValue > 0 ? formatPrice(totalValue) : '——'}
-              </Text>
+              {/* Store MVP 隱藏 session 累計價值 (DIC-1256)。 */}
+              {FEATURES.marketData && (
+                <Text style={styles.totalPrice} testID="scan-session-total-price">
+                  {totalValue > 0 ? formatPrice(totalValue) : '——'}
+                </Text>
+              )}
               <Text style={styles.expandArrow}>{expanded ? '▼' : '▲'}</Text>
             </>
           )}
         </View>
       </TouchableOpacity>
+      {/* Pen wC1cO app-bar 清除 (node S7Pq3U): visible while expanded. */}
+      {expanded && cardCount > 0 ? (
+        <TouchableOpacity
+          style={styles.clearLink}
+          onPress={clearSession}
+          accessibilityRole="button"
+          accessibilityLabel={t('scan_clear')}
+          testID="scan-session-clear"
+        >
+          <Text style={styles.clearLinkText}>{t('scan_clear')}</Text>
+        </TouchableOpacity>
+      ) : null}
 
       {/* Expanded List */}
       {expanded && (
         <View style={styles.expandedBody}>
-          {/* Currency selector row */}
-          <View style={styles.currencyRow}>
-            {CURRENCIES.map((c) => (
-              <TouchableOpacity
-                key={c.code}
-                style={[
-                  styles.currencyBtn,
-                  preferredCurrency === c.code && styles.currencyBtnActive,
-                ]}
-                onPress={() => { setCurrency(c.code as 'TWD' | 'JPY' | 'USD'); }}
-              >
-                <Text
+          {/* Currency selector — Store MVP 隱藏 (DIC-1256)：session 沒有價格
+              可以換算幣別，這排就沒意義了。 */}
+          {FEATURES.marketData && (
+            <View style={styles.currencyRow} testID="scan-session-currency-row">
+              {CURRENCIES.map((c) => (
+                <TouchableOpacity
+                  key={c.code}
                   style={[
-                    styles.currencyBtnText,
-                    preferredCurrency === c.code && styles.currencyBtnTextActive,
+                    styles.currencyBtn,
+                    preferredCurrency === c.code && styles.currencyBtnActive,
                   ]}
+                  onPress={() => { setCurrency(c.code as 'TWD' | 'JPY' | 'USD'); }}
                 >
-                  {c.symbol} {c.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+                  <Text
+                    style={[
+                      styles.currencyBtnText,
+                      preferredCurrency === c.code && styles.currencyBtnTextActive,
+                    ]}
+                  >
+                    {c.symbol} {c.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
           {cardCount === 0 ? (
             <View style={styles.emptyState}>
               <Text style={styles.emptyText}>{t('scan_session_empty')}</Text>
@@ -104,31 +136,91 @@ export default function ScanSessionPanel({
             </View>
           ) : (
             <>
+              {/* Pen wC1cO summary card (node Ahd5w): 本次掃描總計 · N 張 +
+                  big total + 複製結果 + 版本待確認 warning. Store MVP hides
+                  the valuation pieces (DIC-1256), the count line stays. */}
+              <View style={styles.summaryCard} testID="scan-session-summary">
+                <View style={styles.summaryTopRow}>
+                  <View style={styles.summaryLeft}>
+                    <Text style={styles.summaryLabel}>{t('scan_session_summary', { count: cardCount })}</Text>
+                    {FEATURES.marketData && (
+                      <View testID="scan-session-total-row">
+                        <Text style={styles.summaryValue}>{formatPrice(totalValue)}</Text>
+                      </View>
+                    )}
+                  </View>
+                  {FEATURES.marketData && (
+                    <TouchableOpacity
+                      style={styles.copyBtn}
+                      testID="scan-session-copy-results"
+                      accessibilityRole="button"
+                      onPress={() => {
+                        const summary = cards.map((c, i) => {
+                          if (!c.versionConfident) return `${i + 1}. ${c.name} (${c.id}) — ${t('scan_export_pending')}`;
+                          const v = c.priceVersions?.[c.selectedVersion];
+                          const versionLabel = c.priceVersions && c.priceVersions.length > 1 && v?.name
+                            ? ` [${v.name}]`
+                            : '';
+                          return `${i + 1}. ${c.name} (${c.id})${versionLabel} — ${formatPrice(getEffectivePrice(c))}`;
+                        }).join('\n');
+                        const pendingNote = pendingCount > 0 ? `\n（${t('scan_pending_count', { count: pendingCount })}）` : '';
+                        const full = `${t('scan_export_title')}\n━━━━━━━━━━━━\n${summary}\n━━━━━━━━━━━━\n${t('scan_export_total', { total: formatPrice(totalValue) })}${pendingNote}`;
+                        if (Platform.OS === 'web') {
+                          navigator.clipboard?.writeText(full);
+                          alert(t('scan_copied'));
+                        }
+                      }}
+                    >
+                      <Text style={styles.copyBtnText}>{t('scan_copy_results')}</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                {FEATURES.marketData && pendingCount > 0 && (
+                  <Text style={styles.pendingNote} testID="scan-session-pending-note">
+                    ⚠ {t('scan_pending_count', { count: pendingCount })}
+                  </Text>
+                )}
+              </View>
               <ScrollView style={styles.cardList} nestedScrollEnabled>
                 {cards.map((card, index) => {
                   const hasVersions = card.priceVersions && card.priceVersions.length > 1;
                   const selected = card.priceVersions?.[card.selectedVersion];
                   const pending = !card.versionConfident;
                   return (
-                  <View key={card.instanceId} style={styles.cardRow}>
+                  <View key={card.instanceId} style={styles.cardRow} testID={`scan-session-item-${index}`}>
                     <View style={styles.cardInfo}>
-                      <Text style={styles.cardIndex}>#{index + 1}</Text>
+                      {card.imageUrl ? (
+                        /* @ts-ignore */
+                        <Image source={{ uri: card.imageUrl }} style={styles.cardThumb} resizeMode="cover" />
+                      ) : (
+                        <Text style={styles.cardIndex}>#{index + 1}</Text>
+                      )}
                       <View style={styles.cardDetails}>
                         <TouchableOpacity onPress={() => onViewCard?.(card)} activeOpacity={0.7}>
                           <Text style={styles.cardName} numberOfLines={1}>
                             {card.name}
                           </Text>
                           <Text style={styles.cardMeta}>
-                            {card.id}{card.rarity ? ` · ${card.rarity}` : ''} ·{' '}
-                            {pending ? t('scan_version_pending') : formatPrice(getEffectivePrice(card))}
+                            {/* Store MVP 隱藏每張卡的估價字段 (DIC-1256)。
+                                版本待確認狀態仍顯示，因為它與辨識識別／版本
+                                選擇有關，不是市場資訊。 */}
+                            {card.id}{card.rarity ? ` · ${card.rarity}` : ''}
+                            {pending
+                              ? ` · ${t('scan_version_pending')}`
+                              : FEATURES.marketData
+                                ? ` · ${formatPrice(getEffectivePrice(card))}`
+                                : ''}
                           </Text>
                         </TouchableOpacity>
                         {hasVersions ? (
                           <>
                             <Text style={styles.versionHint}>
+                              {/* Store MVP 使用去掉「估價／總計」字樣的變體
+                                  hint (DIC-1256)。版本選擇本身仍保留，只是
+                                  文案不再提市場資訊。 */}
                               {pending
-                                ? t('scan_version_pending_hint')
-                                : t('scan_version_select_hint')}
+                                ? t(FEATURES.marketData ? 'scan_version_pending_hint' : 'scan_version_pending_hint_store')
+                                : t(FEATURES.marketData ? 'scan_version_select_hint' : 'scan_version_select_hint_store')}
                             </Text>
                             <View style={styles.versionRow}>
                               {card.priceVersions.map((v, vi) => {
@@ -143,7 +235,9 @@ export default function ScanSessionPanel({
                                     style={[styles.versionChipText, active && styles.versionChipTextActive]}
                                     numberOfLines={1}
                                   >
-                                    {v.name} · {formatPrice(v.sellPrice)}
+                                    {/* Store MVP 隱藏 chip 上的價格 (DIC-1256)；
+                                        chip 仍可點選來確定卡片版本。 */}
+                                    {FEATURES.marketData ? `${v.name} · ${formatPrice(v.sellPrice)}` : v.name}
                                   </Text>
                                 </TouchableOpacity>
                                 );
@@ -166,62 +260,23 @@ export default function ScanSessionPanel({
                 })}
               </ScrollView>
 
-              {/* Total + Actions */}
+              {/* Pen wC1cO action bar (node Y1xPi/G3y9k): full-width 繼續掃描. */}
               <View style={styles.footer}>
-                <View style={styles.totalRow}>
-                  <Text style={styles.totalLabel}>{t('scan_total')}</Text>
-                  <Text style={styles.totalValue}>
-                    {formatPrice(totalValue)}
-                  </Text>
-                </View>
-                {pendingCount > 0 && (
-                  <Text style={styles.pendingNote}>
-                    {t('scan_pending_count', { count: pendingCount })}
-                  </Text>
+                {onContinueScanning && cardCount > 0 && (
+                  <TouchableOpacity
+                    style={[
+                      styles.continueBar,
+                      Platform.OS === 'web'
+                        ? ({ backgroundImage: `linear-gradient(135deg, ${PALETTE.accent} 0%, ${PALETTE.accent3} 100%)` } as object)
+                        : null,
+                    ]}
+                    onPress={onContinueScanning}
+                    accessibilityRole="button"
+                    testID="scan-session-continue"
+                  >
+                    <Text style={styles.continueBarText}>{t('scan_continue')}</Text>
+                  </TouchableOpacity>
                 )}
-                <View style={styles.actionRow}>
-                  {cardCount > 0 && (
-                    <>
-                      {onContinueScanning && (
-                        <TouchableOpacity
-                          style={styles.actionBtn}
-                          onPress={onContinueScanning}
-                        >
-                          <Text style={styles.actionBtnText}>{t('scan_continue')}</Text>
-                        </TouchableOpacity>
-                      )}
-                      <TouchableOpacity
-                        style={[styles.actionBtn, styles.shareBtn]}
-                        onPress={() => {
-                          // Share/export — build text summary
-                          const summary = cards.map((c, i) => {
-                            if (!c.versionConfident) return `${i + 1}. ${c.name} (${c.id}) — ${t('scan_export_pending')}`;
-                            const v = c.priceVersions?.[c.selectedVersion];
-                            const versionLabel = c.priceVersions && c.priceVersions.length > 1 && v?.name
-                              ? ` [${v.name}]`
-                              : '';
-                            return `${i + 1}. ${c.name} (${c.id})${versionLabel} — ${formatPrice(getEffectivePrice(c))}`;
-                          }).join('\n');
-                          const pendingNote = pendingCount > 0 ? `\n（${t('scan_pending_count', { count: pendingCount })}）` : '';
-                          const full = `${t('scan_export_title')}\n━━━━━━━━━━━━\n${summary}\n━━━━━━━━━━━━\n${t('scan_export_total', { total: formatPrice(totalValue) })}${pendingNote}`;
-                          // Trigger native share
-                          if (Platform.OS === 'web') {
-                            navigator.clipboard?.writeText(full);
-                            alert(t('scan_copied'));
-                          }
-                        }}
-                      >
-                        <Text style={styles.shareBtnText}>{t('scan_copy_results')}</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.actionBtn, styles.clearBtn]}
-                        onPress={clearSession}
-                      >
-                        <Text style={styles.clearBtnText}>{t('scan_clear')}</Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
-                </View>
               </View>
             </>
           )}
@@ -240,7 +295,8 @@ const styles = StyleSheet.create({
     zIndex: 20,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
-    backgroundColor: 'rgba(20, 20, 40, 0.95)',
+    // Pen App/05 掃描估值清單 (frame wC1cO): $app-surface at F2 opacity.
+    backgroundColor: '#12121DF2',
     overflow: 'hidden',
   },
   header: {
@@ -270,8 +326,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
+  // Pen summary value (node ekhnv): display face on $accent-2 for prices.
   totalPrice: {
-    color: '#00C853',
+    color: PALETTE.accent2,
     fontSize: 18,
     fontWeight: 'bold',
   },
@@ -280,7 +337,79 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
   expandedBody: {
-    maxHeight: 350,
+    maxHeight: 420,
+  },
+  // Pen wC1cO 清除 (node S7Pq3U)
+  clearLink: {
+    position: 'absolute',
+    top: 12,
+    right: 48,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+  clearLinkText: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
+  },
+  // Pen wC1cO summary card (node Ahd5w): gradient-tinted surface r16
+  summaryCard: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: 'rgba(139,92,246,0.10)',
+    gap: 10,
+  },
+  summaryTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  summaryLeft: {
+    flexShrink: 1,
+    gap: 5,
+  },
+  summaryLabel: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+  },
+  summaryValue: {
+    color: PALETTE.textPrimary,
+    fontSize: 30,
+    fontWeight: '700',
+  },
+  copyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 10,
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+  },
+  copyBtnText: {
+    color: PALETTE.textPrimary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  cardThumb: {
+    width: 36,
+    height: 50,
+    borderRadius: 6,
+    backgroundColor: PALETTE.appElev,
+  },
+  continueBar: {
+    minHeight: 48,
+    borderRadius: 14,
+    backgroundColor: PALETTE.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  continueBarText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
   },
   emptyState: {
     padding: 30,
@@ -336,8 +465,9 @@ const styles = StyleSheet.create({
     fontSize: 10,
     marginTop: 6,
   },
+  // Pen Warning line (node yo1XN): #D6B25A on amber.
   pendingNote: {
-    color: 'rgba(255,255,255,0.55)',
+    color: '#D6B25A',
     fontSize: 11,
     marginTop: 4,
     textAlign: 'right',
@@ -358,8 +488,8 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
   },
   versionChipActive: {
-    backgroundColor: 'rgba(0, 200, 83, 0.18)',
-    borderColor: '#00C853',
+    backgroundColor: PALETTE.accent + '24',
+    borderColor: PALETTE.accent,
   },
   versionChipText: {
     color: 'rgba(255,255,255,0.6)',
@@ -367,7 +497,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   versionChipTextActive: {
-    color: '#00C853',
+    color: PALETTE.accent,
   },
   versionSingle: {
     color: 'rgba(255,255,255,0.45)',
@@ -403,8 +533,9 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
+  // Pen 本次掃描總計 value (node ekhnv): 30/700 $text-primary.
   totalValue: {
-    color: '#00C853',
+    color: PALETTE.textPrimary,
     fontSize: 24,
     fontWeight: 'bold',
   },

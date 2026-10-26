@@ -11,7 +11,26 @@ import { preprocessCardImage } from './imagePreprocessor';
 import { mapApiCardToCardInfo } from '../utils/apiCardMapper';
 import { stripDisabledCardFields } from '../utils/cardReleaseFilter';
 import { releaseCardFlags, STORE_MVP } from '../config/releaseFlags';
-import { isRecognitionInfrastructureFailure, RECOGNITION_UNAVAILABLE_MESSAGE } from './recognitionOutcome';
+import { nativeApiOrigin } from '../config/apiOrigin';
+import {
+  classifyHttpFailure,
+  isRecognitionInfrastructureFailure,
+  RECOGNITION_REQUEST_TIMEOUT_MS,
+  RECOGNITION_UNAVAILABLE_MESSAGE,
+  type RecognitionFailureKind,
+} from './recognitionOutcome';
+import {
+  buildRecognitionDataUrl,
+  validateRecognitionDataUrl,
+  validateRecognitionImages,
+  type RecognitionImageErrorCode,
+} from './recognitionImagePolicy';
+import { SCAN_RUNTIME } from './scanRuntime';
+import { findCardNumberTokens } from '../utils/cardNumberToken';
+import { matchFromWire, legacyReceivedNumber, verifyLegacyNumberEvidence } from './scanPresentation';
+import { projectTrace, type RecognitionTrace } from './scanTrace';
+import { buildPrintingVersions, provenanceFromRow, type PriceProvenance, type PriceQuote } from '../utils/printingQuotes';
+import { loadDatabaseJson, loadSeriesNamesJson } from '../utils/staticData';
 
 // ── 類型定義 ──
 
@@ -48,12 +67,36 @@ export interface CardInfo {
   priceHistory?: Record<string, number>;
   ytStats?: any;              // YouTube 成員數據（訂閱/成長/觀看）
   normalized?: any;
+  /** v44: where this row's price came from (product, quote time, shop listing). Unknown = null. */
+  provenance?: PriceProvenance | null;
+  /** v44: every catalog row id proven to be this same printing (all stay valid ids). */
+  aliasIds?: string[];
+  /** v44: every quote of those rows — older quotes are kept, never dropped. */
+  priceQuotes?: PriceQuote[];
+  /** v44: quotes at the same latest time disagree — no current price is claimed. */
+  priceConflict?: boolean;
+  /** v44: another printing looks identical but is NOT proven the same — show its source. */
+  lookalike?: boolean;
 }
 
 /** A single ranked candidate returned for mid/low-confidence scans. */
 export interface RecognizedCandidate {
   card: CardInfo;
   confidence: number; // 0-1
+  /**
+   * The backend ranker's evidence tokens for THIS candidate ('cardNumber exact',
+   * 'character exact/contains', 'rarity' …), when the backend sent them. Lets the client
+   * apply the explicit-verdict rules to a response from a backend that predates `match`.
+   */
+  evidence?: string[];
+}
+
+/** Ranker evidence tokens from a wire candidate's `reason` ("a, b, c"); allowlisted. */
+const EVIDENCE_TOKENS = new Set(['cardNumber exact', 'cardNumber fuzzy-1', 'cardNumber fuzzy-2', 'character exact/contains', 'character fuzzy', 'title exact/contains', 'title fuzzy', 'rarity', 'hp', 'bloom/type']);
+export function candidateEvidence(reason: unknown): string[] | undefined {
+  if (typeof reason !== 'string' || !reason) return undefined;
+  const tokens = reason.split(',').map((t) => t.trim()).filter((t) => EVIDENCE_TOKENS.has(t));
+  return tokens.length ? tokens : undefined;
 }
 
 export interface RecognitionResult {
@@ -70,6 +113,48 @@ export interface RecognitionResult {
   serviceUnavailable?: boolean;
   /** Top 3-5 alternative matches for the candidate-confirmation UI. */
   candidates?: RecognizedCandidate[];
+  /** The caller aborted (screen left / scan superseded). Nothing may be committed. */
+  cancelled?: boolean;
+  /** The recognition request ran past RECOGNITION_REQUEST_TIMEOUT_MS and was aborted. */
+  timedOut?: boolean;
+  /** With serviceUnavailable: what is provable about why (recognitionOutcome). */
+  failure?: RecognitionFailureKind;
+  /** HTTP status of a failed recognition response (diagnostics only). */
+  httpStatus?: number;
+  /** The photo was refused locally by recognitionImagePolicy and was NOT uploaded. */
+  imageRejected?: RecognitionImageErrorCode;
+  /** Typed server trace (v39+ backend), re-validated by projectTrace; undefined from older backends. */
+  trace?: RecognitionTrace;
+  /**
+   * The server's explicit verdict (scan best-match fix 2026-10-15). `matched` = one
+   * printing proven by the photo; `identity_only` = card known, printing (and price)
+   * not; `no_match` = no valid answer, with optional evidence-backed alternatives.
+   */
+  match?: ScanMatch;
+}
+
+export interface ScanMatch {
+  status: 'matched' | 'identity_only' | 'no_match';
+  printingResolved: boolean;
+  reason?: 'no_evidence' | 'no_card_number' | 'number_not_in_database' | 'number_name_conflict' | null;
+  /** Evidence tokens such as 'cardNumber exact', 'rarity' — never a probability. */
+  evidence: string[];
+  alternatives: RecognizedCandidate[];
+  /** Deterministic ranking score of the best card — diagnostics only, never shown as %. */
+  ruleScore?: number | null;
+}
+
+/** How a photo reaches recognizeCardFromImage. */
+export interface RecognizeImageOptions {
+  /**
+   * Native only: the capture's raw base64 (`takePictureAsync` / `launchImageLibraryAsync`
+   * with `base64: true`). The uri alone is a device-local path and is never uploaded.
+   */
+  base64?: string | null;
+  /** Native only: the scan-frame crop's raw base64 (nativeScanCapture). Sent second. */
+  cropBase64?: string | null;
+  /** Aborts the upload; the result then comes back `cancelled`. */
+  signal?: AbortSignal;
 }
 
 // ── 資料庫快取 ──
@@ -106,9 +191,9 @@ let seriesNamesCache: Record<string, string> | null = null;
 async function loadSeriesNames(): Promise<Record<string, string>> {
   if (seriesNamesCache) return seriesNamesCache;
   try {
-    const res = await fetch('/data/series-names.json');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    seriesNamesCache = await res.json();
+    // Platform loader (src/utils/staticData): native reads the bundled asset — it has no
+    // page origin for a relative fetch — and web fetches it same-origin.
+    seriesNamesCache = await loadSeriesNamesJson();
     return seriesNamesCache!;
   } catch (e: any) {
     console.error('[cardRecognition] Failed to load series names:', e.message);
@@ -126,16 +211,23 @@ export async function loadAllCards(): Promise<CardInfo[]> {
 
   dbFetchPromise = (async () => {
     try {
-      const res = await fetch('/data/database.json');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const db: DatabaseSchema = await res.json();
+      // Platform loader: native = the bundled sanitized catalog, web = same-origin fetch.
+      // (A relative fetch here failed on native, so a cold scan had no catalog to resolve
+      // proven printing versions against — CR 35faebe.)
+      const db: DatabaseSchema = await loadDatabaseJson();
       const cards = db.cards || {};
 
       // Each compound-key entry (e.g. hBP04-005_hBP04, hBP04-005_ent07) is a separate CardInfo
       // This preserves correct series/category filtering unlike grouped-by-cardNumber
       const cardFlags = releaseCardFlags();
       const result: CardInfo[] = Object.values(cards).map(entry => stripDisabledCardFields({
-        id: (entry as any).cardNumber || entry.id || '',
+        // The compound catalog key (hBP01-024_hBP01_C_hBP01-024_C) IS the
+        // printing's identity. This used to be flattened to the bare cardNumber,
+        // which made `id` non-unique across the 8 rows that share hBP01-024 and
+        // turned every `find(c => c.id === cardNumber)` below into "whichever
+        // printing happens to be first" — see resolvePrintingByCardNumber
+        // (DIC-1325).
+        id: entry.id || (entry as any).cardNumber || '',
         name: entry.name || '',
         nameZh: (entry as any).nameZh || '',
         cardNumber: (entry as any).cardNumber || entry.id || '',
@@ -150,6 +242,7 @@ export async function loadAllCards(): Promise<CardInfo[]> {
         prices: (entry as any).prices || [],
         priceHistory: (entry as any).priceHistory || {},
         ytStats: (entry as any).ytStats ?? null,
+        provenance: provenanceFromRow(entry as any),
       }, cardFlags));
 
       cachedDb = result;
@@ -162,6 +255,124 @@ export async function loadAllCards(): Promise<CardInfo[]> {
   })();
 
   return dbFetchPromise;
+}
+
+// ── 卡號 → 版本解析（DIC-1325 exact-printing 界線）──
+
+/**
+ * Resolve a cardNumber to ONE printing, or refuse.
+ *
+ * A cardNumber is not an identity: hBP01-024 has 8 catalog rows, and their sale
+ * prices genuinely disagree (ent07/HR JPY 50, hBP01/C JPY 120, hPR/P unproven).
+ * The recovery paths used to answer this with `find(c => c.id === cardNumber)`,
+ * which returned whichever row the catalog happened to list first and presented
+ * its price as the scanned card's exact price at confidence 0.9.
+ *
+ * When the evidence names only a cardNumber and several printings carry it,
+ * there is no basis for choosing one, so this returns `ambiguous` and the caller
+ * must surface the card WITHOUT a price and let the user pick the printing.
+ * Quoting a sibling's number would be the cross-printing fallback the product
+ * forbids (DIC-856 / DIC-1319).
+ */
+export type PrintingResolution =
+  | { status: 'unique'; card: CardInfo }
+  | { status: 'ambiguous'; cardNumber: string; printings: CardInfo[] }
+  | { status: 'none' };
+
+const flatten = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+export function resolvePrintingByCardNumber(
+  allCards: CardInfo[],
+  query: string,
+  { fuzzy = false }: { fuzzy?: boolean } = {},
+): PrintingResolution {
+  const q = flatten(query || '');
+  if (!q) return { status: 'none' };
+
+  let matches = allCards.filter(c => flatten(c.cardNumber) === q);
+
+  // `fuzzy` used to accept substring overlaps (q.includes(n) / n.includes(q)), which
+  // turned a truncated or extended number into a different real card (CR 2026-10-15
+  // P2_2). Numbers are now whole-token parsed upstream, so only exact equality counts.
+  void fuzzy;
+
+  if (matches.length === 0) return { status: 'none' };
+  // v44: rows proven to be the same physical printing (an aggregation-bucket alias of the
+  // same shop listing) are ONE version with its latest quote; unproven lookalikes stay
+  // separate and say where their price came from.
+  matches = consolidatePrintingCards(matches);
+  if (matches.length === 1) return { status: 'unique', card: matches[0] };
+  return { status: 'ambiguous', cardNumber: matches[0].cardNumber, printings: matches };
+}
+
+/**
+ * Same-number rows → printing versions (src/utils/printingQuotes). A proven alias group
+ * becomes one card: the representative row's id and identity, the latest same-listing
+ * sell quote as its price (none on a conflict), every quote and every alias id kept.
+ */
+export function consolidatePrintingCards(cards: CardInfo[]): CardInfo[] {
+  return buildPrintingVersions(cards).map((v) => {
+    if (v.members.length === 1) return v.lookalike ? { ...v.primary, lookalike: true } : v.primary;
+    const current = v.currentSell;
+    const currentRow = current ? v.members.find((m) => m.id === current.rowId) : undefined;
+    const history: Record<string, number> = {};
+    for (const m of v.members) Object.assign(history, m.priceHistory || {});
+    Object.assign(history, v.primary.priceHistory || {});
+    return {
+      ...v.primary,
+      sellPrice: current ? current.price : null,
+      buyPrice: v.currentBuy ? v.currentBuy.price : (v.primary.buyPrice ?? null),
+      // The listing prices the session / card page price from. With no current quote (a
+      // same-time conflict, or several conditions) there is NO listing to price from — the
+      // primary row's listing would put a price back on an unpriced version (CR e8f14dc).
+      // Every quote stays in priceQuotes.
+      prices: current ? (currentRow?.prices ?? []) : [],
+      priceHistory: history,
+      provenance: v.primary.provenance
+        ? { ...v.primary.provenance, quotedAt: current?.quotedAt ?? null, listing: current?.listing ?? v.primary.provenance.listing }
+        : null,
+      aliasIds: v.memberIds,
+      priceQuotes: v.quotes,
+      priceConflict: v.sellConflict,
+      lookalike: v.lookalike,
+    };
+  });
+}
+
+/**
+ * The card to show when only the cardNumber is known: shared identity, and
+ * deliberately NO price. `sellPrice: null` is the same "no proven price" state
+ * the UI already renders as 尚無交易, so this needs no new UI branch.
+ */
+export function ambiguousPrintingCard(printings: CardInfo[]): CardInfo {
+  const base = printings[0];
+  return {
+    ...base,
+    // Identity of the NUMBER, not of any one printing.
+    id: base.cardNumber,
+    series: '',
+    rarity: '',
+    sellPrice: null,
+    prices: [],
+    buyPrice: null,
+    priceHistory: {},
+  };
+}
+
+/**
+ * Build the printing chooser. Each candidate is a real printing showing its OWN
+ * price, which is what makes this a resolution step rather than a guess. Equal
+ * confidence, because nothing in the evidence prefers one printing.
+ */
+export function ambiguousPrintingResult(res: { cardNumber: string; printings: CardInfo[] }): RecognitionResult {
+  res = { ...res, printings: consolidatePrintingCards(res.printings) };
+  return {
+    success: true,
+    card: ambiguousPrintingCard(res.printings),
+    lowConfidence: true,
+    reason: 'ambiguous-printing',
+    candidates: res.printings.map(card => ({ card, confidence: 1 / res.printings.length })),
+  };
 }
 
 // ── 文字相似度 ──
@@ -239,56 +450,10 @@ function keywordsMatch(cardKeywords: string[], searchKeywords: string[]): number
  * 從雜亂的 OCR 文字中提取可能的卡號（如 hBP04-001, hSD01-003 等）
  */
 function extractCardIds(text: string): string[] {
-  const normalized = normalizeText(text);
-  // 卡號模式：hBP01-001, hSD02-003, hPR-002, hSP-001 等
-  const patterns = [
-    /h[a-z]{2}\d{0,2}-\d{1,3}/gi,
-    /[a-z]{2}\d{2}-\d{3}/gi,
-    /NP\d{2}[-‾\s]?\d{3}/gi,
-    /BP\d{2}[-‾\s]?\d{3}/gi,
-    /SD\d{2}[-‾\s]?\d{3}/gi,
-    /PR[-‾\s]?\d{3}/gi,
-    /hOCG[-‾\s]?\d{3}/gi,
-    /\d{3}[-‾/]\d{3}/gi,
-  ];
-  // 卡號前綴別名對照表：實體卡上的編號 → 資料庫的系列 prefix
-  const prefixAliases: Record<string, string> = {
-    np: 'hbp',
-    bp: 'hbp',
-    sd: 'hsd',
-    pr: 'hpr',
-    sp: 'hsp',
-    ocg: 'hocg',
-    pc: 'hpc',
-    cs: 'hcs',
-    co: 'hco',
-    wf: 'hwf',
-    ys: 'hys',
-    ent: 'hent',
-  };
-  const ids = new Set<string>();
-  for (const pattern of patterns) {
-    const matches = normalized.match(pattern);
-    if (matches) {
-      for (const m of matches) {
-        // 正規化：移除空白、特殊符號、轉小寫
-        let clean = m.replace(/[‾\s]/g, '-').toLowerCase().replace(/-$/, '');
-        // 如果格式是 'abc12-345'，檢查是否需要 prefix 別名
-        const prefixMatch = clean.match(/^([a-z]{2})(\d+.*)$/);
-        if (prefixMatch) {
-          const prefix = prefixMatch[1];
-          const rest = prefixMatch[2];
-          if (prefixAliases[prefix]) {
-            clean = prefixAliases[prefix] + rest;
-          }
-        }
-        // 確保以 'h' 開頭（某些別名已包含 h, 但 NP/BP 等沒有）
-        if (!clean.startsWith('h')) clean = 'h' + clean;
-        ids.add(clean);
-      }
-    }
-  }
-  return Array.from(ids);
+  // Whole-token parse only (src/utils/cardNumberToken): extra digits / letters fail
+  // closed instead of being trimmed into a different, real card number.
+  // Raw text: the tokenizer applies the O/l → 0/1 confusions to digit groups only.
+  return findCardNumberTokens(text);
 }
 
 /**
@@ -320,104 +485,234 @@ function cleanOcrText(rawText: string): string[] {
   return [...new Set([...withId, ...shortName, ...meaningful])];
 }
 
-/**
- * Resize an image to max dimension, returns data URI.
- * Works on web via canvas.
- */
-async function resizeImage(imageUri: string, maxDim: number): Promise<string> {
-  if (typeof document === 'undefined') return imageUri;
-  return new Promise<string>((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      let { width, height } = img;
-      if (width <= maxDim && height <= maxDim) {
-        resolve(imageUri.startsWith('data:') ? imageUri : `data:image/jpeg;base64,${imageUri}`);
-        return;
-      }
-      if (width > height) { height = (height / width) * maxDim; width = maxDim; }
-      else { width = (width / height) * maxDim; height = maxDim; }
-      const c = document.createElement('canvas');
-      c.width = Math.round(width);
-      c.height = Math.round(height);
-      const ctx = c.getContext('2d');
-      if (!ctx) { resolve(imageUri); return; }
-      ctx.drawImage(img, 0, 0, c.width, c.height);
-      resolve(c.toDataURL('image/jpeg', 0.85));
-    };
-    img.onerror = () => resolve(imageUri);
-    img.src = imageUri;
-  });
-}
-
 /** Map a raw API card payload into the app's CardInfo shape (single shared mapper). */
 function mapApiCard(apiCard: any): CardInfo {
   return stripDisabledCardFields(mapApiCardToCardInfo(apiCard), releaseCardFlags());
 }
 
-/** Map the API's raw candidate list into RecognizedCandidate[]. */
+/** Map the API's raw candidate list into RecognizedCandidate[] (proven versions merged). */
 function mapApiCandidates(raw: any): RecognizedCandidate[] | undefined {
   if (!Array.isArray(raw) || raw.length === 0) return undefined;
-  return raw
+  return consolidateCandidates(raw
     .filter(c => c && c.cardNumber)
     .map(c => ({
       card: mapApiCard(c),
       confidence: typeof c.confidence === 'number' ? c.confidence : 0,
-    }));
+      evidence: candidateEvidence(c.reason),
+    })));
 }
 
 /**
- * Try to recognize card via server-side API (direct Gemini Vision).
- * Falls back gracefully without throwing
+ * v44: candidate rows proven to be one printing (an aggregation alias of the same shop
+ * listing) become ONE candidate — the version with its latest quote — keeping the best
+ * confidence / evidence of its rows. Every recognition entry (API candidates, the API's
+ * own card, the local resolver, ScanScreen) goes through this, so the chooser, the
+ * result and the session see the same version and price.
  */
-async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
-  try {
-    // Preprocess with OpenCV: enhance contrast, sharpen, resize
-    const processedImage = await preprocessCardImage(imageUri);
+export function consolidateCandidates(cands: RecognizedCandidate[] | undefined): RecognizedCandidate[] | undefined {
+  if (!cands) return cands;
+  return consolidatePrintingCards(cands.map((c) => c.card)).map((card) => {
+    const ids = card.aliasIds ?? [card.id];
+    const best = cands.filter((c) => ids.includes(c.card.id)).sort((a, b) => b.confidence - a.confidence)[0];
+    return { card, confidence: best?.confidence ?? 0, evidence: best?.evidence };
+  });
+}
 
-    // Call the API — web uses current origin; native uses the production API host.
+/**
+ * v44 (CR 14f19ab): the proven printing version a single card row belongs to, with its
+ * current proven quote, aliases and every quote kept. Its same-number siblings come from
+ * `catalog`; the row itself is used AS GIVEN (an API row's own, possibly newer quote is
+ * never replaced by the catalog copy of that id) and the existing rules reconcile the
+ * quote times — a same-time disagreement stays unpriced. No siblings (or an empty catalog
+ * after a load failure) → the row unchanged: nothing is inferred without the catalog.
+ */
+export function provenVersionOf(card: CardInfo, catalog: CardInfo[]): CardInfo {
+  if (!card?.cardNumber || (card.aliasIds?.length ?? 0) > 1) return card;
+  const siblings = catalog.filter((c) => c.cardNumber === card.cardNumber && c.id !== card.id);
+  if (siblings.length === 0) return card;
+  const version = consolidatePrintingCards([card, ...siblings]).find((c) => (c.aliasIds ?? [c.id]).includes(card.id));
+  return version && (version.aliasIds?.length ?? 0) > 1 ? version : card;
+}
+
+/** The API's single card → its proven version (candidates first, else the catalog — loaded, not assumed). */
+async function versionOfCard(card: CardInfo, cands: RecognizedCandidate[] | undefined): Promise<CardInfo> {
+  const merged = cands?.find((c) => (c.card.aliasIds?.length ?? 0) > 1 && c.card.aliasIds!.includes(card.id));
+  if (merged) return merged.card;
+  return provenVersionOf(card, await loadAllCards());
+}
+
+/**
+ * The image to upload, as a validated data URL — or why there is none.
+ *
+ * Native: the capture's own base64, typed from its signature bytes. Web: the canvas
+ * preprocessor's data URL. Either way the result has passed the same rules the handler
+ * enforces, so a file:// / content:// path or a bare string is never sent.
+ */
+async function recognitionPayload(
+  imageUri: string,
+  options: RecognizeImageOptions,
+): Promise<{ ok: true; images: string[] } | { ok: false; code: RecognitionImageErrorCode }> {
+  if (SCAN_RUNTIME === 'native') {
+    const built = buildRecognitionDataUrl(options.base64);
+    const crop = options.cropBase64 ? buildRecognitionDataUrl(options.cropBase64) : null;
+    // [context photo, frame crop] like the web scanner; if the pair would exceed the
+    // request cap the crop (the card itself) goes alone; without a crop, the photo.
+    if (built.ok && crop?.ok && validateRecognitionImages([built.dataUrl, crop.dataUrl]).ok) {
+      return { ok: true, images: [built.dataUrl, crop.dataUrl] };
+    }
+    if (crop?.ok) return { ok: true, images: [crop.dataUrl] };
+    return built.ok ? { ok: true, images: [built.dataUrl] } : built;
+  }
+  const processed = await preprocessCardImage(imageUri);
+  const check = validateRecognitionDataUrl(processed);
+  return check.ok ? { ok: true, images: [processed] } : check;
+}
+
+/**
+ * The subset of the backend's (already sanitised) debug block the app keeps: model id,
+ * normalised number, and the fields read off the card. Everything else — and any value
+ * that is not a short string — is dropped; src/services/scanDiagnostics re-validates
+ * each field again before anything is stored or exported.
+ */
+export function diagnosticDebug(raw: any): RecognitionDebug | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const str = (v: unknown) => (typeof v === 'string' && v.length <= 80 ? v : undefined);
+  const x = raw.extracted && typeof raw.extracted === 'object' ? raw.extracted : {};
+  return {
+    provider: str(raw.provider),
+    model: str(raw.model),
+    normalizedCardNumber: str(raw.normalizedCardNumber) ?? null,
+    matchStatus: str(raw.matchStatus),
+    matchReason: str(raw.matchReason) ?? null,
+    extracted: {
+      characterName: str(x.characterName),
+      cardTitle: str(x.cardTitle),
+      setCode: str(x.setCode),
+      language: str(x.language),
+      rarity: str(x.rarity),
+      // As received by the backend (older backends send it); re-validated before storage.
+      cardNumberRaw: str(x.cardNumberRaw),
+    },
+  };
+}
+
+export interface RecognitionDebug {
+  provider?: string;
+  model?: string;
+  normalizedCardNumber: string | null;
+  matchStatus?: string;
+  matchReason?: string | null;
+  extracted: { characterName?: string; cardTitle?: string; setCode?: string; language?: string; rarity?: string; cardNumberRaw?: string };
+}
+
+function mapMatch(raw: any): ScanMatch | undefined {
+  return matchFromWire(raw, mapApiCandidates);
+}
+
+/**
+ * Try to recognize card via server-side API (our backend → Google Gemini).
+ * Falls back gracefully without throwing. Never logs the image, the payload or the
+ * response body.
+ */
+async function recognizeViaApi(imageUri: string, options: RecognizeImageOptions = {}): Promise<RecognitionResult> {
+  if (options.signal?.aborted) return { success: false, cancelled: true, error: '' };
+
+  const payload = await recognitionPayload(imageUri, options);
+  // Preparing the payload is async (web canvas re-encode; a microtask boundary on
+  // native), so a cancel can land while it runs — before any listener exists. Re-check
+  // here: a cancelled scan never uploads, never falls back to OCR, never charges.
+  if (options.signal?.aborted) return { success: false, cancelled: true, error: '' };
+  if (!payload.ok) {
+    console.warn(`[cardRecognition] photo not uploaded: ${payload.code}`);
+    return { success: false, imageRejected: payload.code, error: '' };
+  }
+
+  // From here the listener is attached synchronously after the check above, so no
+  // abort can slip between them; the timer and listener are released in `finally`.
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, RECOGNITION_REQUEST_TIMEOUT_MS);
+  const forwardAbort = () => controller.abort();
+  options.signal?.addEventListener('abort', forwardAbort);
+  let gotResponse = false;
+
+  try {
+
+    // Call the API — web uses current origin; native uses the canonical production
+    // API host (DIC-1245). The old holocard-hunter.vercel.app alias must never
+    // reach an executable native bundle: it does not serve the current KV auth /
+    // recognition surfaces, so recognition would silently fail.
     const apiBase = typeof window !== 'undefined' && window.location?.origin
       ? window.location.origin
-      : 'https://holocard-hunter.vercel.app';
+      : nativeApiOrigin();
     const apiUrl = apiBase + '/api/recognize-card';
     const apiResponse = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: processedImage, storeMvp: STORE_MVP }),
+      body: JSON.stringify({ image: payload.images[0], images: payload.images, storeMvp: STORE_MVP }),
+      signal: controller.signal,
     });
+    gotResponse = true;
 
     if (!apiResponse.ok) {
       console.warn(`[cardRecognition] API returned ${apiResponse.status}`);
       const errorBody = await apiResponse.json().catch(() => null);
       // 5xx 一律算後端故障（未佈署 503、vision 上游或資料庫 502）；404 才是真的比對不到。
       if (isRecognitionInfrastructureFailure(apiResponse.status, errorBody)) {
-        return { success: false, serviceUnavailable: true, error: RECOGNITION_UNAVAILABLE_MESSAGE };
+        return {
+          success: false, serviceUnavailable: true, error: RECOGNITION_UNAVAILABLE_MESSAGE,
+          failure: classifyHttpFailure(apiResponse.status, errorBody), httpStatus: apiResponse.status,
+        };
       }
-      return { success: false, error: '' };
+      // 404 = the backend looked at this photo and has no valid answer. Its verdict
+      // (and any evidence-backed alternatives) is what the UI explains.
+      // Keep the backend's diagnostic metadata (model, what was read) for the local log —
+      // a failed scan is exactly what needs comparing (CR c9793eb P2). Projected, never
+      // the raw body.
+      return { success: false, error: '', match: mapMatch(errorBody?.match), debug: diagnosticDebug(errorBody?.debug), trace: projectTrace(errorBody?.trace) };
     }
 
     const data = await apiResponse.json();
 
     if (!data.success) {
+      // The handler's low-confidence shape is
+      //   { success:false, lowConfidence:true, candidates:[...] }
+      // where each candidate carries its own compound id + own price. Mapping
+      // that to `suggestions: CardInfo[]` alone dropped the per-candidate
+      // confidence AND the typed `candidates` field the gallery decision path
+      // reads, so the gallery low-confidence branch had nothing to hand the
+      // exact-printing picker (DIC-1339). Preserve BOTH shapes: typed
+      // candidates for the decision path, suggestions for legacy consumers.
       return {
         success: false,
         error: data.error || '',
         suggestions: Array.isArray(data.candidates) ? data.candidates.map(mapApiCard) : undefined,
+        candidates: data.match ? mapApiCandidates(data.candidates) : verifyLegacyNumberEvidence(mapApiCandidates(data.candidates), legacyReceivedNumber(data)),
         confidence: data.confidence,
         reason: data.reason,
         raw: data.raw,
-        debug: data.debug,
+        debug: diagnosticDebug(data.debug),
+        trace: projectTrace(data.trace),
         lowConfidence: !!data.lowConfidence,
+        match: mapMatch(data.match),
+        // identity_only: the card the backend identified (no printing → its price is
+        // withheld by the UI until the user picks a printing).
+        card: data.match?.status === 'identity_only' && data.card ? mapApiCard(data.card) : undefined,
       };
     }
 
     // API returned full card info — use it directly
     if (data.card) {
-      const cardInfo = mapApiCard(data.card);
+      const candidates = data.match ? mapApiCandidates(data.candidates) : verifyLegacyNumberEvidence(mapApiCandidates(data.candidates), legacyReceivedNumber(data));
+      const cardInfo = await versionOfCard(mapApiCard(data.card), candidates);
       return {
         success: true,
         card: cardInfo,
         confidence: typeof data.confidence === 'number' ? data.confidence : undefined,
-        candidates: mapApiCandidates(data.candidates),
+        candidates,
+        match: mapMatch(data.match),
+        debug: diagnosticDebug(data.debug),
+        trace: projectTrace(data.trace),
       };
     }
 
@@ -429,33 +724,35 @@ async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
     const allCards = await loadAllCards();
     const cardNumber = data.cardNumber.toLowerCase().replace(/[^a-z0-9-]/g, '');
 
-    // Try exact match
-    const match = allCards.find(c => c.id.toLowerCase() === cardNumber);
-    if (match) {
-      console.log(`[cardRecognition] API recognized: ${cardNumber} → ${match.name}`);
-      return { success: true, card: match };
+    // The API gave us a NUMBER, not a printing. Resolve it or refuse — never
+    // take the first sibling (DIC-1325).
+    const resolved = resolvePrintingByCardNumber(allCards, cardNumber, { fuzzy: true });
+    if (resolved.status === 'unique') {
+      console.log(`[cardRecognition] API recognized: ${cardNumber} → ${resolved.card.name}`);
+      return { success: true, card: resolved.card };
     }
-
-    // Try fuzzy match (strip non-alphanumeric)
-    const fuzzyMatch = allCards.find(c => {
-      const normalizedId = c.id.toLowerCase().replace(/[^a-z0-9]/g, '');
-      const normalizedQuery = cardNumber.replace(/[^a-z0-9]/g, '');
-      return normalizedId === normalizedQuery ||
-             normalizedId.includes(normalizedQuery) ||
-             normalizedQuery.includes(normalizedId);
-    });
-
-    if (fuzzyMatch) {
-      console.log(`[cardRecognition] API fuzzy match: ${cardNumber} → ${fuzzyMatch.name}`);
-      return { success: true, card: fuzzyMatch };
+    if (resolved.status === 'ambiguous') {
+      console.log(`[cardRecognition] API gave only ${cardNumber}; ${resolved.printings.length} printings — asking the user`);
+      return ambiguousPrintingResult(resolved);
     }
 
     console.warn(`[cardRecognition] API found cardNumber ${cardNumber} but no DB match`);
     return { success: false, error: '' };
 
-  } catch (e) {
-    console.warn('[cardRecognition] API call failed:', e);
-    return { success: false, error: '' };
+  } catch (e: any) {
+    if (options.signal?.aborted) return { success: false, cancelled: true, error: '' };
+    if (timedOut) {
+      console.warn('[cardRecognition] API call timed out');
+      return { success: false, timedOut: true, serviceUnavailable: true, error: RECOGNITION_UNAVAILABLE_MESSAGE, failure: 'timeout' };
+    }
+    // Name only: a transport error never carries the request body, but keep it that way.
+    console.warn(`[cardRecognition] API call failed: ${e?.name || 'Error'}`);
+    // No HTTP response at all → provably a connection failure. A response whose body
+    // could not be read is not a network error: cause unknown.
+    return { success: false, serviceUnavailable: true, error: RECOGNITION_UNAVAILABLE_MESSAGE, failure: gotResponse ? 'unavailable' : 'network' };
+  } finally {
+    clearTimeout(timeoutId);
+    options.signal?.removeEventListener('abort', forwardAbort);
   }
 }
 
@@ -463,11 +760,20 @@ async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
  * 用於 OCR 卡牌的智能識別（先裁切找卡號，再比對資料庫）
  * 從圖片直接辨識，優先找卡號（比全圖名稱匹配更可靠）
  */
-export async function recognizeCardFromImage(imageUri: string): Promise<RecognitionResult> {
+export async function recognizeCardFromImage(
+  imageUri: string,
+  options: RecognizeImageOptions = {},
+): Promise<RecognitionResult> {
   // Step 0: Try server-side Gemini Vision API first
   let serviceUnavailable = false;
+  let apiFailure: Pick<RecognitionResult, 'timedOut' | 'imageRejected' | 'failure' | 'httpStatus'> = {};
   try {
-    const apiResult = await recognizeViaApi(imageUri);
+    const apiResult = await recognizeViaApi(imageUri, options);
+    if (apiResult.cancelled) return apiResult;
+    // An explicit backend verdict is final for this photo: local OCR is a fallback for
+    // an AI path that could not answer, never a second opinion that could replace a
+    // no-match with a weaker guess.
+    if (apiResult.match) return apiResult;
     if (apiResult.success && apiResult.card) {
       return apiResult;
     }
@@ -475,17 +781,35 @@ export async function recognizeCardFromImage(imageUri: string): Promise<Recognit
       return apiResult;
     }
     serviceUnavailable = !!apiResult.serviceUnavailable;
-  } catch (e) {
-    console.warn('[cardRecognition] API recognition failed, falling back to local:', e);
+    apiFailure = { timedOut: apiResult.timedOut, imageRejected: apiResult.imageRejected, failure: apiResult.failure, httpStatus: apiResult.httpStatus };
+  } catch (e: any) {
+    console.warn(`[cardRecognition] API recognition failed, falling back to local: ${e?.name || 'Error'}`);
   }
 
-  const { cardId, rawText } = await recognizeCardNumber(imageUri);
+  // Native local OCR is expo-ocr-kit, run by the caller (scanRecognitionFlow / ScanScreen
+  // `performOcr`). Tesseract is web-only; on native this returns so that fallback runs.
+  if (SCAN_RUNTIME === 'native') {
+    return {
+      success: false,
+      error: serviceUnavailable ? RECOGNITION_UNAVAILABLE_MESSAGE : '',
+      serviceUnavailable,
+      ...apiFailure,
+    };
+  }
+
+  let cardId: string | null = null;
+  try {
+    ({ cardId } = await recognizeCardNumber(imageUri));
+  } catch (e: any) {
+    // A Tesseract load / run failure is "local OCR read nothing", not a crash.
+    console.warn(`[cardRecognition] local OCR failed: ${e?.name || 'Error'}`);
+  }
 
   if (!cardId || cardId.trim().length === 0) {
     // A down backend must not masquerade as a badly-lit photo — the local OCR pass
     // above is a best-effort fallback, not evidence about the user's image.
     return serviceUnavailable
-      ? { success: false, serviceUnavailable: true, error: RECOGNITION_UNAVAILABLE_MESSAGE }
+      ? { success: false, serviceUnavailable: true, error: RECOGNITION_UNAVAILABLE_MESSAGE, ...apiFailure }
       : { success: false, error: '無法從卡牌識別到卡號，請調整角度或光線後重試' };
   }
 
@@ -494,24 +818,27 @@ export async function recognizeCardFromImage(imageUri: string): Promise<Recognit
     return { success: false, error: '資料庫載入失敗' };
   }
 
-  // 精確匹配卡號
-  const match = allCards.find(c => c.id.toLowerCase() === cardId);
-  if (match) {
-    return { success: true, card: match, confidence: 0.95 };
+  // OCR read a card NUMBER off the photo. That identifies a printing only when
+  // the number has one; otherwise the user picks (DIC-1325).
+  const exact = resolvePrintingByCardNumber(allCards, cardId);
+  if (exact.status === 'unique') {
+    return { success: true, card: exact.card, confidence: 0.95 };
+  }
+  if (exact.status === 'ambiguous') {
+    return { ...ambiguousPrintingResult(exact), confidence: 0.95 };
   }
 
   // 模糊匹配（如 NP04 → hBP04 已在 extractCardId 處理，但仍可能有數位誤判）
-  const fuzzyMatch = allCards.find(c => {
-    const normalizedId = c.id.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const normalizedQuery = cardId.replace(/[^a-z0-9]/g, '');
-    return normalizedId === normalizedQuery ||
-           normalizedId.includes(normalizedQuery) ||
-           normalizedQuery.includes(normalizedId);
-  });
-  if (fuzzyMatch) {
-    return { success: true, card: fuzzyMatch, confidence: 0.72 };
+  const fuzzy = resolvePrintingByCardNumber(allCards, cardId, { fuzzy: true });
+  if (fuzzy.status === 'unique') {
+    return { success: true, card: fuzzy.card, confidence: 0.72 };
+  }
+  if (fuzzy.status === 'ambiguous') {
+    return { ...ambiguousPrintingResult(fuzzy), confidence: 0.72 };
   }
 
+  // The service never looked at the photo: a local miss is not a "no match" verdict.
+  if (serviceUnavailable) return { success: false, serviceUnavailable: true, error: RECOGNITION_UNAVAILABLE_MESSAGE, ...apiFailure };
   return { success: false, error: `找到卡號 ${cardId} 但資料庫無匹配，請確認卡牌版本` };
 }
 
@@ -532,22 +859,21 @@ export async function recognizeCardFromOcr(rawText: string): Promise<Recognition
   const extractedIds = extractCardIds(rawText);
   if (extractedIds.length > 0) {
     for (const cardId of extractedIds) {
-      // Try lowercase match
-      const match = allCards.find(c => c.id.toLowerCase() === cardId);
-      if (match) {
-        return { success: true, card: match, confidence: 0.9 };
+      const exact = resolvePrintingByCardNumber(allCards, cardId);
+      if (exact.status === 'unique') {
+        return { success: true, card: exact.card, confidence: 0.9 };
+      }
+      if (exact.status === 'ambiguous') {
+        return { ...ambiguousPrintingResult(exact), confidence: 0.9 };
       }
       // Try prefix match (e.g. "NP04" matches "hBP04-xxx" → not reliable, skip)
       // Try fuzzy card number (e.g. "hBPO4" → "hBP04")
-      const fuzzyMatch = allCards.find(c => {
-        const normalizedId = c.id.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const normalizedQuery = cardId.replace(/[^a-z0-9]/g, '');
-        return normalizedId === normalizedQuery ||
-               normalizedId.includes(normalizedQuery) ||
-               normalizedQuery.includes(normalizedId);
-      });
-      if (fuzzyMatch) {
-        return { success: true, card: fuzzyMatch, confidence: 0.68 };
+      const fuzzy = resolvePrintingByCardNumber(allCards, cardId, { fuzzy: true });
+      if (fuzzy.status === 'unique') {
+        return { success: true, card: fuzzy.card, confidence: 0.68 };
+      }
+      if (fuzzy.status === 'ambiguous') {
+        return { ...ambiguousPrintingResult(fuzzy), confidence: 0.68 };
       }
     }
   }
@@ -558,8 +884,13 @@ export async function recognizeCardFromOcr(rawText: string): Promise<Recognition
     const lineIds = extractCardIds(line);
     if (lineIds.length > 0) {
       for (const id of lineIds) {
-        const match = allCards.find(c => c.id.toLowerCase() === id);
-        if (match) return { success: true, card: match, confidence: 0.85 };
+        const perLine = resolvePrintingByCardNumber(allCards, id);
+        if (perLine.status === 'unique') {
+          return { success: true, card: perLine.card, confidence: 0.85 };
+        }
+        if (perLine.status === 'ambiguous') {
+          return { ...ambiguousPrintingResult(perLine), confidence: 0.85 };
+        }
       }
     }
     // Only try name match if the text contains Japanese characters (kana/kanji)
@@ -609,21 +940,32 @@ export async function recognizeCard(searchText: string): Promise<RecognitionResu
   // 1. 精確匹配卡號 (大小寫不敏感)
   const exactIdMatch = allCards.find(c => c.id.toLowerCase() === query.toLowerCase());
   if (exactIdMatch) {
-    return { success: true, card: exactIdMatch };
+    // Any raw id (an alias row included) resolves to its proven version.
+    return { success: true, card: provenVersionOf(exactIdMatch, allCards) };
   }
 
   // 2. 名稱完全匹配
   const exactNameMatch = allCards.find(c => c.name === query);
   if (exactNameMatch) {
-    return { success: true, card: exactNameMatch };
+    return { success: true, card: provenVersionOf(exactNameMatch, allCards) };
   }
 
   // 3. 卡號前綴匹配 (如 "hBP04" 匹配所有 hBP04 系列)
   const idPrefixMatch = allCards.filter(c => c.id.toLowerCase().startsWith(query.toLowerCase()));
   if (idPrefixMatch.length === 1) {
-    return { success: true, card: idPrefixMatch[0] };
+    return { success: true, card: provenVersionOf(idPrefixMatch[0], allCards) };
   }
   if (idPrefixMatch.length > 1) {
+    // Reached from the OCR path (Step 2 below calls recognizeCard per line), so
+    // it is part of the scan recovery path. When every prefix hit is the SAME
+    // cardNumber the query resolved to a number, not a printing — hand back the
+    // chooser with no price instead of the first sibling and its price.
+    // A prefix spanning several card numbers is an ordinary series search
+    // ("hBP04"), which keeps its existing behaviour (DIC-1325).
+    const numbers = new Set(idPrefixMatch.map(c => flatten(c.cardNumber)));
+    if (numbers.size === 1) {
+      return ambiguousPrintingResult({ cardNumber: idPrefixMatch[0].cardNumber, printings: idPrefixMatch });
+    }
     return {
       success: true,
       card: idPrefixMatch[0],
@@ -635,7 +977,7 @@ export async function recognizeCard(searchText: string): Promise<RecognitionResu
   const queryLower = query.toLowerCase();
   const containsMatch = allCards.filter(c => c.name.toLowerCase().includes(queryLower));
   if (containsMatch.length === 1) {
-    return { success: true, card: containsMatch[0] };
+    return { success: true, card: provenVersionOf(containsMatch[0], allCards) };
   }
   if (containsMatch.length > 1) {
     return {
@@ -673,7 +1015,7 @@ export async function recognizeCard(searchText: string): Promise<RecognitionResu
     return queryLower.includes(cardLower);
   }).sort((a, b) => b.name.length - a.name.length); // 最長（最精確）的優先
   if (reversedMatch.length === 1) {
-    return { success: true, card: reversedMatch[0] };
+    return { success: true, card: provenVersionOf(reversedMatch[0], allCards) };
   }
   if (reversedMatch.length > 1) {
     return {
@@ -742,13 +1084,18 @@ export async function searchCards(query: string, limit: number = 10): Promise<Ca
   const allCards = await loadAllCards();
   const queryLower = query.toLowerCase();
 
-  return allCards
-    .filter(card =>
-      card.name.toLowerCase().includes(queryLower) ||
-      card.id.toLowerCase().includes(queryLower) ||
-      card.series.toLowerCase().includes(queryLower),
-    )
-    .slice(0, limit);
+  // Each match becomes its proven version (alias rows of one version → one suggestion).
+  const seen = new Set<string>();
+  const out: CardInfo[] = [];
+  for (const card of allCards) {
+    if (out.length >= limit) break;
+    if (!(card.name.toLowerCase().includes(queryLower) || card.id.toLowerCase().includes(queryLower) || card.series.toLowerCase().includes(queryLower))) continue;
+    const version = provenVersionOf(card, allCards);
+    if (seen.has(version.id)) continue;
+    seen.add(version.id);
+    out.push(version);
+  }
+  return out;
 }
 
 export default {
