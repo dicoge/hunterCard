@@ -11,8 +11,13 @@ jobs:
       contents: write
 
     steps:
+      # Test-first flow: price data lands on staging (where every push runs CI)
+      # and reaches main only through a promotion PR that passes the
+      # stage-promotion proof. This workflow no longer touches main.
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: staging
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -74,8 +79,8 @@ jobs:
           git config --local user.name "GitHub Action"
           git add data/database.json data/images/ public/data/database.json
           git diff --staged --quiet || git commit -m "chore: update database $(date +%Y-%m-%d)"
-          git push origin main
+          git push origin HEAD:refs/heads/staging
 
-      - name: Deploy to Vercel via Deploy Hook
-        if: steps.check.outputs.changed == 'true'
-        run: curl -X POST ${{ secrets.VERCEL_DEPLOY_HOOK }}
+      # No deploy hook: the formal website is deployed only from main after a
+      # promotion. The staging project picks this commit up through its own Git
+      # integration once its Production Branch is set to `staging`.

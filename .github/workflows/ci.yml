@@ -2,12 +2,13 @@ name: CI
 
 on:
   push:
-    # Test-first flow: pushes to staging run the same gates, so a staging
-    # commit can be proven green before a staging-alpha build. Deploying stays
-    # unreachable from push (deploy-production is workflow_dispatch + main only).
+    # Test-first flow: every push to staging runs the full gates, code AND
+    # data, so a staging commit can be proven green before a staging-alpha
+    # build or a promotion to main. There is no paths-ignore: data commits are
+    # exactly what the price/catalog gates exist for, and main now receives
+    # data only through promotion. Deploying stays unreachable from push
+    # (deploy-production is workflow_dispatch + main only).
     branches: [main, staging]
-    paths-ignore:
-      - "data/**"
   pull_request:
     # DIC-1189: `staging` added so PRs into the isolated staging branch get
     # the same Validate gate as PRs into `main`. The main-side contract is
@@ -96,6 +97,34 @@ jobs:
           fi
 
           echo "Verified: ${EXPECTED_SHA} is the exact current tip of main."
+
+  # Test-first flow: a pull request into main must be a promotion of the live
+  # staging tip whose own staging push CI already passed. No job-level `if:`
+  # on purpose (a skipped required check counts as passing): the script is an
+  # explicit no-op for every other event and fails closed on unknown ones.
+  # Name is stable so branch protection on main can require it. Read-only.
+  stage-promotion-proof:
+    name: Stage promotion proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prove a promotion to main is the CI-verified staging tip
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/stage-promotion-proof.sh
 
   validate:
     name: Validate
@@ -227,6 +256,9 @@ jobs:
 
       - name: Verify staging Alpha ref isolation and stage-to-production API leak controls
         run: npm run test:staging-alpha-flow
+
+      - name: Verify staging-first promotion proof, data-bot targets, store binding and stage flags
+        run: npm run test:staging-first-isolation
 
       - name: Verify official-catalog-sync workflow hands off through a PR (DIC-1291)
         run: npm run test:official-catalog-sync-workflow

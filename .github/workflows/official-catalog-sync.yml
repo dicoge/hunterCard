@@ -20,7 +20,9 @@ env:
   # into a PR storm. Force-pushes are scoped strictly to this branch; main
   # is protected and never touched from this workflow.
   SYNC_BRANCH: bot/official-catalog-sync
-  BASE_BRANCH: main
+  # Test-first flow: data lands on staging first and reaches main only through
+  # a normal promotion PR that passes the stage-promotion proof (ci.yml).
+  BASE_BRANCH: staging
   # Everything the pipeline is allowed to stage. Kept in one place so both
   # the change check and the commit stage the exact same set — no path can
   # sneak in via `git add -A` and no path can silently be dropped.

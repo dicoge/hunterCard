@@ -280,7 +280,9 @@ assert.ok(
 
 const workflowSyncBranch = job.env?.SYNC_BRANCH ?? workflow.env?.SYNC_BRANCH;
 const workflowBaseBranch = job.env?.BASE_BRANCH ?? workflow.env?.BASE_BRANCH;
-assert.strictEqual(workflowBaseBranch, 'main', 'BASE_BRANCH env var must be `main`');
+// Test-first flow: the sync PR targets staging; main only receives the data
+// through a normal promotion PR guarded by the stage-promotion proof in ci.yml.
+assert.strictEqual(workflowBaseBranch, 'staging', 'BASE_BRANCH env var must be `staging`');
 assert.ok(
   typeof workflowSyncBranch === 'string' && workflowSyncBranch.startsWith('bot/'),
   `SYNC_BRANCH must live under bot/… (got \`${workflowSyncBranch}\`)`,

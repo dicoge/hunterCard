@@ -67,7 +67,8 @@
       "environment": "preview",
       "env": {
         "EXPO_PUBLIC_STORE_MVP": "1",
-        "EXPO_PUBLIC_APP_STAGE": "staging"
+        "EXPO_PUBLIC_APP_STAGE": "staging",
+        "EXPO_PUBLIC_APP_ENV": "staging"
       }
     }
   },

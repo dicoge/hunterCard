@@ -40,7 +40,8 @@ permissions:
 
 env:
   SYNC_BRANCH: bot/tournament-reports
-  BASE_BRANCH: main
+  # Test-first flow: data PRs target staging; main receives it by promotion.
+  BASE_BRANCH: staging
   # DIC-1380 W8 CR — the whitelist of paths the sync PR is allowed to
   # stage. This must include the discovery-stub directory
   # (data/tournaments/sources/) so a stub written by the failing

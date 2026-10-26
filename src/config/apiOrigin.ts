@@ -17,12 +17,13 @@
 export const PRODUCTION_ORIGIN = 'https://holohunter.dicoge.com';
 
 // Build stage (test-first release flow). Native builds talk to exactly one
-// backend, chosen at build time:
-//   EXPO_PUBLIC_APP_STAGE unset / '' / 'production' → PRODUCTION_ORIGIN, exactly
-//       as before; every existing production profile leaves it unset.
-//   EXPO_PUBLIC_APP_STAGE = 'staging' → EXPO_PUBLIC_STAGING_API_ORIGIN, which
-//       must be a bare https origin whose host is NOT a production host.
-//   any other value, or 'staging' without a usable origin → null. Callers fail
+// backend, chosen at build time from EXPO_PUBLIC_APP_STAGE and
+// EXPO_PUBLIC_APP_ENV (see resolveClientStage):
+//   both unset / '' / 'production' → PRODUCTION_ORIGIN, exactly as before;
+//       every existing production profile leaves them unset.
+//   'staging' → EXPO_PUBLIC_STAGING_API_ORIGIN, which must be a bare https
+//       origin whose host is NOT a production host.
+//   unknown or conflicting values, or staging without a usable origin → null. Callers fail
 //       closed instead of falling back to production, so a staging build can
 //       never silently read or write production KV through these clients.
 // This only selects WHICH host is called. It proves nothing about whether that
@@ -45,6 +46,22 @@ export function resolveAppStage(raw: string | null | undefined): AppStage | null
   return null;
 }
 
+// Two client flags name the stage: EXPO_PUBLIC_APP_STAGE (this module) and
+// EXPO_PUBLIC_APP_ENV (src/config/appEnv.ts, which drives the StagingBanner).
+// Either one saying 'staging' makes the build a staging build. An unknown value
+// in either, or one saying 'staging' while the other says 'production', is a
+// misconfiguration and resolves to null so callers fail closed.
+export function resolveClientStage(
+  appStage: string | null | undefined,
+  appEnv: string | null | undefined,
+): AppStage | null {
+  const norm = (raw: string | null | undefined) => (typeof raw === 'string' ? raw.trim().toLowerCase() : '');
+  const values = [norm(appStage), norm(appEnv)];
+  if (values.some((v) => v !== '' && v !== 'production' && v !== 'staging')) return null;
+  if (values.includes('staging') && values.includes('production')) return null;
+  return values.includes('staging') ? 'staging' : 'production';
+}
+
 export function resolveStagingOrigin(raw: string | null | undefined): string | null {
   if (typeof raw !== 'string' || raw !== raw.trim() || !raw) return null;
   let url: URL;
@@ -63,8 +80,9 @@ export function resolveStagingOrigin(raw: string | null | undefined): string | n
 export function resolveNativeApiOrigin(params: {
   stage: string | null | undefined;
   stagingOrigin: string | null | undefined;
+  appEnv?: string | null | undefined;
 }): string | null {
-  const stage = resolveAppStage(params.stage);
+  const stage = resolveClientStage(params.stage, params.appEnv);
   if (stage === 'production') return PRODUCTION_ORIGIN;
   if (stage === 'staging') return resolveStagingOrigin(params.stagingOrigin);
   return null;
@@ -72,7 +90,7 @@ export function resolveNativeApiOrigin(params: {
 
 export class StageApiOriginError extends Error {
   constructor() {
-    super('This build is not configured for a usable backend: EXPO_PUBLIC_APP_STAGE=staging requires EXPO_PUBLIC_STAGING_API_ORIGIN to be a non-production https origin. Refusing to fall back to production.');
+    super('This build is not configured for a usable backend: a staging build (EXPO_PUBLIC_APP_STAGE or EXPO_PUBLIC_APP_ENV = staging) requires EXPO_PUBLIC_STAGING_API_ORIGIN to be a non-production https origin, and the two stage flags must not disagree. Refusing to fall back to production.');
     this.name = 'StageApiOriginError';
   }
 }
@@ -84,6 +102,7 @@ export function nativeApiOrigin(): string {
   const origin = resolveNativeApiOrigin({
     stage: process.env.EXPO_PUBLIC_APP_STAGE,
     stagingOrigin: process.env.EXPO_PUBLIC_STAGING_API_ORIGIN,
+    appEnv: process.env.EXPO_PUBLIC_APP_ENV,
   });
   if (!origin) throw new StageApiOriginError();
   return origin;

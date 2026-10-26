@@ -170,12 +170,26 @@ function isProductionApiHost(host) {
   return PRODUCTION_API_HOSTS.includes(h) || /^holocard-hunter-[a-z0-9-]+\.vercel\.app$/.test(h);
 }
 
+// Stage flags read at build time: EXPO_PUBLIC_APP_STAGE (native API origin),
+// EXPO_PUBLIC_APP_ENV (client banner / site URL, src/config/appEnv.ts) and, when
+// the build host sets it, the server APP_ENV. Any one saying 'staging' makes
+// this a staging build; an unknown value, or 'staging' alongside an explicit
+// 'production', fails the build. The client two mirror resolveClientStage in
+// src/config/apiOrigin.ts.
+const STAGE_FLAGS = ['EXPO_PUBLIC_APP_STAGE', 'EXPO_PUBLIC_APP_ENV', 'APP_ENV'];
+
 function resolveBuildStage(env = process.env) {
-  const raw = typeof env.EXPO_PUBLIC_APP_STAGE === 'string' ? env.EXPO_PUBLIC_APP_STAGE.trim().toLowerCase() : '';
-  if (raw === '' || raw === 'production') return { stage: 'production', apiOrigin: 'https://holohunter.dicoge.com' };
-  if (raw !== 'staging') {
-    throw new Error(`EXPO_PUBLIC_APP_STAGE="${env.EXPO_PUBLIC_APP_STAGE}" is not a known stage (expected unset, "production" or "staging").`);
+  const values = STAGE_FLAGS.map((name) => [name, typeof env[name] === 'string' ? env[name].trim().toLowerCase() : '']);
+  for (const [name, v] of values) {
+    if (v !== '' && v !== 'production' && v !== 'staging') {
+      throw new Error(`${name}="${env[name]}" is not a known stage (expected unset, "production" or "staging").`);
+    }
   }
+  const set = values.filter(([, v]) => v !== '');
+  if (set.some(([, v]) => v === 'staging') && set.some(([, v]) => v === 'production')) {
+    throw new Error(`Conflicting stage flags: ${set.map(([n, v]) => `${n}=${v}`).join(', ')}. Refusing to guess between staging and production.`);
+  }
+  if (!set.some(([, v]) => v === 'staging')) return { stage: 'production', apiOrigin: 'https://holohunter.dicoge.com' };
   const origin = env.EXPO_PUBLIC_STAGING_API_ORIGIN;
   let url = null;
   try {
@@ -191,7 +205,7 @@ function resolveBuildStage(env = process.env) {
     && !isProductionApiHost(url.hostname);
   if (!ok) {
     throw new Error(
-      'EXPO_PUBLIC_APP_STAGE=staging requires EXPO_PUBLIC_STAGING_API_ORIGIN to be a bare https origin that is not a production host ' +
+      'A staging build requires EXPO_PUBLIC_STAGING_API_ORIGIN to be a bare https origin that is not a production host ' +
       `(got ${origin === undefined ? 'unset' : JSON.stringify(origin)}). A staging build must never fall back to the production API.`,
     );
   }

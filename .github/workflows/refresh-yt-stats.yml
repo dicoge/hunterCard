@@ -37,7 +37,8 @@ permissions:
 
 env:
   SYNC_BRANCH: bot/refresh-yt-stats
-  BASE_BRANCH: main
+  # Test-first flow: data PRs target staging; main receives it by promotion.
+  BASE_BRANCH: staging
   # The exact paths this workflow is allowed to stage. Nothing else may
   # sneak in via `git add -A`.
   SYNC_PATHS: >-

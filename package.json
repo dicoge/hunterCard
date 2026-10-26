@@ -88,6 +88,7 @@
     "test:play-manifest": "node scripts/test-play-release-manifest.mjs",
     "test:eas-submit-production-track": "node scripts/test-eas-submit-production-track.mjs",
     "test:staging-alpha-flow": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-staging-alpha-flow.mjs",
+    "test:staging-first-isolation": "APP_ENV=production node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-staging-first-isolation.mjs",
     "test:play-store-assets": "node scripts/test-play-store-assets.mjs",
     "test:privacy-disclosure": "node scripts/test-privacy-disclosure.mjs",
     "test:native-scan-no-upload": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-native-scan-no-image-upload.mjs",

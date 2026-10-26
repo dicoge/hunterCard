@@ -6,7 +6,7 @@
 // consumes these to dispatch; identity is always resolved server-side regardless
 // of which surface produced the provider ID token.
 
-import { PRODUCTION_ORIGIN, isProductionHost, nativeApiOrigin, resolveAppStage } from '../config/apiOrigin';
+import { PRODUCTION_ORIGIN, isProductionHost, nativeApiOrigin, resolveClientStage } from '../config/apiOrigin';
 
 export type GoogleLoginSurface = 'native-ios' | 'native-android' | 'web';
 export type AppleLoginSurface = 'native-ios' | 'web' | 'android-web' | 'disabled';
@@ -117,7 +117,7 @@ export function resolveApiBase(params: {
   const override = absoluteHttpOverride(envOverride ?? '');
   // A staging build must not be pointed back at production through the
   // override; it falls through to the stage-checked native origin instead.
-  const stagingBuild = resolveAppStage(process.env.EXPO_PUBLIC_APP_STAGE) !== 'production';
+  const stagingBuild = resolveClientStage(process.env.EXPO_PUBLIC_APP_STAGE, process.env.EXPO_PUBLIC_APP_ENV) !== 'production';
   if (override && !(stagingBuild && isProductionHost(new URL(override).hostname))) return override;
   if (platformOS === 'web' && webOrigin) {
     return `${webOrigin.replace(/\/+$/, '')}/api`;
