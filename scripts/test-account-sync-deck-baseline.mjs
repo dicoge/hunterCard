@@ -94,6 +94,55 @@ await test('fingerprint: ignores updatedAt, key order and null/undefined fields;
   assert.notEqual(deckContentFingerprint(deck('d1', 'synced', FAST, [2, 1])), deckContentFingerprint(synced), 'slot order is content');
 });
 
+// origin.importedAt is stored by the server through cleanIso (trim → parse → UTC ISO).
+const imported = (importedAt) => ({
+  ...deck('d1', 'imported', FAST, [1]),
+  origin: { kind: 'tournament', eventId: 'e1', eventName: 'ev', sourceDeckId: 's1', decklogCode: null, sourceUrl: 'https://example.invalid/d', importedAt },
+});
+const SERVER_ISO = '2026-10-27T02:00:00.000Z';
+
+await test('fingerprint: origin.importedAt follows the server ISO normalization; a different instant is different content', () => {
+  const server = deckContentFingerprint(imported(SERVER_ISO));
+  for (const same of ['2026-10-27T10:00:00+08:00', '2026-10-27T02:00:00Z', ` ${SERVER_ISO} `, '2026-10-27T02:00:00.000+00:00']) {
+    assert.equal(deckContentFingerprint(imported(same)), server, `${same} is the same instant`);
+  }
+  assert.notEqual(deckContentFingerprint(imported('2026-10-27T02:00:01.000Z')), server, 'a real re-import time is a change');
+  assert.notEqual(deckContentFingerprint(imported('2026-10-27T10:00:00+09:00')), server, 'same wall clock, other zone = other instant');
+  // Values the server would reject stay verbatim: never equal to a server copy.
+  for (const bad of ['not a date', '', '   ', 12345]) {
+    assert.notEqual(deckContentFingerprint(imported(bad)), server, `${JSON.stringify(bad)} is not a server form`);
+  }
+  assert.notEqual(deckContentFingerprint(imported('not a date')), deckContentFingerprint(imported('also not a date')), 'raw content still distinguishes');
+  // Missing/null importedAt keep the previous handling: dropped like any null field, other origin content kept.
+  assert.equal(deckContentFingerprint(imported(null)), deckContentFingerprint(imported(undefined)));
+  assert.notEqual(deckContentFingerprint(imported(undefined)), deckContentFingerprint(deck('d1', 'imported', FAST, [1])), 'origin itself still counts');
+  // Only origin.importedAt is normalized: an ISO-looking deck name is content as written.
+  assert.notEqual(deckContentFingerprint({ ...synced, name: '2026-10-27T10:00:00+08:00' }), deckContentFingerprint({ ...synced, name: SERVER_ISO }));
+  // Other origin fields and slot order are still compared exactly.
+  assert.notEqual(deckContentFingerprint({ ...imported(SERVER_ISO), origin: { ...imported(SERVER_ISO).origin, eventName: 'ev2' } }), server);
+});
+
+await test('remote deletion with a non-canonical local importedAt: the untouched deck stays deleted; a changed import time is kept', () => {
+  const baseline = baselineFrom(SNAP(10, [imported(SERVER_ISO)]));
+  assert.deepEqual(mergeLocalOntoServer(SNAP(11, []), { decks: [imported('2026-10-27T10:00:00+08:00')] }, {}, baseline).decks, [],
+    'same instant in another ISO form → untouched → stays deleted');
+  assert.deepEqual(mergeLocalOntoServer(SNAP(11, []), { decks: [imported(SERVER_ISO)] }, {}, baseline).decks, [],
+    'canonical form → stays deleted');
+  const reimported = { ...imported('2026-10-27T03:00:00.000Z'), updatedAt: '2026-10-27T09:00:00.000Z' };
+  assert.deepEqual(mergeLocalOntoServer(SNAP(11, []), { decks: [reimported] }, {}, baseline).decks, [reimported],
+    'a different import instant is a local change (slow clock) → kept');
+  const invalidLocal = { ...imported('not a date'), updatedAt: '2026-10-27T09:00:00.000Z' };
+  assert.deepEqual(mergeLocalOntoServer(SNAP(11, []), { decks: [invalidLocal] }, {}, baseline).decks, [invalidLocal],
+    'an unparseable local value cannot match → treated as changed → kept (no silent drop)');
+});
+
+await test('both sides present, local differs only by importedAt ISO form: the genuine server edit wins', () => {
+  const baseline = baselineFrom(SNAP(10, [imported(SERVER_ISO)]));
+  const remote = { ...imported(SERVER_ISO), name: 'B edit', updatedAt: SLOW };
+  const merged = mergeLocalOntoServer(SNAP(11, [remote]), { decks: [imported('2026-10-27T10:00:00+08:00')] }, {}, baseline);
+  assert.deepEqual(merged.decks, [remote]);
+});
+
 await test('baseline: records deck content next to updatedAt; an older persisted baseline (no deckContent) is still accepted', () => {
   const b = base();
   assert.deepEqual(b.decks, { d1: FAST });

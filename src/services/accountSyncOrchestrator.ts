@@ -280,7 +280,20 @@ export function baselineFrom(snapshot: Partial<AccountSyncSnapshot> | AccountSyn
  * top-level `updatedAt` excluded, hashed to a short fixed-size string so the
  * persisted baseline stays small. Two copies with the same fingerprint hold the
  * same name, zones, slots, cards and origin.
+ *
+ * `origin.importedAt` is compared the way the server stores it (cleanIso in
+ * api/_lib/account-sync-store.ts: trim, parse, re-emit as UTC ISO), so a local
+ * `+08:00` form and the server's `Z` form of the same instant are the same
+ * content, while a different import instant is not. A value the server would
+ * reject (not a string, empty, unparseable) is kept verbatim: it can never equal
+ * a server copy, so that deck falls back to the timestamp rules.
  */
+function canonicalIso(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const t = Date.parse(value.trim());
+  return value.trim() && Number.isFinite(t) ? new Date(t).toISOString() : value;
+}
+
 export function deckContentFingerprint(deck: unknown): string {
   const canon = (v: unknown, top: boolean): unknown => {
     if (Array.isArray(v)) return v.map((x) => canon(x, false));
@@ -289,7 +302,9 @@ export function deckContentFingerprint(deck: unknown): string {
       for (const k of Object.keys(v as object).sort()) {
         const x = (v as Record<string, unknown>)[k];
         if (x === undefined || x === null || (top && k === 'updatedAt')) continue;
-        o[k] = canon(x, false);
+        o[k] = top && k === 'origin' && x && typeof x === 'object' && !Array.isArray(x)
+          ? canon({ ...(x as Record<string, unknown>), importedAt: canonicalIso((x as Record<string, unknown>).importedAt) }, false)
+          : canon(x, false);
       }
       return o;
     }
