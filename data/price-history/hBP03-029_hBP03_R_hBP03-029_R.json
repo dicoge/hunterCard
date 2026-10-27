@@ -74,8 +74,16 @@
       "currency": "JPY",
       "cardId": "hBP03-029_hBP03_R_hBP03-029_R",
       "sourceProduct": "hBP03"
+    },
+    {
+      "date": "2026-10-27",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-029_hBP03_R_hBP03-029_R",
+      "sourceProduct": "hBP03"
     }
   ],
-  "lastUpdated": "2026-10-26T02:45:59.618Z",
+  "lastUpdated": "2026-10-27T12:07:11.448Z",
   "nameZh": "櫻巫女"
 }

@@ -74,8 +74,16 @@
       "currency": "JPY",
       "cardId": "hBP08-005_hBP08_SEC_hBP08-005_SEC",
       "sourceProduct": "hBP08"
+    },
+    {
+      "date": "2026-10-27",
+      "price": 59800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-005_hBP08_SEC_hBP08-005_SEC",
+      "sourceProduct": "hBP08"
     }
   ],
-  "lastUpdated": "2026-10-26T02:46:00.005Z",
+  "lastUpdated": "2026-10-27T12:07:23.539Z",
   "nameZh": "鷹嶺琉衣"
 }

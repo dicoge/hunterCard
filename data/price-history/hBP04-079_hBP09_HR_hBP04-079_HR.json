@@ -74,8 +74,16 @@
       "currency": "JPY",
       "cardId": "hBP04-079_hBP09_HR_hBP04-079_HR",
       "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-10-27",
+      "price": 3480,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-079_hBP09_HR_hBP04-079_HR",
+      "sourceProduct": "hBP09"
     }
   ],
-  "lastUpdated": "2026-10-26T02:45:59.510Z",
+  "lastUpdated": "2026-10-27T12:07:09.587Z",
   "nameZh": "夏色祭"
 }

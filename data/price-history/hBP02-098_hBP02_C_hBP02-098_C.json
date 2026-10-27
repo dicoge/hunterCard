@@ -74,8 +74,16 @@
       "currency": "JPY",
       "cardId": "hBP02-098_hBP02_C_hBP02-098_C",
       "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-10-27",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-098_hBP02_C_hBP02-098_C",
+      "sourceProduct": "hBP02"
     }
   ],
-  "lastUpdated": "2026-10-26T02:45:59.830Z",
+  "lastUpdated": "2026-10-27T12:07:15.770Z",
   "nameZh": "Death-sensei"
 }
