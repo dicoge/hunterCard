@@ -74,8 +74,16 @@
       "currency": "JPY",
       "cardId": "hBP02-087_hBP02_C_hBP02-087_C",
       "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-10-27",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-087_hBP02_C_hBP02-087_C",
+      "sourceProduct": "hBP02"
     }
   ],
-  "lastUpdated": "2026-10-26T02:45:59.826Z",
+  "lastUpdated": "2026-10-27T12:07:15.609Z",
   "nameZh": "紫咲詩音的魔法手杖"
 }
