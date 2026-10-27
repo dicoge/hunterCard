@@ -261,12 +261,55 @@ export function baselineFrom(snapshot: Partial<AccountSyncSnapshot> | AccountSyn
     for (const [k, v] of Object.entries(rawCollection)) if (typeof v === 'number' && v > 0) collection[k] = Math.floor(v);
   }
   const decks: Record<string, string> = {};
+  const deckContent: Record<string, string> = {};
   if (Array.isArray(snapshot?.decks)) {
-    for (const d of snapshot!.decks as any[]) if (d?.id) decks[d.id] = String(d.updatedAt ?? '');
+    for (const d of snapshot!.decks as any[]) {
+      if (!d?.id) continue;
+      decks[d.id] = String(d.updatedAt ?? '');
+      deckContent[d.id] = deckContentFingerprint(d);
+    }
   }
   const entries = (snapshot as any)?.scanSession?.entries;
   const scans = Array.isArray(entries) ? entries.map((e: any) => e?.instanceId).filter((id: unknown) => typeof id === 'string') : null;
-  return { collection, decks, scans };
+  return { collection, decks, deckContent, scans };
+}
+
+/**
+ * What a deck CONTAINS, independent of any clock (2026-10-27): canonical JSON with
+ * sorted keys, null/undefined fields dropped (the server drops them too) and the
+ * top-level `updatedAt` excluded, hashed to a short fixed-size string so the
+ * persisted baseline stays small. Two copies with the same fingerprint hold the
+ * same name, zones, slots, cards and origin.
+ */
+export function deckContentFingerprint(deck: unknown): string {
+  const canon = (v: unknown, top: boolean): unknown => {
+    if (Array.isArray(v)) return v.map((x) => canon(x, false));
+    if (v && typeof v === 'object') {
+      const o: Record<string, unknown> = {};
+      for (const k of Object.keys(v as object).sort()) {
+        const x = (v as Record<string, unknown>)[k];
+        if (x === undefined || x === null || (top && k === 'updatedAt')) continue;
+        o[k] = canon(x, false);
+      }
+      return o;
+    }
+    return v;
+  };
+  const text = JSON.stringify(canon(deck, true));
+  // Two independent 53-bit cyrb53 hashes plus the length.
+  const cyrb53 = (seed: number) => {
+    let h1 = 0xdeadbeef ^ seed;
+    let h2 = 0x41c6ce57 ^ seed;
+    for (let i = 0; i < text.length; i += 1) {
+      const ch = text.charCodeAt(i);
+      h1 = Math.imul(h1 ^ ch, 2654435761);
+      h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+  };
+  return `${text.length.toString(36)}.${cyrb53(1)}.${cyrb53(0x9e3779b9)}`;
 }
 
 /**
@@ -557,12 +600,26 @@ function mergeLocalOntoServer(
 
   // decks: union by id, newer updatedAt wins; local wins on tie; drop server
   // entries whose id has a local delete tombstone >= the server updatedAt.
+  // 2026-10-27: when the baseline carries the deck's content fingerprint, the
+  // side that did NOT change since this device last matched the server yields to
+  // the side that did, whatever the device clocks say (a fast-clock device's
+  // untouched copy must not overwrite a slow-clock device's newer edit). Only a
+  // deck changed on BOTH sides, or one without a fingerprint, uses timestamps.
+  const deckBase = (id: string): string | undefined =>
+    (baseline && Array.isArray(server?.decks) ? baseline.deckContent?.[id] : undefined);
+  const unchangedSinceBase = (deck: any): boolean | null => {
+    const base = deckBase(deck?.id);
+    return base === undefined ? null : deckContentFingerprint(deck) === base;
+  };
   const deckMap = new Map<string, any>();
   const rememberDeck = (deck: any, side: 'server' | 'local') => {
     if (!deck?.id) return;
     if (side === 'server') {
       const deletedAt = deletedDeckIds[deck.id];
       if (deletedAt) {
+        // Deleted here, and the server copy is exactly what this device last saw:
+        // the deletion is the only change → it wins (no resurrection by clock).
+        if (unchangedSinceBase(deck) === true) return;
         const deletedMs = Date.parse(deletedAt) || 0;
         const updatedMs = Date.parse(deck.updatedAt || '') || 0;
         if (deletedMs >= updatedMs) return;
@@ -570,6 +627,12 @@ function mergeLocalOntoServer(
     }
     const prev = deckMap.get(deck.id);
     if (!prev) { deckMap.set(deck.id, deck); return; }
+    const localSame = unchangedSinceBase(deck);
+    const serverSame = unchangedSinceBase(prev);
+    if (localSame !== null && serverSame !== null && localSame !== serverSame) {
+      if (serverSame) deckMap.set(deck.id, deck);
+      return;
+    }
     const prevMs = Date.parse(prev.updatedAt || '') || 0;
     const nextMs = Date.parse(deck.updatedAt || '') || 0;
     if (nextMs > prevMs) { deckMap.set(deck.id, deck); return; }
@@ -578,10 +641,13 @@ function mergeLocalOntoServer(
   for (const deck of (server?.decks as any[] | undefined) ?? []) rememberDeck(deck, 'server');
   // CR 2026-10-17: a deck the server no longer has, that this device had when it
   // last matched the server and has not edited since, was deleted elsewhere.
+  // "Not edited" is the content fingerprint when the baseline has one (a slow-clock
+  // edit stamped before the baseline is still an edit), else the timestamp.
   const serverDeckIds = new Set(((server?.decks as any[] | undefined) ?? []).map((d) => d?.id));
   const deletedElsewhere = (deck: any) => !!baseline && Array.isArray(server?.decks) && !serverDeckIds.has(deck?.id)
     && baseline.decks[deck?.id] !== undefined
-    && (Date.parse(deck?.updatedAt || '') || 0) <= (Date.parse(baseline.decks[deck.id]) || 0);
+    && (unchangedSinceBase(deck)
+      ?? (Date.parse(deck?.updatedAt || '') || 0) <= (Date.parse(baseline.decks[deck.id]) || 0));
   for (const deck of (local.decks as any[] | undefined) ?? []) if (!deletedElsewhere(deck)) rememberDeck(deck, 'local');
   merged.decks = [...deckMap.values()];
 
