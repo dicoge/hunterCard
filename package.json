@@ -42,6 +42,7 @@
     "test:account-sync-backend": "node scripts/test-account-sync-backend.cjs",
     "test:account-sync-client": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-account-sync-client.mjs",
     "test:account-sync-orchestrator": "node --import ./scripts/register-web-render.mjs scripts/test-account-sync-orchestrator.mjs",
+    "test:account-sync-deck-baseline": "node --import ./scripts/register-web-render.mjs scripts/test-account-sync-deck-baseline.mjs",
     "test:account-sync-two-device": "node scripts/test-account-sync-two-device.mjs",
     "test:account-sync-binding": "node --import ./scripts/register-web-render.mjs scripts/test-account-sync-binding.mjs",
     "test:deployment-freshness-gate": "node scripts/test-deployment-freshness-gate.mjs",

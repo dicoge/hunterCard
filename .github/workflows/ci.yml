@@ -441,6 +441,9 @@ jobs:
       - name: Verify account remote-sync orchestrator hydrate/push/conflict (DIC-1380 W4)
         run: npm run test:account-sync-orchestrator
 
+      - name: Verify account remote-sync deck merge by baseline content, not device clocks
+        run: npm run test:account-sync-deck-baseline
+
       - name: Verify account remote-sync store binding (DIC-1380 W4)
         run: npm run test:account-sync-binding
 

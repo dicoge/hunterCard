@@ -14,6 +14,10 @@
  *                 (collection quantities, deck id → updatedAt, scan ids). A merge
  *                 compares against it so an entity the device did not touch since
  *                 but another device deleted stays deleted (CR 2026-10-17).
+ *                 `deckContent` (2026-10-27, optional) adds deck id → content
+ *                 fingerprint, so a deck merge can tell which side really changed
+ *                 instead of trusting device clocks; a baseline saved before it
+ *                 existed simply lacks it and the old timestamp rules apply.
  *
  * Nothing here is account data itself; it never leaves the device.
  */
@@ -24,6 +28,8 @@ import platformStorage from '../stores/storage';
 export interface SyncBaseline {
   collection: Record<string, number>;
   decks: Record<string, string>;
+  /** Deck id → deckContentFingerprint() of the copy the server held. Absent in older baselines. */
+  deckContent?: Record<string, string>;
   /** Scan instance ids; null when the server did not carry the scan list. */
   scans: string[] | null;
 }
