@@ -74,8 +74,16 @@
       "currency": "JPY",
       "cardId": "hBP07-101_hBP07_C_hBP07-101_C",
       "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-10-28",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-101_hBP07_C_hBP07-101_C",
+      "sourceProduct": "hBP07"
     }
   ],
-  "lastUpdated": "2026-10-26T02:45:59.994Z",
+  "lastUpdated": "2026-10-28T12:06:13.553Z",
   "nameZh": "ASMR麥克風"
 }
