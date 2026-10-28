@@ -74,8 +74,16 @@
       "currency": "JPY",
       "cardId": "hBP06-092_hBP06_C_hBP06-092_C",
       "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-10-28",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-092_hBP06_C_hBP06-092_C",
+      "sourceProduct": "hBP06"
     }
   ],
-  "lastUpdated": "2026-10-26T02:45:59.983Z",
+  "lastUpdated": "2026-10-28T12:06:13.453Z",
   "nameZh": "美乃滋親親"
 }
