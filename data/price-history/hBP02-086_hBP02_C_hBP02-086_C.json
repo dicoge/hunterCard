@@ -74,8 +74,16 @@
       "currency": "JPY",
       "cardId": "hBP02-086_hBP02_C_hBP02-086_C",
       "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-10-29",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-086_hBP02_C_hBP02-086_C",
+      "sourceProduct": "hBP02"
     }
   ],
-  "lastUpdated": "2026-10-26T02:45:59.825Z",
+  "lastUpdated": "2026-10-29T12:08:11.483Z",
   "nameZh": "Hololive閃耀"
 }
