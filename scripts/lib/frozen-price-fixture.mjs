@@ -139,6 +139,103 @@ export function buildFixtureString({ ref = null, root = repoRoot } = {}) {
   }, null, 2)}\n`;
 }
 
+/**
+ * One card number's listing set from a database that may use EITHER shape:
+ *   • card-number-wide: every row carries the same listing set (the shape the
+ *     original snapshot was frozen from) → that set, unchanged;
+ *   • per-printing: each printing row carries only its own listings (the scraper's
+ *     shape since late 2026-08) → the union of those rows, which is the same
+ *     card-number-wide set split across rows. Rows are read in database-key order and
+ *     identical listing objects are kept once.
+ * Two rows offering the SAME label with different data is a conflict this cannot
+ * resolve — it throws instead of picking one (no cross-printing borrowing, no guess).
+ * Returns { listings, method } or null when the database has no row for the number.
+ */
+export function listingSetForCardNumber(rawCardsByKey, cardNumber) {
+  const rows = Object.keys(rawCardsByKey)
+    .sort()
+    .map((key) => rawCardsByKey[key])
+    .filter((r) => r?.cardNumber === cardNumber);
+  if (rows.length === 0) return null;
+  const sets = rows.map((r) => JSON.stringify(r.prices ?? []));
+  if (new Set(sets).size === 1) return { listings: JSON.parse(sets[0]), method: 'rows-agree' };
+  const byLabel = new Map();
+  const listings = [];
+  for (const row of rows) {
+    for (const listing of row.prices ?? []) {
+      const text = JSON.stringify(listing);
+      const seen = byLabel.get(listing?.name);
+      if (seen === undefined) {
+        byLabel.set(listing?.name, text);
+        listings.push(listing);
+      } else if (seen !== text) {
+        throw new Error(
+          `${cardNumber}: two printing rows list "${listing?.name}" with different data; `
+          + 'refusing to choose one',
+        );
+      }
+    }
+  }
+  return { listings, method: 'per-printing-union' };
+}
+
+/**
+ * ADDITIVE extension of the committed snapshot (PR228): every existing card entry and
+ * the original `source` are kept byte-for-byte; only card numbers the regressions now
+ * need but the snapshot lacks are added, each from the FIRST listed source database that
+ * has a row for it. Every addition is recorded in `supplements` with its exact source
+ * commit and method, so the snapshot stays reproducible from history. Never re-prices
+ * an existing entry. Pure: databases are passed in.
+ *
+ * @param existing  the parsed committed fixture
+ * @param required  card numbers the snapshot must cover
+ * @param sources   [{ ref, commit, cards }] in priority order
+ */
+export function extendFixture(existing, required, sources) {
+  const cards = { ...existing.cards };
+  const missing = required.filter((n) => !Array.isArray(cards[n]));
+  const supplements = (existing.supplements ?? []).map((s) => ({ ...s, cardNumbers: [...s.cardNumbers] }));
+  const added = new Map();
+  const unresolved = [];
+  for (const cardNumber of missing) {
+    let hit = null;
+    for (const source of sources) {
+      const found = listingSetForCardNumber(source.cards, cardNumber);
+      if (found) { hit = { source, ...found }; break; }
+    }
+    if (!hit) { unresolved.push(cardNumber); continue; }
+    cards[cardNumber] = hit.listings;
+    const key = `${hit.source.commit}|${hit.method}`;
+    if (!added.has(key)) added.set(key, { ref: hit.source.ref, commit: hit.source.commit, method: hit.method, cardNumbers: [] });
+    added.get(key).cardNumbers.push(cardNumber);
+  }
+  if (unresolved.length > 0) {
+    throw new Error(`no source database has a row for: ${unresolved.join(', ')}`);
+  }
+  for (const entry of added.values()) supplements.push(entry);
+  const sorted = {};
+  for (const n of Object.keys(cards).sort()) sorted[n] = cards[n];
+  return {
+    _comment: existing._comment,
+    generator: existing.generator,
+    source: existing.source,
+    ...(supplements.length > 0 ? { supplements } : {}),
+    cards: sorted,
+  };
+}
+
+/** The committed fixture extended from git refs (CLI: --extend --ref A [--ref B …]). */
+export function extendFixtureString({ refs, root = repoRoot } = {}) {
+  const existing = JSON.parse(fs.readFileSync(FIXTURE_PATH, 'utf8'));
+  const sources = refs.map((ref) => ({
+    ref,
+    commit: execFileSync('git', ['rev-parse', `${ref}^{commit}`], { cwd: root, encoding: 'utf8' }).trim(),
+    cards: JSON.parse(databaseAtRef(ref, root)).cards ?? {},
+  }));
+  const next = extendFixture(existing, fixtureCardNumbers(root), sources);
+  return `${JSON.stringify(next, null, 2)}\n`;
+}
+
 let cached = null;
 
 /** cardNumber → its frozen listings, exactly as the source published them. */

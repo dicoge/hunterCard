@@ -5,7 +5,87 @@
     "path": "public/data/database.json",
     "ref": "a00676629"
   },
+  "supplements": [
+    {
+      "ref": "a00676629",
+      "commit": "a00676629b4c1a3ea545fcaaffb8374b468889f8",
+      "method": "rows-agree",
+      "cardNumbers": [
+        "hBP01-008",
+        "hBP01-052",
+        "hBP01-054",
+        "hBP01-055",
+        "hBP01-088",
+        "hBP01-090",
+        "hBP02-055",
+        "hBP02-057",
+        "hBP02-059",
+        "hBP04-083",
+        "hBP04-084",
+        "hBP04-085",
+        "hBP05-020",
+        "hBP06-049",
+        "hBP06-053",
+        "hBP06-057",
+        "hBP06-058",
+        "hBP06-059",
+        "hBP06-060",
+        "hBP06-095",
+        "hBP07-007",
+        "hBP07-077",
+        "hBP07-078",
+        "hBP07-080",
+        "hBP07-081",
+        "hBP07-082",
+        "hBP07-083",
+        "hBP07-091",
+        "hBP07-103",
+        "hBP07-110",
+        "hBP08-054",
+        "hSD01-002",
+        "hSD18-004",
+        "hSD18-005",
+        "hY04-001",
+        "hY05-001",
+        "hY06-009"
+      ]
+    },
+    {
+      "ref": "84d822eadfc8f25fa53f4052febff03fdd7df29b",
+      "commit": "84d822eadfc8f25fa53f4052febff03fdd7df29b",
+      "method": "per-printing-union",
+      "cardNumbers": [
+        "hBP09-059",
+        "hBP09-060",
+        "hBP09-061",
+        "hBP09-088",
+        "hBP09-098"
+      ]
+    },
+    {
+      "ref": "84d822eadfc8f25fa53f4052febff03fdd7df29b",
+      "commit": "84d822eadfc8f25fa53f4052febff03fdd7df29b",
+      "method": "rows-agree",
+      "cardNumbers": [
+        "hY02-012"
+      ]
+    }
+  ],
   "cards": {
+    "hBP01-008": [
+      {
+        "name": "こぼ・かなえる(パラレル)",
+        "sellPrice": 17800,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10018.jpg"
+      },
+      {
+        "name": "こぼ・かなえる",
+        "sellPrice": 280,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10017.jpg"
+      }
+    ],
     "hBP01-044": [
       {
         "name": "AZKi",
@@ -46,6 +126,36 @@
         "sellPrice": 980,
         "rarity": "",
         "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10023.jpg"
+      }
+    ],
+    "hBP01-052": [
+      {
+        "name": "アイラニ・イオフィフティーン",
+        "sellPrice": 120,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10068.jpg"
+      },
+      {
+        "name": "アイラニ・イオフィフティーン(パラレル/hBP05)",
+        "sellPrice": 80,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10194.jpg"
+      }
+    ],
+    "hBP01-054": [
+      {
+        "name": "アイラニ・イオフィフティーン",
+        "sellPrice": 180,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10070.jpg"
+      }
+    ],
+    "hBP01-055": [
+      {
+        "name": "アイラニ・イオフィフティーン",
+        "sellPrice": 180,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10071.jpg"
       }
     ],
     "hBP01-056": [
@@ -114,6 +224,28 @@
         "sellPrice": 2480,
         "rarity": "",
         "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10125.jpg"
+      }
+    ],
+    "hBP01-088": [
+      {
+        "name": "ムーナ・ホシノヴァ",
+        "sellPrice": 180,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10107.jpg"
+      },
+      {
+        "name": "ムーナ・ホシノヴァ(パラレル/hBP06)",
+        "sellPrice": 50,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10219.jpg"
+      }
+    ],
+    "hBP01-090": [
+      {
+        "name": "ムーナ・ホシノヴァ",
+        "sellPrice": 220,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10109.jpg"
       }
     ],
     "hBP01-092": [
@@ -282,6 +414,54 @@
         "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp02/10034.jpg"
       }
     ],
+    "hBP02-055": [
+      {
+        "name": "森カリオペ(パラレル)",
+        "sellPrice": 420,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp02/10111.jpg"
+      },
+      {
+        "name": "森カリオペ",
+        "sellPrice": 50,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp02/10110.jpg"
+      }
+    ],
+    "hBP02-057": [
+      {
+        "name": "森カリオペ(パラレル)",
+        "sellPrice": 320,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp02/10115.jpg"
+      },
+      {
+        "name": "森カリオペ",
+        "sellPrice": 80,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp02/10114.jpg"
+      }
+    ],
+    "hBP02-059": [
+      {
+        "name": "森カリオペ(パラレル)",
+        "sellPrice": 2480,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp02/10120.jpg"
+      },
+      {
+        "name": "森カリオペ(パラレル)",
+        "sellPrice": 500,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp02/10119.jpg"
+      },
+      {
+        "name": "森カリオペ",
+        "sellPrice": 180,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp02/10118.jpg"
+      }
+    ],
     "hBP02-078": [
       {
         "name": "かなた建設(パラレル)(エラッタ前)",
@@ -446,6 +626,62 @@
         "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp04/10011.jpg"
       }
     ],
+    "hBP04-083": [
+      {
+        "name": "桃鈴ねね",
+        "sellPrice": 50,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp04/10168.jpg"
+      },
+      {
+        "name": "桃鈴ねね(パラレル/hBP07)",
+        "sellPrice": 50,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10231.jpg"
+      }
+    ],
+    "hBP04-084": [
+      {
+        "name": "桃鈴ねね(パラレル)",
+        "sellPrice": 220,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp04/10170.jpg"
+      },
+      {
+        "name": "桃鈴ねね",
+        "sellPrice": 30,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp04/10169.jpg"
+      }
+    ],
+    "hBP04-085": [
+      {
+        "name": "桃鈴ねね(パラレル)",
+        "sellPrice": 580,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp04/10172.jpg"
+      },
+      {
+        "name": "桃鈴ねね",
+        "sellPrice": 120,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp04/10171.jpg"
+      }
+    ],
+    "hBP05-020": [
+      {
+        "name": "アイラニ・イオフィフティーン(パラレル)",
+        "sellPrice": 320,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10046.jpg"
+      },
+      {
+        "name": "アイラニ・イオフィフティーン",
+        "sellPrice": 30,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10045.jpg"
+      }
+    ],
     "hBP05-074": [
       {
         "name": "フレンドリーパソコン(パラレル)",
@@ -486,6 +722,96 @@
         "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10175.jpg"
       }
     ],
+    "hBP06-049": [
+      {
+        "name": "ムーナ・ホシノヴァ",
+        "sellPrice": 50,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10101.jpg"
+      }
+    ],
+    "hBP06-053": [
+      {
+        "name": "ムーナ・ホシノヴァ(パラレル)",
+        "sellPrice": 1980,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10110.jpg"
+      },
+      {
+        "name": "ムーナ・ホシノヴァ(パラレル)",
+        "sellPrice": 500,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10109.jpg"
+      },
+      {
+        "name": "ムーナ・ホシノヴァ",
+        "sellPrice": 120,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10108.jpg"
+      }
+    ],
+    "hBP06-057": [
+      {
+        "name": "森カリオペ(パラレル)",
+        "sellPrice": 320,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10118.jpg"
+      },
+      {
+        "name": "森カリオペ",
+        "sellPrice": 80,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10117.jpg"
+      }
+    ],
+    "hBP06-058": [
+      {
+        "name": "森カリオペ(パラレル)",
+        "sellPrice": 500,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10120.jpg"
+      },
+      {
+        "name": "森カリオペ",
+        "sellPrice": 120,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10119.jpg"
+      }
+    ],
+    "hBP06-059": [
+      {
+        "name": "森カリオペ(パラレル)",
+        "sellPrice": 780,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10122.jpg"
+      },
+      {
+        "name": "森カリオペ",
+        "sellPrice": 120,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10121.jpg"
+      }
+    ],
+    "hBP06-060": [
+      {
+        "name": "森カリオペ(パラレル)",
+        "sellPrice": 3480,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10125.jpg"
+      },
+      {
+        "name": "森カリオペ(パラレル)",
+        "sellPrice": 580,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10124.jpg"
+      },
+      {
+        "name": "森カリオペ",
+        "sellPrice": 220,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10123.jpg"
+      }
+    ],
     "hBP06-090": [
       {
         "name": "ブルームステージ(パラレル)",
@@ -512,6 +838,14 @@
         "sellPrice": 180,
         "rarity": "",
         "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10192.jpg"
+      }
+    ],
+    "hBP06-095": [
+      {
+        "name": "IDENTIFY -AREA 15-",
+        "sellPrice": 50,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10195.jpg"
       }
     ],
     "hBP07-005": [
@@ -546,6 +880,26 @@
         "sellPrice": 1280,
         "rarity": "",
         "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10013.jpg"
+      }
+    ],
+    "hBP07-007": [
+      {
+        "name": "桃鈴ねね(パラレル/サイン)",
+        "sellPrice": 59800,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10018.jpg"
+      },
+      {
+        "name": "桃鈴ねね(パラレル)",
+        "sellPrice": 8980,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10017.jpg"
+      },
+      {
+        "name": "桃鈴ねね",
+        "sellPrice": 220,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10016.jpg"
       }
     ],
     "hBP07-032": [
@@ -792,6 +1146,90 @@
         "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10140.jpg"
       }
     ],
+    "hBP07-077": [
+      {
+        "name": "桃鈴ねね",
+        "sellPrice": 30,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10158.jpg"
+      }
+    ],
+    "hBP07-078": [
+      {
+        "name": "桃鈴ねね(パラレル)",
+        "sellPrice": 320,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10160.jpg"
+      },
+      {
+        "name": "桃鈴ねね",
+        "sellPrice": 50,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10159.jpg"
+      }
+    ],
+    "hBP07-080": [
+      {
+        "name": "桃鈴ねね(パラレル)",
+        "sellPrice": 180,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10164.jpg"
+      },
+      {
+        "name": "桃鈴ねね",
+        "sellPrice": 30,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10163.jpg"
+      }
+    ],
+    "hBP07-081": [
+      {
+        "name": "桃鈴ねね(パラレル)",
+        "sellPrice": 580,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10166.jpg"
+      },
+      {
+        "name": "桃鈴ねね",
+        "sellPrice": 50,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10165.jpg"
+      }
+    ],
+    "hBP07-082": [
+      {
+        "name": "桃鈴ねね(パラレル)",
+        "sellPrice": 320,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10168.jpg"
+      },
+      {
+        "name": "桃鈴ねね",
+        "sellPrice": 50,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10167.jpg"
+      }
+    ],
+    "hBP07-083": [
+      {
+        "name": "桃鈴ねね(パラレル)",
+        "sellPrice": 12800,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10171.jpg"
+      },
+      {
+        "name": "桃鈴ねね(パラレル)",
+        "sellPrice": 780,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10170.jpg"
+      },
+      {
+        "name": "桃鈴ねね",
+        "sellPrice": 180,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10169.jpg"
+      }
+    ],
     "hBP07-086": [
       {
         "name": "ジジ・ムリン(パラレル)",
@@ -818,6 +1256,20 @@
         "sellPrice": 80,
         "rarity": "",
         "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10181.jpg"
+      }
+    ],
+    "hBP07-091": [
+      {
+        "name": "ライブスタッフ(パラレル)",
+        "sellPrice": 980,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10187.jpg"
+      },
+      {
+        "name": "ライブスタッフ",
+        "sellPrice": 120,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10186.jpg"
       }
     ],
     "hBP07-094": [
@@ -858,6 +1310,34 @@
         "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10202.jpg"
       }
     ],
+    "hBP07-103": [
+      {
+        "name": "ギラファノコギリクワガタ(パラレル)",
+        "sellPrice": 180,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10208.jpg"
+      },
+      {
+        "name": "ギラファノコギリクワガタ",
+        "sellPrice": 30,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10207.jpg"
+      }
+    ],
+    "hBP07-110": [
+      {
+        "name": "ねっ子(パラレル)",
+        "sellPrice": 320,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10222.jpg"
+      },
+      {
+        "name": "ねっ子",
+        "sellPrice": 30,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10221.jpg"
+      }
+    ],
     "hBP08-005": [
       {
         "name": "鷹嶺ルイ(パラレル/サイン)",
@@ -876,6 +1356,20 @@
         "sellPrice": 500,
         "rarity": "",
         "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp08/10011.jpg"
+      }
+    ],
+    "hBP08-054": [
+      {
+        "name": "ムーナ・ホシノヴァ(パラレル)",
+        "sellPrice": 420,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp08/10116.jpg"
+      },
+      {
+        "name": "ムーナ・ホシノヴァ",
+        "sellPrice": 50,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp08/10115.jpg"
       }
     ],
     "hBP08-061": [
@@ -1002,6 +1496,84 @@
         "sellPrice": 50,
         "rarity": "",
         "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp08/10225.jpg"
+      }
+    ],
+    "hBP09-059": [
+      {
+        "name": "ムーナ・ホシノヴァ",
+        "sellPrice": 50,
+        "rarity": "C",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10123.jpg"
+      },
+      {
+        "name": "ムーナ・ホシノヴァ(パラレル)",
+        "sellPrice": 1280,
+        "rarity": "S",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10124.jpg"
+      }
+    ],
+    "hBP09-060": [
+      {
+        "name": "ムーナ・ホシノヴァ(パラレル)",
+        "sellPrice": 1480,
+        "rarity": "S",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10126.jpg"
+      },
+      {
+        "name": "ムーナ・ホシノヴァ",
+        "sellPrice": 50,
+        "rarity": "U",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10125.jpg"
+      }
+    ],
+    "hBP09-061": [
+      {
+        "name": "ムーナ・ホシノヴァ",
+        "sellPrice": 50,
+        "rarity": "R",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10127.jpg"
+      },
+      {
+        "name": "ムーナ・ホシノヴァ(パラレル)",
+        "sellPrice": 980,
+        "rarity": "SR",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10128.jpg"
+      }
+    ],
+    "hBP09-088": [
+      {
+        "name": "桃鈴ねね",
+        "sellPrice": 50,
+        "rarity": "R",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10184.jpg"
+      },
+      {
+        "name": "桃鈴ねね(パラレル)",
+        "sellPrice": 420,
+        "rarity": "SR",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10185.jpg"
+      }
+    ],
+    "hBP09-098": [
+      {
+        "name": "スイカバブル",
+        "sellPrice": 420,
+        "rarity": "C",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10203.jpg"
+      },
+      {
+        "name": "スイカバブル(パラレル)",
+        "sellPrice": 3980,
+        "rarity": "S",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10204.jpg"
+      }
+    ],
+    "hSD01-002": [
+      {
+        "name": "AZKi",
+        "sellPrice": 220,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hsd01/10002.jpg"
       }
     ],
     "hSD01-009": [
@@ -1244,7 +1816,25 @@
         "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hsd17/10010.jpg"
       }
     ],
+    "hSD18-004": [
+      {
+        "name": "森カリオペ",
+        "sellPrice": 50,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hsd18/10004.jpg"
+      }
+    ],
+    "hSD18-005": [
+      {
+        "name": "森カリオペ",
+        "sellPrice": 50,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hsd18/10005.jpg"
+      }
+    ],
     "hY02-001": [],
+    "hY02-012": [],
+    "hY04-001": [],
     "hY04-005": [
       {
         "name": "青エール(雪花ラミィ)",
@@ -1253,6 +1843,7 @@
         "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/yell01/10030.jpg"
       }
     ],
+    "hY05-001": [],
     "hY05-003": [],
     "hY05-005": [
       {
@@ -1277,6 +1868,14 @@
         "sellPrice": 4980,
         "rarity": "",
         "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/yell01/10016.jpg"
+      }
+    ],
+    "hY06-009": [
+      {
+        "name": "黄エール(桃鈴ねね)",
+        "sellPrice": 2480,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/yell01/10058.jpg"
       }
     ]
   }

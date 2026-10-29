@@ -17,6 +17,10 @@
  * catalog.
  *
  * Write:  node scripts/generate-frozen-price-fixture.mjs [--ref <git-ref>]
+ * Extend: node scripts/generate-frozen-price-fixture.mjs --extend --ref <git-ref> [--ref <git-ref> …]
+ *         ADDITIVE: keeps every existing entry byte-for-byte and adds only card numbers
+ *         the regressions newly need, each recorded under `supplements` with its exact
+ *         source commit and method (PR228: the vol.15 tournament decks).
  * Verify: node scripts/generate-frozen-price-fixture.mjs --check
  */
 import fs from 'node:fs';
@@ -25,6 +29,7 @@ import {
   FIXTURE_PATH,
   LIVE_DB_PATH,
   buildFixtureString,
+  extendFixtureString,
   fixtureCardNumbers,
 } from './lib/frozen-price-fixture.mjs';
 
@@ -67,6 +72,17 @@ function verify() {
       problems.push(`${cardNumber}: frozen here but no longer in the shipped catalog`);
     }
   }
+  // Additive supplements must say exactly where each added card number came from.
+  const supplemented = new Set();
+  for (const s of parsed.supplements ?? []) {
+    if (!/^[0-9a-f]{40}$/.test(s?.commit ?? '')) problems.push(`supplement ${s?.ref}: commit must be a full SHA`);
+    if (!['rows-agree', 'per-printing-union'].includes(s?.method)) problems.push(`supplement ${s?.ref}: unknown method ${s?.method}`);
+    for (const n of s?.cardNumbers ?? []) {
+      if (supplemented.has(n)) problems.push(`${n}: listed by more than one supplement`);
+      supplemented.add(n);
+      if (!Array.isArray(cards[n])) problems.push(`${n}: supplement names a card number the snapshot does not hold`);
+    }
+  }
   return problems;
 }
 
@@ -80,6 +96,19 @@ function main() {
     }
     const count = Object.keys(JSON.parse(fs.readFileSync(FIXTURE_PATH, 'utf8')).cards).length;
     console.log(`✓ frozen price fixture covers all ${count} required card numbers`);
+    return;
+  }
+  if (process.argv.includes('--extend')) {
+    const refs = process.argv.flatMap((a, i) => (a === '--ref' ? [process.argv[i + 1]] : []));
+    if (refs.length === 0 || refs.some((r) => !r || r.startsWith('--'))) {
+      console.error('✗ --extend needs at least one --ref <git-ref>');
+      process.exit(1);
+    }
+    const contents = extendFixtureString({ refs });
+    fs.writeFileSync(FIXTURE_PATH, contents, 'utf8');
+    const parsed = JSON.parse(contents);
+    const added = (parsed.supplements ?? []).reduce((n, s) => n + s.cardNumbers.length, 0);
+    console.log(`✓ extended ${rel(FIXTURE_PATH)} — ${Object.keys(parsed.cards).length} card numbers (${added} supplemented)`);
     return;
   }
   const refFlag = process.argv.indexOf('--ref');

@@ -1,7 +1,20 @@
 {
   "algorithmVersion": "tournament-analytics-v1",
-  "generatedAt": "2026-08-17T13:06:46.405Z",
+  "generatedAt": "2026-10-29T07:20:00.000Z",
   "months": [
+    {
+      "inputDeckIds": [
+        "decklog:1A64C0",
+        "decklog:1ZDYLG",
+        "decklog:SDC2Y"
+      ],
+      "month": "2026-10",
+      "sampleSize": 3,
+      "warnings": [
+        "1 incomplete deck(s) excluded because cardsVerified is not true.",
+        "Unproven version label(s) C, OSR, OUR, P, R, RR, S, SR, SY, U, UR were NOT used as feature identity; the source published a rarity label rather than a proven printing, so those cards use NO_VERSION."
+      ]
+    },
     {
       "inputDeckIds": [
         "decklog:DUKHN",

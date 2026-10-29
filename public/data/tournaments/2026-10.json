@@ -1,0 +1,521 @@
+{
+  "schemaVersion": 1,
+  "month": "2026-10",
+  "generatedAt": "2026-10-29T07:20:00.000Z",
+  "source": {
+    "name": "hololive OFFICIAL CARD GAME — 公式コラム「イチ推し！デッキ紹介」vol.15",
+    "url": "https://hololive-official-cardgame.com/news_detail/deck-showcase_vol-15/",
+    "disclaimer": "資料僅來自 2026-10-29 擷取的官方專欄文字所列 4 副敢闘賞牌組，非完整賽果。擷取文字中未取得名次、戰績、參賽人數與完整分布（圖片／圖表、直播及其他官方管道未核對）；占比僅反映已觀測樣本。卡表為 Deck Log 目前公開版本，非比賽當日的保證。"
+  },
+  "coverage": {
+    "knownEvents": 1,
+    "totalEvents": null,
+    "observedDecks": 4,
+    "rankedDecks": 0,
+    "note": "本月僅收錄 1 場的公開精選牌組（共 4 副，其中 0 副有公開名次）。賽事總場數未公開，涵蓋率無法計算完整母體。"
+  },
+  "events": [
+    {
+      "eventId": "extreamer-cup-25-26-final",
+      "name": "エクストリーマーカップ25-26 Final",
+      "nameZh": "Extreamer Cup 25-26 決賽",
+      "date": "2026-10-12",
+      "region": "東京",
+      "format": null,
+      "entrants": null,
+      "sourceUrl": "https://hololive-official-cardgame.com/news_detail/deck-showcase_vol-15/",
+      "sourceType": "official-column",
+      "coverageNote": "已擷取的官方專欄文字展示 4 副獲「敢闘賞」的注目牌組；冠軍、8 強、名次、個人戰績與參賽數未於已擷取的專欄／活動頁文字中取得（圖片、直播等未核對）。3 副牌組卡表已以 Deck Log 公開清單通過嚴格驗證；X9552 的公開清單有重複卡位，未驗證、未收錄卡表。",
+      "decks": [
+        {
+          "deckId": "decklog:SDC2Y",
+          "decklogCode": "SDC2Y",
+          "sourceUrl": "https://decklog.bushiroad.com/view/SDC2Y",
+          "playerName": "ほうほう",
+          "rank": null,
+          "rankLabel": "敢闘賞",
+          "archetypeId": "moona-hoshinova-airani-iofifteen",
+          "archetypeLabel": "ムーナ・ホシノヴァ＋アイラニ・イオフィフティーン（青緑混合）",
+          "oshi": "こぼ・かなえる",
+          "colors": [
+            "青",
+            "緑"
+          ],
+          "cards": [
+            {
+              "zone": "oshi",
+              "cardNumber": "hBP01-008",
+              "version": "OUR",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-052",
+              "version": "C",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-054",
+              "version": "U",
+              "count": 3
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-055",
+              "version": "SR",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP05-020",
+              "version": "C",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-088",
+              "version": "C",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-090",
+              "version": "SR",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP06-049",
+              "version": "U",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP06-053",
+              "version": "SR",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP08-054",
+              "version": "R",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP09-059",
+              "version": "C",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP09-060",
+              "version": "U",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP09-061",
+              "version": "SR",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-108",
+              "version": "P",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP05-080",
+              "version": "U",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP06-095",
+              "version": "P",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD14-010",
+              "version": "P",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-104",
+              "version": "P",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP05-074",
+              "version": "P",
+              "count": 3
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD01-018",
+              "version": "P",
+              "count": 2
+            },
+            {
+              "zone": "yell",
+              "cardNumber": "hY02-012",
+              "version": "SY",
+              "count": 3
+            },
+            {
+              "zone": "yell",
+              "cardNumber": "hY04-001",
+              "version": "C",
+              "count": 17
+            }
+          ],
+          "cardsVerified": true,
+          "coverage": "featured",
+          "fetchedAt": "2026-10-29T07:20:00.000Z"
+        },
+        {
+          "deckId": "decklog:1A64C0",
+          "decklogCode": "1A64C0",
+          "sourceUrl": "https://decklog.bushiroad.com/view/1A64C0",
+          "playerName": "Gikuto",
+          "rank": null,
+          "rankLabel": "敢闘賞",
+          "archetypeId": "azki-mori-calliope",
+          "archetypeLabel": "AZKi＋森カリオペ（紫単）",
+          "oshi": "AZKi",
+          "colors": [
+            "紫"
+          ],
+          "cards": [
+            {
+              "zone": "oshi",
+              "cardNumber": "hSD01-002",
+              "version": "OSR",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-046",
+              "version": "C",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP06-057",
+              "version": "C",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP06-058",
+              "version": "U",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP06-059",
+              "version": "R",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP06-060",
+              "version": "RR",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP02-055",
+              "version": "U",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP02-057",
+              "version": "U",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP02-059",
+              "version": "RR",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-063",
+              "version": "C",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-069",
+              "version": "RR",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD18-004",
+              "version": "C",
+              "count": 3
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD18-005",
+              "version": "U",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP05-080",
+              "version": "U",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-094",
+              "version": "U",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP09-098",
+              "version": "C",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD01-016",
+              "version": "C",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-104",
+              "version": "C",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-100",
+              "version": "U",
+              "count": 4
+            },
+            {
+              "zone": "yell",
+              "cardNumber": "hY05-001",
+              "version": "C",
+              "count": 20
+            }
+          ],
+          "cardsVerified": true,
+          "coverage": "featured",
+          "fetchedAt": "2026-10-29T07:20:00.000Z"
+        },
+        {
+          "deckId": "decklog:1ZDYLG",
+          "decklogCode": "1ZDYLG",
+          "sourceUrl": "https://decklog.bushiroad.com/view/1ZDYLG",
+          "playerName": "きつはる",
+          "rank": null,
+          "rankLabel": "敢闘賞",
+          "archetypeId": "momosuzu-nene",
+          "archetypeLabel": "桃鈴ねね（黄単）",
+          "oshi": "桃鈴ねね",
+          "colors": [
+            "黄"
+          ],
+          "cards": [
+            {
+              "zone": "oshi",
+              "cardNumber": "hBP07-007",
+              "version": "OUR",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP04-083",
+              "version": "P",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP04-084",
+              "version": "S",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP04-085",
+              "version": "SR",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-077",
+              "version": "P",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-078",
+              "version": "S",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-080",
+              "version": "S",
+              "count": 3
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-081",
+              "version": "SR",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-082",
+              "version": "S",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-083",
+              "version": "UR",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP09-088",
+              "version": "SR",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-108",
+              "version": "P",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP03-088",
+              "version": "S",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP06-090",
+              "version": "S",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-099",
+              "version": "S",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP09-098",
+              "version": "S",
+              "count": 3
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD14-010",
+              "version": "P",
+              "count": 3
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-104",
+              "version": "P",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-091",
+              "version": "S",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-103",
+              "version": "S",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-110",
+              "version": "S",
+              "count": 4
+            },
+            {
+              "zone": "yell",
+              "cardNumber": "hY06-009",
+              "version": "SY",
+              "count": 20
+            }
+          ],
+          "cardsVerified": true,
+          "coverage": "featured",
+          "fetchedAt": "2026-10-29T07:20:00.000Z"
+        },
+        {
+          "deckId": "decklog:X9552",
+          "decklogCode": "X9552",
+          "sourceUrl": "https://decklog.bushiroad.com/view/X9552",
+          "playerName": "茶葉りうむ",
+          "rank": null,
+          "rankLabel": "敢闘賞",
+          "archetypeId": "omaru-polka",
+          "archetypeLabel": "尾丸ポルカ（赤単）",
+          "oshi": "尾丸ポルカ",
+          "colors": [
+            "赤"
+          ],
+          "cards": [],
+          "cardsVerified": false,
+          "coverage": "featured",
+          "fetchedAt": "2026-10-29T07:20:00.000Z"
+        }
+      ],
+      "fetchedAt": "2026-10-29T07:20:00.000Z"
+    }
+  ],
+  "archetypeShare": [
+    {
+      "archetypeId": "azki-mori-calliope",
+      "label": "AZKi＋森カリオペ（紫単）",
+      "count": 1,
+      "share": 0.25
+    },
+    {
+      "archetypeId": "momosuzu-nene",
+      "label": "桃鈴ねね（黄単）",
+      "count": 1,
+      "share": 0.25
+    },
+    {
+      "archetypeId": "moona-hoshinova-airani-iofifteen",
+      "label": "ムーナ・ホシノヴァ＋アイラニ・イオフィフティーン（青緑混合）",
+      "count": 1,
+      "share": 0.25
+    },
+    {
+      "archetypeId": "omaru-polka",
+      "label": "尾丸ポルカ（赤単）",
+      "count": 1,
+      "share": 0.25
+    }
+  ],
+  "observedSampleSize": 4
+}
