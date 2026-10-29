@@ -74,8 +74,16 @@
       "currency": "JPY",
       "cardId": "hBP02-083_hBP02_U_hBP02-083_U",
       "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-10-29",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-083_hBP02_U_hBP02-083_U",
+      "sourceProduct": "hBP02"
     }
   ],
-  "lastUpdated": "2026-10-26T02:45:59.824Z",
+  "lastUpdated": "2026-10-29T12:08:11.300Z",
   "nameZh": "魔法衣櫃"
 }

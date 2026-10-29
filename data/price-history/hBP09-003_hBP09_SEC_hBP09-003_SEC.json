@@ -74,8 +74,16 @@
       "currency": "JPY",
       "cardId": "hBP09-003_hBP09_SEC_hBP09-003_SEC",
       "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-10-29",
+      "price": 89800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-003_hBP09_SEC_hBP09-003_SEC",
+      "sourceProduct": "hBP09"
     }
   ],
-  "lastUpdated": "2026-10-26T02:46:00.071Z",
+  "lastUpdated": "2026-10-29T12:08:30.731Z",
   "nameZh": "白銀諾艾爾"
 }

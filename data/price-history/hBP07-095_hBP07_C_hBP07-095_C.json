@@ -74,8 +74,16 @@
       "currency": "JPY",
       "cardId": "hBP07-095_hBP07_C_hBP07-095_C",
       "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-10-29",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-095_hBP07_C_hBP07-095_C",
+      "sourceProduct": "hBP07"
     }
   ],
-  "lastUpdated": "2026-10-26T02:45:59.992Z",
+  "lastUpdated": "2026-10-29T12:08:26.629Z",
   "nameZh": "交叉衝擊"
 }

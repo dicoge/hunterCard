@@ -74,8 +74,16 @@
       "currency": "JPY",
       "cardId": "hBP03-020_hBP03_R_hBP03-020_R",
       "sourceProduct": "hBP03"
+    },
+    {
+      "date": "2026-10-29",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-020_hBP03_R_hBP03-020_R",
+      "sourceProduct": "hBP03"
     }
   ],
-  "lastUpdated": "2026-10-26T02:45:59.842Z",
+  "lastUpdated": "2026-10-29T12:08:13.597Z",
   "nameZh": "獅白牡丹"
 }

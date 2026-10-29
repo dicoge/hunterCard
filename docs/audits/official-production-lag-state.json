@@ -1,4 +1,11 @@
 {
-  "updatedAt": "2026-10-18T12:02:59.414Z",
-  "missingSince": {}
+  "updatedAt": "2026-10-29T12:04:23.165Z",
+  "missingSince": {
+    "hPR": {
+      "firstMissingAt": "2026-10-29T12:04:23.165Z",
+      "officialCount": 460,
+      "productionCount": 447,
+      "lastObservedAt": "2026-10-29T12:04:23.165Z"
+    }
+  }
 }
