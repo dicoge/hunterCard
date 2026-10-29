@@ -375,6 +375,9 @@ jobs:
       - name: Verify the frozen price fixture still describes the repo (DIC-1127)
         run: npm run test:frozen-prices
 
+      - name: Verify the frozen price fixture is only ever extended, never re-priced (PR228)
+        run: npm run test:frozen-prices-extend
+
       - name: Verify tournament import defaults to the lowest ordinary printing (DIC-1060)
         run: npm run test:tournament-printing-default
 
