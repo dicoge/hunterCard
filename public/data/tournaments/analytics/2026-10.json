@@ -14950,7 +14950,7 @@
       "oshi": "AZKi",
       "rank": null,
       "rankLabel": "敢闘賞",
-      "sourceReportHash": "511d0603d9e481f20f6ecfb16ce771d055008e0f24dd8e01bae1f674cc81ea6b"
+      "sourceReportHash": "05942b49831fc3f1da5153938cd60b63758b6bcd5903d37644ceb43efbd3a3aa"
     },
     {
       "archetypeId": "momosuzu-nene",
@@ -14962,7 +14962,7 @@
       "oshi": "桃鈴ねね",
       "rank": null,
       "rankLabel": "敢闘賞",
-      "sourceReportHash": "511d0603d9e481f20f6ecfb16ce771d055008e0f24dd8e01bae1f674cc81ea6b"
+      "sourceReportHash": "05942b49831fc3f1da5153938cd60b63758b6bcd5903d37644ceb43efbd3a3aa"
     },
     {
       "archetypeId": "moona-hoshinova-airani-iofifteen",
@@ -14974,7 +14974,7 @@
       "oshi": "こぼ・かなえる",
       "rank": null,
       "rankLabel": "敢闘賞",
-      "sourceReportHash": "511d0603d9e481f20f6ecfb16ce771d055008e0f24dd8e01bae1f674cc81ea6b"
+      "sourceReportHash": "05942b49831fc3f1da5153938cd60b63758b6bcd5903d37644ceb43efbd3a3aa"
     }
   ],
   "excludedIncompleteDecks": [
@@ -14993,7 +14993,7 @@
   ],
   "inputReports": [
     {
-      "contentSha256": "511d0603d9e481f20f6ecfb16ce771d055008e0f24dd8e01bae1f674cc81ea6b",
+      "contentSha256": "05942b49831fc3f1da5153938cd60b63758b6bcd5903d37644ceb43efbd3a3aa",
       "file": "2026-10.json",
       "generatedAt": "2026-10-29T07:20:00.000Z",
       "month": "2026-10"

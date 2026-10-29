@@ -103,6 +103,33 @@ check('no Deck Log owner / title / comment / image field is stored', () => {
   }
 });
 
+// R1: the evidence is the TEXT of two captured pages, so the copy may only say what was
+// not obtained from that captured text — never that the official did not publish it
+// (images/charts, the stream and other channels were not checked).
+const GLOBAL_ABSENCE = /官方未公開|均未公開|未公開完整|官方不公開|is (?:not )?published|never published|not published|unpublished/;
+function assertCapturedScope(label, text) {
+  assert.equal(typeof text, 'string', `${label} missing`);
+  assert.ok(!GLOBAL_ABSENCE.test(text), `${label} claims a global absence: ${text.match(GLOBAL_ABSENCE)?.[0]}`);
+}
+
+check('copy states only what the captured text lacks, never that the official did not publish it', () => {
+  assertCapturedScope('source.disclaimer', src.source.disclaimer);
+  assertCapturedScope('coverageNote', event.coverageNote);
+  assertCapturedScope('provenance', src.provenance);
+  for (const [label, text] of [['source.disclaimer', src.source.disclaimer], ['coverageNote', event.coverageNote]]) {
+    assert.match(text, /擷取/, `${label} must scope the claim to the captured text`);
+    assert.match(text, /未核對/, `${label} must say images/stream/other channels were not checked`);
+  }
+  assert.match(src.provenance, /captured column and event-page text/);
+  assert.match(src.provenance, /not checked/);
+  const report = read('data/tournaments/2026-10.json');
+  assert.equal(report.source.disclaimer, src.source.disclaimer);
+  assert.equal(report.events[0].coverageNote, event.coverageNote);
+  // the oracle rejects the R0 wording it replaced
+  assert.throws(() => assertCapturedScope('r0', '冠軍、8 強、名次、個人戰績與參賽數均未公開。'));
+  assert.throws(() => assertCapturedScope('r0', 'No rank, placement, win/loss record or entrant count is published'));
+});
+
 check('October report (data + public mirror) matches the source; July/August deck sets unchanged', () => {
   const raw = fs.readFileSync(path.join(ROOT, 'data/tournaments/2026-10.json'), 'utf8');
   assert.equal(raw, fs.readFileSync(path.join(ROOT, 'public/data/tournaments/2026-10.json'), 'utf8'));
