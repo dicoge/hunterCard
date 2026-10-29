@@ -396,6 +396,9 @@ jobs:
       - name: Verify tournament collector failure preservation (DIC-979)
         run: npm run test:tournament-collector
 
+      - name: Verify the curated vol.15 source claims only what the official column published (PR228)
+        run: npm run test:tournament-vol15-source
+
       - name: Verify deterministic tournament deck analytics (DIC-1032)
         run: npm run test:tournament-analytics
 

@@ -1,0 +1,128 @@
+#!/usr/bin/env node
+/**
+ * PR228 — acceptance check for the curated 「イチ推し！デッキ紹介！」vol.15 source
+ * (エクストリーマーカップ25-26 Final, 2026-10-12) and the October report built from it.
+ *
+ * The generic collector/analytics suites prove the pipeline; this file pins what this
+ * particular source may and may not claim, against the committed data:
+ *   • it is a curated source, not the discovery stub, so a live discovery run sees the
+ *     2026-10-23 column as already known ('same'), never 'newer' again;
+ *   • exactly the four 敢闘賞 decks the column links, with no fabricated rank, entrants or
+ *     record (rank/entrants null; rankLabel is the published non-numeric award);
+ *   • a deck is only cardsVerified when its committed list re-passes the strict gate
+ *     against the local catalog; X9552 (duplicate main slot in its public list) carries no
+ *     cards and stays unverified;
+ *   • no Deck Log owner/title/comment/image field is stored;
+ *   • the generated October report (data + public mirror) reflects exactly that, and the
+ *     July/August reports keep their known-good deck sets.
+ *
+ * Run: npm run test:tournament-vol15-source
+ */
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { verifyDeckCards, classifyFreshness } from '../src/utils/tournamentReport.ts';
+
+const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+const read = (rel) => JSON.parse(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
+
+const SOURCE = 'data/tournaments/sources/discovered-2026-10-23.json';
+const src = read(SOURCE);
+const catalog = new Set(Object.values(read('data/database.json').cards).map((c) => String(c.cardNumber ?? '').trim()));
+
+let passed = 0;
+function check(name, fn) {
+  fn();
+  passed += 1;
+  console.log(`  ✓ ${name}`);
+}
+
+const FEATURED = ['SDC2Y', '1A64C0', '1ZDYLG', 'X9552'];
+
+check('source is curated (no stub marker, events present) and the column date is known, not newer', () => {
+  assert.equal(src._stub, undefined);
+  assert.equal(src.month, '2026-10');
+  assert.equal(src.publishedDate, '2026-10-23T17:49:27');
+  assert.ok(Array.isArray(src.events) && src.events.length === 1);
+  // Same predicate the collector's discovery leg uses for "known" sources.
+  const known = fs
+    .readdirSync(path.join(ROOT, 'data/tournaments/sources'))
+    .map((f) => read(`data/tournaments/sources/${f}`))
+    .filter((d) => d.publishedDate && !d._stub && Array.isArray(d.events) && d.events.length > 0)
+    .map((d) => String(d.publishedDate).trim())
+    .sort();
+  assert.equal(classifyFreshness('2026-10-23T17:49:27', known.at(-1)), 'same');
+});
+
+const event = src.events[0];
+
+check('event facts are the published ones; unknowns stay null', () => {
+  assert.equal(event.eventId, 'extreamer-cup-25-26-final');
+  assert.equal(event.date, '2026-10-12');
+  assert.equal(event.entrants, null);
+  assert.equal(event.format, null);
+  assert.equal(event.sourceType, 'official-column');
+  assert.match(event.sourceUrl, /^https:\/\/hololive-official-cardgame\.com\/news_detail\/deck-showcase_vol-15\/$/);
+});
+
+check('exactly the four linked 敢闘賞 decks, none ranked', () => {
+  assert.deepEqual(event.decks.map((d) => d.decklogCode), FEATURED);
+  for (const d of event.decks) {
+    assert.equal(d.rank, null, `${d.decklogCode} rank must stay unknown`);
+    assert.equal(d.rankLabel, '敢闘賞');
+    assert.ok(!/champion|優勝|1位|top|TOP/.test(d.rankLabel));
+  }
+});
+
+check('cardsVerified only when the committed list re-passes the strict gate', () => {
+  for (const d of event.decks) {
+    if (d.cardsVerified) {
+      const v = verifyDeckCards(d.cards, catalog);
+      assert.equal(v.cardsVerified, true, `${d.decklogCode}: ${v.failure}`);
+      assert.deepEqual(v.totals, { oshi: 1, main: 50, yell: 20 });
+      assert.match(d.fetchedAt, /^2026-10-29T07:13:4\d\.\d+\+00:00$/);
+    } else {
+      assert.deepEqual(d.cards, [], `${d.decklogCode}: an unverified deck must not ship a card list`);
+    }
+  }
+  const x = event.decks.find((d) => d.decklogCode === 'X9552');
+  assert.equal(x.cardsVerified, false);
+  assert.match(x.cardsUnverifiedReason, /duplicate card slot within zone: main:hSD14-010/);
+  assert.equal(event.decks.filter((d) => d.cardsVerified).length, 3);
+});
+
+check('no Deck Log owner / title / comment / image field is stored', () => {
+  const allowed = new Set([
+    'decklogCode', 'playerName', 'rank', 'rankLabel', 'archetypeId', 'archetypeLabel', 'oshi',
+    'colors', 'cards', 'cardsVerified', 'fetchedAt', 'cardsUnverifiedReason',
+  ]);
+  for (const d of event.decks) {
+    for (const k of Object.keys(d)) assert.ok(allowed.has(k), `unexpected deck field ${k}`);
+    for (const c of d.cards) assert.deepEqual(Object.keys(c).sort(), ['cardNumber', 'count', 'version', 'zone']);
+  }
+});
+
+check('October report (data + public mirror) matches the source; July/August deck sets unchanged', () => {
+  const raw = fs.readFileSync(path.join(ROOT, 'data/tournaments/2026-10.json'), 'utf8');
+  assert.equal(raw, fs.readFileSync(path.join(ROOT, 'public/data/tournaments/2026-10.json'), 'utf8'));
+  const report = JSON.parse(raw);
+  assert.equal(report.events.length, 1);
+  assert.equal(report.coverage.rankedDecks, 0);
+  assert.equal(report.coverage.totalEvents, null);
+  assert.equal(report.observedSampleSize, 4);
+  assert.deepEqual(
+    report.events[0].decks.map((d) => [d.deckId, d.cardsVerified, d.coverage]),
+    [
+      ['decklog:SDC2Y', true, 'featured'],
+      ['decklog:1A64C0', true, 'featured'],
+      ['decklog:1ZDYLG', true, 'featured'],
+      ['decklog:X9552', false, 'featured'],
+    ],
+  );
+  const ids = (m) => read(`data/tournaments/${m}.json`).events.flatMap((e) => e.decks.map((d) => d.deckId)).sort();
+  assert.deepEqual(ids('2026-07'), ['decklog:1XQQF', 'decklog:4PQXH', 'decklog:5USA7']);
+  assert.deepEqual(ids('2026-08'), ['decklog:2H33J8', 'decklog:DUKHN']);
+});
+
+console.log(`\nPR228 vol.15 source acceptance: ${passed} checks passed`);
