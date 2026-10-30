@@ -1,4 +1,21 @@
 {
-  "generatedAt": "2026-10-29T07:20:00.000Z",
-  "alerts": []
+  "generatedAt": "2026-10-30T23:24:14.791Z",
+  "alerts": [
+    {
+      "level": "info",
+      "message": "Official column freshness: same (newest 2026-10-23T17:49:27)",
+      "discovered": "2026-10-23T17:49:27",
+      "known": "2026-10-23T17:49:27"
+    },
+    {
+      "level": "info",
+      "message": "Result tweet 2086361278742978976 resolves (date unknown)",
+      "file": "2026-08-extreamer-cup-tokai-2.json"
+    },
+    {
+      "level": "info",
+      "message": "Result tweet 2086358733987410177 resolves (date unknown)",
+      "file": "2026-08-extreamer-cup-tokai-2.json"
+    }
+  ]
 }
