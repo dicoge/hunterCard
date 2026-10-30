@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-10-30T12:07:38.408Z",
+  "lastUpdated": "2026-10-30T22:26:23.560Z",
   "totalCards": 3973,
   "source": "hunterCard unified database",
   "cards": {
@@ -61233,10 +61233,10 @@
         ]
       },
       "nameZh": "大神澪",
-      "buyPrice": 50,
       "buyPriceHistory": {
         "2026-10-30": 50
-      }
+      },
+      "buyPrice": 50
     },
     "hBP02-025_ent07": {
       "id": "hBP02-025_ent07",
@@ -215992,10 +215992,10 @@
         "abilityText": "■當成員離開場上時，將該成員的所有應援歸檔。\n\n■當成員進行換手時，將該成員的指定張數應援歸檔。"
       },
       "nameZh": "紅色應援",
-      "buyPrice": 1,
       "buyPriceHistory": {
         "2026-10-30": 1
-      }
+      },
+      "buyPrice": 1
     },
     "hY03-001_hSD02_C_hY03-001_C": {
       "id": "hY03-001_hSD02_C_hY03-001_C",
@@ -379791,6 +379791,9 @@
           "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hsd20/10015.jpg"
         }
       ],
+      "priceHistory": {
+        "2026-10-30": 120
+      },
       "skillsJp": {
         "cardNumber": "hSD14-010",
         "name": "holoAN",
@@ -379805,10 +379808,7 @@
         "color": "",
         "abilityText": "自己抽3張牌。\n\nLIMITED：每回合只能使用1張。"
       },
-      "nameZh": "holoAN",
-      "priceHistory": {
-        "2026-10-30": 120
-      }
+      "nameZh": "holoAN"
     },
     "hSD14-010_hSD15_C_hSD14-010_C": {
       "id": "hSD14-010_hSD15_C_hSD14-010_C",
@@ -393704,10 +393704,10 @@
         ]
       },
       "nameZh": "常暗永遠",
-      "buyPrice": 5,
       "buyPriceHistory": {
         "2026-10-30": 5
-      }
+      },
+      "buyPrice": 5
     },
     "hBP09-053_hBP09_C_hBP09-053_C": {
       "id": "hBP09-053_hBP09_C_hBP09-053_C",
@@ -394347,10 +394347,10 @@
         ]
       },
       "nameZh": "常暗永遠",
-      "buyPrice": 10,
       "buyPriceHistory": {
         "2026-10-30": 10
-      }
+      },
+      "buyPrice": 10
     },
     "hBP09-055_hBP09_SR_hBP09-055_SR": {
       "id": "hBP09-055_hBP09_SR_hBP09-055_SR",
@@ -403920,10 +403920,10 @@
         "abilityText": "選擇自己舞台上的應援1～2張，分配並轉移到自己的成員身上。之後，若自己附有應援的成員有4人以上，則將自己檔案區的應援1張送給自己的成員。"
       },
       "nameZh": "應援的HoloLis",
-      "buyPrice": 1,
       "buyPriceHistory": {
         "2026-10-30": 1
-      }
+      },
+      "buyPrice": 1
     },
     "hBP09-093_hBP09_S_hBP09-093_S": {
       "id": "hBP09-093_hBP09_S_hBP09-093_S",
@@ -406110,10 +406110,10 @@
         "abilityText": "裝備此工具的〈常暗永遠〉的招式+20。\n\n◆若裝備在2nd〈常暗永遠〉身上則追加能力\n\n附在此成員上的所有藍應援，也視為紫應援。\n\n工具只能裝備在自己的每位成員身上1張。"
       },
       "nameZh": "常暗永遠的Break Mic",
-      "buyPrice": 1,
       "buyPriceHistory": {
         "2026-10-30": 1
-      }
+      },
+      "buyPrice": 1
     },
     "hBP09-108_hBP09_S_hBP09-108_S": {
       "id": "hBP09-108_hBP09_S_hBP09-108_S",
@@ -445171,6 +445171,9 @@
           "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hsd20/10001.jpg"
         }
       ],
+      "priceHistory": {
+        "2026-10-30": 180
+      },
       "skillsJp": {
         "cardNumber": "hSD20-001",
         "name": "百灯キョーコ",
@@ -445201,10 +445204,7 @@
           "effect": "[每回合1次]自己場上的應援每有1張，對對手的Debut以外的[中央成員與協力成員]造成特殊傷害10。"
         }
       },
-      "nameZh": "百燈京子",
-      "priceHistory": {
-        "2026-10-30": 180
-      }
+      "nameZh": "百燈京子"
     },
     "hSD20-002_hSD20_C_hSD20-002_C": {
       "id": "hSD20-002_hSD20_C_hSD20-002_C",
@@ -445243,6 +445243,9 @@
           "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hsd20/10002.jpg"
         }
       ],
+      "priceHistory": {
+        "2026-10-30": 80
+      },
       "skillsJp": {
         "cardNumber": "hSD20-002",
         "name": "百灯キョーコ",
@@ -445283,10 +445286,7 @@
           }
         ]
       },
-      "nameZh": "百燈京子",
-      "priceHistory": {
-        "2026-10-30": 80
-      }
+      "nameZh": "百燈京子"
     },
     "hSD20-003_hSD20_U_hSD20-003_U": {
       "id": "hSD20-003_hSD20_U_hSD20-003_U",
@@ -445325,6 +445325,9 @@
           "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hsd20/10003.jpg"
         }
       ],
+      "priceHistory": {
+        "2026-10-30": 50
+      },
       "skillsJp": {
         "cardNumber": "hSD20-003",
         "name": "百灯キョーコ",
@@ -445365,10 +445368,7 @@
           }
         ]
       },
-      "nameZh": "百燈京子",
-      "priceHistory": {
-        "2026-10-30": 50
-      }
+      "nameZh": "百燈京子"
     },
     "hSD20-004_hSD20_C_hSD20-004_C": {
       "id": "hSD20-004_hSD20_C_hSD20-004_C",
@@ -445407,6 +445407,9 @@
           "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hsd20/10004.jpg"
         }
       ],
+      "priceHistory": {
+        "2026-10-30": 50
+      },
       "skillsJp": {
         "cardNumber": "hSD20-004",
         "name": "百灯キョーコ",
@@ -445447,10 +445450,7 @@
           }
         ]
       },
-      "nameZh": "百燈京子",
-      "priceHistory": {
-        "2026-10-30": 50
-      }
+      "nameZh": "百燈京子"
     },
     "hSD20-005_hSD20_U_hSD20-005_U": {
       "id": "hSD20-005_hSD20_U_hSD20-005_U",
@@ -445489,6 +445489,9 @@
           "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hsd20/10005.jpg"
         }
       ],
+      "priceHistory": {
+        "2026-10-30": 120
+      },
       "skillsJp": {
         "cardNumber": "hSD20-005",
         "name": "百灯キョーコ",
@@ -445529,10 +445532,7 @@
           }
         ]
       },
-      "nameZh": "百燈京子",
-      "priceHistory": {
-        "2026-10-30": 120
-      }
+      "nameZh": "百燈京子"
     },
     "hSD20-006_hSD20_R_hSD20-006_R": {
       "id": "hSD20-006_hSD20_R_hSD20-006_R",
@@ -445571,6 +445571,9 @@
           "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hsd20/10006.jpg"
         }
       ],
+      "priceHistory": {
+        "2026-10-30": 180
+      },
       "skillsJp": {
         "cardNumber": "hSD20-006",
         "name": "百灯キョーコ",
@@ -445611,10 +445614,7 @@
           }
         ]
       },
-      "nameZh": "百燈京子",
-      "priceHistory": {
-        "2026-10-30": 180
-      }
+      "nameZh": "百燈京子"
     },
     "hSD20-007_hSD20_RR_hSD20-007_RR": {
       "id": "hSD20-007_hSD20_RR_hSD20-007_RR",
@@ -445653,6 +445653,9 @@
           "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hsd20/10007.jpg"
         }
       ],
+      "priceHistory": {
+        "2026-10-30": 120
+      },
       "skillsJp": {
         "cardNumber": "hSD20-007",
         "name": "百灯キョーコ",
@@ -445695,10 +445698,7 @@
           }
         ]
       },
-      "nameZh": "百燈京子",
-      "priceHistory": {
-        "2026-10-30": 120
-      }
+      "nameZh": "百燈京子"
     },
     "hSD20-008_hSD20_C_hSD20-008_C": {
       "id": "hSD20-008_hSD20_C_hSD20-008_C",
@@ -445737,6 +445737,9 @@
           "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hsd20/10008.jpg"
         }
       ],
+      "priceHistory": {
+        "2026-10-30": 80
+      },
       "skillsJp": {
         "cardNumber": "hSD20-008",
         "name": "宙科そぴあ",
@@ -445785,10 +445788,7 @@
           }
         ]
       },
-      "nameZh": "宙科索比亞",
-      "priceHistory": {
-        "2026-10-30": 80
-      }
+      "nameZh": "宙科索比亞"
     },
     "hSD20-008_hSD21_C_hSD20-008_C": {
       "id": "hSD20-008_hSD21_C_hSD20-008_C",
@@ -445900,6 +445900,9 @@
           "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hsd20/10009.jpg"
         }
       ],
+      "priceHistory": {
+        "2026-10-30": 220
+      },
       "skillsJp": {
         "cardNumber": "hSD20-009",
         "name": "宙科そぴあ",
@@ -445940,10 +445943,7 @@
           }
         ]
       },
-      "nameZh": "宙科索比亞",
-      "priceHistory": {
-        "2026-10-30": 220
-      }
+      "nameZh": "宙科索比亞"
     },
     "hSD20-009_hSD21_U_hSD20-009_U": {
       "id": "hSD20-009_hSD21_U_hSD20-009_U",
@@ -446047,6 +446047,9 @@
           "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hsd20/10010.jpg"
         }
       ],
+      "priceHistory": {
+        "2026-10-30": 180
+      },
       "skillsJp": {
         "cardNumber": "hSD20-010",
         "name": "宙科そぴあ",
@@ -446087,10 +446090,7 @@
           }
         ]
       },
-      "nameZh": "宙科索比亞",
-      "priceHistory": {
-        "2026-10-30": 180
-      }
+      "nameZh": "宙科索比亞"
     },
     "hSD20-010_hSD21_R_hSD20-010_R": {
       "id": "hSD20-010_hSD21_R_hSD20-010_R",
@@ -446194,6 +446194,9 @@
           "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hsd20/10011.jpg"
         }
       ],
+      "priceHistory": {
+        "2026-10-30": 220
+      },
       "skillsJp": {
         "cardNumber": "hSD20-011",
         "name": "宙科そぴあ",
@@ -446236,10 +446239,7 @@
           }
         ]
       },
-      "nameZh": "宙科索比亞",
-      "priceHistory": {
-        "2026-10-30": 220
-      }
+      "nameZh": "宙科索比亞"
     },
     "hSD20-011_hSD21_RR_hSD20-011_RR": {
       "id": "hSD20-011_hSD21_RR_hSD20-011_RR",
@@ -446345,6 +446345,9 @@
           "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hsd20/10012.jpg"
         }
       ],
+      "priceHistory": {
+        "2026-10-30": 50
+      },
       "skillsJp": {
         "cardNumber": "hSD20-012",
         "name": "アソビ★まわり隊！",
@@ -446359,10 +446362,7 @@
         "color": "",
         "abilityText": "此卡必須在自己手牌不含此卡且為6張以下時才能使用。\n\n查看自己牌組上方4張。從中，公開任意張數持有#遊玩★巡遊隊！的成員，將公開的成員加入手牌。然後將剩餘的卡牌以任意順序放回牌組下方。\n\nLIMITED:每回合只能使用1張。"
       },
-      "nameZh": "遊玩★巡遊隊！",
-      "priceHistory": {
-        "2026-10-30": 50
-      }
+      "nameZh": "遊玩★巡遊隊！"
     },
     "hSD20-012_hSD21_U_hSD20-012_U": {
       "id": "hSD20-012_hSD21_U_hSD20-012_U",
@@ -446440,6 +446440,9 @@
           "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hsd20/10013.jpg"
         }
       ],
+      "priceHistory": {
+        "2026-10-30": 420
+      },
       "skillsJp": {
         "cardNumber": "hSD20-013",
         "name": "ぐるぐるTIME！",
@@ -446454,10 +446457,7 @@
         "color": "",
         "abilityText": "此卡必須在自己場上的成員全員都是持有#遊玩★巡遊隊！的成員時才能使用。\n\n選擇1位對手的後排成員。將所選成員與對手的中央成員進行交換。之後，與對手進行猜拳直到分出勝負。如果自己獲勝，從自己的牌組抽3張牌。\n\nLIMITED:每回合只能使用1張。"
       },
-      "nameZh": "轉圈圈TIME！",
-      "priceHistory": {
-        "2026-10-30": 420
-      }
+      "nameZh": "轉圈圈TIME！"
     },
     "hSD20-013_hSD21_U_hSD20-013_U": {
       "id": "hSD20-013_hSD21_U_hSD20-013_U",
@@ -446535,6 +446535,9 @@
           "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hsd20/10014.jpg"
         }
       ],
+      "priceHistory": {
+        "2026-10-30": 180
+      },
       "skillsJp": {
         "cardNumber": "hSD20-014",
         "name": "百灯キョーコの拡声器",
@@ -446549,10 +446552,7 @@
         "color": "",
         "abilityText": "裝備此工具的〈百燈京子〉的招式+20。\n\n◆裝備在1st以上的〈百燈京子〉時追加能力\n\n當這個成員讓對手的成員倒下時，可以將自己歸檔中的應援1張送給自己的持有#遊玩★巡遊隊！的後排成員。\n\n工具只能裝備在自己的每1位成員上1張。"
       },
-      "nameZh": "百燈京子的擴音器",
-      "priceHistory": {
-        "2026-10-30": 180
-      }
+      "nameZh": "百燈京子的擴音器"
     },
     "hY04-007_hSD2025summer_S_hY04-007_S": {
       "id": "hY04-007_hSD2025summer_S_hY04-007_S",
@@ -446630,6 +446630,9 @@
           "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hsd21/10001.jpg"
         }
       ],
+      "priceHistory": {
+        "2026-10-30": 180
+      },
       "skillsJp": {
         "cardNumber": "hSD21-001",
         "name": "熱千めら",
@@ -446660,10 +446663,7 @@
           "effect": "[每回合1次]選擇1位自己場上的成員。自己歸檔中持有禮物的成員每有1張，此回合內，所選成員的招式+10。此外，如果所選成員是〈熱千梅拉〉，該成員的招式所需的無色-1。"
         }
       },
-      "nameZh": "熱千梅拉",
-      "priceHistory": {
-        "2026-10-30": 180
-      }
+      "nameZh": "熱千梅拉"
     },
     "hSD21-002_hSD21_C_hSD21-002_C": {
       "id": "hSD21-002_hSD21_C_hSD21-002_C",
@@ -446702,6 +446702,9 @@
           "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hsd21/10002.jpg"
         }
       ],
+      "priceHistory": {
+        "2026-10-30": 80
+      },
       "skillsJp": {
         "cardNumber": "hSD21-002",
         "name": "熱千めら",
@@ -446750,10 +446753,7 @@
           }
         ]
       },
-      "nameZh": "熱千梅拉",
-      "priceHistory": {
-        "2026-10-30": 80
-      }
+      "nameZh": "熱千梅拉"
     },
     "hSD21-003_hSD21_U_hSD21-003_U": {
       "id": "hSD21-003_hSD21_U_hSD21-003_U",
@@ -446792,6 +446792,9 @@
           "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hsd21/10003.jpg"
         }
       ],
+      "priceHistory": {
+        "2026-10-30": 50
+      },
       "skillsJp": {
         "cardNumber": "hSD21-003",
         "name": "熱千めら",
@@ -446832,10 +446835,7 @@
           }
         ]
       },
-      "nameZh": "熱千梅拉",
-      "priceHistory": {
-        "2026-10-30": 50
-      }
+      "nameZh": "熱千梅拉"
     },
     "hSD21-004_hSD21_C_hSD21-004_C": {
       "id": "hSD21-004_hSD21_C_hSD21-004_C",
@@ -446874,6 +446874,9 @@
           "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hsd21/10004.jpg"
         }
       ],
+      "priceHistory": {
+        "2026-10-30": 50
+      },
       "skillsJp": {
         "cardNumber": "hSD21-004",
         "name": "熱千めら",
@@ -446914,10 +446917,7 @@
           }
         ]
       },
-      "nameZh": "熱千梅拉",
-      "priceHistory": {
-        "2026-10-30": 50
-      }
+      "nameZh": "熱千梅拉"
     },
     "hSD21-005_hSD21_U_hSD21-005_U": {
       "id": "hSD21-005_hSD21_U_hSD21-005_U",
@@ -446956,6 +446956,9 @@
           "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hsd21/10005.jpg"
         }
       ],
+      "priceHistory": {
+        "2026-10-30": 120
+      },
       "skillsJp": {
         "cardNumber": "hSD21-005",
         "name": "熱千めら",
@@ -446996,10 +446999,7 @@
           }
         ]
       },
-      "nameZh": "熱千梅拉",
-      "priceHistory": {
-        "2026-10-30": 120
-      }
+      "nameZh": "熱千梅拉"
     },
     "hSD21-006_hSD21_R_hSD21-006_R": {
       "id": "hSD21-006_hSD21_R_hSD21-006_R",
@@ -447038,6 +447038,9 @@
           "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hsd21/10006.jpg"
         }
       ],
+      "priceHistory": {
+        "2026-10-30": 180
+      },
       "skillsJp": {
         "cardNumber": "hSD21-006",
         "name": "熱千めら",
@@ -447078,10 +447081,7 @@
           }
         ]
       },
-      "nameZh": "熱千梅拉",
-      "priceHistory": {
-        "2026-10-30": 180
-      }
+      "nameZh": "熱千梅拉"
     },
     "hSD21-007_hSD21_RR_hSD21-007_RR": {
       "id": "hSD21-007_hSD21_RR_hSD21-007_RR",
@@ -447120,6 +447120,9 @@
           "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hsd21/10007.jpg"
         }
       ],
+      "priceHistory": {
+        "2026-10-30": 120
+      },
       "skillsJp": {
         "cardNumber": "hSD21-007",
         "name": "熱千めら",
@@ -447162,10 +447165,7 @@
           }
         ]
       },
-      "nameZh": "熱千梅拉",
-      "priceHistory": {
-        "2026-10-30": 120
-      }
+      "nameZh": "熱千梅拉"
     },
     "hSD21-008_hSD21_U_hSD21-008_U": {
       "id": "hSD21-008_hSD21_U_hSD21-008_U",
@@ -447204,6 +447204,9 @@
           "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hsd21/10008.jpg"
         }
       ],
+      "priceHistory": {
+        "2026-10-30": 180
+      },
       "skillsJp": {
         "cardNumber": "hSD21-008",
         "name": "熱千めらの拍子木",
@@ -447218,10 +447221,7 @@
         "color": "",
         "abilityText": "裝備此工具的〈熱千梅拉〉的招式+20。\n\n◆裝備在1st以上的〈熱千梅拉〉時追加能力\n\n當這個成員讓對手的成員倒下時，從自己的牌組抽1張牌，將手牌1張歸檔。\n\n工具只能裝備在自己的每1位成員上1張。"
       },
-      "nameZh": "熱千梅拉的拍子木",
-      "priceHistory": {
-        "2026-10-30": 180
-      }
+      "nameZh": "熱千梅拉的拍子木"
     },
     "hYS01-001_hYS01_OC_hYS01-001_OC": {
       "id": "hYS01-001_hYS01_OC_hYS01-001_OC",
