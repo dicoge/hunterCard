@@ -7,7 +7,12 @@
  *             (recognizeCardFromImage, native payload) → 8,980; then exact-id lookups of
  *             BOTH raw ids and the search suggestions → 加入 → session 8,980
  *   warm      same API answer after loadAllCards → 8,980; an API row with a NEWER own quote
- *             (9,500, 2026-10-30) is not replaced by the catalog copy → 9,500
+ *             (9,500, quoted strictly after every catalog quote of the proven version — the
+ *             time is DERIVED from the loaded catalog, never a calendar literal, because the
+ *             nightly scrape re-dates the ent07 row) is not replaced by the catalog copy →
+ *             9,500. Negative controls: an OLDER own quote loses to the catalog quote, a
+ *             same-time different price is a conflict (no price), and a later catalog
+ *             refresh beats a time that was not re-derived.
  *   nocatalog the catalog cannot load → the API row stays as sent (9,980): no sibling
  *             evidence is invented
  * The API response is served in memory; no HTTP, provider or quota.
@@ -267,11 +272,74 @@ if (MODE === 'nocatalog') {
   });
 }
 if (MODE === 'warm') {
-  await check('warm: an API row with its OWN newer quote (9,500 on 2026-10-30) is not replaced by the catalog copy → 9,500', async () => {
-    apiBody = { success: true, card: apiRow({ sellPrice: 9500, timestamp: '2026-10-30T00:00:00.000Z' }) };
+  // The synthetic quote's time is derived from the catalog the app actually loaded: strictly
+  // after the latest valid quote of the proven version (both ENT07 and HPR rows). The scrape
+  // re-dates these rows, so a fixed calendar time silently stops being "newer" (PR269).
+  const OWN_PRICE = 9500;
+  const STEP_MS = 24 * 60 * 60 * 1000;
+  const quoteMs = (row) => {
+    const ms = Date.parse(row?.provenance?.quotedAt ?? '');
+    assert.ok(Number.isFinite(ms) && ms > 0, `${row?.id}: catalog quote time must be valid (${row?.provenance?.quotedAt})`);
+    return ms;
+  };
+  const versionRows = (catalog) => {
+    const rows = catalog.filter((c) => c.id === ENT07 || c.id === HPR);
+    assert.deepEqual(rows.map((c) => c.id).sort(), [ENT07, HPR].sort(), 'both rows of the proven version are in the catalog');
+    return rows;
+  };
+  const latestMs = (catalog) => Math.max(...versionRows(catalog).map(quoteMs));
+  const iso = (ms) => new Date(ms).toISOString();
+  const sellQuotes = (card) => (card.priceQuotes ?? []).filter((q) => q.type === 'sell').map((q) => q.price).sort();
+  const catalog = await rec.loadAllCards();
+  const ent07Row = catalog.find((c) => c.id === ENT07);
+  const LATEST = latestMs(catalog);
+  const NEWER = iso(LATEST + STEP_MS);
+  const ownCard = (quotedAt) => {   // the API's own HPR row as the client maps it, with its own quote
+    const base = catalog.find((c) => c.id === HPR);
+    return { ...base, sellPrice: OWN_PRICE, prices: [{ name: base.name, sellPrice: OWN_PRICE, rarity: base.rarity }],
+      provenance: { ...base.provenance, quotedAt } };
+  };
+  await check('warm: fixture precondition — the own quote is a different price and strictly newer than every catalog quote of the proven version', () => {
+    assert.notEqual(ent07Row.sellPrice, OWN_PRICE);
+    for (const row of versionRows(catalog)) assert.ok(Date.parse(NEWER) > quoteMs(row), `${NEWER} must be after ${row.id} ${row.provenance.quotedAt}`);
+  });
+  await check(`warm: an API row with its OWN newer quote (${OWN_PRICE}, after the latest catalog quote) is not replaced by the catalog copy → ${OWN_PRICE}`, async () => {
+    apiBody = { success: true, card: apiRow({ sellPrice: OWN_PRICE, timestamp: NEWER }) };
     const r = await recognizeOnce();
-    assert.equal(r.card.sellPrice, 9500);
-    assert.equal(addAndPrice(r.card).effective, 9500);
+    assert.equal(r.card.sellPrice, OWN_PRICE);
+    assert.equal(r.card.provenance?.quotedAt, NEWER);
+    assert.deepEqual([...r.card.aliasIds].sort(), [ENT07, HPR].sort());
+    assert.equal(addAndPrice(r.card).effective, OWN_PRICE);
+  });
+  await check('warm negative: an OLDER own quote cannot replace the newer catalog quote → the catalog price', async () => {
+    const OLDER = iso(quoteMs(ent07Row) - STEP_MS);
+    assert.ok(Date.parse(OLDER) < quoteMs(ent07Row));
+    apiBody = { success: true, card: apiRow({ sellPrice: OWN_PRICE, timestamp: OLDER }) };
+    const r = await recognizeOnce();
+    assert.equal(r.card.sellPrice, ent07Row.sellPrice);
+    assert.notEqual(r.card.sellPrice, OWN_PRICE);
+    assert.deepEqual(sellQuotes(r.card), [OWN_PRICE, ent07Row.sellPrice].sort(), 'the older quote is kept, not dropped');
+  });
+  await check('warm negative: an own quote at the SAME time as the catalog quote with a different price is a conflict (no current price)', async () => {
+    const SAME = ent07Row.provenance.quotedAt;
+    apiBody = { success: true, card: apiRow({ sellPrice: OWN_PRICE, timestamp: SAME }) };
+    const r = await recognizeOnce();
+    assert.deepEqual([...r.card.aliasIds].sort(), [ENT07, HPR].sort());
+    assert.equal(r.card.sellPrice, null);
+    assert.equal(r.card.priceConflict, true);
+    assert.deepEqual(sellQuotes(r.card), [OWN_PRICE, ent07Row.sellPrice].sort());
+  });
+  await check('warm perturbation: a later catalog refresh beats a time that was not re-derived; re-deriving restores "newer" (no calendar assumption)', () => {
+    // The catalog's ENT07 row is re-quoted after the time chosen above (what the nightly scrape did).
+    const refreshed = catalog.map((c) => (c.id === ENT07 ? { ...c, provenance: { ...c.provenance, quotedAt: iso(Date.parse(NEWER) + STEP_MS) } } : c));
+    assert.ok(latestMs(refreshed) > Date.parse(NEWER));
+    const stale = rec.provenVersionOf(ownCard(NEWER), refreshed);
+    assert.equal(stale.sellPrice, ent07Row.sellPrice, 'a stale fixed time loses to the refreshed catalog quote');
+    const rederived = iso(latestMs(refreshed) + STEP_MS);
+    const fresh = rec.provenVersionOf(ownCard(rederived), refreshed);
+    assert.equal(fresh.sellPrice, OWN_PRICE);
+    // Same production path on the unperturbed catalog agrees with the API flow above.
+    assert.equal(rec.provenVersionOf(ownCard(NEWER), catalog).sellPrice, OWN_PRICE);
   });
 }
 if (MODE === 'cold') {
