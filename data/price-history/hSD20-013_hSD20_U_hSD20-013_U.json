@@ -1,0 +1,17 @@
+{
+  "cardId": "hSD20-013_hSD20_U_hSD20-013_U",
+  "cardNumber": "hSD20-013",
+  "name": "ぐるぐるTIME！",
+  "records": [
+    {
+      "date": "2026-10-30",
+      "price": 420,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD20-013_hSD20_U_hSD20-013_U",
+      "sourceProduct": "hSD20"
+    }
+  ],
+  "lastUpdated": "2026-10-30T12:07:58.502Z",
+  "nameZh": "轉圈圈TIME！"
+}

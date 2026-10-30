@@ -1,0 +1,17 @@
+{
+  "cardId": "hSD20-010_hSD20_R_hSD20-010_R",
+  "cardNumber": "hSD20-010",
+  "name": "宙科そぴあ",
+  "records": [
+    {
+      "date": "2026-10-30",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD20-010_hSD20_R_hSD20-010_R",
+      "sourceProduct": "hSD20"
+    }
+  ],
+  "lastUpdated": "2026-10-30T12:07:58.495Z",
+  "nameZh": "宙科索比亞"
+}

@@ -74,8 +74,16 @@
       "currency": "JPY",
       "cardId": "hBP01-032_hBP05_C_hBP01-032_02_C",
       "sourceProduct": "hBP05"
+    },
+    {
+      "date": "2026-10-30",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-032_hBP05_C_hBP01-032_02_C",
+      "sourceProduct": "hBP05"
     }
   ],
-  "lastUpdated": "2026-10-26T02:45:59.759Z",
+  "lastUpdated": "2026-10-30T12:07:48.309Z",
   "nameZh": "亞綺·羅森塔爾"
 }

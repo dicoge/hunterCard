@@ -1,0 +1,17 @@
+{
+  "cardId": "hSD21-005_hSD21_U_hSD21-005_U",
+  "cardNumber": "hSD21-005",
+  "name": "熱千めら",
+  "records": [
+    {
+      "date": "2026-10-30",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD21-005_hSD21_U_hSD21-005_U",
+      "sourceProduct": "hSD21"
+    }
+  ],
+  "lastUpdated": "2026-10-30T12:07:58.536Z",
+  "nameZh": "熱千梅拉"
+}

@@ -74,8 +74,16 @@
       "currency": "JPY",
       "cardId": "hBP09-098_hBP09_S_hBP09-098_S",
       "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-10-30",
+      "price": 3980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-098_hBP09_S_hBP09-098_S",
+      "sourceProduct": "hBP09"
     }
   ],
-  "lastUpdated": "2026-10-26T02:46:00.108Z",
+  "lastUpdated": "2026-10-30T12:07:56.104Z",
   "nameZh": "西瓜泡泡"
 }
