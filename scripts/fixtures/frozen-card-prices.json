@@ -69,6 +69,25 @@
       "cardNumbers": [
         "hY02-012"
       ]
+    },
+    {
+      "ref": "a00676629",
+      "commit": "a00676629b4c1a3ea545fcaaffb8374b468889f8",
+      "method": "rows-agree",
+      "cardNumbers": [
+        "hBP01-062",
+        "hBP01-068",
+        "hBP01-070",
+        "hBP01-071",
+        "hBP01-125",
+        "hBP01-126",
+        "hBP05-003",
+        "hBP05-030",
+        "hBP05-031",
+        "hBP07-044",
+        "hBP08-042",
+        "hY03-014"
+      ]
     }
   ],
   "cards": {
@@ -192,6 +211,62 @@
         "sellPrice": 120,
         "rarity": "",
         "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10077.jpg"
+      }
+    ],
+    "hBP01-062": [
+      {
+        "name": "小鳥遊キアラ",
+        "sellPrice": 180,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10078.jpg"
+      },
+      {
+        "name": "小鳥遊キアラ(パラレル/hBP08)",
+        "sellPrice": 50,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp08/10231.jpg"
+      }
+    ],
+    "hBP01-068": [
+      {
+        "name": "尾丸ポルカ",
+        "sellPrice": 80,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10085.jpg"
+      },
+      {
+        "name": "尾丸ポルカ(パラレル/HR)",
+        "sellPrice": 3980,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10205.jpg"
+      },
+      {
+        "name": "尾丸ポルカ(パラレル/hBP05)",
+        "sellPrice": 80,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10195.jpg"
+      }
+    ],
+    "hBP01-070": [
+      {
+        "name": "尾丸ポルカ",
+        "sellPrice": 180,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10087.jpg"
+      }
+    ],
+    "hBP01-071": [
+      {
+        "name": "尾丸ポルカ(パラレル)",
+        "sellPrice": 980,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10089.jpg"
+      },
+      {
+        "name": "尾丸ポルカ",
+        "sellPrice": 180,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10088.jpg"
       }
     ],
     "hBP01-081": [
@@ -354,6 +429,22 @@
         "sellPrice": 80,
         "rarity": "",
         "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10144.jpg"
+      }
+    ],
+    "hBP01-125": [
+      {
+        "name": "KFP",
+        "sellPrice": 120,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10145.jpg"
+      }
+    ],
+    "hBP01-126": [
+      {
+        "name": "座員",
+        "sellPrice": 80,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10146.jpg"
       }
     ],
     "hBP02-003": [
@@ -668,6 +759,26 @@
         "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp04/10171.jpg"
       }
     ],
+    "hBP05-003": [
+      {
+        "name": "尾丸ポルカ(パラレル/サイン)",
+        "sellPrice": 99800,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10008.jpg"
+      },
+      {
+        "name": "尾丸ポルカ(パラレル)",
+        "sellPrice": 12800,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10007.jpg"
+      },
+      {
+        "name": "尾丸ポルカ",
+        "sellPrice": 320,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10006.jpg"
+      }
+    ],
     "hBP05-020": [
       {
         "name": "アイラニ・イオフィフティーン(パラレル)",
@@ -680,6 +791,34 @@
         "sellPrice": 30,
         "rarity": "",
         "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10045.jpg"
+      }
+    ],
+    "hBP05-030": [
+      {
+        "name": "尾丸ポルカ(パラレル)",
+        "sellPrice": 220,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10068.jpg"
+      },
+      {
+        "name": "尾丸ポルカ",
+        "sellPrice": 50,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10067.jpg"
+      }
+    ],
+    "hBP05-031": [
+      {
+        "name": "尾丸ポルカ(パラレル)",
+        "sellPrice": 180,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10070.jpg"
+      },
+      {
+        "name": "尾丸ポルカ",
+        "sellPrice": 30,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10069.jpg"
       }
     ],
     "hBP05-074": [
@@ -956,6 +1095,20 @@
         "sellPrice": 180,
         "rarity": "",
         "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10072.jpg"
+      }
+    ],
+    "hBP07-044": [
+      {
+        "name": "尾丸ポルカ(パラレル)",
+        "sellPrice": 580,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10092.jpg"
+      },
+      {
+        "name": "尾丸ポルカ",
+        "sellPrice": 50,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10091.jpg"
       }
     ],
     "hBP07-050": [
@@ -1356,6 +1509,20 @@
         "sellPrice": 500,
         "rarity": "",
         "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp08/10011.jpg"
+      }
+    ],
+    "hBP08-042": [
+      {
+        "name": "小鳥遊キアラ(パラレル)",
+        "sellPrice": 220,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp08/10091.jpg"
+      },
+      {
+        "name": "小鳥遊キアラ",
+        "sellPrice": 30,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp08/10090.jpg"
       }
     ],
     "hBP08-054": [
@@ -1834,6 +2001,14 @@
     ],
     "hY02-001": [],
     "hY02-012": [],
+    "hY03-014": [
+      {
+        "name": "赤エール(尾丸ポルカ)",
+        "sellPrice": 1980,
+        "rarity": "",
+        "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/yell01/10055.jpg"
+      }
+    ],
     "hY04-001": [],
     "hY04-005": [
       {

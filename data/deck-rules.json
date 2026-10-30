@@ -1,6 +1,6 @@
 {
   "_comment": "Data-driven hOCG deck construction rules for the HoloHunter deck editor. Source of truth: DIC-943 official rule matrix. Only rules that the current card dataset can actually verify are enabled; unconfirmed rules (e.g. Bloom/Debut warnings that need Bloom-level data the dataset does not carry) are left disabled so they are NOT hardcoded as false positives. Update this file when the official rules or dataset change — do not hardcode rule values in TypeScript.",
-  "version": "2026-08-10",
+  "version": "2026-10-30",
   "source": "DIC-943",
   "zones": {
     "oshi": { "label": "推しホロメン", "exactCount": 1 },
@@ -21,7 +21,18 @@
     "hBP07-101": 1
   },
   "unlimitedCopyCards": {
-    "_comment": "Cards printed with 'このカードはデッキに何枚でも入れられる' are exempt from the 4-copy limit. List their cardNumbers here as they are confirmed.",
-    "cardNumbers": []
+    "_comment": "Cards printed with 'このカードはデッキに何枚でも入れられる' are exempt from the 4-copy limit. List their cardNumbers here as they are confirmed. Every listed cardNumber must carry its official source in `sources` (printed text + official card image) — never add a card by inference from its name, keywords or another number.",
+    "cardNumbers": ["hBP01-068"],
+    "sources": {
+      "hBP01-068": {
+        "label": "エクストラ",
+        "text": "このホロメンはデッキに何枚でも入れられる",
+        "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP01/hBP01-068_C.png",
+        "officialImageSha256": "43baddd1d8dbc81580ede54a949bb7f34cf6d79c13f30337205366faad09a0a9",
+        "officialCardList": "https://hololive-official-cardgame.com/cardlist/cardsearch/?expansion=hBP05&view=text",
+        "verifiedAt": "2026-10-29",
+        "tournamentEvidence": "Deck Log X9552 (エクストリーマーカップ25-26 Final, deck-showcase vol.15) publishes 5 copies"
+      }
+    }
   }
 }
