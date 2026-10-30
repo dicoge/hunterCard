@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "month": "2026-10",
-  "generatedAt": "2026-10-29T07:20:00.000Z",
+  "generatedAt": "2026-10-29T17:15:00.000Z",
   "source": {
     "name": "hololive OFFICIAL CARD GAME — 公式コラム「イチ推し！デッキ紹介」vol.15",
     "url": "https://hololive-official-cardgame.com/news_detail/deck-showcase_vol-15/",
-    "disclaimer": "資料僅來自 2026-10-29 擷取的官方專欄文字所列 4 副敢闘賞牌組，非完整賽果。擷取文字中未取得名次、戰績、參賽人數與完整分布（圖片／圖表、直播及其他官方管道未核對）；占比僅反映已觀測樣本。卡表為 Deck Log 目前公開版本，非比賽當日的保證。"
+    "disclaimer": "資料僅來自 2026-10-29 擷取的官方專欄文字所列 4 副敢闘賞牌組，非完整賽果。擷取文字中未取得名次、戰績、參賽人數與完整分布（除 X9552 牌組圖片外之圖片／圖表、直播及其他官方管道未核對；X9552 牌組圖片僅用於佐證其卡表，未提供名次、戰績或參賽人數，相關欄位維持未知）；占比僅反映已觀測樣本。卡表為 Deck Log 目前公開版本，非比賽當日的保證。"
   },
   "coverage": {
     "knownEvents": 1,
@@ -25,7 +25,7 @@
       "entrants": null,
       "sourceUrl": "https://hololive-official-cardgame.com/news_detail/deck-showcase_vol-15/",
       "sourceType": "official-column",
-      "coverageNote": "已擷取的官方專欄文字展示 4 副獲「敢闘賞」的注目牌組；冠軍、8 強、名次、個人戰績與參賽數未於已擷取的專欄／活動頁文字中取得（圖片、直播等未核對）。3 副牌組卡表已以 Deck Log 公開清單通過嚴格驗證；X9552 的公開清單有重複卡位，未驗證、未收錄卡表。",
+      "coverageNote": "已擷取的官方專欄文字展示 4 副獲「敢闘賞」的注目牌組；冠軍、8 強、名次、個人戰績與參賽數未於已擷取的專欄／活動頁文字中取得（除 X9552 牌組圖片外之圖片、直播等未核對；該圖片僅佐證卡表，不含名次、戰績或參賽數，相關欄位維持未知）。4 副牌組卡表已以 Deck Log 公開清單通過嚴格驗證；X9552 的 hSD14-010 以兩種不同卡圖各 1 張刊載，合併為同一卡位 ×2。",
       "decks": [
         {
           "deckId": "decklog:SDC2Y",
@@ -177,7 +177,7 @@
           ],
           "cardsVerified": true,
           "coverage": "featured",
-          "fetchedAt": "2026-10-29T07:20:00.000Z"
+          "fetchedAt": "2026-10-29T17:15:00.000Z"
         },
         {
           "deckId": "decklog:1A64C0",
@@ -316,7 +316,7 @@
           ],
           "cardsVerified": true,
           "coverage": "featured",
-          "fetchedAt": "2026-10-29T07:20:00.000Z"
+          "fetchedAt": "2026-10-29T17:15:00.000Z"
         },
         {
           "deckId": "decklog:1ZDYLG",
@@ -467,7 +467,7 @@
           ],
           "cardsVerified": true,
           "coverage": "featured",
-          "fetchedAt": "2026-10-29T07:20:00.000Z"
+          "fetchedAt": "2026-10-29T17:15:00.000Z"
         },
         {
           "deckId": "decklog:X9552",
@@ -482,13 +482,122 @@
           "colors": [
             "赤"
           ],
-          "cards": [],
-          "cardsVerified": false,
+          "cards": [
+            {
+              "zone": "oshi",
+              "cardNumber": "hBP05-003",
+              "version": "SEC",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-071",
+              "version": "UR",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-062",
+              "version": "P",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-068",
+              "version": "HR",
+              "count": 5
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-070",
+              "version": "P",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP05-030",
+              "version": "S",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP05-031",
+              "version": "S",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-044",
+              "version": "SR",
+              "count": 3
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP08-042",
+              "version": "S",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD01-016",
+              "version": "P",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD01-017",
+              "version": "S",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD14-010",
+              "version": "P",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-104",
+              "version": "P",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-125",
+              "version": "C",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-126",
+              "version": "P",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP05-074",
+              "version": "C",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-091",
+              "version": "S",
+              "count": 3
+            },
+            {
+              "zone": "yell",
+              "cardNumber": "hY03-014",
+              "version": "SY",
+              "count": 20
+            }
+          ],
+          "cardsVerified": true,
           "coverage": "featured",
-          "fetchedAt": "2026-10-29T07:20:00.000Z"
+          "fetchedAt": "2026-10-29T17:15:00.000Z"
         }
       ],
-      "fetchedAt": "2026-10-29T07:20:00.000Z"
+      "fetchedAt": "2026-10-29T17:15:00.000Z"
     }
   ],
   "archetypeShare": [

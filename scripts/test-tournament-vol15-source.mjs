@@ -10,8 +10,9 @@
  *   • exactly the four 敢闘賞 decks the column links, with no fabricated rank, entrants or
  *     record (rank/entrants null; rankLabel is the published non-numeric award);
  *   • a deck is only cardsVerified when its committed list re-passes the strict gate
- *     against the local catalog; X9552 (duplicate main slot in its public list) carries no
- *     cards and stays unverified;
+ *     against the local catalog; X9552 is verified ONLY through the proven art-slot
+ *     consolidation of its public list (hSD14-010 as two artworks ×1, fixture-backed),
+ *     and without that proof its list is still refused;
  *   • no Deck Log owner/title/comment/image field is stored;
  *   • the generated October report (data + public mirror) reflects exactly that, and the
  *     July/August reports keep their known-good deck sets.
@@ -22,7 +23,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { verifyDeckCards, classifyFreshness } from '../src/utils/tournamentReport.ts';
+import { verifyDeckCards, classifyFreshness, cardsFromDecklog } from '../src/utils/tournamentReport.ts';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => JSON.parse(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
@@ -81,21 +82,43 @@ check('cardsVerified only when the committed list re-passes the strict gate', ()
       const v = verifyDeckCards(d.cards, catalog);
       assert.equal(v.cardsVerified, true, `${d.decklogCode}: ${v.failure}`);
       assert.deepEqual(v.totals, { oshi: 1, main: 50, yell: 20 });
-      assert.match(d.fetchedAt, /^2026-10-29T07:13:4\d\.\d+\+00:00$/);
+      // The PR228 capture time; X9552 was re-fetched later for the art-slot proof.
+      if (d.decklogCode === 'X9552') assert.equal(d.fetchedAt, '2026-10-29T17:06:42.625986+00:00');
+      else assert.match(d.fetchedAt, /^2026-10-29T07:13:4\d\.\d+\+00:00$/);
     } else {
       assert.deepEqual(d.cards, [], `${d.decklogCode}: an unverified deck must not ship a card list`);
     }
   }
+  assert.equal(event.decks.filter((d) => d.cardsVerified).length, 4);
+});
+
+check('X9552 is verified only through the proven art-slot consolidation of its public list', () => {
   const x = event.decks.find((d) => d.decklogCode === 'X9552');
-  assert.equal(x.cardsVerified, false);
-  assert.match(x.cardsUnverifiedReason, /duplicate card slot within zone: main:hSD14-010/);
-  assert.equal(event.decks.filter((d) => d.cardsVerified).length, 3);
+  assert.equal(x.cardsVerified, true);
+  assert.equal(x.cardsUnverifiedReason, undefined);
+  const fixture = read('scripts/fixtures/decklog-x9552-art-slots.json');
+  // The committed list is exactly what the adapter makes of the sanitized public response.
+  assert.deepEqual(x.cards, cardsFromDecklog(fixture.deck));
+  assert.deepEqual(x.cards.filter((c) => c.cardNumber === 'hSD14-010'), [{ zone: 'main', cardNumber: 'hSD14-010', version: 'P', count: 2 }]);
+  assert.equal(x.cards.find((c) => c.cardNumber === 'hBP01-068').count, 5, 'source-published ×5 is kept');
+  assert.deepEqual(x.artSlotProof, [{
+    zone: 'main', cardNumber: 'hSD14-010', version: 'P', decklogIds: [2727, 2995], counts: [1, 1],
+    fixture: 'scripts/fixtures/decklog-x9552-art-slots.json',
+  }]);
+  assert.equal(fixture.provenance.decklog.fetchedAt, x.fetchedAt);
+  // Negative control: the same published rows WITHOUT the art proof (as in the PR228
+  // capture) stay two slots and the strict gate still refuses them.
+  const unproven = structuredClone(fixture.deck);
+  for (const r of unproven.list) { delete r.id; delete r.img; }
+  const v = verifyDeckCards(cardsFromDecklog(unproven), catalog);
+  assert.equal(v.cardsVerified, false);
+  assert.match(v.failure, /duplicate card slot within zone: main:hSD14-010/);
 });
 
 check('no Deck Log owner / title / comment / image field is stored', () => {
   const allowed = new Set([
     'decklogCode', 'playerName', 'rank', 'rankLabel', 'archetypeId', 'archetypeLabel', 'oshi',
-    'colors', 'cards', 'cardsVerified', 'fetchedAt', 'cardsUnverifiedReason',
+    'colors', 'cards', 'cardsVerified', 'fetchedAt', 'cardsUnverifiedReason', 'artSlotProof',
   ]);
   for (const d of event.decks) {
     for (const k of Object.keys(d)) assert.ok(allowed.has(k), `unexpected deck field ${k}`);
@@ -122,6 +145,18 @@ check('copy states only what the captured text lacks, never that the official di
   }
   assert.match(src.provenance, /captured column and event-page text/);
   assert.match(src.provenance, /not checked/);
+  // The official X9552 column image WAS viewed (card-list proof only), so "not
+  // checked" must be scoped to the other images, never stated without exception,
+  // and the image must not be presented as evidence of rank/record/entrants.
+  for (const [label, text] of [['source.disclaimer', src.source.disclaimer], ['coverageNote', event.coverageNote]]) {
+    assert.match(text, /除 X9552 牌組圖片外之圖片[^）]*未核對/, `${label} must exempt only the X9552 image from 未核對`);
+    assert.match(text, /佐證(?:其)?卡表/, `${label} must say the X9552 image corroborates the card list only`);
+    assert.match(text, /維持未知/, `${label} must keep the unknown fields unknown`);
+    assert.ok(!/（圖片(?:／圖表)?[、，]/.test(text), `${label} still says images were not checked without exception`);
+  }
+  assert.match(src.provenance, /images\/charts other than the X9552 deck image[^)]*not checked/);
+  assert.match(src.provenance, /X9552 deck image was viewed only to corroborate its card list and states no rank, record or entrant count/);
+  assert.ok(!src.provenance.includes('(images/charts, the live stream'), 'provenance still says images were not checked without exception');
   const report = read('data/tournaments/2026-10.json');
   assert.equal(report.source.disclaimer, src.source.disclaimer);
   assert.equal(report.events[0].coverageNote, event.coverageNote);
@@ -144,7 +179,7 @@ check('October report (data + public mirror) matches the source; July/August dec
       ['decklog:SDC2Y', true, 'featured'],
       ['decklog:1A64C0', true, 'featured'],
       ['decklog:1ZDYLG', true, 'featured'],
-      ['decklog:X9552', false, 'featured'],
+      ['decklog:X9552', true, 'featured'],
     ],
   );
   const ids = (m) => read(`data/tournaments/${m}.json`).events.flatMap((e) => e.decks.map((d) => d.deckId)).sort();

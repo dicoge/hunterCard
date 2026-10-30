@@ -402,6 +402,12 @@ jobs:
       - name: Verify the curated vol.15 source claims only what the official column published (PR228)
         run: npm run test:tournament-vol15-source
 
+      - name: Verify Deck Log art slots merge only with published id/image proof (X9552)
+        run: npm run test:tournament-art-slots
+
+      - name: Verify the real X9552 import is legal in the editor; only source-attributed unlimited cards are exempt (X9552)
+        run: npm run test:tournament-x9552-import
+
       - name: Verify deterministic tournament deck analytics (DIC-1032)
         run: npm run test:tournament-analytics
 

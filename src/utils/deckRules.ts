@@ -88,7 +88,22 @@ export interface DeckRulesConfig {
   identity: { field: string };
   copyLimits: { mainDefault: number; yellUnlimited: boolean };
   restrictedCards: Record<string, number>;
-  unlimitedCopyCards: { cardNumbers: string[] };
+  unlimitedCopyCards: {
+    cardNumbers: string[];
+    /** official attribution per listed cardNumber (provenance only — the
+     *  limit itself is decided by `cardNumbers`) */
+    sources?: Record<string, UnlimitedCopySource>;
+  };
+}
+
+export interface UnlimitedCopySource {
+  label: string;
+  text: string;
+  officialImage: string;
+  officialImageSha256: string;
+  officialCardList: string;
+  verifiedAt: string;
+  tournamentEvidence?: string;
 }
 
 // Recursively drop the human-readable `_comment` annotations the JSON spec file

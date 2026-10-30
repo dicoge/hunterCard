@@ -1,0 +1,192 @@
+{
+  "_comment": "Sanitized public Deck Log view-API response for X9552 (proof fields only). Test data; see scripts/test-tournament-art-slots.mjs.",
+  "provenance": {
+    "decklog": {
+      "url": "https://decklog.bushiroad.com/system/app/api/view/X9552",
+      "fetchedAt": "2026-10-29T17:06:42.625986+00:00",
+      "httpStatus": 200,
+      "responseSha256": "7a644e36b77d136dba6434f60ae140c50103a3b970d38b6b5eb98b3f35092b35"
+    },
+    "officialColumn": {
+      "url": "https://hololive-official-cardgame.com/news_detail/deck-showcase_vol-15/",
+      "linksImageToDeckLog": "https://decklog.bushiroad.com/view/X9552",
+      "image": {
+        "url": "https://hololive-official-cardgame.com/images/news_detail/deck-showcase_vol-15/img_column05.jpg",
+        "fetchedAt": "2026-10-29T17:07:43.767257+00:00",
+        "sha256": "654e4724f87819cf07f5f41120fdb9851c8d224f557e1b68a246baab60147c5b",
+        "bytes": 912100
+      },
+      "observation": "The image shows the two holoAN (hSD14-010) entries as two different artworks, ×1 each; hBP01-068 ×5."
+    },
+    "kept": [
+      "card_number",
+      "num",
+      "type",
+      "id",
+      "img",
+      "rare"
+    ]
+  },
+  "deck": {
+    "deck_id": "X9552",
+    "game_title_id": 9,
+    "p_list": [
+      {
+        "card_number": "hBP05-003",
+        "num": 1,
+        "type": 3,
+        "id": 1808,
+        "img": "hBP05/hBP05-003_SEC.png",
+        "rare": "SEC"
+      }
+    ],
+    "list": [
+      {
+        "card_number": "hBP01-071",
+        "num": 4,
+        "type": 1,
+        "id": 144,
+        "img": "hBP01/hBP01-071_UR.png",
+        "rare": "UR"
+      },
+      {
+        "card_number": "hBP01-062",
+        "num": 1,
+        "type": 1,
+        "id": 232,
+        "img": "hPR/hBP01-062_P.png",
+        "rare": "P"
+      },
+      {
+        "card_number": "hBP01-068",
+        "num": 5,
+        "type": 1,
+        "id": 1895,
+        "img": "hBP05/hBP01-068_HR.png",
+        "rare": "HR"
+      },
+      {
+        "card_number": "hBP01-070",
+        "num": 4,
+        "type": 1,
+        "id": 1964,
+        "img": "hPR/hBP01-070_P_02.png",
+        "rare": "P"
+      },
+      {
+        "card_number": "hBP05-030",
+        "num": 1,
+        "type": 1,
+        "id": 1841,
+        "img": "hBP05/hBP05-030_S.png",
+        "rare": "S"
+      },
+      {
+        "card_number": "hBP05-031",
+        "num": 4,
+        "type": 1,
+        "id": 1842,
+        "img": "hBP05/hBP05-031_S.png",
+        "rare": "S"
+      },
+      {
+        "card_number": "hBP07-044",
+        "num": 3,
+        "type": 1,
+        "id": 2495,
+        "img": "hBP07/hBP07-044_SR.png",
+        "rare": "SR"
+      },
+      {
+        "card_number": "hBP08-042",
+        "num": 2,
+        "type": 1,
+        "id": 2929,
+        "img": "hBP08/hBP08-042_S.png",
+        "rare": "S"
+      },
+      {
+        "card_number": "hSD01-016",
+        "num": 4,
+        "type": 1,
+        "id": 224,
+        "img": "hPR/hSD01-016_P.png",
+        "rare": "P"
+      },
+      {
+        "card_number": "hSD01-017",
+        "num": 1,
+        "type": 1,
+        "id": 1543,
+        "img": "hBP04/hSD01-017_02_S.png",
+        "rare": "S"
+      },
+      {
+        "card_number": "hSD14-010",
+        "num": 1,
+        "type": 1,
+        "id": 2727,
+        "img": "hPR/hSD14-010_P.png",
+        "rare": "P"
+      },
+      {
+        "card_number": "hSD14-010",
+        "num": 1,
+        "type": 1,
+        "id": 2995,
+        "img": "hPR/hSD14-010_P_02.png",
+        "rare": "P"
+      },
+      {
+        "card_number": "hBP01-104",
+        "num": 4,
+        "type": 1,
+        "id": 223,
+        "img": "hPR/hBP01-104_P.png",
+        "rare": "P"
+      },
+      {
+        "card_number": "hBP01-125",
+        "num": 4,
+        "type": 1,
+        "id": 200,
+        "img": "hBP01/hBP01-125_C.png",
+        "rare": "C"
+      },
+      {
+        "card_number": "hBP01-126",
+        "num": 4,
+        "type": 1,
+        "id": 1344,
+        "img": "hPR/hBP01-126_P_02.png",
+        "rare": "P"
+      },
+      {
+        "card_number": "hBP05-074",
+        "num": 4,
+        "type": 1,
+        "id": 1788,
+        "img": "hBP05/hBP05-074_C.png",
+        "rare": "C"
+      },
+      {
+        "card_number": "hBP07-091",
+        "num": 3,
+        "type": 1,
+        "id": 2543,
+        "img": "hBP07/hBP07-091_S.png",
+        "rare": "S"
+      }
+    ],
+    "sub_list": [
+      {
+        "card_number": "hY03-014",
+        "num": 20,
+        "type": 2,
+        "id": 2568,
+        "img": "hBP07/hY03-014_SY.png",
+        "rare": "SY"
+      }
+    ]
+  }
+}

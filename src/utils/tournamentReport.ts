@@ -463,6 +463,11 @@ export interface DecklogApiCard {
   num?: number;
   type?: number;
   rare?: string | null;
+  /** Deck Log's own card-entry id; distinct per printed artwork. Used only as proof. */
+  id?: number;
+  /** Deck Log's card image path (e.g. "hPR/hSD14-010_P_02.png"). Used only as proof,
+   * never stored or republished. */
+  img?: string;
 }
 
 export interface DecklogApiDeck {
@@ -496,12 +501,117 @@ export function zoneFromDecklogList(
   return match ? match.zone : null;
 }
 
+/** One card number that a Deck Log list publishes as more than one row. */
+export interface DecklogArtSlotGroup {
+  zone: DeckZone;
+  cardNumber: string;
+  version: string | null;
+  /** Rows as published: id / img / count, in list order. */
+  rows: Array<{ id: unknown; img: unknown; count: number; version: string | null }>;
+  /** True only when the published rows PROVE distinct artworks of one card; see
+   * {@link provenArtSlotFailure}. */
+  proven: boolean;
+  failure: string | null;
+}
+
+const ART_IMG_PATH = /^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*\.(?:png|jpe?g|webp)$/;
+
+/**
+ * Deck Log lists the same card number twice when a deck uses two different
+ * ARTWORKS of it (each art is its own card entry, with its own id and image) —
+ * e.g. X9552 publishes hSD14-010 as ids 2727 (hPR/hSD14-010_P.png) and 2995
+ * (hPR/hSD14-010_P_02.png), one copy each, and the official column image shows the
+ * two different holoAN arts ×1 each. Those rows are one deck slot of that card
+ * number with the summed count.
+ *
+ * The rows may be consolidated ONLY when the published fields prove it; anything
+ * less returns the reason and the rows stay separate, so the strict duplicate gate
+ * still refuses them (fail closed):
+ *   • every row has a positive integer `id`, and the ids are pairwise distinct;
+ *   • every row has an image path whose file name is `<card_number>_…`, and the
+ *     paths are pairwise distinct (an image naming another card is contradictory);
+ *   • every row publishes the SAME non-empty version token (no printing is chosen
+ *     or inferred when versions differ or are missing).
+ * Counts were already required to be readable by the caller.
+ */
+export function provenArtSlotFailure(
+  cardNumber: string,
+  rows: DecklogArtSlotGroup['rows'],
+): string | null {
+  const ids = rows.map((r) => r.id);
+  if (!ids.every((id) => typeof id === 'number' && Number.isSafeInteger(id) && id > 0)) {
+    return 'a row has no readable Deck Log id';
+  }
+  if (new Set(ids).size !== ids.length) return 'rows repeat the same Deck Log id';
+  const imgs = rows.map((r) => r.img);
+  for (const img of imgs) {
+    if (typeof img !== 'string' || !ART_IMG_PATH.test(img)) return 'a row has no readable image path';
+    const file = img.slice(img.lastIndexOf('/') + 1);
+    if (!file.startsWith(`${cardNumber}_`)) return `image ${img} does not name ${cardNumber}`;
+  }
+  if (new Set(imgs).size !== imgs.length) return 'rows repeat the same image';
+  const versions = rows.map((r) => r.version);
+  if (versions.some((v) => v == null) || new Set(versions).size !== 1) {
+    return 'rows do not publish one common version';
+  }
+  return null;
+}
+
+/** Every card number a Deck Log response lists more than once inside one zone,
+ * with the published proof and the consolidation decision. Pure. */
+export function decklogArtSlotGroups(deck: DecklogApiDeck): DecklogArtSlotGroup[] {
+  const groups: DecklogArtSlotGroup[] = [];
+  for (const { key, zone } of ZONE_BY_DECKLOG_LIST) {
+    const byNumber = new Map<string, DecklogArtSlotGroup['rows']>();
+    for (const raw of (deck[key] as DecklogApiCard[] | null) ?? []) {
+      const cardNumber = String(raw.card_number ?? '').trim();
+      if (!byNumber.has(cardNumber)) byNumber.set(cardNumber, []);
+      byNumber.get(cardNumber)!.push({
+        id: raw.id,
+        img: raw.img,
+        count: raw.num as number,
+        version: (raw.rare ?? '').trim() || null,
+      });
+    }
+    for (const [cardNumber, rows] of byNumber) {
+      if (rows.length < 2) continue;
+      const failure = provenArtSlotFailure(cardNumber, rows);
+      groups.push({ zone, cardNumber, version: rows[0].version, rows, proven: failure === null, failure });
+    }
+  }
+  return groups;
+}
+
 /** Map a Deck Log view-API response into normalized, zoned deck cards. Throws on
  * the first unreadable slot (missing card number, unreadable copy count, or a
  * list/type mismatch) so a half-parsed deck can never silently become a
- * "verified" one. */
+ * "verified" one.
+ *
+ * Rows of one card number that the response PROVES are different artworks
+ * (decklogArtSlotGroups) become one slot carrying the summed count, at the first
+ * row's position. Every other repeated card number is returned exactly as
+ * published — one slot per row — so verifyDeckCards still refuses it. */
 export function cardsFromDecklog(deck: DecklogApiDeck | null | undefined): DeckCardRef[] {
   if (!deck) throw new Error('empty Deck Log response');
+  const slots = cardsFromDecklogRows(deck);
+  const proven = new Map(
+    decklogArtSlotGroups(deck).filter((g) => g.proven).map((g) => [`${g.zone}:${g.cardNumber}`, g]),
+  );
+  if (proven.size === 0) return slots;
+  const out: DeckCardRef[] = [];
+  const emitted = new Set<string>();
+  for (const slot of slots) {
+    const key = `${slot.zone}:${slot.cardNumber}`;
+    const group = proven.get(key);
+    if (!group) { out.push(slot); continue; }
+    if (emitted.has(key)) continue;
+    emitted.add(key);
+    out.push({ ...slot, count: group.rows.reduce((n, r) => n + r.count, 0) });
+  }
+  return out;
+}
+
+function cardsFromDecklogRows(deck: DecklogApiDeck): DeckCardRef[] {
   const out: DeckCardRef[] = [];
   for (const { key, zone, type } of ZONE_BY_DECKLOG_LIST) {
     for (const raw of (deck[key] as DecklogApiCard[] | null) ?? []) {
