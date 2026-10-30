@@ -74,8 +74,16 @@
       "currency": "JPY",
       "cardId": "hBP04-016_hBP06_C_hBP04-016_02_C",
       "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-10-30",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-016_hBP06_C_hBP04-016_02_C",
+      "sourceProduct": "hBP06"
     }
   ],
-  "lastUpdated": "2026-10-26T02:45:59.894Z",
+  "lastUpdated": "2026-10-30T12:07:50.096Z",
   "nameZh": "勞菈·潘德菈"
 }

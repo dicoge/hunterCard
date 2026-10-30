@@ -74,8 +74,16 @@
       "currency": "JPY",
       "cardId": "hBP08-100_hBP08_U_hBP08-100_U",
       "sourceProduct": "hBP08"
+    },
+    {
+      "date": "2026-10-30",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-100_hBP08_U_hBP08-100_U",
+      "sourceProduct": "hBP08"
     }
   ],
-  "lastUpdated": "2026-10-26T02:46:00.059Z",
+  "lastUpdated": "2026-10-30T12:07:52.771Z",
   "nameZh": "Myth"
 }

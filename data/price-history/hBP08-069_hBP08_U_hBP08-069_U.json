@@ -74,8 +74,16 @@
       "currency": "JPY",
       "cardId": "hBP08-069_hBP08_U_hBP08-069_U",
       "sourceProduct": "hBP08"
+    },
+    {
+      "date": "2026-10-30",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-069_hBP08_U_hBP08-069_U",
+      "sourceProduct": "hBP08"
     }
   ],
-  "lastUpdated": "2026-10-26T02:46:00.044Z",
+  "lastUpdated": "2026-10-30T12:07:52.622Z",
   "nameZh": "一伊那爾棲"
 }

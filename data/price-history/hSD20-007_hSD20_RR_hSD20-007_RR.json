@@ -1,0 +1,17 @@
+{
+  "cardId": "hSD20-007_hSD20_RR_hSD20-007_RR",
+  "cardNumber": "hSD20-007",
+  "name": "百灯キョーコ",
+  "records": [
+    {
+      "date": "2026-10-30",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD20-007_hSD20_RR_hSD20-007_RR",
+      "sourceProduct": "hSD20"
+    }
+  ],
+  "lastUpdated": "2026-10-30T12:07:58.488Z",
+  "nameZh": "百燈京子"
+}

@@ -74,8 +74,16 @@
       "currency": "JPY",
       "cardId": "hBP04-007_hBP04_OSR_hBP04-007_OSR",
       "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-10-30",
+      "price": 220,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-007_hBP04_OSR_hBP04-007_OSR",
+      "sourceProduct": "hBP04"
     }
   ],
-  "lastUpdated": "2026-10-26T02:45:59.890Z",
+  "lastUpdated": "2026-10-30T12:07:50.055Z",
   "nameZh": "安雅·梅爾菲莎"
 }
