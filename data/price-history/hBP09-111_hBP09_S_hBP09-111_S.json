@@ -82,8 +82,16 @@
       "currency": "JPY",
       "cardId": "hBP09-111_hBP09_S_hBP09-111_S",
       "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-10-31",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-111_hBP09_S_hBP09-111_S",
+      "sourceProduct": "hBP09"
     }
   ],
-  "lastUpdated": "2026-10-30T12:07:56.159Z",
+  "lastUpdated": "2026-10-31T12:09:00.624Z",
   "nameZh": "Pemaloe"
 }

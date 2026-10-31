@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-10-30T12:03:19.154Z",
+  "updatedAt": "2026-10-31T12:04:05.714Z",
   "discoveredSeries": [
     "hSD21",
     "hCO03",
@@ -92,7 +92,7 @@
       "expectedCount": 20,
       "ingestedCount": 20,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:01:42.215Z"
+      "lastSuccessfulSync": "2026-10-31T12:02:12.660Z"
     },
     {
       "code": "hCO03",
@@ -100,7 +100,7 @@
       "expectedCount": 6,
       "ingestedCount": 6,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:01:42.442Z"
+      "lastSuccessfulSync": "2026-10-31T12:02:13.914Z"
     },
     {
       "code": "hBP09",
@@ -108,7 +108,7 @@
       "expectedCount": 255,
       "ingestedCount": 255,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:01:48.750Z"
+      "lastSuccessfulSync": "2026-10-31T12:02:21.782Z"
     },
     {
       "code": "hEB01",
@@ -116,7 +116,7 @@
       "expectedCount": 214,
       "ingestedCount": 214,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:01:54.720Z"
+      "lastSuccessfulSync": "2026-10-31T12:02:29.000Z"
     },
     {
       "code": "hBP08",
@@ -124,7 +124,7 @@
       "expectedCount": 251,
       "ingestedCount": 251,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:02:01.844Z"
+      "lastSuccessfulSync": "2026-10-31T12:02:38.807Z"
     },
     {
       "code": "hWF01",
@@ -132,7 +132,7 @@
       "expectedCount": 34,
       "ingestedCount": 34,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:02:03.035Z"
+      "lastSuccessfulSync": "2026-10-31T12:02:40.128Z"
     },
     {
       "code": "hCO01",
@@ -140,7 +140,7 @@
       "expectedCount": 8,
       "ingestedCount": 8,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:02:03.257Z"
+      "lastSuccessfulSync": "2026-10-31T12:02:40.559Z"
     },
     {
       "code": "hSD14",
@@ -148,7 +148,7 @@
       "expectedCount": 17,
       "ingestedCount": 17,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:02:03.987Z"
+      "lastSuccessfulSync": "2026-10-31T12:02:41.420Z"
     },
     {
       "code": "hSD15",
@@ -156,7 +156,7 @@
       "expectedCount": 17,
       "ingestedCount": 17,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:02:04.575Z"
+      "lastSuccessfulSync": "2026-10-31T12:02:42.216Z"
     },
     {
       "code": "hSD16",
@@ -164,7 +164,7 @@
       "expectedCount": 17,
       "ingestedCount": 17,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:02:05.545Z"
+      "lastSuccessfulSync": "2026-10-31T12:02:42.944Z"
     },
     {
       "code": "hSD17",
@@ -172,7 +172,7 @@
       "expectedCount": 17,
       "ingestedCount": 17,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:02:06.125Z"
+      "lastSuccessfulSync": "2026-10-31T12:02:43.532Z"
     },
     {
       "code": "hSD18",
@@ -180,7 +180,7 @@
       "expectedCount": 16,
       "ingestedCount": 16,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:02:06.821Z"
+      "lastSuccessfulSync": "2026-10-31T12:02:44.299Z"
     },
     {
       "code": "hSD19",
@@ -188,7 +188,7 @@
       "expectedCount": 17,
       "ingestedCount": 17,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:02:07.672Z"
+      "lastSuccessfulSync": "2026-10-31T12:02:44.876Z"
     },
     {
       "code": "hBP07",
@@ -196,7 +196,7 @@
       "expectedCount": 249,
       "ingestedCount": 249,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:02:14.751Z"
+      "lastSuccessfulSync": "2026-10-31T12:02:52.788Z"
     },
     {
       "code": "hSD12",
@@ -204,7 +204,7 @@
       "expectedCount": 26,
       "ingestedCount": 26,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:02:15.437Z"
+      "lastSuccessfulSync": "2026-10-31T12:02:53.466Z"
     },
     {
       "code": "hSD13",
@@ -212,7 +212,7 @@
       "expectedCount": 25,
       "ingestedCount": 25,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:02:16.115Z"
+      "lastSuccessfulSync": "2026-10-31T12:02:54.150Z"
     },
     {
       "code": "hBP06",
@@ -220,7 +220,7 @@
       "expectedCount": 243,
       "ingestedCount": 243,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:02:23.435Z"
+      "lastSuccessfulSync": "2026-10-31T12:03:03.290Z"
     },
     {
       "code": "hSD10",
@@ -228,7 +228,7 @@
       "expectedCount": 19,
       "ingestedCount": 19,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:02:25.404Z"
+      "lastSuccessfulSync": "2026-10-31T12:03:04.324Z"
     },
     {
       "code": "hSD01",
@@ -236,7 +236,7 @@
       "expectedCount": 23,
       "ingestedCount": 23,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:02:26.358Z"
+      "lastSuccessfulSync": "2026-10-31T12:03:05.048Z"
     },
     {
       "code": "hSD20",
@@ -244,7 +244,7 @@
       "expectedCount": 20,
       "ingestedCount": 20,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:02:26.966Z"
+      "lastSuccessfulSync": "2026-10-31T12:03:05.706Z"
     },
     {
       "code": "hCO02",
@@ -252,7 +252,7 @@
       "expectedCount": 6,
       "ingestedCount": 6,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:02:27.211Z"
+      "lastSuccessfulSync": "2026-10-31T12:03:05.945Z"
     },
     {
       "code": "hSD11",
@@ -260,7 +260,7 @@
       "expectedCount": 19,
       "ingestedCount": 19,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:02:27.903Z"
+      "lastSuccessfulSync": "2026-10-31T12:03:06.525Z"
     },
     {
       "code": "hBP01",
@@ -268,7 +268,7 @@
       "expectedCount": 153,
       "ingestedCount": 153,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:02:32.453Z"
+      "lastSuccessfulSync": "2026-10-31T12:03:11.454Z"
     },
     {
       "code": "hYS01",
@@ -276,7 +276,7 @@
       "expectedCount": 8,
       "ingestedCount": 8,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:02:32.712Z"
+      "lastSuccessfulSync": "2026-10-31T12:03:11.704Z"
     },
     {
       "code": "hPR",
@@ -284,7 +284,7 @@
       "expectedCount": 460,
       "ingestedCount": 460,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:02:45.471Z"
+      "lastSuccessfulSync": "2026-10-31T12:03:27.044Z"
     },
     {
       "code": "hBP02",
@@ -292,7 +292,7 @@
       "expectedCount": 219,
       "ingestedCount": 219,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:02:51.284Z"
+      "lastSuccessfulSync": "2026-10-31T12:03:34.162Z"
     },
     {
       "code": "hSD02",
@@ -300,7 +300,7 @@
       "expectedCount": 20,
       "ingestedCount": 20,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:02:51.940Z"
+      "lastSuccessfulSync": "2026-10-31T12:03:35.005Z"
     },
     {
       "code": "hSD03",
@@ -308,7 +308,7 @@
       "expectedCount": 20,
       "ingestedCount": 20,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:02:52.668Z"
+      "lastSuccessfulSync": "2026-10-31T12:03:35.853Z"
     },
     {
       "code": "hSD04",
@@ -316,7 +316,7 @@
       "expectedCount": 20,
       "ingestedCount": 20,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:02:53.259Z"
+      "lastSuccessfulSync": "2026-10-31T12:03:36.469Z"
     },
     {
       "code": "hSD05",
@@ -324,7 +324,7 @@
       "expectedCount": 20,
       "ingestedCount": 20,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:02:53.989Z"
+      "lastSuccessfulSync": "2026-10-31T12:03:37.088Z"
     },
     {
       "code": "hSD06",
@@ -332,7 +332,7 @@
       "expectedCount": 20,
       "ingestedCount": 20,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:02:54.625Z"
+      "lastSuccessfulSync": "2026-10-31T12:03:37.775Z"
     },
     {
       "code": "hSD07",
@@ -340,7 +340,7 @@
       "expectedCount": 20,
       "ingestedCount": 20,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:02:55.534Z"
+      "lastSuccessfulSync": "2026-10-31T12:03:38.379Z"
     },
     {
       "code": "hBP03",
@@ -348,7 +348,7 @@
       "expectedCount": 244,
       "ingestedCount": 244,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:03:03.240Z"
+      "lastSuccessfulSync": "2026-10-31T12:03:45.518Z"
     },
     {
       "code": "hPC01",
@@ -356,7 +356,7 @@
       "expectedCount": 5,
       "ingestedCount": 5,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:03:03.883Z"
+      "lastSuccessfulSync": "2026-10-31T12:03:45.920Z"
     },
     {
       "code": "hBP04",
@@ -364,7 +364,7 @@
       "expectedCount": 225,
       "ingestedCount": 225,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:03:11.134Z"
+      "lastSuccessfulSync": "2026-10-31T12:03:52.466Z"
     },
     {
       "code": "hSD08",
@@ -372,7 +372,7 @@
       "expectedCount": 17,
       "ingestedCount": 17,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:03:12.005Z"
+      "lastSuccessfulSync": "2026-10-31T12:03:53.168Z"
     },
     {
       "code": "hSD09",
@@ -380,7 +380,7 @@
       "expectedCount": 17,
       "ingestedCount": 17,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:03:12.631Z"
+      "lastSuccessfulSync": "2026-10-31T12:03:53.786Z"
     },
     {
       "code": "hSD2025summer",
@@ -388,7 +388,7 @@
       "expectedCount": 1,
       "ingestedCount": 1,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:03:12.881Z"
+      "lastSuccessfulSync": "2026-10-31T12:03:54.277Z"
     },
     {
       "code": "hCS01",
@@ -396,7 +396,7 @@
       "expectedCount": 5,
       "ingestedCount": 5,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:03:13.118Z"
+      "lastSuccessfulSync": "2026-10-31T12:03:55.464Z"
     },
     {
       "code": "hBP05",
@@ -404,7 +404,7 @@
       "expectedCount": 217,
       "ingestedCount": 217,
       "missingCount": 0,
-      "lastSuccessfulSync": "2026-10-30T12:03:19.137Z"
+      "lastSuccessfulSync": "2026-10-31T12:04:05.708Z"
     }
   ]
 }

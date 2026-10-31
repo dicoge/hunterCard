@@ -1,11 +1,11 @@
 {
   "schema": "huntercard.price-rejections/v1",
   "label": "build-database",
-  "generatedAt": "2026-10-30T12:07:39.944Z",
+  "generatedAt": "2026-10-31T12:08:47.011Z",
   "before": {
-    "pricedRows": 2524,
-    "pricedUniqueCardNumbers": 1288,
-    "priceEntries": 2524
+    "pricedRows": 2546,
+    "pricedUniqueCardNumbers": 1310,
+    "priceEntries": 2546
   },
   "after": {
     "pricedRows": 2546,
@@ -13,27 +13,11 @@
     "priceEntries": 2546
   },
   "deltas": {
-    "pricedRows": 22,
-    "pricedUniqueCardNumbers": 22,
-    "priceEntries": 22
+    "pricedRows": 0,
+    "pricedUniqueCardNumbers": 0,
+    "priceEntries": 0
   },
   "rejections": [
-    {
-      "id": "hBD24-058_ent07",
-      "cardNumber": "hBD24-058",
-      "sourceProduct": "ent07",
-      "rarity": "P",
-      "reason": "cross-product-image",
-      "evidence": {
-        "sellPrice": 9980,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10058.jpg",
-        "imageProduct": "promo-hbd20",
-        "entryImageProducts": [
-          "promo-hbd20"
-        ],
-        "timestamp": "2026-10-18T12:08:22.747Z"
-      }
-    },
     {
       "id": "hSD03-002_ent07_P_2_hSD03-002_P_2",
       "cardNumber": "hSD03-002",
@@ -47,7 +31,7 @@
         "entryImageProducts": [
           "promo-hsd10"
         ],
-        "timestamp": "2026-10-30T12:07:06.795Z"
+        "timestamp": "2026-10-31T12:08:16.398Z"
       }
     }
   ],

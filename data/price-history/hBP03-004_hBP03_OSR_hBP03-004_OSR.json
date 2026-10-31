@@ -82,8 +82,16 @@
       "currency": "JPY",
       "cardId": "hBP03-004_hBP03_OSR_hBP03-004_OSR",
       "sourceProduct": "hBP03"
+    },
+    {
+      "date": "2026-10-31",
+      "price": 780,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-004_hBP03_OSR_hBP03-004_OSR",
+      "sourceProduct": "hBP03"
     }
   ],
-  "lastUpdated": "2026-10-30T12:07:49.609Z",
+  "lastUpdated": "2026-10-31T12:08:56.314Z",
   "nameZh": "FUWAMOCO"
 }

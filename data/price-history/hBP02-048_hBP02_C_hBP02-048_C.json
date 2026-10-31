@@ -560,7 +560,15 @@
       "currency": "JPY",
       "cardId": "hBP02-048_hBP02_C_hBP02-048_C",
       "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-10-31",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-048_hBP02_C_hBP02-048_C",
+      "sourceProduct": "hBP02"
     }
   ],
-  "lastUpdated": "2026-10-30T12:07:49.299Z"
+  "lastUpdated": "2026-10-31T12:08:55.869Z"
 }

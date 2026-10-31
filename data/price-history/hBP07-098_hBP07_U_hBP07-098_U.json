@@ -82,8 +82,16 @@
       "currency": "JPY",
       "cardId": "hBP07-098_hBP07_U_hBP07-098_U",
       "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-10-31",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-098_hBP07_U_hBP07-098_U",
+      "sourceProduct": "hBP07"
     }
   ],
-  "lastUpdated": "2026-10-30T12:07:52.100Z",
+  "lastUpdated": "2026-10-31T12:08:58.977Z",
   "nameZh": "大神澪的占卜"
 }

@@ -82,8 +82,16 @@
       "currency": "JPY",
       "cardId": "hBP05-075_hBP05_C_hBP05-075_C",
       "sourceProduct": "hBP05"
+    },
+    {
+      "date": "2026-10-31",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-075_hBP05_C_hBP05-075_C",
+      "sourceProduct": "hBP05"
     }
   ],
-  "lastUpdated": "2026-10-30T12:07:51.270Z",
+  "lastUpdated": "2026-10-31T12:08:58.151Z",
   "nameZh": "牛丼"
 }
