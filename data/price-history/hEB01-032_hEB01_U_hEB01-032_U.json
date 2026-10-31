@@ -66,8 +66,16 @@
       "currency": "JPY",
       "cardId": "hEB01-032_hEB01_U_hEB01-032_U",
       "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-10-31",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hEB01-032_hEB01_U_hEB01-032_U",
+      "sourceProduct": "hEB01"
     }
   ],
-  "lastUpdated": "2026-10-30T12:07:57.018Z",
+  "lastUpdated": "2026-10-31T12:09:00.708Z",
   "nameZh": "STAR STAR☆T"
 }

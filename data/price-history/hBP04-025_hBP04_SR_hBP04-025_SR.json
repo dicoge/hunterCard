@@ -82,8 +82,16 @@
       "currency": "JPY",
       "cardId": "hBP04-025_hBP04_SR_hBP04-025_SR",
       "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-10-31",
+      "price": 680,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-025_hBP04_SR_hBP04-025_SR",
+      "sourceProduct": "hBP04"
     }
   ],
-  "lastUpdated": "2026-10-30T12:07:50.141Z",
+  "lastUpdated": "2026-10-31T12:08:57.361Z",
   "nameZh": "儒烏風亭螺鈿"
 }

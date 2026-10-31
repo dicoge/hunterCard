@@ -82,8 +82,16 @@
       "currency": "JPY",
       "cardId": "hBP08-097_hBP08_C_hBP08-097_C",
       "sourceProduct": "hBP08"
+    },
+    {
+      "date": "2026-10-31",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-097_hBP08_C_hBP08-097_C",
+      "sourceProduct": "hBP08"
     }
   ],
-  "lastUpdated": "2026-10-30T12:07:52.746Z",
+  "lastUpdated": "2026-10-31T12:08:59.637Z",
   "nameZh": "富裕巧克的漢堡排"
 }

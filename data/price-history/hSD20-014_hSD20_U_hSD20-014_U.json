@@ -10,8 +10,16 @@
       "currency": "JPY",
       "cardId": "hSD20-014_hSD20_U_hSD20-014_U",
       "sourceProduct": "hSD20"
+    },
+    {
+      "date": "2026-10-31",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD20-014_hSD20_U_hSD20-014_U",
+      "sourceProduct": "hSD20"
     }
   ],
-  "lastUpdated": "2026-10-30T12:07:58.524Z",
+  "lastUpdated": "2026-10-31T12:09:01.454Z",
   "nameZh": "百燈京子的擴音器"
 }
