@@ -90,8 +90,16 @@
       "currency": "JPY",
       "cardId": "hBP03-078_hBP03_SR_hBP03-078_SR",
       "sourceProduct": "hBP03"
+    },
+    {
+      "date": "2026-11-01",
+      "price": 420,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-078_hBP03_SR_hBP03-078_SR",
+      "sourceProduct": "hBP03"
     }
   ],
-  "lastUpdated": "2026-10-31T12:08:56.709Z",
+  "lastUpdated": "2026-11-01T12:07:11.045Z",
   "nameZh": "亞菈妲·麗絲"
 }
