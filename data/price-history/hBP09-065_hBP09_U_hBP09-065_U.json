@@ -90,8 +90,16 @@
       "currency": "JPY",
       "cardId": "hBP09-065_hBP09_U_hBP09-065_U",
       "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-11-01",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-065_hBP09_U_hBP09-065_U",
+      "sourceProduct": "hBP09"
     }
   ],
-  "lastUpdated": "2026-10-31T12:09:00.501Z",
+  "lastUpdated": "2026-11-01T12:07:17.441Z",
   "nameZh": "綺綺羅羅薇薇"
 }

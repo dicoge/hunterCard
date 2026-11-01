@@ -1,7 +1,7 @@
 {
   "schema": "huntercard.price-rejections/v1",
   "label": "build-database",
-  "generatedAt": "2026-10-31T12:08:47.011Z",
+  "generatedAt": "2026-11-01T12:06:59.777Z",
   "before": {
     "pricedRows": 2546,
     "pricedUniqueCardNumbers": 1310,
@@ -31,7 +31,7 @@
         "entryImageProducts": [
           "promo-hsd10"
         ],
-        "timestamp": "2026-10-31T12:08:16.398Z"
+        "timestamp": "2026-11-01T12:06:33.115Z"
       }
     }
   ],
@@ -2336,10 +2336,10 @@
         1480,
         420,
         4980,
-        180,
+        220,
         120,
         4980,
-        180,
+        220,
         120,
         4980
       ],
@@ -6098,7 +6098,7 @@
       ],
       "listingSellPrices": [
         580,
-        180,
+        220,
         4980,
         6980
       ],

@@ -90,8 +90,16 @@
       "currency": "JPY",
       "cardId": "hBP09-093_hBP09_C_hBP09-093_C",
       "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-11-01",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-093_hBP09_C_hBP09-093_C",
+      "sourceProduct": "hBP09"
     }
   ],
-  "lastUpdated": "2026-10-31T12:09:00.586Z",
+  "lastUpdated": "2026-11-01T12:07:18.283Z",
   "nameZh": "應援的HoloLis"
 }

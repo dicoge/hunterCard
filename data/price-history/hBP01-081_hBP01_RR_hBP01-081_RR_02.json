@@ -90,8 +90,16 @@
       "currency": "JPY",
       "cardId": "hBP01-081_hBP01_RR_hBP01-081_RR_02",
       "sourceProduct": "hBP01"
+    },
+    {
+      "date": "2026-11-01",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-081_hBP01_RR_hBP01-081_RR_02",
+      "sourceProduct": "hBP01"
     }
   ],
-  "lastUpdated": "2026-10-31T12:08:55.253Z",
+  "lastUpdated": "2026-11-01T12:07:08.459Z",
   "nameZh": "星街彗星"
 }
