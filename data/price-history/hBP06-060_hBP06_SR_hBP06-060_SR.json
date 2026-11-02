@@ -98,8 +98,16 @@
       "currency": "JPY",
       "cardId": "hBP06-060_hBP06_SR_hBP06-060_SR",
       "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-11-02",
+      "price": 420,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-060_hBP06_SR_hBP06-060_SR",
+      "sourceProduct": "hBP06"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:13.361Z",
+  "lastUpdated": "2026-11-02T12:07:48.639Z",
   "nameZh": "森美聲"
 }

@@ -98,8 +98,16 @@
       "currency": "JPY",
       "cardId": "hBP09-092_hBP09_C_hBP09-092_C",
       "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-11-02",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-092_hBP09_C_hBP09-092_C",
+      "sourceProduct": "hBP09"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:18.275Z",
+  "lastUpdated": "2026-11-02T12:07:51.652Z",
   "nameZh": "雨天的薇薇"
 }
