@@ -18,6 +18,8 @@
  *                 fingerprint, so a deck merge can tell which side really changed
  *                 instead of trusting device clocks; a baseline saved before it
  *                 existed simply lacks it and the old timestamp rules apply.
+ *                 `scanPicks` (2026-11-03, optional) does the same for a scan's version
+ *                 pick: instance id → pick fingerprint; absent → clock-only pick rule.
  *
  * Nothing here is account data itself; it never leaves the device.
  */
@@ -32,6 +34,9 @@ export interface SyncBaseline {
   deckContent?: Record<string, string>;
   /** Scan instance ids; null when the server did not carry the scan list. */
   scans: string[] | null;
+  /** Scan instance id → scanPickFingerprint() of the server's copy (2026-11-03). Absent in
+   *  older baselines, which keep the clock-only pick rule. */
+  scanPicks?: Record<string, string>;
 }
 
 export interface AccountSyncState {

@@ -456,6 +456,9 @@ jobs:
       - name: Verify account remote-sync deck merge by baseline content, not device clocks
         run: npm run test:account-sync-deck-baseline
 
+      - name: Verify scan version picks merge by baseline pick, not device clocks
+        run: npm run test:scan-pick-baseline
+
       - name: Verify account remote-sync store binding (DIC-1380 W4)
         run: npm run test:account-sync-binding
 

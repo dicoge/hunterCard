@@ -55,7 +55,11 @@ const {
   resetLastKnownRevision,
   mergeLocalOntoServer,
   clearAccountScopedStores,
+  baselineFrom,
+  mergeGuestOntoServer,
+  setLastKnownRevision,
 } = await import('../src/services/accountSyncOrchestrator.ts');
+const { scanPickFingerprint } = await import('../src/utils/scanSessionSync.ts');
 const { useAuthStore } = await import('../src/store/authStore.ts');
 const { useDeckStore } = await import('../src/store/deckStore.ts');
 const { usePriceAlertStore } = await import('../src/stores/priceAlertStore.ts');
@@ -849,6 +853,92 @@ await test('CR ACK (b16d7ab): a pick changed while the request was in flight is 
   assert.equal(after.selectedVersion, 1);
   assert.equal(after.selectedAt, newPick.selectedAt, 'the pending pick keeps its own time');
   assert.equal(useDeckStore.getState().collection['hBP09-001|BASE'], 4, 'unrelated edit untouched');
+  const { useAccountSyncStateStore: meta } = await import('../src/store/accountSyncStateStore.ts');
+  const { toSyncEntry } = await import('../src/stores/scanSessionStore.ts');
+  assert.notEqual(meta.getState().baseline.scanPicks[id], scanPickFingerprint(toSyncEntry(after, false)),
+    '2026-11-03: the pending pick differs from the acked baseline pick, so a later merge treats it as a local change');
+  store.setState({ cards: [] });
+});
+
+// ── 2026-11-03: a scan's version pick is merged by the baseline pick, not by device clocks ──
+const VERSIONS_2 = [
+  { name: '風真いろは', printing: 'BASE', sellPrice: 120, buyPrice: null },
+  { name: '風真いろは(パラレル)', printing: 'PARALLEL', sellPrice: 980, buyPrice: null },
+];
+const pick2 = (version, selectedAt, id = 's1') => ({
+  ...scanEntry(id, '2026-11-03T08:00:00.000Z'), priceVersions: VERSIONS_2, selectedVersion: version, versionConfident: true,
+  ...(selectedAt ? { selectedAt } : {}),
+});
+const AT = (hhmm) => `2026-11-03T${hhmm}:00.000Z`;
+const SERVER_V0 = () => ({ ...SNAPSHOT_V7, scanSession: { entries: [pick2(0, AT('10:00'))], clearedAt: null } });
+
+await test('scan pick baseline: baselineFrom records each scan\'s pick fingerprint; a snapshot without the list has none', () => {
+  const b = baselineFrom(SERVER_V0());
+  assert.deepEqual(b.scans, ['s1']);
+  assert.equal(b.scanPicks.s1, scanPickFingerprint(pick2(0, AT('10:00'))));
+  assert.equal(baselineFrom({ ...SNAPSHOT_V7 }).scanPicks, undefined, 'no scan list → no scan picks (old rule)');
+});
+
+await test('scan pick baseline: slow-clock LOCAL new pick vs UNCHANGED server → kept; UNCHANGED local vs newer slow-clock server pick → server', () => {
+  const baseline = baselineFrom(SERVER_V0());
+  let merged = mergeLocalOntoServer(SERVER_V0(), { scanSession: { entries: [pick2(1, AT('09:50'))], clearedAt: null } }, {}, baseline);
+  assert.equal(merged.scanSession.entries[0].selectedVersion, 1, 'local new pick survives');
+  merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, scanSession: { entries: [pick2(1, AT('09:50'))], clearedAt: null } },
+    { scanSession: { entries: [pick2(0, AT('10:00'))], clearedAt: null } }, {}, baseline,
+  );
+  assert.equal(merged.scanSession.entries[0].selectedVersion, 1, 'the newer server pick is not overwritten by the stale copy');
+  // Negative control: the same data WITHOUT the baseline keeps the old clock-only outcome.
+  merged = mergeLocalOntoServer(SERVER_V0(), { scanSession: { entries: [pick2(1, AT('09:50'))], clearedAt: null } }, {});
+  assert.equal(merged.scanSession.entries[0].selectedVersion, 0, 'no baseline: clock rule as before');
+  const { scanPicks: _drop, ...oldBaseline } = baseline;
+  merged = mergeLocalOntoServer(SERVER_V0(), { scanSession: { entries: [pick2(1, AT('09:50'))], clearedAt: null } }, {}, oldBaseline);
+  assert.equal(merged.scanSession.entries[0].selectedVersion, 0, 'a persisted baseline without scanPicks: clock rule as before');
+});
+
+await test('scan pick baseline: both changed → clock rule; removal and remote deletion still win', () => {
+  const baseline = baselineFrom(SERVER_V0());
+  const merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, scanSession: { entries: [pick2(1, AT('10:20'))], clearedAt: null } },
+    { scanSession: { entries: [pick2(0, AT('10:10'))], clearedAt: null } }, {}, baseline,
+  );
+  assert.equal(merged.scanSession.entries[0].selectedVersion, 1, 'both changed: newer pick time');
+  assert.deepEqual(mergeLocalOntoServer(SERVER_V0(), { scanSession: { entries: [], clearedAt: null } },
+    { scanRemovedAt: { s1: AT('09:00') } }, baseline).scanSession.entries, [], 'removed here → stays removed');
+  assert.deepEqual(mergeLocalOntoServer({ ...SNAPSHOT_V7, scanSession: { entries: [], clearedAt: null } },
+    { scanSession: { entries: [pick2(1, AT('09:50'))], clearedAt: null } }, {}, baseline).scanSession.entries, [],
+    'removed on another device → a local pick change does not resurrect it (existing scans rule)');
+  assert.deepEqual(mergeLocalOntoServer({ ...SNAPSHOT_V7, scanSession: { entries: [pick2(0, AT('10:00'))], clearedAt: AT('09:00') } },
+    { scanSession: { entries: [pick2(1, AT('09:50'))], clearedAt: null } }, {}, baseline).scanSession.entries, [],
+    'cleared after the scan → gone');
+});
+
+await test('scan pick baseline: guest merge is unchanged (no baseline involved)', () => {
+  const merged = mergeGuestOntoServer(SERVER_V0(), { scanSession: { entries: [pick2(1, AT('09:50'))], clearedAt: null } });
+  assert.equal(merged.scanSession.entries[0].selectedVersion, 0, 'clock rule as before');
+});
+
+await test('scan pick baseline: end to end — a 409 retry sends the slow-clock local pick, and the ACK baseline matches the local copy', async () => {
+  const { useScanSessionStore: store, fromSyncEntry, toSyncEntry } = await import('../src/stores/scanSessionStore.ts');
+  const { useAccountSyncStateStore: meta } = await import('../src/store/accountSyncStateStore.ts');
+  store.setState({ cards: [fromSyncEntry(pick2(1, AT('09:50')))], removals: {}, clearedAt: null });
+  meta.setState({ baseline: baselineFrom(SERVER_V0()), dirtySeq: 1, ackedSeq: 0, lastRevision: 7 });
+  setLastKnownRevision(7);
+  responseQueue = [
+    jsonResponse(409, { error: 'revision_conflict', serverRevision: 8, snapshot: { ...SERVER_V0(), revision: 8 } }),
+    async () => {
+      const sent = fetchCalls[1].body.patch.scanSession.entries;
+      return new Response(JSON.stringify({ ok: true, snapshot: { ...SNAPSHOT_V7, revision: 9,
+        scanSession: { entries: sent.map((e) => ({ ...e, selectedAt: '2026-11-03T09:50:00Z' })), clearedAt: null } } }), { status: 200 });
+    },
+  ];
+  await pushAccountSyncFromStores(SESSION);
+  assert.equal(fetchCalls.length, 2);
+  assert.equal(fetchCalls[1].body.patch.scanSession.entries[0].selectedVersion, 1, 'the retry writes the new pick');
+  const card = store.getState().cards[0];
+  assert.equal(card.selectedVersion, 1);
+  assert.equal(meta.getState().baseline.scanPicks.s1, scanPickFingerprint(toSyncEntry(card, false)),
+    'after ACK the local pick equals the baseline pick (same instant, server ISO form)');
   store.setState({ cards: [] });
 });
 

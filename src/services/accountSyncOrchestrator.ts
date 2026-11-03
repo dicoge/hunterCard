@@ -62,7 +62,7 @@ import { FEATURES } from '../config/releaseFlags';
 import { useScanSessionStore, scanSessionForSync } from '../stores/scanSessionStore';
 import { useAccountSyncStateStore, type SyncBaseline } from '../store/accountSyncStateStore';
 import { useAccountSyncOutboxStore, type OutboxEntry } from '../store/accountSyncOutboxStore';
-import { laterClear, unionScanEntries, emptyScanSession } from '../utils/scanSessionSync';
+import { laterClear, unionScanEntries, emptyScanSession, scanPickFingerprint } from '../utils/scanSessionSync';
 
 export const ACCOUNT_SYNC_ORCHESTRATOR_VERSION = 2;
 
@@ -271,7 +271,12 @@ export function baselineFrom(snapshot: Partial<AccountSyncSnapshot> | AccountSyn
   }
   const entries = (snapshot as any)?.scanSession?.entries;
   const scans = Array.isArray(entries) ? entries.map((e: any) => e?.instanceId).filter((id: unknown) => typeof id === 'string') : null;
-  return { collection, decks, deckContent, scans };
+  if (!Array.isArray(entries)) return { collection, decks, deckContent, scans };
+  // 2026-11-03: each scan's pick as the server held it, so a merge can tell which side
+  // changed the pick instead of trusting device clocks (see preferScanEntryWithBaseline).
+  const scanPicks: Record<string, string> = {};
+  for (const e of entries as any[]) if (typeof e?.instanceId === 'string') scanPicks[e.instanceId] = scanPickFingerprint(e);
+  return { collection, decks, deckContent, scans, scanPicks };
 }
 
 /**
@@ -704,11 +709,16 @@ function mergeLocalOntoServer(
     const localEntries = (local.scanSession?.entries ?? []).filter(
       (e) => !(baseScans && baseScans.has(e.instanceId) && !serverScanIds.has(e.instanceId)),
     );
+    // 2026-11-03: the same scan on both sides is decided by which side changed its pick
+    // since the baseline (a slow-clock device's new pick survives an unchanged server
+    // copy and vice versa); both changed / no baseline pick: the old clock rule.
+    const basePicks = baseline?.scanPicks && server?.scanSession ? baseline.scanPicks : null;
     merged.scanSession = {
       entries: unionScanEntries(
         [server?.scanSession?.entries ?? [], localEntries],
         clearedAt,
         tombstones?.scanRemovedAt ?? {},
+        basePicks,
       ),
       clearedAt,
     };

@@ -489,6 +489,56 @@ try {
     await pa.kill(); await pb.kill();
   });
 
+  // ── 2026-11-03: pick merge by baseline, not by device clock ──
+  await test('scan pick baseline: STALE B with a clock 10 min SLOW picks version 1 (stamped before A\'s pick 0) → 409 → server and B keep 1', async () => {
+    const Q = await server.createSession('two-device-user-q'); const userQ = { ...Q.user };
+    const pa = await device('slowpick-a');
+    const pb = await device('slowpick-b');
+    await act(pa, 'login', { session: Q.session, user: userQ });
+    await act(pb, 'login', { session: Q.session, user: userQ });
+    await act(pa, 'scan', { card: DUAL });
+    await act(pa, 'pickVersion', { index: 0, version: 0 });
+    await pb.call('resync'); await pb.call('settle');
+    const picked0At = (await serverSnapshot(Q.session)).scanSession.entries[0].selectedAt;
+    await act(pa, 'own', { cardNumber: 'hBP05-052', version: 'BASE', qty: 1 });   // B is now stale
+    await pb.call('clock', { skewMs: -10 * 60 * 1000 });
+    const conflicts = server.log.filter((r) => r.status === 409).length;
+    const sb = await act(pb, 'pickVersion', { index: 0, version: 1 });
+    assert.ok(Date.parse(sb.scans[0].selectedAt) < Date.parse(picked0At), 'B\'s genuinely newer pick carries an EARLIER stamp (negative-control setup)');
+    assert.ok(server.log.filter((r) => r.status === 409).length > conflicts, 'B\'s push really went through a 409');
+    assert.equal(sb.scans[0].selectedVersion, 1, 'B keeps its new pick');
+    const snap = await serverSnapshot(Q.session);
+    assert.equal(snap.scanSession.entries[0].selectedVersion, 1, 'the server holds B\'s new pick');
+    assert.equal(snap.collection['hBP05-052|BASE'], 1, 'A\'s unrelated edit is kept');
+    await pa.kill(); await pb.kill();
+  });
+
+  await test('scan pick baseline: B (clock 10 min SLOW) picks version 1 → STALE A, unchanged at version 0 with a later stamp, hits 409 → server and A keep 1', async () => {
+    const R = await server.createSession('two-device-user-r'); const userR = { ...R.user };
+    const pa = await device('slowpick2-a');
+    const pb = await device('slowpick2-b');
+    await act(pa, 'login', { session: R.session, user: userR });
+    await act(pb, 'login', { session: R.session, user: userR });
+    await act(pa, 'scan', { card: DUAL });
+    await act(pa, 'pickVersion', { index: 0, version: 0 });
+    await pb.call('resync'); await pb.call('settle');
+    const picked0At = (await serverSnapshot(R.session)).scanSession.entries[0].selectedAt;
+    await pb.call('clock', { skewMs: -10 * 60 * 1000 });
+    await act(pb, 'pickVersion', { index: 0, version: 1 });           // newer in real time, earlier stamp
+    const snap1 = await serverSnapshot(R.session);
+    assert.equal(snap1.scanSession.entries[0].selectedVersion, 1);
+    assert.ok(Date.parse(snap1.scanSession.entries[0].selectedAt) < Date.parse(picked0At),
+      'B\'s newer pick carries an EARLIER stamp than A\'s unchanged pick (negative-control setup)');
+    const conflicts = server.log.filter((r) => r.status === 409).length;
+    const sa = await act(pa, 'own', { cardNumber: 'hBP05-053', version: 'BASE', qty: 1 });   // stale A, unrelated edit
+    assert.ok(server.log.filter((r) => r.status === 409).length > conflicts, 'A\'s push really went through a 409');
+    assert.equal(sa.scans[0].selectedVersion, 1, 'A takes B\'s newer pick instead of re-sending its unchanged 0');
+    const snap2 = await serverSnapshot(R.session);
+    assert.equal(snap2.scanSession.entries[0].selectedVersion, 1, 'the server keeps B\'s pick');
+    assert.equal(snap2.collection['hBP05-053|BASE'], 1, 'A\'s unrelated edit is kept');
+    await pa.kill(); await pb.kill();
+  });
+
   // ── CR b16d7ab (P2): the server's capped pick time is adopted locally on ACK ──
   await test('CR P2 (b16d7ab): B picks 0 with its clock 5 min ahead → server caps the time and B adopts it on ACK → A (correct clock) picks 1 → B\'s unrelated write hits 409 → server and B keep 1', async () => {
     const O = await server.createSession('two-device-user-o'); const userO = { ...O.user };
