@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PALETTE, LAYOUT, SPACING } from '../../theme/tokensV2';
 import { AppBar, AppBarProps } from './AppBar';
 import { BottomTabBar, BottomTabBarProps } from './BottomTabBar';
+import { useShellNavMode } from './navigationChrome';
 
 export interface AppShellProps {
   children?: React.ReactNode;
@@ -41,9 +42,14 @@ export function AppShell({
   const topInset = Math.max(insets.top, Platform.OS === 'web' ? 0 : LAYOUT.safeMobile);
   const bottomInset = Math.max(insets.bottom, Platform.OS === 'web' ? 0 : LAYOUT.safeMobile);
 
+  const navMode = useShellNavMode();
+
   const top = appBar === false ? null : <AppBar {...(appBar ?? {})} />;
-  const tabs = bottomTabBar === false || !bottomTabBar ? null : (
-    <BottomTabBar {...bottomTabBar} />
+  // 2026-11-03: inside the permanent desktop drawer the sidebar IS the global
+  // navigation, so the mobile bar is not drawn twice; root-stack screens on
+  // desktop keep the same tab registry as a compact centred dock.
+  const tabs = bottomTabBar === false || !bottomTabBar || navMode === 'drawer' ? null : (
+    <BottomTabBar {...bottomTabBar} variant={navMode === 'dock' ? 'dock' : 'full'} />
   );
 
   // DIC-1452: the tab bar is a flex sibling BELOW the content region, so it
