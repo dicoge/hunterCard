@@ -82,8 +82,16 @@
       "currency": "JPY",
       "cardId": "hEB01-002_hEB01_SEC_hEB01-002_SEC",
       "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-11-03",
+      "price": 79800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hEB01-002_hEB01_SEC_hEB01-002_SEC",
+      "sourceProduct": "hEB01"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:18.961Z",
+  "lastUpdated": "2026-11-03T12:08:39.719Z",
   "nameZh": "寶鍾瑪琳"
 }
