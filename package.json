@@ -45,6 +45,7 @@
     "test:account-sync-deck-baseline": "node --import ./scripts/register-web-render.mjs scripts/test-account-sync-deck-baseline.mjs",
     "test:scan-pick-baseline": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-scan-pick-baseline.mjs",
     "test:account-sync-two-device": "node scripts/test-account-sync-two-device.mjs",
+    "test:account-sync-lost-ack": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-account-sync-lost-ack-pick.mjs",
     "test:account-sync-binding": "node --import ./scripts/register-web-render.mjs scripts/test-account-sync-binding.mjs",
     "test:deployment-freshness-gate": "node scripts/test-deployment-freshness-gate.mjs",
     "test:deck-editor-name-resolver": "node --import ./scripts/register-web-render.mjs scripts/test-deck-editor-name-resolver.mjs",

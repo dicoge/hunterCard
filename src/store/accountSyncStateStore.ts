@@ -20,6 +20,9 @@
  *                 existed simply lacks it and the old timestamp rules apply.
  *                 `scanPicks` (2026-11-03, optional) does the same for a scan's version
  *                 pick: instance id → pick fingerprint; absent → clock-only pick rule.
+ *   pendingAck    (2026-11-04, optional) a push sent without a response (lost ACK),
+ *                 replayed verbatim before the next push/hydrate; see PendingAck.
+ *                 Persist version unchanged (1): older state simply lacks it.
  *
  * Nothing here is account data itself; it never leaves the device.
  */
@@ -39,6 +42,26 @@ export interface SyncBaseline {
   scanPicks?: Record<string, string>;
 }
 
+/**
+ * A push whose request was sent but whose response never arrived (status 0, a lost
+ * ACK — 2026-11-04 F1). The server may or may not have committed it; replaying the
+ * EXACT request with the same idempotency key recovers the original ACK (the server
+ * answers an existing key before checking the revision) or proves it never
+ * committed (409). Frozen JSON deep copies; owner-scoped; cleared by reset().
+ */
+export interface PendingAck {
+  ownerId: string;
+  idempotencyKey: string;
+  baseRevision: number;
+  /** AccountSyncPatch as sent (kept untyped here to avoid an import cycle). */
+  patch: Record<string, unknown>;
+  /** The tombstone maps that request carried (SyncTombstones shape). */
+  tombstones: Record<string, Record<string, string>>;
+  seqAtPush: number;
+  createdAt: string;
+  attempts: number;
+}
+
 export interface AccountSyncState {
   ownerId: string | null;
   dirtySeq: number;
@@ -46,6 +69,8 @@ export interface AccountSyncState {
   lastRevision: number;
   lastSyncedAt: string | null;
   baseline: SyncBaseline | null;
+  /** Optional (2026-11-04): absent in older persisted state = no pending lost ACK. */
+  pendingAck?: PendingAck | null;
 
   markDirty: () => void;
   /** The server holds everything up to `seq`, at `revision`. */
@@ -53,10 +78,11 @@ export interface AccountSyncState {
   /** Local stores now hold `ownerId`'s data, matching server `revision`. */
   adoptOwner: (ownerId: string | null, revision: number) => void;
   setBaseline: (baseline: SyncBaseline | null) => void;
+  setPendingAck: (pendingAck: PendingAck | null) => void;
   reset: () => void;
 }
 
-const EMPTY = { ownerId: null, dirtySeq: 0, ackedSeq: 0, lastRevision: 0, lastSyncedAt: null, baseline: null };
+const EMPTY = { ownerId: null, dirtySeq: 0, ackedSeq: 0, lastRevision: 0, lastSyncedAt: null, baseline: null, pendingAck: null };
 
 export const useAccountSyncStateStore = create<AccountSyncState>()(
   persist(
@@ -75,6 +101,7 @@ export const useAccountSyncStateStore = create<AccountSyncState>()(
         lastSyncedAt: new Date().toISOString(),
       })),
       setBaseline: (baseline) => set({ baseline }),
+      setPendingAck: (pendingAck) => set({ pendingAck }),
       reset: () => set({ ...EMPTY }),
     }),
     {
@@ -88,6 +115,7 @@ export const useAccountSyncStateStore = create<AccountSyncState>()(
         lastRevision: s.lastRevision,
         lastSyncedAt: s.lastSyncedAt,
         baseline: s.baseline,
+        pendingAck: s.pendingAck ?? null,
       }),
     },
   ),

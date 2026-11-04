@@ -465,6 +465,9 @@ jobs:
       - name: Verify same-account sync across two simulated phones on the real sync handler — Store MVP, guest merge, deletions, offline restart, 409 merge, logout / account-switch isolation (v41)
         run: npm run test:account-sync-two-device
 
+      - name: Verify a lost sync ACK is recovered by replaying the same request (scan pick F1) — natural retry, hydrate, post-send edits, restart, owner isolation
+        run: npm run test:account-sync-lost-ack
+
       - name: Verify shared card name resolver (DIC-1380 naming consistency)
         run: npm run test:card-display-name
 
