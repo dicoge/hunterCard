@@ -98,8 +98,16 @@
       "currency": "JPY",
       "cardId": "hBP04-003_hBP04_OSR_hBP04-003_OSR",
       "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-11-04",
+      "price": 320,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-003_hBP04_OSR_hBP04-003_OSR",
+      "sourceProduct": "hBP04"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:11.782Z",
+  "lastUpdated": "2026-11-04T12:07:49.844Z",
   "nameZh": "一條莉莉華"
 }
