@@ -60,7 +60,7 @@ import type { Deck } from '../utils/deckRules';
 import type { PriceAlert } from '../utils/priceAlerts';
 import { FEATURES } from '../config/releaseFlags';
 import { useScanSessionStore, scanSessionForSync } from '../stores/scanSessionStore';
-import { useAccountSyncStateStore, type SyncBaseline } from '../store/accountSyncStateStore';
+import { useAccountSyncStateStore, type SyncBaseline, type PendingAck } from '../store/accountSyncStateStore';
 import { useAccountSyncOutboxStore, type OutboxEntry } from '../store/accountSyncOutboxStore';
 import { laterClear, unionScanEntries, emptyScanSession, scanPickFingerprint } from '../utils/scanSessionSync';
 
@@ -370,6 +370,134 @@ function reconcileAckedScanSelections(pushed: AccountSyncPatch, confirmed: Accou
   }
 }
 
+/**
+ * The bookkeeping of ONE acknowledged request — the push that was just answered, or
+ * (2026-11-04) the replay of a push whose answer was lost. Only what THAT request
+ * carried is confirmed: its tombstones (same timestamp only; newer ones stay), its
+ * scan picks (canonical time adopted only where the pick is unchanged since it was
+ * sent) and its sequence number (edits made after it stay dirty).
+ *
+ * `monotonic` (replay): the replayed answer is the snapshot of the ORIGINAL commit,
+ * not the server's head. If this device already knows a later revision, the
+ * revision and the baseline are not moved backwards (an older baseline could
+ * resurrect another device's deletion); the markers and the sequence still are.
+ * `discardOutbox` keeps the existing "anything parked is on the server now" rule for
+ * a normal push only; a replay carries the old request, not what may be parked.
+ */
+function applyAcknowledgedRequest(
+  sent: { patch: AccountSyncPatch; tombstones: SyncTombstones; seqAtPush: number; baseRevision: number },
+  confirmed: AccountSyncSnapshot,
+  opts: { monotonic: boolean; discardOutbox: boolean },
+): void {
+  const st0 = useAccountSyncStateStore.getState();
+  const confirmedRevision = typeof confirmed.revision === 'number' ? confirmed.revision : sent.baseRevision;
+  const known = Math.max(lastKnownRevision, st0.lastRevision ?? 0);
+  const regress = opts.monotonic && confirmedRevision < known;
+  if (!regress) lastKnownRevision = confirmedRevision;
+  // Server has our removals + decreases — drop exactly those markers so
+  // the next push does not carry them again (newer ones stay).
+  clearAckedTombstones(sent.tombstones);
+  reconcileAckedScanSelections(sent.patch, confirmed);
+  const st = useAccountSyncStateStore.getState();
+  st.markSynced(regress ? known : lastKnownRevision, sent.seqAtPush);
+  if (!regress) {
+    st.setBaseline(baselineFrom(confirmed.collection || confirmed.decks || confirmed.scanSession ? confirmed : sent.patch));
+  }
+  // Anything this owner had parked is now on the server too.
+  if (opts.discardOutbox && st.ownerId) useAccountSyncOutboxStore.getState().discard(st.ownerId);
+}
+
+// ── Lost-ACK recovery (2026-11-04, F1; design ACK_RECOVERY_DESIGN_REVIEW.md) ──
+const PENDING_ACK_MAX_AGE_MS = 20 * 60 * 60 * 1000;   // the server keeps idempotency keys 24 h
+const PENDING_ACK_MAX_ATTEMPTS = 20;
+
+function deepCopy<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value ?? null));
+}
+
+/** A persisted record we can safely replay; anything malformed is dropped, never sent. */
+function usablePendingAck(rec: unknown): rec is PendingAck {
+  const r = rec as PendingAck | null | undefined;
+  return !!r && typeof r === 'object'
+    && typeof r.ownerId === 'string' && r.ownerId.length > 0
+    && typeof r.idempotencyKey === 'string' && r.idempotencyKey.length > 0
+    && Number.isSafeInteger(r.baseRevision) && r.baseRevision >= 0
+    && !!r.patch && typeof r.patch === 'object'
+    && !!r.tombstones && typeof r.tombstones === 'object'
+    && Number.isSafeInteger(r.seqAtPush)
+    && typeof r.createdAt === 'string'
+    && Number.isSafeInteger(r.attempts) && r.attempts >= 0;
+}
+
+/** Clear the record only if it is still the one we looked at. */
+function dropPendingAck(key: string): void {
+  const st = useAccountSyncStateStore.getState();
+  if (st.pendingAck?.idempotencyKey === key) st.setPendingAck(null);
+}
+
+const EMPTY_TOMBSTONES: SyncTombstones = {
+  favoritesRemovedAt: {}, priceAlertsRemovedAt: {}, deletedDeckIds: {}, collectionChangedKeys: {}, scanRemovedAt: {},
+};
+
+type PendingAckOutcome =
+  | { state: 'none' | 'skipped' | 'cleared' | 'abort' }
+  | { state: 'acked'; confirmed: AccountSyncSnapshot };
+
+/**
+ * Settle a lost ACK before anything else reads the stores (called inside withLock by
+ * push and hydrate — never through another locked public function). Replays the
+ * frozen ORIGINAL request with its own idempotency key:
+ *   200          → the original's ACK: confirm exactly that request, clear the record
+ *   409          → it never committed (an existing key is answered first): clear, go on
+ *   400 / 413    → deterministic, cannot have committed: clear, go on
+ *   null         → 401/404/410 / no session: send nothing more now (abort this sync)
+ *   5xx / 429 / … (answered) → keep, count the attempt, rethrow (binding backoff)
+ *   0 (no response)          → keep UNCHANGED (not counted), rethrow
+ * Expired (> 20 h) or 20 answered failures → cleared without sending (old behaviour).
+ * Sent only for the owner it was recorded for, with the stores still that owner's.
+ */
+async function resolvePendingAck(session: string | null | undefined, still: () => boolean): Promise<PendingAckOutcome> {
+  const st = useAccountSyncStateStore.getState();
+  const rec = st.pendingAck;
+  if (rec == null) return { state: 'none' };
+  if (!usablePendingAck(rec)) { st.setPendingAck(null); return { state: 'cleared' }; }
+  const created = Date.parse(rec.createdAt);
+  if (!Number.isFinite(created) || Date.now() - created > PENDING_ACK_MAX_AGE_MS || rec.attempts >= PENDING_ACK_MAX_ATTEMPTS) {
+    dropPendingAck(rec.idempotencyKey);
+    return { state: 'cleared' };
+  }
+  const owner = currentUserId();
+  if (!still() || !owner || owner !== rec.ownerId || !storesBelongToCurrentAccount()) return { state: 'skipped' };
+
+  const request = deepCopy({ idempotencyKey: rec.idempotencyKey, baseRevision: rec.baseRevision, patch: rec.patch });
+  let confirmed: AccountSyncSnapshot | null;
+  try {
+    confirmed = await pushAccountSnapshot(session, request as { idempotencyKey: string; baseRevision: number; patch: AccountSyncPatch });
+  } catch (err) {
+    if (err instanceof AccountSyncConflictError) { dropPendingAck(rec.idempotencyKey); return { state: 'cleared' }; }
+    const status = err instanceof AccountSyncClientError ? err.status : 0;
+    if (status === 400 || status === 413) { dropPendingAck(rec.idempotencyKey); return { state: 'cleared' }; }
+    // R1: only an ANSWERING server (status > 0: 5xx, 429, …) consumes the attempt
+    // budget. No response (status 0, offline) keeps the record unchanged; it is
+    // bounded by PENDING_ACK_MAX_AGE_MS instead, so offline triggers cannot exhaust it.
+    const cur = useAccountSyncStateStore.getState().pendingAck;
+    if (status > 0 && cur && cur.idempotencyKey === rec.idempotencyKey) {
+      useAccountSyncStateStore.getState().setPendingAck({ ...cur, attempts: cur.attempts + 1 });
+    }
+    throw err;
+  }
+  if (!confirmed) return { state: 'abort' };
+  if (!still() || currentUserId() !== rec.ownerId) return { state: 'abort' };
+  applyAcknowledgedRequest({
+    patch: rec.patch as AccountSyncPatch,
+    tombstones: { ...EMPTY_TOMBSTONES, ...(rec.tombstones as Partial<SyncTombstones>) },
+    seqAtPush: rec.seqAtPush,
+    baseRevision: rec.baseRevision,
+  }, confirmed, { monotonic: true, discardOutbox: false });
+  dropPendingAck(rec.idempotencyKey);
+  return { state: 'acked', confirmed };
+}
+
 /** Everything a merge or a push would send, for "did the user change anything meanwhile?". */
 function localFingerprint(): string {
   return JSON.stringify(snapshotFromLocalStores());
@@ -460,10 +588,23 @@ export async function hydrateAccountSyncFromServer(
   // Captured when the hydrate is ASKED for, not when it gets the lock: an edit made
   // while it waits behind another sync call (e.g. right after an account switch) is
   // "during the pull" too.
-  const before = localFingerprint();
-  const seqBefore = useAccountSyncStateStore.getState().dirtySeq;
+  let before = localFingerprint();
+  let seqBefore = useAccountSyncStateStore.getState().dirtySeq;
   return withLock(async () => {
     if (!still()) return null;
+    // 2026-11-04: settle a lost ACK BEFORE pulling. Otherwise the pending-change
+    // merge below keeps the uncapped local pick and moves the baseline past it (F1).
+    // The replay's own store writes (canonical pick time, acknowledged markers) are
+    // not "edits during the pull"; an edit made before it still is.
+    const editedBeforeReplay = useAccountSyncStateStore.getState().dirtySeq !== seqBefore || localFingerprint() !== before;
+    const pending = await resolvePendingAck(session, still);
+    if (pending.state === 'abort' || !still()) return null;
+    let carriedEdit = false;
+    if (pending.state === 'acked') {
+      carriedEdit = editedBeforeReplay;
+      before = localFingerprint();
+      seqBefore = useAccountSyncStateStore.getState().dirtySeq;
+    }
     const snapshot = await pullAccountSnapshot(session);
     if (!snapshot) return null;
     // DIC-1380 W6 handback: an account-switch or logout that happened
@@ -475,7 +616,7 @@ export async function hydrateAccountSyncFromServer(
     const st = useAccountSyncStateStore.getState();
     const owner = opts.adoptOwnerId !== undefined ? opts.adoptOwnerId : currentUserId();
     const ownerPending = st.ownerId !== null && st.ownerId === owner && st.dirtySeq !== st.ackedSeq;
-    const editedDuringPull = st.dirtySeq !== seqBefore || localFingerprint() !== before;
+    const editedDuringPull = carriedEdit || st.dirtySeq !== seqBefore || localFingerprint() !== before;
     const revision = typeof snapshot.revision === 'number' ? snapshot.revision : 0;
     if (!editedDuringPull && !ownerPending) {
       applyServerSnapshotToStores(snapshot);
@@ -836,6 +977,16 @@ export async function pushAccountSyncFromStores(
     // account A behind another sync call must not read what the stores hold after
     // a switch to B / a guest and send it under A's bearer.
     if (!still() || !storesBelongToCurrentAccount()) return null;
+    // 2026-11-04: a push whose answer was lost is settled first (same key, same
+    // request), so this push and any 409 merge start from the real post-commit state.
+    const pending = await resolvePendingAck(session, still);
+    if (pending.state === 'abort') return null;
+    if (pending.state === 'acked') {
+      if (!still()) return null;
+      // Nothing changed after the recovered request: it is confirmed, nothing to resend.
+      const s = useAccountSyncStateStore.getState();
+      if (s.dirtySeq === s.ackedSeq) return pending.confirmed;
+    }
     let localPatch = snapshotFromLocalStores();
     let tombstones = currentTombstones();
     // Everything changed up to here is in this push; a change made while it is in
@@ -847,27 +998,45 @@ export async function pushAccountSyncFromStores(
       baseRevision: number,
       idempotencyKey: string,
     ): Promise<AccountSyncSnapshot | null> => {
-      const confirmed = await pushAccountSnapshot(session, {
-        baseRevision,
-        idempotencyKey,
-        deviceId: opts.deviceId,
-        patch,
-      });
+      // Captured BEFORE sending and never mutated afterwards: what this request
+      // carries is what its ACK (or a lost-ACK replay) may confirm.
+      const sentTombstones = tombstones;
+      const sentSeq = seqAtPush;
+      const owner = currentUserId();
+      const frozen = owner
+        ? { idempotencyKey, baseRevision, patch: deepCopy(patch), tombstones: deepCopy(sentTombstones), seqAtPush: sentSeq }
+        : null;
+      let confirmed: AccountSyncSnapshot | null;
+      try {
+        confirmed = await pushAccountSnapshot(session, {
+          baseRevision,
+          idempotencyKey,
+          deviceId: opts.deviceId,
+          patch,
+        });
+      } catch (err) {
+        // 2026-11-04: no response at all (status 0) — the server may have committed
+        // it. Remember the exact request for the same owner; the binding's retry
+        // then replays it first (resolvePendingAck). HTTP errors never record.
+        if (frozen && err instanceof AccountSyncClientError && !(err instanceof AccountSyncConflictError)
+          && err.status === 0 && still() && currentUserId() === owner
+          && useAccountSyncStateStore.getState().ownerId === owner) {
+          useAccountSyncStateStore.getState().setPendingAck({
+            ownerId: owner as string,
+            ...frozen,
+            createdAt: new Date().toISOString(),
+            attempts: 0,
+          } as unknown as PendingAck);
+        }
+        throw err;
+      }
       if (confirmed) {
         // DIC-1380 W6: only trust the response if the session bearer (and,
         // CR 2026-10-17, the account epoch) is still the one this push was
         // made for.
         if (!still()) return null;
-        lastKnownRevision = typeof confirmed.revision === 'number' ? confirmed.revision : baseRevision;
-        // Server has our removals + decreases — drop exactly those markers so
-        // the next push does not carry them again (newer ones stay).
-        clearAckedTombstones(tombstones);
-        reconcileAckedScanSelections(patch, confirmed);
-        const st = useAccountSyncStateStore.getState();
-        st.markSynced(lastKnownRevision, seqAtPush);
-        st.setBaseline(baselineFrom(confirmed.collection || confirmed.decks || confirmed.scanSession ? confirmed : patch));
-        // Anything this owner had parked is now on the server too.
-        if (st.ownerId) useAccountSyncOutboxStore.getState().discard(st.ownerId);
+        applyAcknowledgedRequest({ patch, tombstones: sentTombstones, seqAtPush: sentSeq, baseRevision }, confirmed,
+          { monotonic: false, discardOutbox: true });
       }
       return confirmed;
     };

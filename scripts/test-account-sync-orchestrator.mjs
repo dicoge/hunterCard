@@ -942,6 +942,262 @@ await test('scan pick baseline: end to end — a 409 retry sends the slow-clock 
   store.setState({ cards: [] });
 });
 
+// ── 2026-11-04: lost-ACK recovery (pendingAck) — record, replay, bounds ──
+// Real orchestrator + stores with the queued fake fetch. Each case signs in a
+// synthetic verified user and resets that state afterwards, so the cases above are
+// untouched (they run without a user id, where no record is ever made).
+const LA_UID = 'u-lost-ack';
+const netFail = () => () => { throw new TypeError('Network request failed'); };
+const okSnap = (revision, extra = {}) => jsonResponse(200, { ok: true, snapshot: { ...SNAPSHOT_V7, revision, ...extra } });
+async function lostAckCase(fn) {
+  const { useAccountSyncStateStore: meta } = await import('../src/store/accountSyncStateStore.ts');
+  const { useScanSessionStore: store } = await import('../src/stores/scanSessionStore.ts');
+  useAuthStore.setState((s) => ({ ...s, session: SESSION, user: { internalId: LA_UID } }));
+  meta.getState().reset();
+  meta.setState({ ownerId: LA_UID, dirtySeq: 1, ackedSeq: 0, lastRevision: 7, baseline: null, pendingAck: null });
+  setLastKnownRevision(7);
+  store.setState({ cards: [], removals: {}, clearedAt: null });
+  try {
+    await fn(meta);
+  } finally {
+    useAuthStore.setState((s) => ({ ...s, user: null }));
+    meta.getState().reset();
+    store.setState({ cards: [], removals: {}, clearedAt: null });
+  }
+}
+/** Lose one push (status 0) and return the record it left. */
+async function loseOne(meta) {
+  responseQueue = [netFail()];
+  await assert.rejects(() => pushAccountSyncFromStores(SESSION));
+  const rec = meta.getState().pendingAck;
+  assert.ok(rec, 'a no-response failure records the request');
+  return rec;
+}
+
+await test('lost ACK: status 0 records the EXACT request (key/base/patch/seq), frozen against later edits', async () => {
+  await lostAckCase(async (meta) => {
+    useDeckStore.setState((st) => ({ ...st, collection: { 'hLA-001|BASE': 1 } }));
+    const rec = await loseOne(meta);
+    const sent = fetchCalls[0].body;
+    assert.equal(rec.idempotencyKey, sent.idempotencyKey);
+    assert.equal(rec.baseRevision, 7);
+    assert.deepEqual(rec.patch, sent.patch);
+    assert.equal(rec.seqAtPush, 1);
+    assert.equal(rec.attempts, 0);
+    assert.equal(rec.ownerId, LA_UID);
+    useDeckStore.setState((st) => ({ ...st, collection: { 'hLA-001|BASE': 5 } }));   // edit after sending
+    assert.equal(meta.getState().pendingAck.patch.collection['hLA-001|BASE'], 1, 'the record is a deep copy, not the live stores');
+  });
+});
+
+await test('lost ACK: HTTP errors (500/429) and a missing verified user never create a record', async () => {
+  await lostAckCase(async (meta) => {
+    for (const status of [500, 429]) {
+      responseQueue = [jsonResponse(status, { error: 'x' })];
+      await assert.rejects(() => pushAccountSyncFromStores(SESSION));
+      assert.equal(meta.getState().pendingAck, null, `${status}: no record`);
+    }
+    useAuthStore.setState((s) => ({ ...s, user: null }));
+    meta.setState({ ownerId: null });
+    responseQueue = [netFail()];
+    await assert.rejects(() => pushAccountSyncFromStores(SESSION));
+    assert.equal(meta.getState().pendingAck, null, 'no verified owner: no record (legacy behaviour)');
+  });
+});
+
+await test('lost ACK replay: the next push replays the frozen original first; its ACK confirms only that request; later edits stay dirty and are pushed', async () => {
+  await lostAckCase(async (meta) => {
+    const rec = await loseOne(meta);
+    fetchCalls.length = 0;
+    useDeckStore.setState((st) => ({ ...st, collection: { ...st.collection, 'hLA-002|BASE': 3 } }));
+    meta.getState().markDirty();                                   // what the binding does on an edit (seq 2)
+    responseQueue = [okSnap(8), okSnap(9)];
+    await pushAccountSyncFromStores(SESSION);
+    assert.equal(fetchCalls.length, 2);
+    assert.equal(fetchCalls[0].body.idempotencyKey, rec.idempotencyKey, 'replay first, same key');
+    assert.equal(fetchCalls[0].body.baseRevision, 7, 'same base');
+    assert.deepEqual(fetchCalls[0].body.patch, rec.patch, 'same patch (not the current stores)');
+    assert.notEqual(fetchCalls[1].body.idempotencyKey, rec.idempotencyKey, 'then a normal push');
+    assert.equal(fetchCalls[1].body.baseRevision, 8, 'on top of the recovered commit');
+    assert.equal(fetchCalls[1].body.patch.collection['hLA-002|BASE'], 3, 'carrying the post-send edit');
+    assert.equal(meta.getState().pendingAck, null);
+    assert.equal(meta.getState().ackedSeq, 2);
+  });
+});
+
+await test('lost ACK replay with nothing new: one replay, no second push of already-confirmed data', async () => {
+  await lostAckCase(async (meta) => {
+    await loseOne(meta);
+    fetchCalls.length = 0;
+    responseQueue = [okSnap(8)];
+    const r = await pushAccountSyncFromStores(SESSION);
+    assert.equal(fetchCalls.length, 1);
+    assert.equal(r?.revision, 8);
+    assert.equal(meta.getState().dirtySeq, meta.getState().ackedSeq);
+  });
+});
+
+await test('lost ACK replay: 409 / 400 / 413 drop the record and the normal push runs', async () => {
+  for (const [label, first] of [
+    ['409', jsonResponse(409, { error: 'revision_conflict', currentRevision: 7, snapshot: { ...SNAPSHOT_V7, revision: 7 } })],
+    ['400', jsonResponse(400, { error: 'invalid_patch' })],
+    ['413', jsonResponse(413, { error: 'too_large' })],
+  ]) {
+    await lostAckCase(async (meta) => {
+      const rec = await loseOne(meta);
+      fetchCalls.length = 0;
+      responseQueue = [first, okSnap(8)];
+      await pushAccountSyncFromStores(SESSION);
+      assert.equal(meta.getState().pendingAck, null, `${label}: record dropped`);
+      assert.equal(fetchCalls.length, 2, `${label}: replay, then the normal push`);
+      assert.notEqual(fetchCalls[1].body.idempotencyKey, rec.idempotencyKey);
+    });
+  }
+});
+
+await test('lost ACK replay: 5xx / 429 (answered) keep the record, count the attempt and rethrow; status 0 keeps it UNCOUNTED (R1)', async () => {
+  await lostAckCase(async (meta) => {
+    const rec = await loseOne(meta);
+    for (const [resp, want] of [[netFail(), 0], [jsonResponse(503, { error: 'x' }), 1], [netFail(), 1], [jsonResponse(429, { error: 'x' }), 2]]) {
+      fetchCalls.length = 0;
+      responseQueue = [resp];
+      await assert.rejects(() => pushAccountSyncFromStores(SESSION));
+      assert.equal(fetchCalls.length, 1, 'only the replay was attempted');
+      assert.equal(meta.getState().pendingAck?.idempotencyKey, rec.idempotencyKey, 'record kept');
+      assert.equal(meta.getState().pendingAck?.attempts, want, 'only answered failures are counted');
+    }
+  });
+});
+
+await test('lost ACK replay (R1): more than 20 consecutive status-0 replays keep the ORIGINAL request; the next 200 recovers it', async () => {
+  await lostAckCase(async (meta) => {
+    const rec = await loseOne(meta);
+    for (let i = 0; i < 25; i += 1) {
+      fetchCalls.length = 0;
+      responseQueue = [netFail()];
+      await assert.rejects(() => pushAccountSyncFromStores(SESSION));
+      assert.equal(fetchCalls[0].body.idempotencyKey, rec.idempotencyKey, `offline replay #${i + 1} is the original request`);
+    }
+    assert.deepEqual(meta.getState().pendingAck, rec, 'record unchanged after 25 no-response replays (not counted, not dropped)');
+    fetchCalls.length = 0;
+    responseQueue = [okSnap(8)];
+    const r = await pushAccountSyncFromStores(SESSION);
+    assert.equal(fetchCalls.length, 1);
+    assert.equal(fetchCalls[0].body.idempotencyKey, rec.idempotencyKey, 'the recovering request is still the original');
+    assert.equal(fetchCalls[0].body.baseRevision, rec.baseRevision);
+    assert.deepEqual(fetchCalls[0].body.patch, rec.patch);
+    assert.equal(r?.revision, 8, 'recovered ACK');
+    assert.equal(meta.getState().pendingAck, null);
+    assert.equal(meta.getState().dirtySeq, meta.getState().ackedSeq);
+  });
+});
+
+await test('lost ACK replay (R1): 20 answered failures (503) still exhaust the cap → dropped without sending', async () => {
+  await lostAckCase(async (meta) => {
+    const rec = await loseOne(meta);
+    for (let i = 0; i < 20; i += 1) {
+      responseQueue = [jsonResponse(503, { error: 'x' })];
+      await assert.rejects(() => pushAccountSyncFromStores(SESSION));
+    }
+    assert.equal(meta.getState().pendingAck?.attempts, 20);
+    fetchCalls.length = 0;
+    responseQueue = [okSnap(8)];
+    await pushAccountSyncFromStores(SESSION);
+    assert.equal(meta.getState().pendingAck, null, 'dropped at the cap');
+    assert.equal(fetchCalls.length, 1);
+    assert.notEqual(fetchCalls[0].body.idempotencyKey, rec.idempotencyKey, 'the old request was not sent again');
+  });
+});
+
+await test('lost ACK replay: a null answer (401) aborts this sync without sending anything else; the record stays for reset/expiry', async () => {
+  await lostAckCase(async (meta) => {
+    const rec = await loseOne(meta);
+    fetchCalls.length = 0;
+    responseQueue = [jsonResponse(401, { error: 'unauthorized' })];
+    const r = await pushAccountSyncFromStores(SESSION);
+    assert.equal(r, null);
+    assert.equal(fetchCalls.length, 1);
+    assert.equal(meta.getState().pendingAck?.idempotencyKey, rec.idempotencyKey);
+  });
+});
+
+await test('lost ACK bounds: older than 20 h or 20 attempts → dropped WITHOUT sending; a malformed or legacy record is never sent', async () => {
+  for (const [label, patchRec] of [
+    ['expired', (r) => ({ ...r, createdAt: new Date(Date.now() - 21 * 3600 * 1000).toISOString() })],
+    ['attempts', (r) => ({ ...r, attempts: 20 })],
+    ['malformed', (r) => ({ ...r, idempotencyKey: '' })],
+  ]) {
+    await lostAckCase(async (meta) => {
+      const rec = await loseOne(meta);
+      meta.setState({ pendingAck: patchRec(rec) });
+      fetchCalls.length = 0;
+      responseQueue = [okSnap(8)];
+      await pushAccountSyncFromStores(SESSION);
+      assert.equal(meta.getState().pendingAck, null, `${label}: dropped`);
+      assert.equal(fetchCalls.length, 1, `${label}: only the normal push went out`);
+      assert.notEqual(fetchCalls[0].body.idempotencyKey, rec.idempotencyKey, `${label}: the old request was not replayed`);
+    });
+  }
+  await lostAckCase(async (meta) => {
+    meta.setState((s) => { const { pendingAck: _drop, ...rest } = s; return rest; }, true);   // persisted state from before the field
+    meta.setState({ ownerId: LA_UID, dirtySeq: 1, ackedSeq: 0, lastRevision: 7 });
+    fetchCalls.length = 0;
+    responseQueue = [okSnap(8)];
+    await pushAccountSyncFromStores(SESSION);
+    assert.equal(fetchCalls.length, 1, 'legacy state (no pendingAck): exactly the old single push');
+  });
+});
+
+await test('lost ACK: a record for another owner is never sent under this user', async () => {
+  await lostAckCase(async (meta) => {
+    const rec = await loseOne(meta);
+    meta.setState({ pendingAck: { ...rec, ownerId: 'someone-else' } });
+    fetchCalls.length = 0;
+    responseQueue = [okSnap(8)];
+    await pushAccountSyncFromStores(SESSION);
+    assert.ok(fetchCalls.every((c) => c.body?.idempotencyKey !== rec.idempotencyKey), 'not sent');
+  });
+});
+
+await test('lost ACK: reset() (logout / account switch) clears the record', async () => {
+  await lostAckCase(async (meta) => {
+    await loseOne(meta);
+    meta.getState().reset();
+    assert.equal(meta.getState().pendingAck, null);
+  });
+});
+
+await test('lost ACK replay never moves the revision or baseline backwards (old commit snapshot vs a newer known head)', async () => {
+  await lostAckCase(async (meta) => {
+    const rec = await loseOne(meta);
+    const newer = { collection: { 'keep|BASE': 1 }, decks: {}, scans: null };
+    meta.setState({ lastRevision: 12, baseline: newer });
+    setLastKnownRevision(12);
+    fetchCalls.length = 0;
+    responseQueue = [okSnap(8)];
+    await pushAccountSyncFromStores(SESSION);
+    assert.equal(fetchCalls[0].body.idempotencyKey, rec.idempotencyKey);
+    assert.equal(meta.getState().lastRevision, 12, 'revision not moved back');
+    assert.deepEqual(meta.getState().baseline, newer, 'baseline not moved back');
+    assert.equal(meta.getState().pendingAck, null);
+    assert.equal(meta.getState().ackedSeq, 1, 'the original request is still acknowledged');
+  });
+});
+
+await test('lost ACK: hydrate settles the record BEFORE pulling (replay POST, then GET)', async () => {
+  await lostAckCase(async (meta) => {
+    const rec = await loseOne(meta);
+    fetchCalls.length = 0;
+    responseQueue = [okSnap(8), jsonResponse(200, { snapshot: { ...SNAPSHOT_V7, revision: 8 } })];
+    await hydrateAccountSyncFromServer(SESSION);
+    assert.equal(fetchCalls[0].method, 'POST');
+    assert.equal(fetchCalls[0].body.idempotencyKey, rec.idempotencyKey);
+    assert.equal(fetchCalls[1].method, 'GET');
+    assert.equal(meta.getState().pendingAck, null);
+    assert.equal(meta.getState().dirtySeq, meta.getState().ackedSeq, 'recovered: the pull applied without a pending-change merge');
+  });
+});
+
 if ((process.exitCode ?? 0) === 0) {
   console.log(`\n✅ account remote-sync orchestrator: ${passed} checks passed`);
 } else {

@@ -47,6 +47,11 @@ let inflight = 0;
 let lastActivity = Date.now();
 const requests = [];
 const holds = [];     // { method, gate, release, held }
+// 2026-11-04 (F1 lost-ACK repro): the next sync request with this method really
+// reaches the server (and is committed there), but its response is dropped and the
+// phone sees a network failure — a lost ACK. One-shot.
+const loseResponse = new Set();
+let lostResponses = 0;
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (input, init = {}) => {
   const url = String(input);
@@ -61,7 +66,13 @@ globalThis.fetch = async (input, init = {}) => {
   if (offline) throw new TypeError('Network request failed');
   inflight += 1; lastActivity = Date.now();
   try {
-    return await realFetch(url.replace(/^https?:\/\/[^/]+/, `http://127.0.0.1:${PORT}`), init);
+    const res = await realFetch(url.replace(/^https?:\/\/[^/]+/, `http://127.0.0.1:${PORT}`), init);
+    if (url.includes('/api/auth/sync') && loseResponse.delete(method)) {
+      await res.text();               // the server has fully processed (and committed) it
+      lostResponses += 1;
+      throw new TypeError('Network request failed (response lost)');
+    }
+    return res;
   } finally { inflight -= 1; lastActivity = Date.now(); }
 };
 
@@ -75,7 +86,7 @@ const { useAccountSyncStateStore } = await import('../../src/store/accountSyncSt
 const { useScanQuotaStore } = await import('../../src/store/scanQuotaStore.ts');
 const { useAccountSyncOutboxStore } = await import('../../src/store/accountSyncOutboxStore.ts');
 const { FEATURES } = await import('../../src/config/releaseFlags.ts');
-const { reconcileAccountSync } = await import('../../src/services/accountSyncOrchestrator.ts');
+const { reconcileAccountSync, hydrateAccountSyncFromServer, pushAccountSyncFromStores } = await import('../../src/services/accountSyncOrchestrator.ts');
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 for (const s of [useAuthStore, useDeckStore, useSettingsStore, useScanSessionStore, useAccountSyncStateStore, useFavoritesStore, useAccountSyncOutboxStore]) {
@@ -134,6 +145,40 @@ const commands = {
     void reconcileAccountSync(st.session, st.user?.internalId ?? null, null).catch(() => {});
   },
   async wait({ ms }) { await wait(ms); },
+  /** 2026-11-04: the next sync request with `method` is committed but its response is lost. */
+  async loseNextResponse({ method }) { loseResponse.add(method); },
+  /** 2026-11-04: the REAL exported hydrate / push entry points, called directly. */
+  async hydrate() {
+    try { return { ok: !!(await hydrateAccountSyncFromServer(useAuthStore.getState().session)) }; }
+    catch (err) { return { ok: false, error: String(err?.message || err) }; }
+  },
+  async push() {
+    try { return { ok: !!(await pushAccountSyncFromStores(useAuthStore.getState().session)) }; }
+    catch (err) { return { ok: false, error: String(err?.message || err) }; }
+  },
+  /** 2026-11-04: sync bookkeeping the F1 repro asserts on (read-only). */
+  async syncMeta() {
+    const s = useAccountSyncStateStore.getState();
+    const p = s.pendingAck;
+    return { dirtySeq: s.dirtySeq, ackedSeq: s.ackedSeq, lastRevision: s.lastRevision,
+      scanPicks: s.baseline?.scanPicks ?? null, lostResponses,
+      // 2026-11-04 recovery: the persisted lost-ACK record (summary) and every sync POST
+      // this phone sent: its bearer, idempotency key, base revision and scan picks.
+      pendingAck: p ? { ownerId: p.ownerId, idempotencyKey: p.idempotencyKey, baseRevision: p.baseRevision,
+        attempts: p.attempts, createdAt: p.createdAt, seqAtPush: p.seqAtPush } : null,
+      postLog: requests.filter((r) => r.method === 'POST' && r.body).map((r) => ({
+        bearer: r.bearer, idempotencyKey: r.body.idempotencyKey, baseRevision: r.body.baseRevision,
+        scans: (r.body.patch?.scanSession?.entries ?? []).map((e) => ({ instanceId: e.instanceId, selectedVersion: e.selectedVersion })),
+        collection: r.body.patch?.collection ?? null,
+      })) };
+  },
+  /** 2026-11-04: test-only — age or exhaust the persisted lost-ACK record (bounded-retry cases). */
+  async agePendingAck({ createdAt, attempts }) {
+    const s = useAccountSyncStateStore.getState();
+    if (!s.pendingAck) return false;
+    s.setPendingAck({ ...s.pendingAck, ...(createdAt ? { createdAt } : {}), ...(attempts != null ? { attempts } : {}) });
+    return true;
+  },
   async createDeck({ name }) { return useDeckStore.getState().createDeck(name); },
   async deleteDeck({ id }) { useDeckStore.getState().deleteDeck(id); },
   async foreground() {
