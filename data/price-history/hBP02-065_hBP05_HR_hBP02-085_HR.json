@@ -106,8 +106,16 @@
       "currency": "JPY",
       "cardId": "hBP02-065_hBP05_HR_hBP02-085_HR",
       "sourceProduct": "hBP05"
+    },
+    {
+      "date": "2026-11-02",
+      "price": 3980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-065_hBP05_HR_hBP02-085_HR",
+      "sourceProduct": "hBP05"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:03.936Z",
+  "lastUpdated": "2026-11-02T12:07:37.337Z",
   "nameZh": "涅莉莎·雷文克羅夫特"
 }

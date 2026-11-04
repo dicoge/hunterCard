@@ -98,8 +98,16 @@
       "currency": "JPY",
       "cardId": "hBP07-027_hBP07_R_hBP07-027_R",
       "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-11-02",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-027_hBP07_R_hBP07-027_R",
+      "sourceProduct": "hBP07"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:06.624Z",
+  "lastUpdated": "2026-11-02T12:07:40.592Z",
   "nameZh": "大神澪"
 }
