@@ -569,7 +569,15 @@
       "currency": "JPY",
       "cardId": "hSD02-006_hSD02_C_hSD02-006_C",
       "sourceProduct": "hSD02"
+    },
+    {
+      "date": "2026-11-05",
+      "price": 280,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD02-006_hSD02_C_hSD02-006_C",
+      "sourceProduct": "hSD02"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:19.539Z"
+  "lastUpdated": "2026-11-05T12:11:12.756Z"
 }

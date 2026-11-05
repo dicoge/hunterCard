@@ -82,8 +82,16 @@
       "currency": "JPY",
       "cardId": "hEB01-003_hEB01_SEC_hEB01-003_SEC",
       "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-11-05",
+      "price": 49800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hEB01-003_hEB01_SEC_hEB01-003_SEC",
+      "sourceProduct": "hEB01"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:19.096Z",
+  "lastUpdated": "2026-11-05T12:11:12.654Z",
   "nameZh": "博衣可佑理"
 }
