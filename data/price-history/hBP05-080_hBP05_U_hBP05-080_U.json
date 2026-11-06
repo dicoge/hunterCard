@@ -98,8 +98,40 @@
       "currency": "JPY",
       "cardId": "hBP05-080_hBP05_U_hBP05-080_U",
       "sourceProduct": "hBP05"
+    },
+    {
+      "date": "2026-11-02",
+      "price": 680,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-080_hBP05_U_hBP05-080_U",
+      "sourceProduct": "hBP05"
+    },
+    {
+      "date": "2026-11-03",
+      "price": 680,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-080_hBP05_U_hBP05-080_U",
+      "sourceProduct": "hBP05"
+    },
+    {
+      "date": "2026-11-04",
+      "price": 680,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-080_hBP05_U_hBP05-080_U",
+      "sourceProduct": "hBP05"
+    },
+    {
+      "date": "2026-11-05",
+      "price": 680,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-080_hBP05_U_hBP05-080_U",
+      "sourceProduct": "hBP05"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:12.887Z",
+  "lastUpdated": "2026-11-05T12:11:09.148Z",
   "nameZh": "SorAZ慶典"
 }

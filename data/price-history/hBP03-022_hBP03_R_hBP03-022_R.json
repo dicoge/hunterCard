@@ -98,8 +98,40 @@
       "currency": "JPY",
       "cardId": "hBP03-022_hBP03_R_hBP03-022_R",
       "sourceProduct": "hBP03"
+    },
+    {
+      "date": "2026-11-02",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-022_hBP03_R_hBP03-022_R",
+      "sourceProduct": "hBP03"
+    },
+    {
+      "date": "2026-11-03",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-022_hBP03_R_hBP03-022_R",
+      "sourceProduct": "hBP03"
+    },
+    {
+      "date": "2026-11-04",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-022_hBP03_R_hBP03-022_R",
+      "sourceProduct": "hBP03"
+    },
+    {
+      "date": "2026-11-05",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-022_hBP03_R_hBP03-022_R",
+      "sourceProduct": "hBP03"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:10.617Z",
+  "lastUpdated": "2026-11-05T12:11:07.328Z",
   "nameZh": "亞綺·羅森塔爾"
 }

@@ -98,8 +98,40 @@
       "currency": "JPY",
       "cardId": "hBP08-006_hBP08_OSR_hBP08-006_OSR",
       "sourceProduct": "hBP08"
+    },
+    {
+      "date": "2026-11-02",
+      "price": 780,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-006_hBP08_OSR_hBP08-006_OSR",
+      "sourceProduct": "hBP08"
+    },
+    {
+      "date": "2026-11-03",
+      "price": 780,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-006_hBP08_OSR_hBP08-006_OSR",
+      "sourceProduct": "hBP08"
+    },
+    {
+      "date": "2026-11-04",
+      "price": 780,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-006_hBP08_OSR_hBP08-006_OSR",
+      "sourceProduct": "hBP08"
+    },
+    {
+      "date": "2026-11-05",
+      "price": 780,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-006_hBP08_OSR_hBP08-006_OSR",
+      "sourceProduct": "hBP08"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:13.895Z",
+  "lastUpdated": "2026-11-05T12:11:11.575Z",
   "nameZh": "一伊那爾棲"
 }

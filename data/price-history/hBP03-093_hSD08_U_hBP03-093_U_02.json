@@ -98,8 +98,40 @@
       "currency": "JPY",
       "cardId": "hBP03-093_hSD08_U_hBP03-093_U_02",
       "sourceProduct": "hSD08"
+    },
+    {
+      "date": "2026-11-02",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-093_hSD08_U_hBP03-093_U_02",
+      "sourceProduct": "hSD08"
+    },
+    {
+      "date": "2026-11-03",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-093_hSD08_U_hBP03-093_U_02",
+      "sourceProduct": "hSD08"
+    },
+    {
+      "date": "2026-11-04",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-093_hSD08_U_hBP03-093_U_02",
+      "sourceProduct": "hSD08"
+    },
+    {
+      "date": "2026-11-05",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-093_hSD08_U_hBP03-093_U_02",
+      "sourceProduct": "hSD08"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:11.406Z",
+  "lastUpdated": "2026-11-05T12:11:08.325Z",
   "nameZh": "hololive 4期生"
 }

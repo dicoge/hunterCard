@@ -98,8 +98,40 @@
       "currency": "JPY",
       "cardId": "hBP06-046_hBP06_R_hBP06-046_R",
       "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-11-02",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-046_hBP06_R_hBP06-046_R",
+      "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-11-03",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-046_hBP06_R_hBP06-046_R",
+      "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-11-04",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-046_hBP06_R_hBP06-046_R",
+      "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-11-05",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-046_hBP06_R_hBP06-046_R",
+      "sourceProduct": "hBP06"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:13.074Z",
+  "lastUpdated": "2026-11-05T12:11:09.829Z",
   "nameZh": "鷹嶺琉衣"
 }

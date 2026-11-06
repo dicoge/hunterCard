@@ -98,8 +98,40 @@
       "currency": "JPY",
       "cardId": "hBP09-010_hBP09_S_hBP09-010_S",
       "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-11-02",
+      "price": 220,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-010_hBP09_S_hBP09-010_S",
+      "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-11-03",
+      "price": 220,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-010_hBP09_S_hBP09-010_S",
+      "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-11-04",
+      "price": 220,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-010_hBP09_S_hBP09-010_S",
+      "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-11-05",
+      "price": 220,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-010_hBP09_S_hBP09-010_S",
+      "sourceProduct": "hBP09"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:17.191Z",
+  "lastUpdated": "2026-11-05T12:11:12.211Z",
   "nameZh": "大空昴"
 }

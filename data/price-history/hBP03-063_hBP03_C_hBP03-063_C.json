@@ -98,8 +98,40 @@
       "currency": "JPY",
       "cardId": "hBP03-063_hBP03_C_hBP03-063_C",
       "sourceProduct": "hBP03"
+    },
+    {
+      "date": "2026-11-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-063_hBP03_C_hBP03-063_C",
+      "sourceProduct": "hBP03"
+    },
+    {
+      "date": "2026-11-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-063_hBP03_C_hBP03-063_C",
+      "sourceProduct": "hBP03"
+    },
+    {
+      "date": "2026-11-04",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-063_hBP03_C_hBP03-063_C",
+      "sourceProduct": "hBP03"
+    },
+    {
+      "date": "2026-11-05",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-063_hBP03_C_hBP03-063_C",
+      "sourceProduct": "hBP03"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:10.887Z",
+  "lastUpdated": "2026-11-05T12:11:07.569Z",
   "nameZh": "戌神沁音"
 }

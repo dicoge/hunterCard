@@ -98,8 +98,40 @@
       "currency": "JPY",
       "cardId": "hBP01-024_hBP07_C_hBP01-024_02_C",
       "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-11-02",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-024_hBP07_C_hBP01-024_02_C",
+      "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-11-03",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-024_hBP07_C_hBP01-024_02_C",
+      "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-11-04",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-024_hBP07_C_hBP01-024_02_C",
+      "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-11-05",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-024_hBP07_C_hBP01-024_02_C",
+      "sourceProduct": "hBP07"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:03.047Z",
+  "lastUpdated": "2026-11-05T12:11:00.081Z",
   "nameZh": "貝絲緹亞·澤塔"
 }

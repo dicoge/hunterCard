@@ -98,8 +98,40 @@
       "currency": "JPY",
       "cardId": "hBP05-058_hBP05_C_hBP05-058_C",
       "sourceProduct": "hBP05"
+    },
+    {
+      "date": "2026-11-02",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-058_hBP05_C_hBP05-058_C",
+      "sourceProduct": "hBP05"
+    },
+    {
+      "date": "2026-11-03",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-058_hBP05_C_hBP05-058_C",
+      "sourceProduct": "hBP05"
+    },
+    {
+      "date": "2026-11-04",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-058_hBP05_C_hBP05-058_C",
+      "sourceProduct": "hBP05"
+    },
+    {
+      "date": "2026-11-05",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-058_hBP05_C_hBP05-058_C",
+      "sourceProduct": "hBP05"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:06.274Z",
+  "lastUpdated": "2026-11-05T12:11:04.033Z",
   "nameZh": "涅莉莎·雷文克羅夫特"
 }

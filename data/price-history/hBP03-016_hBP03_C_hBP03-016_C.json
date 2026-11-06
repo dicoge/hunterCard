@@ -576,7 +576,39 @@
       "currency": "JPY",
       "cardId": "hBP03-016_hBP03_C_hBP03-016_C",
       "sourceProduct": "hBP03"
+    },
+    {
+      "date": "2026-11-02",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-016_hBP03_C_hBP03-016_C",
+      "sourceProduct": "hBP03"
+    },
+    {
+      "date": "2026-11-03",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-016_hBP03_C_hBP03-016_C",
+      "sourceProduct": "hBP03"
+    },
+    {
+      "date": "2026-11-04",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-016_hBP03_C_hBP03-016_C",
+      "sourceProduct": "hBP03"
+    },
+    {
+      "date": "2026-11-05",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-016_hBP03_C_hBP03-016_C",
+      "sourceProduct": "hBP03"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:10.574Z"
+  "lastUpdated": "2026-11-05T12:11:07.310Z"
 }

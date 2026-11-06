@@ -98,8 +98,40 @@
       "currency": "JPY",
       "cardId": "hBP02-001_hBP02_OSR_hBP02-001_OSR",
       "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-11-02",
+      "price": 1780,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-001_hBP02_OSR_hBP02-001_OSR",
+      "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-11-03",
+      "price": 1780,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-001_hBP02_OSR_hBP02-001_OSR",
+      "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-11-04",
+      "price": 1780,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-001_hBP02_OSR_hBP02-001_OSR",
+      "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-11-05",
+      "price": 1780,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-001_hBP02_OSR_hBP02-001_OSR",
+      "sourceProduct": "hBP02"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:08.763Z",
+  "lastUpdated": "2026-11-05T12:11:06.259Z",
   "nameZh": "白上吹雪"
 }

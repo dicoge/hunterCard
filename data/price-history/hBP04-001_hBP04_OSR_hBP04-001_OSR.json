@@ -98,8 +98,40 @@
       "currency": "JPY",
       "cardId": "hBP04-001_hBP04_OSR_hBP04-001_OSR",
       "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-11-02",
+      "price": 500,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-001_hBP04_OSR_hBP04-001_OSR",
+      "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-11-03",
+      "price": 500,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-001_hBP04_OSR_hBP04-001_OSR",
+      "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-11-04",
+      "price": 500,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-001_hBP04_OSR_hBP04-001_OSR",
+      "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-11-05",
+      "price": 500,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-001_hBP04_OSR_hBP04-001_OSR",
+      "sourceProduct": "hBP04"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:11.749Z",
+  "lastUpdated": "2026-11-05T12:11:08.468Z",
   "nameZh": "博衣可佑理"
 }
