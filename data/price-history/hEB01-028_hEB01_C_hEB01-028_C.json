@@ -114,8 +114,16 @@
       "currency": "JPY",
       "cardId": "hEB01-028_hEB01_C_hEB01-028_C",
       "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-11-06",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hEB01-028_hEB01_C_hEB01-028_C",
+      "sourceProduct": "hEB01"
     }
   ],
-  "lastUpdated": "2026-11-05T12:11:12.739Z",
+  "lastUpdated": "2026-11-06T12:08:23.944Z",
   "nameZh": "劈西瓜"
 }

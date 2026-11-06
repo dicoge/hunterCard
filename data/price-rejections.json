@@ -1,11 +1,11 @@
 {
   "schema": "huntercard.price-rejections/v1",
   "label": "build-database",
-  "generatedAt": "2026-11-05T12:10:55.183Z",
+  "generatedAt": "2026-11-06T12:08:10.413Z",
   "before": {
-    "pricedRows": 2546,
+    "pricedRows": 2543,
     "pricedUniqueCardNumbers": 1310,
-    "priceEntries": 2546
+    "priceEntries": 2543
   },
   "after": {
     "pricedRows": 2543,
@@ -13,59 +13,11 @@
     "priceEntries": 2543
   },
   "deltas": {
-    "pricedRows": -3,
+    "pricedRows": 0,
     "pricedUniqueCardNumbers": 0,
-    "priceEntries": -3
+    "priceEntries": 0
   },
   "rejections": [
-    {
-      "id": "hBD24-035_ent07",
-      "cardNumber": "hBD24-035",
-      "sourceProduct": "ent07",
-      "rarity": "P",
-      "reason": "cross-product-image",
-      "evidence": {
-        "sellPrice": 5980,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10035.jpg",
-        "imageProduct": "promo-hbd20",
-        "entryImageProducts": [
-          "promo-hbd20"
-        ],
-        "timestamp": "2026-11-01T12:06:33.115Z"
-      }
-    },
-    {
-      "id": "hBD24-060_ent07",
-      "cardNumber": "hBD24-060",
-      "sourceProduct": "ent07",
-      "rarity": "P",
-      "reason": "cross-product-image",
-      "evidence": {
-        "sellPrice": 9980,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10060.jpg",
-        "imageProduct": "promo-hbd20",
-        "entryImageProducts": [
-          "promo-hbd20"
-        ],
-        "timestamp": "2026-11-01T12:06:33.115Z"
-      }
-    },
-    {
-      "id": "hBP01-075_ent07",
-      "cardNumber": "hBP01-075",
-      "sourceProduct": "ent07",
-      "rarity": "P",
-      "reason": "cross-product-image",
-      "evidence": {
-        "sellPrice": 7980,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10047.jpg",
-        "imageProduct": "promo-hbp10",
-        "entryImageProducts": [
-          "promo-hbp10"
-        ],
-        "timestamp": "2026-11-01T12:06:33.115Z"
-      }
-    },
     {
       "id": "hSD03-002_ent07_P_2_hSD03-002_P_2",
       "cardNumber": "hSD03-002",
@@ -79,7 +31,39 @@
         "entryImageProducts": [
           "promo-hsd10"
         ],
-        "timestamp": "2026-11-05T12:10:26.551Z"
+        "timestamp": "2026-11-06T12:07:42.379Z"
+      }
+    },
+    {
+      "id": "hBP07-068_ent07",
+      "cardNumber": "hBP07-068",
+      "sourceProduct": "ent07",
+      "rarity": "P",
+      "reason": "cross-product-image",
+      "evidence": {
+        "sellPrice": 9980,
+        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10180.jpg",
+        "imageProduct": "promo-hbp10",
+        "entryImageProducts": [
+          "promo-hbp10"
+        ],
+        "timestamp": "2026-11-06T12:07:42.379Z"
+      }
+    },
+    {
+      "id": "hBP07-071_ent07",
+      "cardNumber": "hBP07-071",
+      "sourceProduct": "ent07",
+      "rarity": "P",
+      "reason": "cross-product-image",
+      "evidence": {
+        "sellPrice": 9980,
+        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10181.jpg",
+        "imageProduct": "promo-hbp10",
+        "entryImageProducts": [
+          "promo-hbp10"
+        ],
+        "timestamp": "2026-11-06T12:07:42.379Z"
       }
     }
   ],
@@ -575,7 +559,7 @@
         "heb01"
       ],
       "listingSellPrices": [
-        180,
+        120,
         2980,
         30,
         2980,
@@ -1768,10 +1752,10 @@
         "hbp02"
       ],
       "listingSellPrices": [
-        99800,
+        108000,
         24800,
         420,
-        99800,
+        108000,
         24800
       ],
       "candidatePrintings": [
@@ -2406,7 +2390,7 @@
       ],
       "listingSellPrices": [
         8980,
-        1280,
+        1480,
         420,
         4980,
         220,
@@ -3816,7 +3800,7 @@
         "hbp09"
       ],
       "listingSellPrices": [
-        120,
+        80,
         6980,
         30,
         6980,
@@ -4200,8 +4184,8 @@
       "listingSellPrices": [
         1780,
         180,
-        19800,
         17800,
+        19800,
         17800,
         1780
       ],
@@ -5237,10 +5221,10 @@
         "hbp04"
       ],
       "listingSellPrices": [
-        3480,
+        3980,
         500,
         120,
-        3480
+        3980
       ],
       "candidatePrintings": [
         "hBP04-066_ent07_RR_hBP04-066_RR",
@@ -5786,10 +5770,10 @@
         "hbp05"
       ],
       "listingSellPrices": [
-        79800,
+        89800,
         12800,
         220,
-        79800,
+        89800,
         12800
       ],
       "candidatePrintings": [
@@ -6585,8 +6569,8 @@
       "listingSellPrices": [
         580,
         220,
-        6980,
-        4980
+        4980,
+        6980
       ],
       "candidatePrintings": [
         "hBP05-079_hBP05_U_hBP05-079_U",
@@ -6799,10 +6783,10 @@
         "hbp06"
       ],
       "listingSellPrices": [
-        108000,
+        118000,
         24800,
         680,
-        108000
+        118000
       ],
       "candidatePrintings": [
         "hBP06-003_ent07_OSR_hBP06-003_OSR",
@@ -7274,9 +7258,9 @@
         "hbp06"
       ],
       "listingSellPrices": [
-        980,
+        1480,
         120,
-        980
+        1480
       ],
       "candidatePrintings": [
         "hBP06-038_hBP06_R_hBP06-038_R",
@@ -7914,9 +7898,9 @@
       ],
       "listingSellPrices": [
         34800,
-        4980,
+        5980,
         220,
-        4980
+        5980
       ],
       "candidatePrintings": [
         "hBP07-002_ent07_OSR_hBP07-002_OSR",
@@ -8609,13 +8593,15 @@
     {
       "cardNumber": "hBP07-068",
       "reason": "positive-listings-unbound-priced-sibling",
-      "listings": 3,
+      "listings": 4,
       "listingImageProducts": [
-        "hbp07"
+        "hbp07",
+        "promo-hbp10"
       ],
       "listingSellPrices": [
         220,
         50,
+        9980,
         220
       ],
       "candidatePrintings": [
@@ -8627,11 +8613,12 @@
         "hBP07-068_hPR_P_hBP07-068_P"
       ],
       "provenPrintings": [
+        "hBP07-068_ent07",
         "hBP07-068_hBP07_S_hBP07-068_S",
         "hBP07-068_hBP07_U_hBP07-068_U"
       ],
       "refusedListingIds": [
-        "hBP07-068#2"
+        "hBP07-068#3"
       ]
     },
     {
@@ -9045,15 +9032,16 @@
     {
       "cardNumber": "hBP08-004",
       "reason": "positive-listings-unbound-priced-sibling",
-      "listings": 4,
+      "listings": 5,
       "listingImageProducts": [
         "hbp08"
       ],
       "listingSellPrices": [
         108000,
-        19800,
+        24800,
         580,
-        108000
+        108000,
+        24800
       ],
       "candidatePrintings": [
         "hBP08-004_hBP08_OSR_hBP08-004_OSR",
@@ -9066,7 +9054,8 @@
         "hBP08-004_hBP08_SEC_hBP08-004_SEC"
       ],
       "refusedListingIds": [
-        "hBP08-004#3"
+        "hBP08-004#3",
+        "hBP08-004#4"
       ]
     },
     {
@@ -9315,7 +9304,9 @@
       ],
       "candidatePrintings": [
         "hBP08-017_hBP08_R_hBP08-017_R",
-        "hBP08-017_hBP08_SR_hBP08-017_SR"
+        "hBP08-017_hBP08_SR_hBP08-017_SR",
+        "hBP08-017_hPR_P_hBP08-017_P",
+        "hBP08-017_hPR_P_hBP08-017_P_02"
       ],
       "provenPrintings": [
         "hBP08-017_hBP08_R_hBP08-017_R",
@@ -10254,13 +10245,14 @@
     {
       "cardNumber": "hBP09-001",
       "reason": "positive-listings-unbound-priced-sibling",
-      "listings": 4,
+      "listings": 5,
       "listingImageProducts": [
         "hbp09"
       ],
       "listingSellPrices": [
         17800,
         680,
+        17800,
         17800,
         680
       ],
@@ -10279,7 +10271,8 @@
       ],
       "refusedListingIds": [
         "hBP09-001#2",
-        "hBP09-001#3"
+        "hBP09-001#3",
+        "hBP09-001#4"
       ]
     },
     {
@@ -10448,13 +10441,14 @@
     {
       "cardNumber": "hBP09-007",
       "reason": "positive-listings-unbound-priced-sibling",
-      "listings": 4,
+      "listings": 5,
       "listingImageProducts": [
         "hbp09"
       ],
       "listingSellPrices": [
         24800,
         500,
+        24800,
         24800,
         500
       ],
@@ -10469,7 +10463,8 @@
       ],
       "refusedListingIds": [
         "hBP09-007#2",
-        "hBP09-007#3"
+        "hBP09-007#3",
+        "hBP09-007#4"
       ]
     },
     {
@@ -12420,10 +12415,10 @@
         "hbp09"
       ],
       "listingSellPrices": [
-        680,
+        780,
         30,
-        680,
-        680,
+        780,
+        780,
         30
       ],
       "candidatePrintings": [
@@ -12448,10 +12443,10 @@
         "hbp09"
       ],
       "listingSellPrices": [
-        580,
+        680,
         30,
-        580,
-        580,
+        680,
+        680,
         30
       ],
       "candidatePrintings": [
@@ -13388,10 +13383,10 @@
       "listingSellPrices": [
         49800,
         7980,
-        120,
+        180,
         49800,
         7980,
-        120
+        180
       ],
       "candidatePrintings": [
         "hEB01-003_hEB01_OSR_hEB01-003_OSR",
@@ -13495,9 +13490,9 @@
         "heb01"
       ],
       "listingSellPrices": [
-        220,
+        280,
         30,
-        220,
+        280,
         30
       ],
       "candidatePrintings": [
@@ -13521,9 +13516,9 @@
         "heb01"
       ],
       "listingSellPrices": [
-        180,
+        220,
         50,
-        180,
+        220,
         50
       ],
       "candidatePrintings": [
@@ -14767,6 +14762,52 @@
       ]
     },
     {
+      "cardNumber": "hSD12-013",
+      "reason": "positive-listings-unbound-priced-sibling",
+      "listings": 2,
+      "listingImageProducts": [
+        "hsd12",
+        "promo-hsd10"
+      ],
+      "listingSellPrices": [
+        980,
+        14800
+      ],
+      "candidatePrintings": [
+        "hSD12-013_hPR_P_hSD12-013_P",
+        "hSD12-013_hSD12_C_hSD12-013_C"
+      ],
+      "provenPrintings": [
+        "hSD12-013_hSD12_C_hSD12-013_C"
+      ],
+      "refusedListingIds": [
+        "hSD12-013#1"
+      ]
+    },
+    {
+      "cardNumber": "hSD12-014",
+      "reason": "positive-listings-unbound-priced-sibling",
+      "listings": 2,
+      "listingImageProducts": [
+        "hsd12",
+        "promo-hsd10"
+      ],
+      "listingSellPrices": [
+        680,
+        12800
+      ],
+      "candidatePrintings": [
+        "hSD12-014_hPR_P_hSD12-014_P",
+        "hSD12-014_hSD12_C_hSD12-014_C"
+      ],
+      "provenPrintings": [
+        "hSD12-014_hSD12_C_hSD12-014_C"
+      ],
+      "refusedListingIds": [
+        "hSD12-014#1"
+      ]
+    },
+    {
       "cardNumber": "hSD13-013",
       "reason": "positive-listings-unbound-priced-sibling",
       "listings": 2,
@@ -15569,19 +15610,19 @@
     "noSellListing": [],
     "unaccounted": [],
     "printingLedger": {
-      "freshlyPriced": 2472,
+      "freshlyPriced": 2474,
       "positiveListingUnpriced": 0,
       "shippedPriced": 2471,
-      "refusedIncrease": 1,
+      "refusedIncrease": 3,
       "ambiguityNulled": 0,
       "refusedListing": 0,
       "unaccounted": 0
     },
     "unaccountedPrintings": [],
     "listingLedger": {
-      "positiveListings": 3404,
-      "matched": 2485,
-      "refused": 919,
+      "positiveListings": 3411,
+      "matched": 2487,
+      "refused": 924,
       "unaccounted": 0
     },
     "unaccountedListings": []

@@ -130,8 +130,16 @@
       "currency": "JPY",
       "cardId": "hBP02-078_hBP02_U_hBP02-078_U",
       "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-11-06",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-078_hBP02_U_hBP02-078_U",
+      "sourceProduct": "hBP02"
     }
   ],
-  "lastUpdated": "2026-11-05T12:11:06.969Z",
+  "lastUpdated": "2026-11-06T12:08:16.600Z",
   "nameZh": "彼方建設"
 }

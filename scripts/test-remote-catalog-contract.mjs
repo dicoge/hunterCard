@@ -70,7 +70,17 @@ test('the client accepts the real manifest and the real assets', () => {
   const parsed = contract.parseCatalogManifest(JSON.stringify(release.manifest));
   assert.ok(parsed.ok, parsed.reason);
   const m = parsed.value;
-  assert.equal(m.cardCount, 3973);
+  // Count derived from the source data, not frozen: the daily data legitimately grows
+  // (3973 → 3975 in PR281 added hBP08-017_hPR_P_hBP08-017_P and …_02). Independent checks:
+  // canonical id set == bundled public asset id set == published asset id set; the manifest
+  // count equals that set's size and the canonical/public totalCards metadata.
+  const canonicalIds = Object.keys(canonical.cards).sort();
+  const publicDb = JSON.parse(read('public/data/database.json'));
+  assert.deepEqual(Object.keys(publicDb.cards).sort(), canonicalIds, 'bundled public asset has exactly the canonical card-id set');
+  assert.equal(m.cardCount, canonicalIds.length, 'manifest cardCount equals the full canonical card-id set');
+  assert.equal(canonical.totalCards, canonicalIds.length, 'canonical totalCards metadata matches its entries');
+  assert.equal(publicDb.totalCards, canonicalIds.length, 'public totalCards metadata matches its entries');
+  assert.ok(m.cardCount >= 1000, 'catalog plausibly complete (client minCardCount floor)');
   assert.equal(m.dataObservedAt, canonical.lastUpdated, 'observation time is the data\'s own');
   assert.equal(m.publishedAt, NOW.toISOString(), 'publish time is build metadata');
   for (const a of release.assets) {
@@ -81,9 +91,45 @@ test('the client accepts the real manifest and the real assets', () => {
     assert.equal(contract.utf8ByteLength(a.text), ref.bytes, 'client byte count agrees with the server');
   }
   const db = JSON.parse(release.assets.find((a) => a.rel.includes('/database.')).text);
+  assert.deepEqual(Object.keys(db.cards).sort(), canonicalIds, 'published asset carries every canonical card id');
   const ok = contract.validateCatalogDatabase(db, { cardCount: m.cardCount, dataObservedAt: m.dataObservedAt, minCardCount: 1000 });
   assert.ok(ok.ok, ok.reason);
   assert.ok(contract.validateSeriesNames(seriesNames).ok);
+});
+
+test('genuine dataset growth publishes and validates; a manifest miscount or an omitted card fails closed', () => {
+  // Growth: the real publisher over canonical data plus one added card (cloned shape, new id)
+  // must produce a manifest whose count is exactly one more and which the real client accepts.
+  const baseIds = Object.keys(canonical.cards);
+  const grown = structuredClone(canonical);
+  const newId = 'hZZ99-001_hZZ99_C_hZZ99-001_C';
+  assert.ok(!(newId in grown.cards), 'synthetic growth id is not real data');
+  grown.cards[newId] = { ...structuredClone(grown.cards[baseIds[0]]), id: newId, cardNumber: 'hZZ99-001', series: 'hZZ99' };
+  grown.totalCards = baseIds.length + 1;
+  const grownRelease = buildNativeCatalogRelease({ canonical: grown, seriesNames, now: NOW });
+  const gm = contract.parseCatalogManifest(JSON.stringify(grownRelease.manifest));
+  assert.ok(gm.ok, gm.reason);
+  assert.equal(gm.value.cardCount, baseIds.length + 1, 'manifest follows the grown data');
+  const grownDb = JSON.parse(grownRelease.assets.find((a) => a.rel.includes('/database.')).text);
+  const grownOk = contract.validateCatalogDatabase(grownDb, { cardCount: gm.value.cardCount, dataObservedAt: gm.value.dataObservedAt, minCardCount: 1000 });
+  assert.ok(grownOk.ok, grownOk.reason);
+
+  // Negative 1: a manifest that over-counts the unchanged real asset is rejected by the real client.
+  const realDb = JSON.parse(release.assets.find((a) => a.rel.includes('/database.')).text);
+  const miscount = contract.validateCatalogDatabase(realDb, {
+    cardCount: release.manifest.cardCount + 1, dataObservedAt: release.manifest.dataObservedAt, minCardCount: 1000 });
+  assert.equal(miscount.ok, false);
+  assert.match(miscount.reason, /card count differs from manifest/);
+
+  // Negative 2: an asset that silently omits one real card (e.g. one of PR281's two new hPR
+  // printings) against the honest manifest count is rejected.
+  const omitted = structuredClone(realDb);
+  const victim = Object.keys(omitted.cards).find((k) => k.startsWith('hBP08-017_hPR_P_hBP08-017_P')) ?? Object.keys(omitted.cards)[0];
+  delete omitted.cards[victim];
+  const omittedResult = contract.validateCatalogDatabase(omitted, {
+    cardCount: release.manifest.cardCount, dataObservedAt: release.manifest.dataObservedAt, minCardCount: 1000 });
+  assert.equal(omittedResult.ok, false);
+  assert.match(omittedResult.reason, /card count differs from manifest/);
 });
 
 test('client rejects the raw canonical database (forbidden/internal fields)', () => {
