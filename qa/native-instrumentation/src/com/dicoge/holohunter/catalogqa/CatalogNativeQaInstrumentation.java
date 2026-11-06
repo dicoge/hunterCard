@@ -29,6 +29,13 @@
  * Boundaries: reads/writes ONLY <target cacheDir>/holohunter-catalog/ (public catalog cache;
  * never auth, collection, settings or other app data). Never seeds a pointer, manifest or
  * asset. No camera, scan, quota, login, account deletion or billing. JSON is data only.
+ *
+ * 2026-11-07 evidence refinement (no behaviour change): at each manifest preflight, read-only
+ * hh_ctx_* notes record this process's uid vs the target uid, INTERNET / ACCESS_NETWORK_STATE
+ * grant tokens (process and target), the caller's active-network presence + INTERNET/VALIDATED
+ * capability, NetworkInfo DetailedState and restrict-background enum. A preflight IOException
+ * additionally records hh_manifest_error_{class,message,cause1..3}, sanitized FIRST then capped
+ * (EvidenceSanitizer). Same fetch, same assertions, no retry, no new permission or request.
  */
 package com.dicoge.holohunter.catalogqa;
 
@@ -42,6 +49,9 @@ import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.Signature;
 import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkInfo;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Process;
@@ -63,9 +73,12 @@ import java.security.MessageDigest;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public final class CatalogNativeQaInstrumentation extends Instrumentation {
@@ -283,6 +296,7 @@ public final class CatalogNativeQaInstrumentation extends Instrumentation {
 
     /** Returns a Manifest, or an Outcome (REFUSED/FAIL) that ends the phase. Never retries. */
     Object preflight() {
+        recordNetworkContext();   // read-only evidence of THIS process at fetch time; never changes the outcome
         HttpURLConnection c = null;
         try {
             c = (HttpURLConnection) new URL(MANIFEST_URL).openConnection();
@@ -302,11 +316,187 @@ public final class CatalogNativeQaInstrumentation extends Instrumentation {
             if (body == null) return fail("manifest exceeds " + MANIFEST_MAX_BYTES + " bytes");
             return parseManifest(new String(body, StandardCharsets.UTF_8));
         } catch (IOException e) {
+            noteThrowable("manifest_error", e);   // sanitized, bounded message + up to 3 causes
             return fail("manifest unreachable: " + e.getClass().getSimpleName());
         } catch (Exception e) {
             return fail("manifest invalid: " + e.getMessage());
         } finally {
             if (c != null) c.disconnect();
+        }
+    }
+
+    // ── read-only failure evidence (2026-11-07; run-20261106T224057Z) ──────────
+    // The system default network was WIFI+INTERNET+VALIDATED at the same phase, yet the fetch in this
+    // process failed with UnknownHostException before any HTTP status. These notes record THIS
+    // process's own view using existing permissions and read-only APIs only (no permission, policy,
+    // service or connectivity change, no extra network request). They never alter the outcome.
+    static String permToken(int result) {
+        return result == PackageManager.PERMISSION_GRANTED ? "granted"
+                : result == PackageManager.PERMISSION_DENIED ? "denied" : "unknown";
+    }
+
+    static String restrictBackgroundToken(int status) {
+        switch (status) {
+            case ConnectivityManager.RESTRICT_BACKGROUND_STATUS_DISABLED: return "disabled";
+            case ConnectivityManager.RESTRICT_BACKGROUND_STATUS_WHITELISTED: return "allowlisted";
+            case ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED: return "enabled";
+            default: return "unknown";
+        }
+    }
+
+    @SuppressWarnings("deprecation")   // NetworkInfo: the per-caller DetailedState (e.g. BLOCKED) has no exact replacement
+    void recordNetworkContext() {
+        try {
+            Context target = getTargetContext();
+            int processUid = Process.myUid();
+            int targetUid = -1;
+            try {
+                targetUid = target.getPackageManager().getApplicationInfo(TARGET_PACKAGE, 0).uid;
+            } catch (Exception e) {
+                note("ctx_target_uid_error", e.getClass().getSimpleName());
+            }
+            note("ctx_process_uid", processUid);
+            note("ctx_target_uid", targetUid);
+            note("ctx_uid_match", processUid == targetUid);
+            // Fully qualified: the nested data class `Manifest` (catalog manifest) shadows android.Manifest.
+            note("ctx_process_internet", permToken(target.checkPermission(android.Manifest.permission.INTERNET, Process.myPid(), processUid)));
+            note("ctx_process_network_state", permToken(target.checkPermission(android.Manifest.permission.ACCESS_NETWORK_STATE, Process.myPid(), processUid)));
+            PackageManager pm = target.getPackageManager();
+            note("ctx_target_internet", permToken(pm.checkPermission(android.Manifest.permission.INTERNET, TARGET_PACKAGE)));
+            note("ctx_target_network_state", permToken(pm.checkPermission(android.Manifest.permission.ACCESS_NETWORK_STATE, TARGET_PACKAGE)));
+            ConnectivityManager cm = (ConnectivityManager) target.getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm == null) {
+                note("ctx_active_network", "cm_unavailable");
+                return;
+            }
+            try {
+                Network n = cm.getActiveNetwork();   // null when no default network OR it is blocked for this caller
+                note("ctx_active_network", n != null ? "present" : "none");
+                if (n != null) {
+                    NetworkCapabilities nc = cm.getNetworkCapabilities(n);
+                    note("ctx_cap_internet", nc == null ? "unavailable" : String.valueOf(nc.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)));
+                    note("ctx_cap_validated", nc == null ? "unavailable" : String.valueOf(nc.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)));
+                }
+                NetworkInfo ni = cm.getActiveNetworkInfo();
+                note("ctx_networkinfo_state", ni == null ? "none" : ni.getDetailedState().name());
+                note("ctx_restrict_background", restrictBackgroundToken(cm.getRestrictBackgroundStatus()));
+            } catch (SecurityException e) {
+                note("ctx_network_error", "SecurityException");
+            }
+        } catch (Throwable t) {   // evidence must never change the phase outcome
+            note("ctx_error", t.getClass().getSimpleName());
+        }
+    }
+
+    void noteThrowable(String prefix, Throwable e) {
+        try {
+            note(prefix + "_class", e.getClass().getName());
+            note(prefix + "_message", EvidenceSanitizer.clean(e.getMessage()));
+            List<String> causes = EvidenceSanitizer.causes(e);
+            for (int i = 0; i < causes.size(); i++) note(prefix + "_cause" + (i + 1), causes.get(i));
+        } catch (Throwable t) {
+            note(prefix + "_evidence_error", t.getClass().getSimpleName());
+        }
+    }
+
+    /**
+     * Pure-Java (no Android API) sanitizer for exception text: sanitize FIRST, then cap. Keeps the
+     * diagnostic words (e.g. "EACCES (Permission denied)", "EAI_NODATA (No address associated with
+     * hostname)", "ENONET", the constant manifest hostname); strips Bearer/Basic credentials,
+     * key/token/password/secret/cookie values, PEM blocks, URLs other than the constant manifest
+     * origin, IP literals and long opaque values. Offline host check: run main() (see the report).
+     */
+    static final class EvidenceSanitizer {
+        static final int MAX_MESSAGE = 300;
+        static final int MAX_CAUSES = 3;
+        static final String ALLOWED_ORIGIN = "https://holohunter.dicoge.com/";
+        private static final Pattern PEM = Pattern.compile("-----BEGIN [A-Z0-9 ]+-----.*?(?:-----END [A-Z0-9 ]+-----|$)");
+        private static final Pattern BEARER = Pattern.compile("(?i)\\b(bearer|basic)\\s+\\S+");
+        private static final Pattern KV = Pattern.compile("(?i)\\b([\\w.-]*(?:pub_?key|public[_ -]?key|private[_ -]?key|priv_?key"
+                + "|adbkey|token|password|passwd|passphrase|credential|secret|jwks|authorization|api[_-]?key|cookie|session)"
+                + "[\\w.-]*)(\\s*[:=]\\s*)(\"[^\"]*\"|'[^']*'|\\S+)");
+        private static final Pattern URL_RE = Pattern.compile("(?i)\\b[a-z][a-z0-9+.-]*://\\S+");
+        private static final Pattern IPV4 = Pattern.compile("\\b\\d{1,3}(?:\\.\\d{1,3}){3}\\b");
+        private static final Pattern IPV6 = Pattern.compile("(?i)(?<![\\w:])(?:[0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}(?![\\w:])");
+        private static final Pattern BLOB = Pattern.compile("(?<![\\w/.-])[A-Za-z0-9+/_-]{40,}={0,2}(?![\\w/.-])");
+
+        private EvidenceSanitizer() {}
+
+        static String clean(String s) {
+            if (s == null) return "";
+            String t = s.replace('\r', ' ').replace('\n', ' ');
+            t = PEM.matcher(t).replaceAll("[PEM redacted]");
+            t = BEARER.matcher(t).replaceAll("$1 [REDACTED]");
+            t = KV.matcher(t).replaceAll("$1$2[REDACTED]");
+            Matcher m = URL_RE.matcher(t);
+            StringBuffer sb = new StringBuffer();
+            while (m.find()) {
+                String u = m.group();
+                m.appendReplacement(sb, Matcher.quoteReplacement(
+                        u.toLowerCase(java.util.Locale.ROOT).startsWith(ALLOWED_ORIGIN) ? ALLOWED_ORIGIN + "<path>" : "<url>"));
+            }
+            m.appendTail(sb);
+            t = sb.toString();
+            t = IPV4.matcher(t).replaceAll("<ipv4>");
+            t = IPV6.matcher(t).replaceAll("<ipv6>");
+            t = BLOB.matcher(t).replaceAll("[REDACTED_BLOB]");
+            t = t.trim();
+            return t.length() > MAX_MESSAGE ? t.substring(0, MAX_MESSAGE) : t;   // cap AFTER sanitizing
+        }
+
+        /** Up to MAX_CAUSES causes as "<class>: <sanitized message>"; cycle-safe; capped. */
+        static List<String> causes(Throwable t) {
+            List<String> out = new ArrayList<>();
+            Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+            if (t == null) return out;
+            seen.add(t);
+            Throwable c = t.getCause();
+            while (c != null && out.size() < MAX_CAUSES && seen.add(c)) {
+                String entry = c.getClass().getName() + ": " + clean(c.getMessage());
+                out.add(entry.length() > MAX_MESSAGE + 120 ? entry.substring(0, MAX_MESSAGE + 120) : entry);
+                c = c.getCause();
+            }
+            return out;
+        }
+
+        private static void req(boolean ok, String what) {
+            if (!ok) throw new AssertionError("EvidenceSanitizer check failed: " + what);
+        }
+
+        /** Offline host self-check (plain JVM, no device): exits non-zero via AssertionError on failure. */
+        public static void main(String[] args) {
+            int n = 0;
+            String keep1 = "Unable to resolve host \"holohunter.dicoge.com\": No address associated with hostname";
+            req(clean(keep1).equals(keep1), "UnknownHost message + constant hostname kept"); n++;
+            String keep2 = "android_getaddrinfo failed: EAI_NODATA (No address associated with hostname)";
+            req(clean(keep2).equals(keep2), "EAI_NODATA kept"); n++;
+            req(clean("connect failed: EACCES (Permission denied)").equals("connect failed: EACCES (Permission denied)"), "EACCES kept"); n++;
+            req(clean("socket failed: ENONET (Machine is not on the network)").contains("ENONET"), "ENONET kept"); n++;
+            String secrets = "Authorization: Bearer abc.def.ghi token=s3cr3tvalue password: hunter2 api_key=XYZ123 Cookie: sid=1";
+            String s = clean(secrets);
+            for (String leak : new String[]{"abc.def.ghi", "s3cr3tvalue", "hunter2", "XYZ123", "sid=1"}) req(!s.contains(leak), "leak " + leak); n++;
+            req(!clean("x -----BEGIN PRIVATE KEY----- MIIEvQIBADAN -----END PRIVATE KEY----- y").contains("MIIEvQ"), "PEM"); n++;
+            String blob = new String(new char[64]).replace('\0', 'Q');
+            req(clean("v " + blob + " w").equals("v [REDACTED_BLOB] w"), "blob"); n++;
+            String urls = clean("GET https://evil.example/x?token=1 then " + CatalogNativeQaInstrumentation.MANIFEST_URL);
+            req(!urls.contains("evil.example") && urls.contains("<url>") && urls.contains(ALLOWED_ORIGIN + "<path>"), "urls " + urls); n++;
+            req(clean("dns 10.0.2.3 and fe80::5054:ff:fe12:3456").equals("dns <ipv4> and <ipv6>"), "ip literals"); n++;
+            String longMsg = new String(new char[285]).replace('\0', 'x').replace("xxxxx", "xxxx ") + " token=SECRETSECRETVALUE";
+            String capped = clean(longMsg + new String(new char[5000]).replace('\0', '.'));
+            req(capped.length() <= MAX_MESSAGE && !capped.contains("SECRE"), "sanitize before cap"); n++;
+            req(clean(null).isEmpty() && !clean("a\nb\rc").contains("\n"), "null / newlines"); n++;
+            Exception deep = new Exception("level5");
+            for (int i = 4; i >= 1; i--) deep = new Exception(i == 2 ? "token=leakvalue" : "level" + i, deep);
+            java.net.UnknownHostException top = new java.net.UnknownHostException("Unable to resolve host \"holohunter.dicoge.com\"");
+            top.initCause(new RuntimeException(keep2, deep));
+            List<String> cs = causes(top);
+            req(cs.size() == MAX_CAUSES && cs.get(0).equals("java.lang.RuntimeException: " + keep2), "causes " + cs); n++;
+            req(!String.join("|", cs).contains("leakvalue"), "cause leak"); n++;
+            Exception a = new Exception("A");
+            Exception b = new Exception("B", a);
+            a.initCause(b);                          // a cycle: must terminate
+            req(causes(a).size() == 1 && causes(null).isEmpty(), "cycle-safe"); n++;
+            System.out.println("EvidenceSanitizer offline checks passed: " + n);
         }
     }
 
