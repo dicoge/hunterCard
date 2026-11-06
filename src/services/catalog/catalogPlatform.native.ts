@@ -8,7 +8,8 @@
  * permission. The ~7 MB database is a FILE, never an AsyncStorage item.
  *
  * Why the cache directory, not documentDirectory: the app does not configure
- * Android auto-backup rules, and two retained revisions (~14 MB of public data)
+ * Android auto-backup rules, and the retained revisions (GC keeps every revision
+ * either pointer slot references — up to three, ~21 MB of public data)
  * under the backed-up files directory would eat into the per-app backup quota
  * that the user's own data needs. The catalog is re-downloadable public data: if
  * the OS evicts the cache under storage pressure, the repository falls back to

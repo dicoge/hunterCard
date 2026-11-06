@@ -363,6 +363,9 @@ jobs:
       - name: Verify native guest series/card data loads fail-closed (DIC-972)
         run: npm run test:native-guest-data
 
+      - name: Verify remote native catalog contract/repository/consumers (2026-11-06)
+        run: npm run test:remote-catalog
+
       - name: Verify deck editor rules engine (DIC-945)
         run: npm run test:deck-rules
 
