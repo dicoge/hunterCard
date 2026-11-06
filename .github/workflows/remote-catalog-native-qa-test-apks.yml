@@ -1,0 +1,229 @@
+# UNAPPLIED RECIPE TEXT (R2) — NOT A LIVE WORKFLOW. Nothing under .github/ was changed.
+# Intended path in a SEPARATE, reviewed, same-repo QA pull request that is NEVER merged:
+#   .github/workflows/remote-catalog-native-qa-test-apks.yml
+#   qa/native-instrumentation/AndroidManifest.xml
+#   qa/native-instrumentation/src/com/dicoge/holohunter/catalogqa/CatalogNativeQaInstrumentation.java
+# CI-DEBUG TEST ARTIFACTS ONLY: NEVER ALPHA / PLAY / EAS.
+# The QA PR must be opened as a DRAFT titled "DO NOT MERGE — CI-debug test APKs" and closed (not
+# merged) once the artifacts are pinned. No such PR exists yet; opening it needs owner authorization.
+#
+# Builds (1) a TEST-ONLY client APK from the EXACT approved product code (commit d91a19ba…,
+# git tree a54a2216…, identical to reviewed feature commit f7f1ce7a…) whose bundled catalog is the
+# GENUINE historical public data of 91fa4c5 (db raw sha a7af…, 3920 entries; series-names raw sha
+# dfec…, 40 entries) as a labelled fixture in the EPHEMERAL checkout only, and (2) the framework-only
+# instrumentation APK, both signed by the existing public Expo-template CI debug key.
+# Product files, canonical data, ci.yml (Validate + release-APK guard) and every other workflow are
+# untouched. Trigger = the deliberate QA PR itself (review P0-B1); no workflow_dispatch registration,
+# no aliasing of an existing workflow. Inherits the repository artifact retention (no override).
+
+name: Remote catalog native QA test APKs (CI debug, never release)
+
+on:
+  pull_request:
+    paths:
+      - 'qa/native-instrumentation/**'
+      - '.github/workflows/remote-catalog-native-qa-test-apks.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: remote-catalog-native-qa-test-apks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  test-apks:
+    # Same-repository QA PR only (a fork PR never runs this).
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      CODE_COMMIT: d91a19ba22f44ca9b0d96e91b16be98071ef607b
+      REVIEWED_FEATURE_COMMIT: f7f1ce7a384024d9e5fd871400a5c38c7c40de4a
+      CODE_TREE: a54a22163972fb0b4b6dff03fa6a2546ca55efde
+      FIXTURE_COMMIT_ABBREV: 91fa4c5
+      FIXTURE_DB_SHA256: a7af984486ce17cdc397ebbfd4b109457db2b94608208125e452c0228a24772d
+      FIXTURE_SERIES_NAMES_SHA256: dfecdf3bc7f8c8a06a7cfaf098d688483327de6acc7a2ec7c0dba3d5f111e4a5
+      DEBUG_CERT_SHA256: fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c
+    steps:
+      - name: Checkout the QA PR head (full history for the fixture blobs)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Assert the product is EXACTLY the approved code (fail closed if main moved)
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse "$CODE_COMMIT^{tree}")" = "$CODE_TREE"
+          test "$(git rev-parse "$REVIEWED_FEATURE_COMMIT^{tree}")" = "$CODE_TREE"
+          QA_PATHS=(':(exclude)qa/native-instrumentation' ':(exclude).github/workflows/remote-catalog-native-qa-test-apks.yml')
+          git diff --quiet "$CODE_COMMIT" HEAD -- . "${QA_PATHS[@]}"
+          # The PR may add ONLY the QA paths.
+          git diff --name-only "$CODE_COMMIT" HEAD | while read -r f; do
+            case "$f" in
+              qa/native-instrumentation/*|.github/workflows/remote-catalog-native-qa-test-apks.yml) ;;
+              *) echo "unexpected change outside the QA paths: $f"; exit 1 ;;
+            esac
+          done
+
+      - name: Swap in the GENUINE historical public data as a labelled TEST FIXTURE (ephemeral checkout only)
+        run: |
+          set -euo pipefail
+          FIXTURE_COMMIT=$(git rev-parse --verify "$FIXTURE_COMMIT_ABBREV^{commit}")   # ambiguity fails
+          echo "FIXTURE_COMMIT=$FIXTURE_COMMIT" >> "$GITHUB_ENV"
+          git show "$FIXTURE_COMMIT:public/data/database.json" > public/data/database.json
+          git show "$FIXTURE_COMMIT:data/series-names.json" > data/series-names.json
+          echo "$FIXTURE_DB_SHA256  public/data/database.json" | sha256sum -c -
+          echo "$FIXTURE_SERIES_NAMES_SHA256  data/series-names.json" | sha256sum -c -
+          node -e '
+            const db = require("./public/data/database.json"); const names = require("./data/series-names.json");
+            const ids = Object.keys(db.cards);
+            if (ids.length !== 3920) throw new Error("fixture must hold 3920 entries, got " + ids.length);
+            if (Object.keys(names).length !== 40) throw new Error("fixture series names must hold 40 entries");
+            if (ids.some((k) => db.cards[k].series === "hSD20")) throw new Error("fixture must not contain series hSD20 (series field, not id prefix)");
+            if (db.cards["hSD20-001_hSD20_OSR_hSD20-001_OSR"]) throw new Error("fixture must not contain the new card");
+            if (!ids.some((k) => db.cards[k].series === "hBP01")) throw new Error("fixture must contain the known old series hBP01");
+            if (names.hBP01 !== "ブルーミングレディアンス") throw new Error("fixture series name for hBP01 differs from the instrumentation constant");
+            for (const k of ids) for (const f of ["buyPrice","buyPriceHistory","priceHistory","ytStats","_rawPricesArchive"]) if (f in db.cards[k]) throw new Error("fixture not sanitized: " + f);
+            console.log(JSON.stringify({ fixtureCards: ids.length, fixtureSeriesNames: Object.keys(names).length, lastUpdated: db.lastUpdated }));
+          '
+          git status --porcelain   # expected: only the two fixture files modified; never committed or pushed
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.4 - 22'
+          cache: 'npm'
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # R3: NO license acceptance and NO sdkmanager install here. The job uses only the SDK
+      # packages and license files ALREADY present on the hosted runner image; if any is missing
+      # it fails clearly. It never pipes `yes` into `sdkmanager --licenses` (no new legal terms).
+      - name: Use the runner's preinstalled Android SDK (no new license acceptance; fail clearly if absent)
+        run: |
+          set -euo pipefail
+          ANDROID_HOME=${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}
+          missing=0
+          for f in \
+            "licenses/android-sdk-license" \
+            "platform-tools/adb" \
+            "platforms/android-35/android.jar" \
+            "build-tools/35.0.0/d8" "build-tools/35.0.0/aapt2" \
+            "build-tools/35.0.0/zipalign" "build-tools/35.0.0/apksigner"; do
+            if [ ! -e "$ANDROID_HOME/$f" ]; then echo "::error::runner SDK lacks $f (not installed/accepted by this job; refusing)"; missing=1; fi
+          done
+          test "$missing" = "0"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prebuild (same production-apk profile as the release-APK guard)
+        env:
+          EAS_BUILD_PROFILE: production-apk
+          EAS_BUILD_PLATFORM: android
+          EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: remote-catalog-native-qa-test-placeholder
+        run: npx expo prebuild --platform android --no-install --clean
+
+      - name: Assert the generated debug signing config is EXACTLY the public Expo template (values never echoed)
+        run: |
+          set -euo pipefail
+          python3 - android/app/build.gradle <<'PY'
+          import re, sys
+          src = open(sys.argv[1], encoding="utf-8").read()
+          m = re.search(r"signingConfigs\s*\{\s*debug\s*\{\s*storeFile file\('([^']+)'\)\s*storePassword '([^']*)'\s*keyAlias '([^']*)'\s*keyPassword '([^']*)'\s*\}", src)
+          if not m:
+              sys.exit("signing: debug signingConfig block not in the expected generated shape — refusing")
+          if m.groups() != ("debug.keystore", "android", "androiddebugkey", "android"):
+              sys.exit("signing: debug config differs from the public Expo template — refusing (values not printed)")
+          if not re.search(r"release\s*\{[^}]*signingConfig signingConfigs\.debug", src, re.S):
+              sys.exit("signing: release buildType does not use signingConfigs.debug — refusing")
+          PY
+          test -f android/app/debug.keystore
+          # The keystore must hold exactly the CI Android Debug certificate already pinned (fac617…).
+          FP=$(keytool -list -v -keystore android/app/debug.keystore -storepass android -alias androiddebugkey \
+               | sed -n 's/^[[:space:]]*SHA256: //p' | tr -d ':' | tr 'A-F' 'a-f')
+          test "$FP" = "$DEBUG_CERT_SHA256"
+          echo "DEBUG_KEYSTORE=$PWD/android/app/debug.keystore" >> "$GITHUB_ENV"   # path only; no password exported
+
+      - name: Assemble TEST client APK (fixture data, exact code)
+        env:
+          _JAVA_OPTIONS: "-Xmx4g -Dfile.encoding=UTF-8"
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew app:assembleRelease --no-daemon --console=plain --stacktrace
+          cp app/build/outputs/apk/release/app-release.apk ../hh-catalog-qa-client.apk
+
+      - name: Build framework-only instrumentation APK (no AndroidX/JUnit downloads)
+        run: |
+          set -euo pipefail
+          BT="$ANDROID_HOME/build-tools/35.0.0"; PLAT="$ANDROID_HOME/platforms/android-35/android.jar"
+          SRC=qa/native-instrumentation
+          rm -rf build-qa && mkdir -p build-qa/classes build-qa/dex
+          javac -source 17 -target 17 -classpath "$PLAT" -d build-qa/classes \
+            "$SRC/src/com/dicoge/holohunter/catalogqa/CatalogNativeQaInstrumentation.java"
+          "$BT/d8" --release --min-api 28 --lib "$PLAT" --output build-qa/dex $(find build-qa/classes -name '*.class')
+          "$BT/aapt2" link --manifest "$SRC/AndroidManifest.xml" -I "$PLAT" -o build-qa/unsigned.apk
+          (cd build-qa/dex && zip -q ../unsigned.apk classes.dex)
+          "$BT/zipalign" -p -f 4 build-qa/unsigned.apk build-qa/aligned.apk
+          # Public Expo-template debug constants, asserted exact in the previous step.
+          "$BT/apksigner" sign --ks "$DEBUG_KEYSTORE" --ks-key-alias androiddebugkey \
+            --ks-pass pass:android --key-pass pass:android \
+            --out hh-catalog-qa-instrumentation.apk build-qa/aligned.apk
+
+      - name: Verify package, single signer, ABI and provenance of BOTH APKs (fail closed)
+        run: |
+          set -euo pipefail
+          BT="$ANDROID_HOME/build-tools/35.0.0"
+          for apk in hh-catalog-qa-client.apk hh-catalog-qa-instrumentation.apk; do
+            "$BT/apksigner" verify --print-certs "$apk" > "$apk.certs.txt"
+            test "$(grep -cE '^Signer #[0-9]+ certificate SHA-256 digest:' "$apk.certs.txt")" = "1"
+            test "$(grep -E '^Signer #1 certificate SHA-256 digest:' "$apk.certs.txt" | awk '{print $NF}')" = "$DEBUG_CERT_SHA256"
+          done
+          test "$("$BT/aapt2" dump packagename hh-catalog-qa-client.apk)" = "com.dicoge.holohunter"
+          test "$("$BT/aapt2" dump packagename hh-catalog-qa-instrumentation.apk)" = "com.dicoge.holohunter.catalogqa"
+          "$BT/aapt2" dump xmltree --file AndroidManifest.xml hh-catalog-qa-instrumentation.apk | grep -q 'targetPackage.*com.dicoge.holohunter'
+          "$BT/aapt2" dump xmltree --file AndroidManifest.xml hh-catalog-qa-instrumentation.apk | grep -q 'testOnly'
+          unzip -l hh-catalog-qa-client.apk | awk '{print $4}' | grep -E '^lib/[^/]+/' | cut -d/ -f2 | sort -u > client-abis.txt
+          test "$(cat client-abis.txt)" = "arm64-v8a"   # B4: confirm equals scripts/test-release-apk-postpackage.mjs expectation before applying
+          CLIENT_SHA=$(sha256sum hh-catalog-qa-client.apk | cut -d' ' -f1)
+          TEST_SHA=$(sha256sum hh-catalog-qa-instrumentation.apk | cut -d' ' -f1)
+          # Same key names as controller/PINS.json (minus the host-only jdk17_home).
+          cat > PROVENANCE-CI-DEBUG-TEST-ONLY.json <<JSON
+          {
+            "label": "CI-DEBUG TEST ARTIFACTS — NEVER ALPHA / PLAY / EAS",
+            "client_apk_sha256": "$CLIENT_SHA",
+            "test_apk_sha256": "$TEST_SHA",
+            "debug_cert_sha256": "$DEBUG_CERT_SHA256",
+            "fixture_db_sha256": "$FIXTURE_DB_SHA256",
+            "fixture_series_names_sha256": "$FIXTURE_SERIES_NAMES_SHA256",
+            "fixture_commit": "$FIXTURE_COMMIT",
+            "code_commit": "$CODE_COMMIT",
+            "reviewed_feature_commit": "$REVIEWED_FEATURE_COMMIT",
+            "code_tree": "$CODE_TREE",
+            "qa_pr_head": "${{ github.event.pull_request.head.sha }}",
+            "ci_run_id": "$GITHUB_RUN_ID"
+          }
+          JSON
+          python3 -c 'import json; json.load(open("PROVENANCE-CI-DEBUG-TEST-ONLY.json"))'
+
+      - name: Upload CI-debug test artifacts (repository default retention; never a release channel)
+        uses: actions/upload-artifact@v4
+        with:
+          name: CI-DEBUG-TEST-ONLY-NEVER-RELEASE-remote-catalog-native-qa
+          if-no-files-found: error
+          path: |
+            hh-catalog-qa-client.apk
+            hh-catalog-qa-instrumentation.apk
+            PROVENANCE-CI-DEBUG-TEST-ONLY.json
+            *.certs.txt
+            client-abis.txt
