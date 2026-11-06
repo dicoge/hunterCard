@@ -130,8 +130,16 @@
       "currency": "JPY",
       "cardId": "hBP02-094_hBP02_C_hBP02-094_C",
       "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-11-06",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-094_hBP02_C_hBP02-094_C",
+      "sourceProduct": "hBP02"
     }
   ],
-  "lastUpdated": "2026-11-05T12:11:07.130Z",
+  "lastUpdated": "2026-11-06T12:08:16.662Z",
   "nameZh": "Tatang"
 }

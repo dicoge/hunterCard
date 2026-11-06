@@ -130,8 +130,16 @@
       "currency": "JPY",
       "cardId": "hBP09-108_hBP09_S_hBP09-108_S",
       "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-11-06",
+      "price": 680,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-108_hBP09_S_hBP09-108_S",
+      "sourceProduct": "hBP09"
     }
   ],
-  "lastUpdated": "2026-11-05T12:11:12.615Z",
+  "lastUpdated": "2026-11-06T12:08:23.689Z",
   "nameZh": "常暗永遠的Break Mic"
 }

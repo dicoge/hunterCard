@@ -130,8 +130,16 @@
       "currency": "JPY",
       "cardId": "hBP08-093_hBP08_U_hBP08-093_U",
       "sourceProduct": "hBP08"
+    },
+    {
+      "date": "2026-11-06",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-093_hBP08_U_hBP08-093_U",
+      "sourceProduct": "hBP08"
     }
   ],
-  "lastUpdated": "2026-11-05T12:11:12.102Z",
+  "lastUpdated": "2026-11-06T12:08:18.918Z",
   "nameZh": "巧可的茄子肉膾"
 }
