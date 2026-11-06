@@ -24,8 +24,16 @@
  * Also mutation-tested: temporarily reinstate the deleted copy-assets.js copy,
  * re-run the sequence, and confirm the artifact now leaks `_rawPricesArchive`
  * — so the regression fails if the fix regresses.
+ *
+ * Remote native catalog (2026-11-06, review F2): after the SAME real chain, in
+ * both profiles, `dist/data/catalog/` must hold a manifest the client contract
+ * accepts, both referenced assets with matching sha256 and byte counts, and a
+ * database asset byte-identical to public/data/database.json (always sanitized,
+ * even when the web copy is the full dataset) — and copy-assets.js must have left
+ * that directory exactly as fix-html.js published it.
  */
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -36,6 +44,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.join(__dirname, '..');
 const CANONICAL_DB = path.join(repoRoot, 'data', 'database.json');
 const VERCEL_JSON = path.join(repoRoot, 'vercel.json');
+const PUBLIC_NATIVE_DB = path.join(repoRoot, 'public', 'data', 'database.json');
+const SERIES_NAMES = path.join(repoRoot, 'data', 'series-names.json');
+// The client's own wire contract (pure TS, no relative imports; run with
+// --experimental-strip-types, see package.json test:web-export-artifact).
+const catalogContract = await import('../src/services/catalog/catalogContract.ts');
 
 let failures = 0;
 function fail(msg) { failures += 1; console.error(`  ✗ ${msg}`); }
@@ -183,6 +196,55 @@ function auditArtifact(label, artifact, { storeMvp }) {
   }
 }
 
+/**
+ * Audit the native catalog the real chain left in dist/ (review F2). Read-only:
+ * compares against the committed public/data/database.json, data/series-names.json
+ * and data/database.json; never writes repository data.
+ */
+function auditNativeCatalog(label) {
+  const distDir = path.join(repoRoot, 'dist');
+  const catalogDir = path.join(distDir, 'data', 'catalog');
+  const manifestPath = path.join(catalogDir, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) {
+    fail(`${label}: real chain published dist/data/catalog/manifest.json`);
+    return;
+  }
+  ok(`${label}: real chain published dist/data/catalog/manifest.json`);
+  const parsed = catalogContract.parseCatalogManifest(fs.readFileSync(manifestPath, 'utf-8'));
+  if (!parsed.ok) {
+    fail(`${label}: manifest accepted by the client contract — ${parsed.reason}`);
+    return;
+  }
+  ok(`${label}: manifest accepted by the client contract (parseCatalogManifest)`);
+  const m = parsed.value;
+  const assetText = {};
+  for (const [kind, ref] of [['database', m.assets.database], ['seriesNames', m.assets.seriesNames]]) {
+    const abs = path.join(distDir, ref.path.replace(/^\//, ''));
+    if (!fs.existsSync(abs)) {
+      fail(`${label}: ${kind} asset ${ref.path} exists`);
+      continue;
+    }
+    const text = fs.readFileSync(abs, 'utf-8');
+    assetText[kind] = text;
+    eq(crypto.createHash('sha256').update(text, 'utf8').digest('hex'), ref.sha256, `${label}: ${kind} asset sha256 matches the manifest`);
+    eq(Buffer.byteLength(text, 'utf8'), ref.bytes, `${label}: ${kind} asset byte count matches the manifest`);
+  }
+  if (assetText.database == null || assetText.seriesNames == null) return;
+  eq(assetText.database === fs.readFileSync(PUBLIC_NATIVE_DB, 'utf-8'), true,
+    `${label}: catalog database asset is byte-identical to public/data/database.json (sanitized in every profile)`);
+  const db = JSON.parse(assetText.database);
+  const dbOk = catalogContract.validateCatalogDatabase(db, { cardCount: m.cardCount, dataObservedAt: m.dataObservedAt, minCardCount: 1000 });
+  eq(dbOk.ok, true, `${label}: catalog database passes client validation (no forbidden/internal field)${dbOk.ok ? '' : ` — ${dbOk.reason}`}`);
+  eq(catalogContract.validateSeriesNames(JSON.parse(assetText.seriesNames)).ok, true, `${label}: series-names asset passes client validation`);
+  eq(assetText.seriesNames === JSON.stringify(JSON.parse(fs.readFileSync(SERIES_NAMES, 'utf-8'))), true, `${label}: series-names asset equals data/series-names.json`);
+  eq(m.dataObservedAt, JSON.parse(fs.readFileSync(CANONICAL_DB, 'utf-8')).lastUpdated, `${label}: dataObservedAt is the canonical lastUpdated (honest observation time)`);
+  // copy-assets.js ran after fix-html.js: the catalog directory must be exactly
+  // what fix-html.js published — manifest + the two named assets, no temp files.
+  const expectedV1 = [path.posix.basename(m.assets.database.path), path.posix.basename(m.assets.seriesNames.path)].sort();
+  eq(JSON.stringify(fs.readdirSync(path.join(catalogDir, 'v1')).sort()), JSON.stringify(expectedV1), `${label}: copy-assets left dist/data/catalog/v1 intact (exactly the two referenced assets)`);
+  eq(JSON.stringify(fs.readdirSync(catalogDir).sort()), JSON.stringify(['manifest.json', 'v1']), `${label}: dist/data/catalog holds only manifest.json + v1 (no temp files)`);
+}
+
 console.log('── vercel.json build sequence audit ──');
 {
   const scripts = readVercelPostExpoScripts();
@@ -197,12 +259,14 @@ console.log('\n── Full mode: play back the exact Vercel sequence ──');
 {
   const artifact = runConfiguredSequence({ storeMvp: false });
   auditArtifact('full', artifact, { storeMvp: false });
+  auditNativeCatalog('full');
 }
 
 console.log('\n── Store MVP mode: play back the exact Vercel sequence with EXPO_PUBLIC_STORE_MVP=1 ──');
 {
   const artifact = runConfiguredSequence({ storeMvp: true });
   auditArtifact('store-mvp', artifact, { storeMvp: true });
+  auditNativeCatalog('store-mvp');
 }
 
 console.log('\n── Mutation sensitivity: reinstating the deleted copy in copy-assets.js MUST break the audit ──');

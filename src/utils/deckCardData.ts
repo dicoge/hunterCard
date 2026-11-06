@@ -5,7 +5,7 @@
 // the screen component so it can be reused and reasoned about independently.
 
 import type { DeckCard, PriceRecord } from './deckRules';
-import { loadDatabaseJson } from './staticData';
+import { getCatalogRevision, loadDatabaseJson } from './staticData';
 import { eligibleZone } from './deckRules';
 import {
   BASE_PRINTING, buildSourcePrintings, printingFromLabel, type SourceListing, type SourcePrinting,
@@ -50,8 +50,10 @@ export interface CardDatabase extends AdaptedCards {
 export const PRICE_SOURCE = 'yuyu-tei.jp';
 export const PRICE_CURRENCY = 'JPY';
 
-let cache: CardDatabase | null = null;
-let inflight: Promise<CardDatabase> | null = null;
+// Keyed by catalog revision (remote native catalog, 2026-11-06); the tag is read
+// before the load so an entry is never labelled newer than its data.
+let cache: { revision: string; db: CardDatabase } | null = null;
+let inflight: { revision: string; promise: Promise<CardDatabase> } | null = null;
 
 function toDeckCard(rep: RawCard, printing: SourcePrinting): DeckCard {
   return {
@@ -196,15 +198,19 @@ export function adaptDatabase(rawCards: RawCard[]): CardDatabase {
 // against, so the request rejected and the editor fell back to an empty catalog.
 // The loader is platform-split instead — see src/utils/staticData.ts.
 export async function loadCardDatabase(): Promise<CardDatabase> {
-  if (cache) return cache;
-  if (inflight) return inflight;
+  const revision = getCatalogRevision();
+  if (cache?.revision === revision) return cache.db;
+  if (inflight?.revision === revision) return inflight.promise;
 
-  inflight = (async () => {
+  const promise = (async () => {
     const db = await loadDatabaseJson();
     const rawCards = Object.values(db.cards || {}) as RawCard[];
-    cache = adaptDatabase(rawCards);
-    return cache;
+    const adapted = adaptDatabase(rawCards);
+    cache = { revision, db: adapted };
+    return adapted;
   })();
+  inflight = { revision, promise };
+  promise.catch(() => { if (inflight?.promise === promise) inflight = null; });
 
-  return inflight;
+  return promise;
 }

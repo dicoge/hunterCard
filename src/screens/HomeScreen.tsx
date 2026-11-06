@@ -3,7 +3,8 @@ import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform }
 import { FEATURES } from '../config/releaseFlags';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useTranslation } from '../i18n';
-import { loadDatabaseJson, loadSeriesNamesJson } from '../utils/staticData';
+import { getCatalogRevision, loadCatalogSnapshot } from '../utils/staticData';
+import { useCatalogRevision } from '../hooks/useCatalogRevision';
 import { buildSeriesCatalog, SeriesCatalog } from '../utils/seriesCatalog';
 import { AppShell, buildShellTabs } from '../components/shell';
 import { SeriesCard } from '../components/cards';
@@ -17,33 +18,35 @@ import {
   TYPE_SCALE,
 } from '../theme/tokensV2';
 
-let cachedSeries: SeriesCatalog | null = null;
-let seriesFetchPromise: Promise<SeriesCatalog> | null = null;
+// Keyed by catalog revision (remote native catalog, 2026-11-06): a committed newer
+// catalog invalidates the derived series list instead of serving it forever.
+let cachedSeries: { revision: string; catalog: SeriesCatalog } | null = null;
+let seriesFetch: { revision: string; promise: Promise<SeriesCatalog> } | null = null;
 
 async function fetchSeriesData(): Promise<SeriesCatalog> {
-  if (cachedSeries) return cachedSeries;
-  if (seriesFetchPromise) return seriesFetchPromise;
+  const revision = getCatalogRevision();
+  if (cachedSeries && cachedSeries.revision === revision) return cachedSeries.catalog;
+  if (seriesFetch && seriesFetch.revision === revision) return seriesFetch.promise;
 
-  seriesFetchPromise = (async () => {
-    const [db, seriesNames] = await Promise.all([
-      loadDatabaseJson(),
-      loadSeriesNamesJson(),
-    ]);
-
-    const result = buildSeriesCatalog(db, seriesNames);
-    cachedSeries = result;
+  const promise = (async () => {
+    // One snapshot → the database and the series names share a revision.
+    const snapshot = await loadCatalogSnapshot();
+    const result = buildSeriesCatalog(snapshot.database, snapshot.seriesNames);
+    cachedSeries = { revision: snapshot.revision, catalog: result };
     return result;
   })();
-
-  return seriesFetchPromise;
+  seriesFetch = { revision, promise };
+  promise.catch(() => { if (seriesFetch?.promise === promise) seriesFetch = null; });
+  return promise;
 }
 
 // Test seam (same pattern as SearchResultsScreen's __seedSearchResultsCacheForTest):
 // the module-level cache above is the only way a JSDOM regression can render the
-// real screen against a deterministic catalog. Pass `null` to clear.
+// real screen against a deterministic catalog. Pass `null` to clear. A seeded
+// catalog belongs to the revision current at seeding time.
 export function __seedHomeSeriesCacheForTest(catalog: SeriesCatalog | null): void {
-  cachedSeries = catalog;
-  seriesFetchPromise = null;
+  cachedSeries = catalog ? { revision: getCatalogRevision(), catalog } : null;
+  seriesFetch = null;
 }
 
 // Pen `App / 01 首頁` (frame tmKqY) — Color Chips row (node gfXsp): six chips,
@@ -78,16 +81,21 @@ const QUICK_ACTIONS: {
 
 export default function HomeScreen({ navigation }: any) {
   const { t } = useTranslation();
-  const [seriesData, setSeriesData] = useState<SeriesCatalog | null>(cachedSeries);
+  const catalogRevision = useCatalogRevision();
+  const [seriesData, setSeriesData] = useState<SeriesCatalog | null>(cachedSeries?.catalog ?? null);
   const [loading, setLoading] = useState(cachedSeries == null);
   const { isDesktop } = useBreakpoint();
 
+  // Re-runs when a newer catalog revision is committed, so an already mounted home
+  // shows new series. A failed refresh keeps what is on screen.
   useEffect(() => {
+    let alive = true;
     fetchSeriesData()
-      .then(data => setSeriesData(data))
-      .catch(() => setSeriesData(null))
-      .finally(() => setLoading(false));
-  }, []);
+      .then(data => { if (alive) setSeriesData(data); })
+      .catch(() => { if (alive) setSeriesData((prev) => prev ?? null); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [catalogRevision]);
 
   const tabs = useMemo(() => buildShellTabs({ navigation }), [navigation]);
   const quickActions = QUICK_ACTIONS.filter((a) => (a.gate ? FEATURES[a.gate] : true));

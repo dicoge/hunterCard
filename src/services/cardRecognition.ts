@@ -30,7 +30,7 @@ import { findCardNumberTokens } from '../utils/cardNumberToken';
 import { matchFromWire, legacyReceivedNumber, verifyLegacyNumberEvidence } from './scanPresentation';
 import { projectTrace, type RecognitionTrace } from './scanTrace';
 import { buildPrintingVersions, provenanceFromRow, type PriceProvenance, type PriceQuote } from '../utils/printingQuotes';
-import { loadDatabaseJson, loadSeriesNamesJson } from '../utils/staticData';
+import { getCatalogRevision, loadDatabaseJson, loadSeriesNamesJson } from '../utils/staticData';
 
 // ── 類型定義 ──
 
@@ -181,20 +181,28 @@ interface DatabaseSchema {
   lastUpdated: string;
 }
 
-let cachedDb: CardInfo[] | null = null;
-let dbFetchPromise: Promise<CardInfo[]> | null = null;
-let seriesNamesCache: Record<string, string> | null = null;
+// Keyed by catalog revision (remote native catalog, 2026-11-06). The tag is read
+// BEFORE the load, so a cache entry is never labelled newer than its data: a
+// commit landing mid-load only costs one extra re-derivation on the next call.
+let cachedDb: { revision: string; cards: CardInfo[] } | null = null;
+// `owner` is a per-flight identity token, created before the flight starts, so a
+// finishing flight can tell whether it still owns `dbFetch`: an older flight's
+// completion or rejection never clears or overwrites a newer flight's state.
+let dbFetch: { revision: string; owner: object; promise: Promise<CardInfo[]> } | null = null;
+let seriesNamesCache: { revision: string; names: Record<string, string> } | null = null;
 
 /**
  * 載入 series-names.json 並快取
  */
 async function loadSeriesNames(): Promise<Record<string, string>> {
-  if (seriesNamesCache) return seriesNamesCache;
+  const revision = getCatalogRevision();
+  if (seriesNamesCache?.revision === revision) return seriesNamesCache.names;
   try {
     // Platform loader (src/utils/staticData): native reads the bundled asset — it has no
     // page origin for a relative fetch — and web fetches it same-origin.
-    seriesNamesCache = await loadSeriesNamesJson();
-    return seriesNamesCache!;
+    const names = await loadSeriesNamesJson();
+    seriesNamesCache = { revision, names };
+    return names;
   } catch (e: any) {
     console.error('[cardRecognition] Failed to load series names:', e.message);
     return {};
@@ -206,10 +214,12 @@ async function loadSeriesNames(): Promise<Record<string, string>> {
  * 同一 cardNumber 在不同系列時，自動合併為一筆並以 variants 列出
  */
 export async function loadAllCards(): Promise<CardInfo[]> {
-  if (cachedDb) return cachedDb;
-  if (dbFetchPromise) return dbFetchPromise;
+  const revision = getCatalogRevision();
+  if (cachedDb?.revision === revision) return cachedDb.cards;
+  if (dbFetch?.revision === revision) return dbFetch.promise;
 
-  dbFetchPromise = (async () => {
+  const owner = {};
+  const promise: Promise<CardInfo[]> = (async () => {
     try {
       // Platform loader: native = the bundled sanitized catalog, web = same-origin fetch.
       // (A relative fetch here failed on native, so a cold scan had no catalog to resolve
@@ -245,16 +255,21 @@ export async function loadAllCards(): Promise<CardInfo[]> {
         provenance: provenanceFromRow(entry as any),
       }, cardFlags));
 
-      cachedDb = result;
+      // Only the flight that still owns `dbFetch` publishes its result: a newer
+      // flight (started after a revision change) is never displaced by older data.
+      if (dbFetch?.owner === owner) cachedDb = { revision, cards: result };
       return result;
     } catch (e: any) {
       console.error('[cardRecognition] Failed to load database:', e.message);
-      dbFetchPromise = null;
+      if (dbFetch?.owner === owner) dbFetch = null;
       return [];
     }
   })();
+  // Assigned synchronously, before the flight's first `await` can settle, so the
+  // flight always finds its own token here unless a newer flight replaced it.
+  dbFetch = { revision, owner, promise };
 
-  return dbFetchPromise;
+  return promise;
 }
 
 // ── 卡號 → 版本解析（DIC-1325 exact-printing 界線）──
