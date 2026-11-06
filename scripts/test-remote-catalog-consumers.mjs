@@ -22,6 +22,7 @@
  */
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import { JSDOM } from 'jsdom';
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>', {
@@ -122,7 +123,16 @@ staticData.__setCatalogPlatformForTest(platform);
 const bundledDb = await staticData.loadDatabaseJson();
 const bundledNames = await staticData.loadSeriesNamesJson();
 assert.equal(staticData.getCatalogRevision(), 'bundled');
-assert.equal(Object.keys(bundledDb.cards).length, 3973, 'starts from the full bundled catalog');
+// The bundled catalog is the FULL dataset: exactly the canonical source's card-id set (independent
+// of how many cards the current data happens to hold), its own totalCards metadata, and a plausible
+// size (the same 1000-card floor the client enforces for a remote catalog).
+{
+  const canonicalDb = JSON.parse(fs.readFileSync(new URL('../data/database.json', import.meta.url), 'utf8'));
+  const bundledIds = Object.keys(bundledDb.cards).sort();
+  assert.deepEqual(bundledIds, Object.keys(canonicalDb.cards).sort(), 'starts from the full bundled catalog (same card-id set as canonical data/database.json)');
+  assert.equal(bundledDb.totalCards, bundledIds.length, 'bundled totalCards metadata matches its card entries');
+  assert.ok(bundledIds.length >= 1000, 'bundled catalog is plausibly complete');
+}
 
 // Synthetic next dataset: one new supported card in one new series.
 const NEW_ID = 'hBP99-001_hBP99';
