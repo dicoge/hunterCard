@@ -3,11 +3,12 @@ import { NavigationContainer } from '@react-navigation/native';
 import { formatDocumentTitle } from './documentTitle';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createDrawerNavigator, DrawerContentScrollView, DrawerItemList, DrawerContentComponentProps } from '@react-navigation/drawer';
-import { Text, View, StyleSheet, ActivityIndicator } from 'react-native';
+import { Text, View, StyleSheet, ActivityIndicator, Platform } from 'react-native';
 import { COLORS } from '../constants';
 import { FEATURES } from '../config/releaseFlags';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useTranslation } from '../i18n';
+import { DrawerHostContext, drawerPresentation } from '../components/shell/navigationChrome';
 
 // Screens
 import HomeScreen from '../screens/HomeScreen';
@@ -86,18 +87,25 @@ function ScanScreenSafe(props: any) {
 function MainDrawer() {
   const { isDesktop } = useBreakpoint();
   const { t } = useTranslation();
+  // R2: permanent sidebar only on web ≥768 (same rule as the shell); native
+  // keeps the overlay drawer at every width beside its bottom tabs.
+  const drawer = drawerPresentation({ platform: Platform.OS, isDesktop });
 
+  // 2026-11-03: screens inside this drawer know they are drawer-hosted, so at
+  // the desktop breakpoint (permanent sidebar) AppShell does not draw the
+  // mobile bottom bar a second time (src/components/shell/navigationChrome.ts).
   return (
+    <DrawerHostContext.Provider value>
     <Drawer.Navigator
       drawerContent={(props) => <CustomDrawerContent {...props} />}
       screenOptions={{
-        drawerType: isDesktop ? 'permanent' : 'front',
+        drawerType: drawer.drawerType,
         drawerActiveTintColor: COLORS.primary,
         drawerInactiveTintColor: COLORS.textSecondary,
         drawerStyle: {
           backgroundColor: COLORS.surface,
-          width: isDesktop ? 260 : 280,
-          borderRightWidth: isDesktop ? 1 : 0,
+          width: drawer.width,
+          borderRightWidth: drawer.borderRightWidth,
           borderRightColor: COLORS.border,
         },
         drawerLabelStyle: {
@@ -290,6 +298,7 @@ function MainDrawer() {
         }}
       />
     </Drawer.Navigator>
+    </DrawerHostContext.Provider>
   );
 }
 
