@@ -98,8 +98,40 @@
       "currency": "JPY",
       "cardId": "hBP02-003_hBP02_OUR_hBP02-003_OUR",
       "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-11-02",
+      "price": 12800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-003_hBP02_OUR_hBP02-003_OUR",
+      "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-11-03",
+      "price": 12800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-003_hBP02_OUR_hBP02-003_OUR",
+      "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-11-04",
+      "price": 12800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-003_hBP02_OUR_hBP02-003_OUR",
+      "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-11-05",
+      "price": 12800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-003_hBP02_OUR_hBP02-003_OUR",
+      "sourceProduct": "hBP02"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:08.823Z",
+  "lastUpdated": "2026-11-05T12:11:06.269Z",
   "nameZh": "寶鍾瑪琳"
 }

@@ -98,8 +98,40 @@
       "currency": "JPY",
       "cardId": "hBP05-003_hBP05_OUR_hBP05-003_OUR",
       "sourceProduct": "hBP05"
+    },
+    {
+      "date": "2026-11-02",
+      "price": 12800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-003_hBP05_OUR_hBP05-003_OUR",
+      "sourceProduct": "hBP05"
+    },
+    {
+      "date": "2026-11-03",
+      "price": 12800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-003_hBP05_OUR_hBP05-003_OUR",
+      "sourceProduct": "hBP05"
+    },
+    {
+      "date": "2026-11-04",
+      "price": 12800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-003_hBP05_OUR_hBP05-003_OUR",
+      "sourceProduct": "hBP05"
+    },
+    {
+      "date": "2026-11-05",
+      "price": 12800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-003_hBP05_OUR_hBP05-003_OUR",
+      "sourceProduct": "hBP05"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:05.929Z",
+  "lastUpdated": "2026-11-05T12:11:03.448Z",
   "nameZh": "尾丸波爾卡"
 }

@@ -98,8 +98,40 @@
       "currency": "JPY",
       "cardId": "hBP09-005_hBP09_OSR_hBP09-005_OSR",
       "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-11-02",
+      "price": 780,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-005_hBP09_OSR_hBP09-005_OSR",
+      "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-11-03",
+      "price": 780,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-005_hBP09_OSR_hBP09-005_OSR",
+      "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-11-04",
+      "price": 780,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-005_hBP09_OSR_hBP09-005_OSR",
+      "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-11-05",
+      "price": 780,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-005_hBP09_OSR_hBP09-005_OSR",
+      "sourceProduct": "hBP09"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:17.038Z",
+  "lastUpdated": "2026-11-05T12:11:12.195Z",
   "nameZh": "常暗永遠"
 }

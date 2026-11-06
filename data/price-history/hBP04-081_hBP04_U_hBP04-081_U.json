@@ -98,8 +98,40 @@
       "currency": "JPY",
       "cardId": "hBP04-081_hBP04_U_hBP04-081_U",
       "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-11-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-081_hBP04_U_hBP04-081_U",
+      "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-11-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-081_hBP04_U_hBP04-081_U",
+      "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-11-04",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-081_hBP04_U_hBP04-081_U",
+      "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-11-05",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-081_hBP04_U_hBP04-081_U",
+      "sourceProduct": "hBP04"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:05.883Z",
+  "lastUpdated": "2026-11-05T12:11:03.372Z",
   "nameZh": "夏色祭"
 }

@@ -82,8 +82,40 @@
       "currency": "JPY",
       "cardId": "hBP03-060_hEB01_R_hBP03-060_R_02",
       "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-11-02",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-060_hEB01_R_hBP03-060_R_02",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-11-03",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-060_hEB01_R_hBP03-060_R_02",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-11-04",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-060_hEB01_R_hBP03-060_R_02",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-11-05",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-060_hEB01_R_hBP03-060_R_02",
+      "sourceProduct": "hEB01"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:10.860Z",
+  "lastUpdated": "2026-11-05T12:11:07.548Z",
   "nameZh": "蘿蔔子"
 }

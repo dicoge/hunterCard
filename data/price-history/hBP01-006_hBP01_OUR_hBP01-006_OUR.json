@@ -98,8 +98,40 @@
       "currency": "JPY",
       "cardId": "hBP01-006_hBP01_OUR_hBP01-006_OUR",
       "sourceProduct": "hBP01"
+    },
+    {
+      "date": "2026-11-02",
+      "price": 5980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-006_hBP01_OUR_hBP01-006_OUR",
+      "sourceProduct": "hBP01"
+    },
+    {
+      "date": "2026-11-03",
+      "price": 5980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-006_hBP01_OUR_hBP01-006_OUR",
+      "sourceProduct": "hBP01"
+    },
+    {
+      "date": "2026-11-04",
+      "price": 5980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-006_hBP01_OUR_hBP01-006_OUR",
+      "sourceProduct": "hBP01"
+    },
+    {
+      "date": "2026-11-05",
+      "price": 5980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-006_hBP01_OUR_hBP01-006_OUR",
+      "sourceProduct": "hBP01"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:07.650Z",
+  "lastUpdated": "2026-11-05T12:11:05.473Z",
   "nameZh": "小鳥遊琪亞拉"
 }

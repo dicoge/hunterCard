@@ -98,8 +98,40 @@
       "currency": "JPY",
       "cardId": "hBP02-007_hBP02_OSR_hBP02-007_OSR",
       "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-11-02",
+      "price": 580,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-007_hBP02_OSR_hBP02-007_OSR",
+      "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-11-03",
+      "price": 580,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-007_hBP02_OSR_hBP02-007_OSR",
+      "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-11-04",
+      "price": 580,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-007_hBP02_OSR_hBP02-007_OSR",
+      "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-11-05",
+      "price": 580,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-007_hBP02_OSR_hBP02-007_OSR",
+      "sourceProduct": "hBP02"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:08.839Z",
+  "lastUpdated": "2026-11-05T12:11:06.347Z",
   "nameZh": "森美聲"
 }

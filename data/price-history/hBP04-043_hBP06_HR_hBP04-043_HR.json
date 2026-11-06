@@ -106,8 +106,40 @@
       "currency": "JPY",
       "cardId": "hBP04-043_hBP06_HR_hBP04-043_HR",
       "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-11-02",
+      "price": 5980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-043_hBP06_HR_hBP04-043_HR",
+      "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-11-03",
+      "price": 5980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-043_hBP06_HR_hBP04-043_HR",
+      "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-11-04",
+      "price": 5980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-043_hBP06_HR_hBP04-043_HR",
+      "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-11-05",
+      "price": 5980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-043_hBP06_HR_hBP04-043_HR",
+      "sourceProduct": "hBP06"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:12.190Z",
+  "lastUpdated": "2026-11-05T12:11:08.682Z",
   "nameZh": "雪花菈米"
 }

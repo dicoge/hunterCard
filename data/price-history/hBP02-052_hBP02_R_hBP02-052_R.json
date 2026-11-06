@@ -98,8 +98,40 @@
       "currency": "JPY",
       "cardId": "hBP02-052_hBP02_R_hBP02-052_R",
       "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-11-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-052_hBP02_R_hBP02-052_R",
+      "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-11-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-052_hBP02_R_hBP02-052_R",
+      "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-11-04",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-052_hBP02_R_hBP02-052_R",
+      "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-11-05",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-052_hBP02_R_hBP02-052_R",
+      "sourceProduct": "hBP02"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:09.330Z",
+  "lastUpdated": "2026-11-05T12:11:06.838Z",
   "nameZh": "克蕾伊姬·歐莉"
 }

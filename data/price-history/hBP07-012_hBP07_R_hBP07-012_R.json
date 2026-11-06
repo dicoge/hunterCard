@@ -98,8 +98,40 @@
       "currency": "JPY",
       "cardId": "hBP07-012_hBP07_R_hBP07-012_R",
       "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-11-02",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-012_hBP07_R_hBP07-012_R",
+      "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-11-03",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-012_hBP07_R_hBP07-012_R",
+      "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-11-04",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-012_hBP07_R_hBP07-012_R",
+      "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-11-05",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-012_hBP07_R_hBP07-012_R",
+      "sourceProduct": "hBP07"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:06.576Z",
+  "lastUpdated": "2026-11-05T12:11:04.365Z",
   "nameZh": "角卷綿芽"
 }

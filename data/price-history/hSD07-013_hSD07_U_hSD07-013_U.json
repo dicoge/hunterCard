@@ -562,7 +562,39 @@
       "currency": "JPY",
       "cardId": "hSD07-013_hSD07_U_hSD07-013_U",
       "sourceProduct": "hSD07"
+    },
+    {
+      "date": "2026-11-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD07-013_hSD07_U_hSD07-013_U",
+      "sourceProduct": "hSD07"
+    },
+    {
+      "date": "2026-11-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD07-013_hSD07_U_hSD07-013_U",
+      "sourceProduct": "hSD07"
+    },
+    {
+      "date": "2026-11-04",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD07-013_hSD07_U_hSD07-013_U",
+      "sourceProduct": "hSD07"
+    },
+    {
+      "date": "2026-11-05",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD07-013_hSD07_U_hSD07-013_U",
+      "sourceProduct": "hSD07"
     }
   ],
-  "lastUpdated": "2026-11-01T12:07:20.081Z"
+  "lastUpdated": "2026-11-05T12:11:12.947Z"
 }
