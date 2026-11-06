@@ -20,6 +20,7 @@ import {
   type CardCategory, type CardFacets, type PickerCriteria,
 } from '../utils/cardCatalog';
 import { loadCardDatabase, type CardDatabase } from '../utils/deckCardData';
+import { useCatalogRevision } from '../hooks/useCatalogRevision';
 import { CardFilterPanel, CardPickerGrid } from '../components/CardPicker';
 import { AppShell, buildShellTabs } from '../components/shell';
 import PriceAlertEditor, { type PriceAlertTarget } from '../components/PriceAlertEditor';
@@ -224,12 +225,19 @@ export default function DeckEditorScreen({ route }: any = {}) {
   const menuDeck = decks.find((deck) => deck.id === menuDeckId) || null;
   const deleteCandidate = decks.find((deck) => deck.id === deleteDeckId) || null;
 
+  // Remote native catalog (2026-11-06): a committed newer revision reloads the
+  // picker catalog in place. Only `db` changes — the open deck, its zones, the
+  // picker criteria and any rename in progress are untouched — and a failed
+  // refresh keeps the catalog already loaded.
+  const catalogRevision = useCatalogRevision();
   useEffect(() => {
+    let alive = true;
     loadCardDatabase()
-      .then((data) => setDb(data))
-      .catch(() => setDb(null))
-      .finally(() => setLoading(false));
-  }, []);
+      .then((data) => { if (alive) setDb(data); })
+      .catch(() => { if (alive) setDb((prev) => prev ?? null); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [catalogRevision]);
 
   // User 2026-10-19: the deck feature is a LIST first — 牌組 list → open / create → edit →
   // back to the list → leave. An empty list shows the create form; no deck is created

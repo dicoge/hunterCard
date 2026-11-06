@@ -23,6 +23,13 @@
  *   - it audits the bytes the loader actually returned and pins them to
  *     sanitizeDatabase(data/database.json), so native stays Store-MVP fail-closed.
  *
+ * Remote catalog (2026-11-06): native may now replace the bundle with a verified
+ * remote revision. The bundled asset remains the offline/first-launch fallback and
+ * is exactly what this loader returns when no platform is present (Node), and a
+ * remote refresh is only ever an ABSOLUTE https request on PRODUCTION_ORIGIN —
+ * never the relative '/data/...' URL this test exists to forbid. Section 5 pins
+ * both; the remote behaviour itself is covered by test-remote-catalog-*.mjs.
+ *
  * The real Metro `expo export --platform android` audit lives in
  * scripts/test-store-mvp-native-export.mjs (retained, run separately in CI);
  * this complements it at the loader+screen runtime layer.
@@ -34,7 +41,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadDatabaseJson, loadSeriesNamesJson } from '../src/utils/staticData.ts';
+import {
+  getCatalogRevision,
+  loadCatalogSnapshot,
+  loadDatabaseJson,
+  loadSeriesNamesJson,
+} from '../src/utils/staticData.ts';
 import { buildSeriesCatalog } from '../src/utils/seriesCatalog.ts';
 import { FORBIDDEN_CARD_FIELDS, sanitizeDatabase } from './lib/store-mvp-sanitize.mjs';
 
@@ -151,5 +163,24 @@ for (const screen of ['src/screens/HomeScreen.tsx', 'src/screens/SearchResultsSc
   );
 }
 console.log('Executed path matches production HomeScreen extraction; no relative /data fetch reintroduced.');
+
+// ── 5. Remote catalog keeps the bundled fallback and only absolute trusted URLs ──
+// The loader's default (no native platform) serves the bundled snapshot, as ONE
+// revision for both files; the remote path is absolute https on PRODUCTION_ORIGIN.
+{
+  assert.equal(getCatalogRevision(), 'bundled', 'without a native platform the bundled catalog is the source');
+  const snapshot = await loadCatalogSnapshot();
+  assert.equal(snapshot.database, db, 'snapshot database is the same bundled object loadDatabaseJson returned');
+  assert.equal(snapshot.seriesNames, seriesNames, 'snapshot names come from the same revision');
+  assert.equal(snapshot.source, 'bundled');
+  const staticSrc = stripComments(read('src/utils/staticData.ts'));
+  assert.match(staticSrc, /from '\.\.\/\.\.\/public\/data\/database\.json'/, 'native still bundles the sanitized asset as fallback');
+  const repoSrc = stripComments(read('src/services/catalog/catalogRepository.ts'));
+  assert.match(repoSrc, /\$\{PRODUCTION_ORIGIN\}\$\{MANIFEST_PATH\}/, 'manifest URL is absolute on PRODUCTION_ORIGIN');
+  assert.doesNotMatch(repoSrc, /fetch\w*\(\s*['"`]\//, 'the remote catalog never requests a relative URL');
+  const platformSrc = stripComments(read('src/services/catalog/catalogPlatform.ts'));
+  assert.doesNotMatch(platformSrc, /from 'expo-/, 'the Node/tsc default platform imports no native Expo module');
+  console.log('Bundled fallback is the default snapshot; remote catalog uses only absolute PRODUCTION_ORIGIN URLs.');
+}
 
 console.log('DIC-972 native guest series-data regression checks passed');

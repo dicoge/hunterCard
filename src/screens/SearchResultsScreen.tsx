@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Image } from 'react-native';
 import type { LayoutChangeEvent } from 'react-native';
 import { COLORS, convertPrice } from '../constants';
@@ -6,7 +6,8 @@ import { useSettingsStore } from '../store/settingsStore';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { FEATURES, releaseCardFlags } from '../config/releaseFlags';
 import { resolveCardDisplayName } from '../utils/cardDisplayName';
-import { loadDatabaseJson, loadSeriesNamesJson } from '../utils/staticData';
+import { getCatalogRevision, loadCatalogSnapshot } from '../utils/staticData';
+import { useCatalogRevision } from '../hooks/useCatalogRevision';
 import { useTranslation } from '../i18n';
 import { uniformGridItemStyle } from '../utils/gridLayout';
 import { AppShell, buildShellTabs } from '../components/shell';
@@ -39,23 +40,6 @@ import {
 
 // ── Server-side search constants ──
 
-// Module-level cache for series names (fetched from JSON)
-let cachedSeriesNames: Record<string, string> | null = null;
-let seriesNamesFetchPromise: Promise<Record<string, string>> | null = null;
-
-async function fetchSeriesNames(): Promise<Record<string, string>> {
-  if (cachedSeriesNames) return cachedSeriesNames;
-  if (seriesNamesFetchPromise) return seriesNamesFetchPromise;
-
-  seriesNamesFetchPromise = (async () => {
-    // Native reads the bundled asset; web fetches same-origin /data/* (staticData).
-    const names = await loadSeriesNamesJson();
-    cachedSeriesNames = names;
-    return names;
-  })();
-
-  return seriesNamesFetchPromise;
-}
 const GRADE_RARITY: Record<string, string> = { debut: 'C', '1st': 'U', '2nd': 'R', buzz: 'SR', spot: 'N' };
 
 const COLOR_TO_CN: Record<string, string[]> = {
@@ -82,23 +66,36 @@ const gradeLabels: Record<string, string> = {
 // CardRecord / CardResult / DatabaseSchema are owned by canonicalCardRecord.ts
 // and imported above: the mapper and the shapes it maps between stay together.
 
-// ── Module-level database cache (persists across re-renders and navigation) ──
+// ── Module-level catalog cache (persists across re-renders and navigation) ──
+//
+// Keyed by catalog revision (remote native catalog, 2026-11-06): the database and
+// the series names are read from ONE snapshot (native: bundled / last-known-good /
+// verified remote; web: same-origin /data/*), and a committed newer revision
+// invalidates both together.
 
-let cachedDatabase: DatabaseSchema | null = null;
-let databaseFetchPromise: Promise<DatabaseSchema> | null = null;
+let cachedDatabase: { revision: string; value: DatabaseSchema } | null = null;
+let cachedSeriesNames: { revision: string; value: Record<string, string> } | null = null;
+let catalogFetch: { revision: string; promise: Promise<{ db: DatabaseSchema; names: Record<string, string> }> } | null = null;
 
-async function fetchDatabase(): Promise<DatabaseSchema> {
-  if (cachedDatabase) return cachedDatabase;
-  if (databaseFetchPromise) return databaseFetchPromise;
+async function fetchSearchCatalog(): Promise<{ db: DatabaseSchema; names: Record<string, string> }> {
+  const revision = getCatalogRevision();
+  if (cachedDatabase?.revision === revision && cachedSeriesNames?.revision === revision) {
+    return { db: cachedDatabase.value, names: cachedSeriesNames.value };
+  }
+  if (catalogFetch && catalogFetch.revision === revision) return catalogFetch.promise;
 
-  databaseFetchPromise = (async () => {
-    // Native reads the bundled sanitized asset; web fetches same-origin /data/*.
-    const db: DatabaseSchema = await loadDatabaseJson();
-    cachedDatabase = db;
-    return db;
+  const promise = (async () => {
+    const snapshot = await loadCatalogSnapshot();
+    // A test may have seeded one half for this revision; keep it.
+    const db = cachedDatabase?.revision === snapshot.revision ? cachedDatabase.value : (snapshot.database as DatabaseSchema);
+    const names = cachedSeriesNames?.revision === snapshot.revision ? cachedSeriesNames.value : snapshot.seriesNames;
+    cachedDatabase = { revision: snapshot.revision, value: db };
+    cachedSeriesNames = { revision: snapshot.revision, value: names };
+    return { db, names };
   })();
-
-  return databaseFetchPromise;
+  catalogFetch = { revision, promise };
+  promise.catch(() => { if (catalogFetch?.promise === promise) catalogFetch = null; });
+  return promise;
 }
 
 // ── Search & mapping logic (ported from api/search.ts) ──
@@ -402,6 +399,13 @@ export default function SearchResultsScreen({ route, navigation }: any) {
     </AppShell>
   );
 
+  // Remote native catalog (2026-11-06): a committed newer revision re-runs the
+  // same query in place. That refresh is silent — the draft text, filters and sort
+  // the player is editing stay as they are, and a failed refresh keeps the results
+  // already on screen.
+  const catalogRevision = useCatalogRevision();
+  const shownQueryRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!query.trim()) {
       setError(t('search_missing_query'));
@@ -409,25 +413,34 @@ export default function SearchResultsScreen({ route, navigation }: any) {
       return;
     }
 
+    let alive = true;
+    const silent = shownQueryRef.current === query;
     const run = async () => {
-      setLoading(true);
-      setError(null);
+      if (!silent) {
+        setLoading(true);
+        setError(null);
+      }
       try {
-        const [db, names] = await Promise.all([fetchDatabase(), fetchSeriesNames()]);
+        const { db, names } = await fetchSearchCatalog();
+        if (!alive) return;
         const matched = searchCards(db, query, names);
         setResults(matched);
+        setError(null);
+        shownQueryRef.current = query;
       } catch (err) {
+        if (!alive || silent) return;
         if ((err as any)?.name === 'AbortError') {
           setError(t('search_timeout'));
         } else {
           setError(language === 'ja' ? t('search_database_failed') : (err instanceof Error ? err.message : t('search_database_failed')));
         }
       } finally {
-        setLoading(false);
+        if (alive) setLoading(false);
       }
     };
     run();
-  }, [query, language]);
+    return () => { alive = false; };
+  }, [query, language, catalogRevision]);
 
   if (loading) return wrapInShell(
     <View style={styles.centerContainer}>
@@ -875,10 +888,10 @@ export function __seedSearchResultsCacheForTest(
   db: DatabaseSchema | null,
   names: Record<string, string> | null,
 ): void {
-  cachedDatabase = db;
-  databaseFetchPromise = null;
-  cachedSeriesNames = names;
-  seriesNamesFetchPromise = null;
+  const revision = getCatalogRevision();
+  cachedDatabase = db ? { revision, value: db } : null;
+  cachedSeriesNames = names ? { revision, value: names } : null;
+  catalogFetch = null;
 }
 
 // Pen `App / 02 搜尋結果` shell chrome — back arrow (A2SWo) + search field

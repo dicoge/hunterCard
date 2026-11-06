@@ -30,7 +30,7 @@
 import { releaseCardFlags } from '../config/releaseFlags';
 import { stripDisabledCardFields, type ReleaseCardFlags } from './cardReleaseFilter';
 import { normalizeCardIdentity, resolveCardColorsWithNestedFallback } from './cardNormalization';
-import { loadDatabaseJson, loadSeriesNamesJson } from './staticData';
+import { getCatalogRevision, loadCatalogSnapshot } from './staticData';
 import { adaptCardNumber, pickRepresentative, type RawCard } from './deckCardData';
 import { buildSourcePrintings, canonicalPrinting, type SourceListing } from './printingIdentity';
 
@@ -213,8 +213,10 @@ export function dedupeListings(
   return out;
 }
 
-let cache: CanonicalCardIndex | null = null;
-let inflight: Promise<CanonicalCardIndex> | null = null;
+// Keyed by catalog revision (remote native catalog, 2026-11-06): the index is
+// built from ONE snapshot, so its database and series names share a revision.
+let cache: { revision: string; index: CanonicalCardIndex } | null = null;
+let inflight: { revision: string; promise: Promise<CanonicalCardIndex> } | null = null;
 
 /**
  * Pure raw-records → exact-printing index. Kept separate from the fetch/cache
@@ -340,15 +342,19 @@ export function buildCanonicalCardIndex(
  * native reads its bundled copy instead of a page-relative fetch (DIC-972).
  */
 export async function loadCanonicalCardIndex(): Promise<CanonicalCardIndex> {
-  if (cache) return cache;
-  if (inflight) return inflight;
+  const revision = getCatalogRevision();
+  if (cache?.revision === revision) return cache.index;
+  if (inflight?.revision === revision) return inflight.promise;
 
-  inflight = (async () => {
-    const [db, nameMap] = await Promise.all([loadDatabaseJson(), loadSeriesNamesJson()]);
-    const rawCards = Object.values((db as DatabaseSchema).cards || {}) as (CardRecord & RawCard)[];
-    cache = buildCanonicalCardIndex(rawCards, nameMap || {});
-    return cache;
+  const promise = (async () => {
+    const snapshot = await loadCatalogSnapshot();
+    const rawCards = Object.values((snapshot.database as DatabaseSchema).cards || {}) as (CardRecord & RawCard)[];
+    const index = buildCanonicalCardIndex(rawCards, snapshot.seriesNames || {});
+    cache = { revision: snapshot.revision, index };
+    return index;
   })();
+  inflight = { revision, promise };
+  promise.catch(() => { if (inflight?.promise === promise) inflight = null; });
 
-  return inflight;
+  return promise;
 }

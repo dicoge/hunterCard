@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { copyDatabaseFile, resolveStoreMvpFromEnv } from './lib/store-mvp-sanitize.mjs';
+import { publishNativeCatalog } from './lib/native-catalog-publish.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.join(__dirname, '../dist');
@@ -67,6 +68,23 @@ html = html.replace(
     console.log('  ✅ series-names.json → dist/data/series-names.json');
   } else {
     console.log('  ⚠️ series-names.json not found, skipping');
+  }
+}
+
+// Remote native catalog (2026-11-06): immutable sanitizeDatabase(canonical) +
+// series-names assets, then the manifest LAST. Always sanitized, independent of
+// the web Store MVP profile; a forbidden field fails the build. The stable legacy
+// /data/database.json and /data/series-names.json above are unchanged.
+{
+  const dbSource = path.join(__dirname, '..', 'data', 'database.json');
+  const namesSource = path.join(__dirname, '..', 'data', 'series-names.json');
+  if (fs.existsSync(dbSource) && fs.existsSync(namesSource)) {
+    const manifest = publishNativeCatalog({ canonicalPath: dbSource, seriesNamesPath: namesSource, distDir });
+    console.log(
+      `  ✅ native catalog ${manifest.revision} (${manifest.cardCount} cards, data observed ${manifest.dataObservedAt}) → dist/data/catalog/`,
+    );
+  } else {
+    console.log('  ⚠️ native catalog not published: canonical database or series names missing');
   }
 }
 

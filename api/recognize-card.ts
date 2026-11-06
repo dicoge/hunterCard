@@ -78,18 +78,31 @@ class RecognitionUnavailableError extends Error {}
 
 export const RECOGNITION_UNAVAILABLE_CODE = 'RECOGNITION_UNAVAILABLE';
 
+// Warm-instance catalog cache, bounded by age (remote native catalog, 2026-11-06).
+// A warm function used to keep its first-fetched catalog for its whole lifetime,
+// so scan results could disagree indefinitely with a newer catalog the app now
+// browses. A cached catalog older than DATABASE_TTL_MS is refetched; if that
+// refetch fails, the last good catalog keeps serving (stale beats unavailable) and
+// the next request retries.
+export const DATABASE_TTL_MS = 10 * 60 * 1000;
 let dbFetchPromise: Promise<Record<string, any> | null> | null = null;
+let dbLoadedAt = 0;
+let lastGoodCards: Record<string, any> | null = null;
 
 async function getDatabase(): Promise<Record<string, any> | null> {
-  if (dbFetchPromise) return dbFetchPromise;
+  if (dbFetchPromise && Date.now() - dbLoadedAt < DATABASE_TTL_MS) return dbFetchPromise;
+  dbLoadedAt = Date.now();
   dbFetchPromise = (async () => {
     try {
       const res = await fetch(DATABASE_URL);
-      if (!res.ok) { dbFetchPromise = null; return null; }
-      return (await res.json())?.cards || null;
+      if (!res.ok) { dbFetchPromise = null; return lastGoodCards; }
+      const cards = (await res.json())?.cards || null;
+      if (cards) lastGoodCards = cards;
+      else dbFetchPromise = null;
+      return cards || lastGoodCards;
     } catch {
       dbFetchPromise = null;
-      return null;
+      return lastGoodCards;
     }
   })();
   return dbFetchPromise;

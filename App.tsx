@@ -4,6 +4,7 @@ import AppNavigator from './src/navigation/AppNavigator';
 import { initPushNotifications } from './src/services/pushNotificationService';
 import { FEATURES } from './src/config/releaseFlags';
 import { installAccountSyncBinding } from './src/services/accountSyncBinding';
+import { installCatalogUpdates } from './src/services/catalog/catalogLifecycle';
 // Registers the local diagnostic log as the recorder for sign-in failures (diagnosticsSink).
 import './src/store/scanDiagnosticsStore';
 
@@ -20,12 +21,17 @@ export default function App() {
     // scan list too. Hidden surfaces (bookmarks, price alerts) never push there:
     // accountSyncOrchestrator.activeDomainsOnly + the binding's FEATURES gates.
     installAccountSyncBinding();
+    // Remote native catalog (2026-11-06): verified card/price-only catalog updates
+    // without an App release — launch + foreground manifest check, bundled /
+    // last-known-good fallback. No-op on web.
+    const uninstallCatalogUpdates = installCatalogUpdates();
     // NOTE (DIC-976 CR blocker 2): the web-Google redirect RETURN leg is no
     // longer kicked off here. Boot is now owned exclusively by the auth store's
     // onRehydrateStorage, which serializes the redirect-completion and
     // persisted-session-validation flows so a stale /auth/me can't race/overwrite
     // the callback result. Kicking it off from here too would double-run and
     // reintroduce the race.
+    return uninstallCatalogUpdates;
   }, []);
 
   return (
