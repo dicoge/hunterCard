@@ -138,8 +138,16 @@
       "currency": "JPY",
       "cardId": "hBP07-057_hBP07_R_hBP07-057_R",
       "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-11-07",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-057_hBP07_R_hBP07-057_R",
+      "sourceProduct": "hBP07"
     }
   ],
-  "lastUpdated": "2026-11-06T12:08:15.718Z",
+  "lastUpdated": "2026-11-07T12:07:04.693Z",
   "nameZh": "貓又小粥"
 }
