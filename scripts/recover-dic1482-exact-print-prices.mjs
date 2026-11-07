@@ -65,7 +65,7 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 
-const BUY_FIELDS = ['buyPrice', 'buyPriceVersion', 'buyPriceSource', 'buyPriceTimestamp', 'buyPriceHistory'];
+const BUY_FIELDS = ['buyPrice', 'buyPriceVersion', 'buyPriceSource', 'buyPriceTimestamp', 'buyPriceHistory', 'buyPriceRetained', 'buyLastKnown', 'buyPriorSource'];
 
 function stripBuyFields(entry) {
   const clean = { ...entry };

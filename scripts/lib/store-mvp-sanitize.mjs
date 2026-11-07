@@ -20,13 +20,14 @@ import path from 'path';
  * `buyPriceHistory` is buy-back historical data (same feature group as buyPrice),
  * so it must fail closed too — CR DIC-913 flagged it shipping in the web artifact.
  */
-export const FORBIDDEN_CARD_FIELDS = ['buyPrice', 'buyPriceHistory', 'priceHistory', 'ytStats'];
+export const FORBIDDEN_CARD_FIELDS = ['buyPrice', 'buyPriceHistory', 'priceHistory', 'ytStats', 'buyPriceRetained', 'buyLastKnown', 'buyPriorSource'];
 
 /** Buy-price fields stripped from each prices[] variant entry. Besides the price
  * itself, the per-version provenance stamped by merge-buy-prices.js
- * (buyPriceVersion / buyPriceSource / buyPriceTimestamp) is the same feature
- * group and must fail closed too — it would otherwise leak store buy-back data. */
-export const FORBIDDEN_VARIANT_FIELDS = ['buyPrice', 'buyPriceVersion', 'buyPriceSource', 'buyPriceTimestamp'];
+ * (buyPriceVersion / buyPriceSource / buyPriceTimestamp / buyPriceRetained) is the
+ * same feature group and must fail closed too — it would otherwise leak store
+ * buy-back data. `buyLastKnown` is build-database's unverified buy holder. */
+export const FORBIDDEN_VARIANT_FIELDS = ['buyPrice', 'buyPriceVersion', 'buyPriceSource', 'buyPriceTimestamp', 'buyPriceRetained', 'buyLastKnown'];
 
 /**
  * Internal audit fields — canonicalisation bookkeeping the source of truth
@@ -38,8 +39,30 @@ export const FORBIDDEN_VARIANT_FIELDS = ['buyPrice', 'buyPriceVersion', 'buyPric
  * `_rawPricesArchive` is the pre-canonicalisation prices[] snapshot; every row
  * that carried `エラッタ前/後` in the source lives on this array. If it leaks,
  * shipped artifacts contain the very shop-history labels DIC-1139 hides.
+ *
+ * Buy last-known evidence holders (2026-11-07) must never ship on any profile:
+ *   - `buyLastKnown` on a prices[] entry: the rebuild's unverified carry of the
+ *     previous tuple (merge-buy-prices.js converts or drops it);
+ *   - `buyLastKnown` on a card: the merge's internal evidence record for a retained
+ *     card-level quote, carried across rebuilds;
+ *   - `buyPriorSource` on a card: the rebuild's raw capture of the previous source
+ *     cache, consumed by the merge.
+ * stripInternalAuditFields removes them at card AND prices[] level.
  */
-export const INTERNAL_AUDIT_FIELDS = ['_rawPricesArchive'];
+export const INTERNAL_AUDIT_FIELDS = ['_rawPricesArchive', 'buyLastKnown', 'buyPriorSource'];
+
+/**
+ * Internal DATABASE-level (top-level) bookkeeping that must never ship on any profile:
+ * `buyQuoteRun` is merge-buy-prices.js's run proof (run start, clock, zone, source digest),
+ * used only by regen-buy-alignment.mjs to reproduce that merge (review N5).
+ */
+export const INTERNAL_DATABASE_FIELDS = ['buyQuoteRun'];
+
+function withoutInternalDatabaseFields(db, cards) {
+  const out = { ...db, cards };
+  for (const field of INTERNAL_DATABASE_FIELDS) delete out[field];
+  return out;
+}
 
 /**
  * Resolve the Store MVP profile for a BUILD context (web export) from env.
@@ -122,7 +145,7 @@ export function sanitizeDatabase(db) {
   for (const [key, entry] of Object.entries(db.cards)) {
     cards[key] = stripForbiddenCardFields(entry);
   }
-  return { ...db, cards };
+  return withoutInternalDatabaseFields(db, cards);
 }
 
 /**
@@ -138,7 +161,7 @@ export function stripInternalAuditDatabase(db) {
   for (const [key, entry] of Object.entries(db.cards)) {
     cards[key] = stripInternalAuditFields(entry);
   }
-  return { ...db, cards };
+  return withoutInternalDatabaseFields(db, cards);
 }
 
 /**

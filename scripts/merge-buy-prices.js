@@ -16,9 +16,12 @@
  *   `prices[i].buyPriceVersion`    該價格的精確版本 token（base 印在 bare = 'BASE'）
  *   `prices[i].buyPriceSource`     來源店家（torecolo / fullahead）
  *   `prices[i].buyPriceTimestamp`  來源抓取時間
+ *   `prices[i].buyPriceRetained`   true = 本輪沒有新報價，這是驗證過的上次已知報價（原來源／原時間）；
+ *                                  本輪新報價不帶此欄位。card 層級 `card.buyPriceRetained` 同義。
  * 讓資料面直接可驗證「每個價格都精確對應一個來源的特定版本」，且 build-database / 讀取層
  * 不需重複推測 provenance（DIC-856 版本來源可追溯）。
  */
+import { createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -33,16 +36,33 @@ import {
   classifyVariant,
   sourceToken,
 } from './lib/variant-key.js';
+import { readBuySourceEntries, groupByNumKey, buySourceDigest } from './lib/buy-source-cache.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const DB_PATH = path.join(__dirname, '../data/database.json');
-const BUY_DIR = path.join(__dirname, '../data/buy-prices');
+const BUY_DIR = process.env.HUNTERCARD_BUY_PRICES_DIR || path.join(__dirname, '../data/buy-prices');
 const SOURCE_FILES = ['torecolo-prices.json', 'fullahead-prices.json', 'yuyu-prices.json'];
+const BUY_SOURCES = new Set(SOURCE_FILES.map((f) => f.replace(/-prices\.json$/, '')));
 
 // 來源檔的 timestamp 超過這個時數就視為過期，避免把昨天殘留檔當今天資料寫入（DIC-187）。
 const MAX_SOURCE_AGE_HOURS = 18;
+// 來源 timestamp 晚於 now 超過這個容差 → 未來時間，fail closed（不當新鮮、不當 last-known）。
+const FUTURE_SKEW_MS = 5 * 60 * 1000;
+
+/**
+ * 本次 pipeline 的起始時間（ms）。只認 local-scrape-and-push.sh 明確 export 的
+ * HUNTERCARD_RUN_STARTED_AT（epoch 秒，已在 shell 端拒絕未來 / >1 天的殘留值，這裡再驗一次）。
+ * 缺少或不合法 → null：無法證明哪筆報價是「這一輪」抓到的，所有報價都只能當 last-known
+ * （buyPriceRetained），絕不由檔案 mtime / build 時間 / 18h 年齡推論為本輪新報價。
+ */
+function runStartedAtMs(now = Date.now(), raw = process.env.HUNTERCARD_RUN_STARTED_AT) {
+  if (raw == null || !/^\d+$/.test(String(raw).trim())) return null;
+  const ms = Number(String(raw).trim()) * 1000;
+  if (!Number.isFinite(ms) || ms > now + FUTURE_SKEW_MS || now - ms > 86400 * 1000) return null;
+  return ms;
+}
 
 function localDateStr(d = new Date()) {
   const y = d.getFullYear();
@@ -51,16 +71,32 @@ function localDateStr(d = new Date()) {
   return `${y}-${m}-${day}`;
 }
 
+/** The merge process's own time zone (recorded in the run proof). */
+function processTimeZone() {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+}
+
+/**
+ * YYYY-MM-DD of `ms` in `timeZone`. Used by the merge's history write (with its own zone) and by
+ * regen when it reproduces a merge from its recorded run proof (with the recorded zone), so the
+ * two can never key the same observation differently.
+ */
+function historyDateKey(ms, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(ms));
+  const get = (t) => parts.find((p) => p.type === t)?.value;
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
 /**
  * 讀所有來源檔，建 numKey(正規化卡號) -> 該卡號的買取版本清單。
  * 每筆版本：{ token(精確 rarity/產品碼，bare='' ), price, source, timestamp }。同一
  * (numKey, token) 多筆（例如 fullahead 與 torecolo 都收 SEC）取較高價——那是「同一版本」
  * 的兩個報價，非跨版本；同時記錄該報價的來源店家與抓取時間戳。
  */
-function buildBuyIndex(now = Date.now()) {
+function buildBuyIndex(now = Date.now(), { dir = BUY_DIR, notBefore = null } = {}) {
   const byNum = new Map(); // numKey -> Map(token -> { price, source, timestamp })
   for (const file of SOURCE_FILES) {
-    const p = path.join(BUY_DIR, file);
+    const p = path.join(dir, file);
     let raw;
     try {
       raw = JSON.parse(fs.readFileSync(p, 'utf-8'));
@@ -72,12 +108,28 @@ function buildBuyIndex(now = Date.now()) {
     let fresh = 0;
     let stale = 0;
     let unknown = 0;
-    for (const [srcKey, entry] of Object.entries(raw || {})) {
+    let future = 0;
+    let earlier = 0;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      console.warn(`[merge-buy] ${file} 格式異常（非物件），跳過`);
+      continue;
+    }
+    for (const [srcKey, entry] of Object.entries(raw)) {
       const price = entry && Number(entry.buyPrice);
       if (!Number.isFinite(price) || price <= 0) continue;
       const t = Date.parse(entry && entry.timestamp);
       if (!Number.isFinite(t) || now - t > MAX_SOURCE_AGE_HOURS * 3600 * 1000) {
         stale += 1;
+        continue;
+      }
+      if (t > now + FUTURE_SKEW_MS) {
+        future += 1;
+        continue;
+      }
+      // 本輪起始之前抓到的報價（例如 403 後殘留的昨天檔案）不是本輪新報價：
+      // 不進 fresh index；該版本先前寫入的 tuple 由 reconcile 以 last-known 保留。
+      if (notBefore != null && t < notBefore) {
+        earlier += 1;
         continue;
       }
       const numKey = normalizeCardNumber(srcKey);
@@ -104,6 +156,12 @@ function buildBuyIndex(now = Date.now()) {
     }
     if (unknown > 0) {
       console.warn(`[merge-buy] ${file}: fail-closed 丟棄 ${unknown} 筆未知版本標記（不塌成原印版）`);
+    }
+    if (future > 0) {
+      console.warn(`[merge-buy] ${file}: fail-closed 丟棄 ${future} 筆未來時間戳報價`);
+    }
+    if (earlier > 0) {
+      console.warn(`[merge-buy] ${file}: ${earlier} 筆報價早於本輪起始（非本輪新報價，不當新鮮）`);
     }
     console.log(`[merge-buy] ${file}: ${fresh} 筆新鮮買取價`);
   }
@@ -187,7 +245,10 @@ function assignVariantBuyPrices(variants, buyEntries) {
  * @param {{[k:string]:unknown}} variant
  * @param {{price:number, token:string, source?:string, timestamp?:string}|null} match
  */
-function applyVariantBuyProvenance(variant, match) {
+function applyVariantBuyProvenance(variant, match, { retained = false } = {}) {
+  // 新報價（或清除）一律清掉 last-known 狀態；只有 reconcile 明確驗證過的舊報價才帶 retained。
+  delete variant.buyPriceRetained;
+  delete variant.buyLastKnown;
   if (match == null) {
     delete variant.buyPrice;
     delete variant.buyPriceVersion;
@@ -199,6 +260,205 @@ function applyVariantBuyProvenance(variant, match) {
   variant.buyPriceVersion = match.token === '' ? 'BASE' : match.token;
   variant.buyPriceSource = match.source || '';
   variant.buyPriceTimestamp = match.timestamp || '';
+  if (retained) variant.buyPriceRetained = true;
+}
+
+/**
+ * 先前寫入（或 build-database 以 `buyLastKnown` 暫存）的單一版本報價，轉成可再驗證的
+ * 候選 entry `{ token, price, source, timestamp }`。值、精確版本、來源、時間必須一起完整，
+ * 任何一項缺失／格式錯／來源不在 allowlist／未來時間 → null（fail closed）。
+ * 不讀 buyPriceHistory、不讀使用者成本／帳戶資料。
+ */
+function lastKnownBuyCandidate(variant, now) {
+  if (!variant || typeof variant !== 'object') return null;
+  const held = variant.buyLastKnown && typeof variant.buyLastKnown === 'object' ? variant.buyLastKnown : null;
+  const price = held ? held.price : variant.buyPrice;
+  const version = held ? held.version : variant.buyPriceVersion;
+  const source = held ? held.source : variant.buyPriceSource;
+  const timestamp = held ? held.timestamp : variant.buyPriceTimestamp;
+  if (typeof price !== 'number' || !Number.isFinite(price) || price <= 0) return null;
+  if (typeof version !== 'string' || version === '' || version.startsWith('#') || version === UNKNOWN_TOKEN) return null;
+  if (typeof source !== 'string' || !BUY_SOURCES.has(source)) return null;
+  const t = typeof timestamp === 'string' ? Date.parse(timestamp) : NaN;
+  if (!Number.isFinite(t) || t > now + FUTURE_SKEW_MS) return null;
+  const token = version === 'BASE' ? '' : version;
+  // 版本 token 必須是 allowlist 內的精確代碼（與來源端同一判準），未知尾綴不收。
+  if (token !== '' && sourceToken(token, '') !== token) return null;
+  return { token, price, source, timestamp };
+}
+
+function representativeBuyEntry(card, buyEntries) {
+  const byToken = new Map();
+  for (const b of Array.isArray(buyEntries) ? buyEntries : []) {
+    const prev = byToken.get(b.token);
+    if (prev == null || b.price > prev.price) byToken.set(b.token, b);
+  }
+  const price = representativeBuyPrice(card, buyEntries);
+  if (price == null) return null;
+  const code = normalizeRarityCode(card && card.rarity);
+  const entry = isPremiumRarityCode(code) ? byToken.get(code) : byToken.get('');
+  return entry && entry.price === price ? entry : null;
+}
+
+/**
+ * A raw source-evidence record (`card.buyPriorSource[]` from the rebuild, or a current
+ * source-file entry that is not proven fresh this run) → candidate entry, or null.
+ * Same validity rules as a held tuple: positive value, allowlisted exact token, known shop,
+ * parseable own observation time not in the future. Its own time is kept verbatim.
+ */
+function sourceEvidenceCandidate(rec, now) {
+  if (!rec || typeof rec !== 'object') return null;
+  const { token, price, source, timestamp, sourceKey } = rec;
+  if (typeof price !== 'number' || !Number.isFinite(price) || price <= 0) return null;
+  if (typeof token !== 'string' || token.startsWith('#') || token === UNKNOWN_TOKEN) return null;
+  if (token !== '' && sourceToken(token, '') !== token) return null;
+  if (typeof source !== 'string' || !BUY_SOURCES.has(source)) return null;
+  const t = typeof timestamp === 'string' ? Date.parse(timestamp) : NaN;
+  if (!Number.isFinite(t) || t > now + FUTURE_SKEW_MS) return null;
+  return { token, price, source, timestamp, ...(typeof sourceKey === 'string' ? { sourceKey } : {}) };
+}
+
+/**
+ * Retained-only candidate pool of one card: token → ONE evidence entry.
+ *   - variant tuples / `buyLastKnown` holders, only when compatible with their own variant;
+ *   - the card's own verified holder (`card.buyLastKnown`, written by a previous merge);
+ *   - the rebuild-captured prior source cache (`card.buyPriorSource`);
+ *   - `cacheEntries`: this run's source files' entries that are NOT proven fresh this run.
+ * A token quoted fresh this run is excluded (fresh always wins, even lower). Per token the
+ * NEWEST observation is the evidence; two different quotes (value or shop) at that newest
+ * time → the token is a conflict and nothing is retained for it (fail closed).
+ */
+function buildRetainedCandidatePool(card, fresh, now, cacheEntries, retainedBefore = Infinity) {
+  const freshTokens = new Set(fresh.map((b) => b.token));
+  const raw = [];
+  if (Array.isArray(card.prices)) {
+    card.prices.forEach((v) => {
+      const c = lastKnownBuyCandidate(v, now);
+      if (!c) return;
+      const own = classifyVariant(v && v.name);
+      const compatible = own.token === null ? PARALLEL_RARITIES.has(c.token) : own.token === c.token;
+      if (compatible) raw.push(c);
+    });
+  }
+  if (card.buyLastKnown && typeof card.buyLastKnown === 'object') {
+    const c = lastKnownBuyCandidate({ buyLastKnown: card.buyLastKnown }, now);
+    if (c) raw.push(typeof card.buyLastKnown.sourceKey === 'string' ? { ...c, sourceKey: card.buyLastKnown.sourceKey } : c);
+  }
+  for (const rec of [...(Array.isArray(card.buyPriorSource) ? card.buyPriorSource : []), ...(cacheEntries || [])]) {
+    const c = sourceEvidenceCandidate(rec, now);
+    if (c) raw.push(c);
+  }
+  const byToken = new Map();
+  for (const c of raw) {
+    if (freshTokens.has(c.token)) continue;
+    // A quote observed at/after this run's start (or, with no run marker, after the merge clock)
+    // is never "last known": it is either this run's fresh quote or not trustworthy (review N7).
+    if (!(Date.parse(c.timestamp) < retainedBefore)) continue;
+    if (!byToken.has(c.token)) byToken.set(c.token, []);
+    byToken.get(c.token).push(c);
+  }
+  const pool = new Map();
+  const conflicts = new Set();
+  for (const [token, list] of byToken) {
+    const newest = Math.max(...list.map((c) => Date.parse(c.timestamp)));
+    const atNewest = list.filter((c) => Date.parse(c.timestamp) === newest);
+    const distinct = new Set(atNewest.map((c) => `${c.price}|${c.source}`));
+    if (distinct.size > 1) {
+      conflicts.add(token);
+      continue;
+    }
+    // Same quote seen through several carriers: keep the one that names its source key.
+    pool.set(token, atNewest.find((c) => c.sourceKey) || atNewest[0]);
+  }
+  return { pool, conflicts };
+}
+
+/** Why the card-level quote could not be restored (replay / audit diagnostics). */
+function cardLevelFailReason(card, combined, conflicts) {
+  const code = normalizeRarityCode(card && card.rarity);
+  if (!isKnownRarityCode(code)) return `unknown-rarity:${card && card.rarity}`;
+  const tokens = new Set(combined.map((b) => b.token));
+  if (isPremiumRarityCode(code)) {
+    if (conflicts.has(code)) return `conflicting-evidence:${code}`;
+    return `no-evidence-for-token:${code}`;
+  }
+  if (!isOwnSetPrinting(card && card.cardNumber, card && card.series)) return 'reprint-row-cannot-take-bare-listing';
+  if (tokens.has(code)) return `bare-and-${code}-listings-both-present`;
+  if (conflicts.has('')) return 'conflicting-evidence:BASE';
+  return 'no-evidence-for-token:BASE';
+}
+
+/**
+ * merge 與 regen 共用的唯一 reconcile（就地修改 card）：
+ *   1. 每個版本先只用本輪新報價（freshEntries）精確對齊——與既有規則完全相同，新報價永遠勝出
+ *      （即使比舊報價低），帶自己的來源與時間，並清掉 retained 狀態。
+ *   2. 本輪沒有新報價的版本／card：只從 retained-only 候選池（見 buildRetainedCandidatePool）
+ *      以「同一套」exact 對齊規則重跑；對到候選 → 保留並標 `buyPriceRetained: true`，保留原來源
+ *      與原觀測時間；對不到／歧義／衝突 → 清除（拒絕、不相容、歧義不復活）。
+ *   3. card 層級：本輪新報價 → buyPrice（回傳 entry 供呼叫端以觀測日期寫 history）；否則以同一
+ *      representative 規則（原印集 bare／premium 精確 token／衝突即 null）從 fresh ∪ 候選池選；
+ *      選中候選 → retained，並寫 internal `card.buyLastKnown`（值+版本+來源+時間），使證據在
+ *      下一次全量 rebuild 與連續缺報後仍可再驗證。保留的報價絕不寫 history。
+ *   4. `card.buyPriorSource`（rebuild 暫存的原始來源證據）在此被消耗並移除。
+ * @returns {{ fresh: object|null, retained: boolean, retainedEntry: object|null, cardReason: string|null,
+ *             variantsFresh: number, variantsRetained: number }}
+ */
+function reconcileCardBuyQuotes(card, freshEntries, now, { cacheEntries = [], retainedBefore = Infinity } = {}) {
+  const fresh = Array.isArray(freshEntries) ? freshEntries : [];
+  const { pool, conflicts } = buildRetainedCandidatePool(card, fresh, now, cacheEntries, retainedBefore);
+  const poolEntries = new Set(pool.values());
+  // A conflicted token still EXISTS as source evidence: it enters alignment as a placeholder
+  // that can never be retained, so it keeps blocking what its presence makes ambiguous (a plain
+  // parallel's pool, a base row's bare listing beside its own code) instead of vanishing.
+  const placeholders = [...conflicts].map((token) => ({ token, price: -1, conflict: true }));
+  const combined = [...fresh, ...pool.values(), ...placeholders];
+  let variantsFresh = 0;
+  let variantsRetained = 0;
+  if (Array.isArray(card.prices) && card.prices.length > 0) {
+    const freshMatches = assignVariantBuyMatches(card.prices, fresh);
+    const combinedMatches = assignVariantBuyMatches(card.prices, combined);
+    card.prices.forEach((v, i) => {
+      if (freshMatches[i] != null) {
+        applyVariantBuyProvenance(v, freshMatches[i]);
+        variantsFresh += 1;
+        return;
+      }
+      const m = combinedMatches[i];
+      if (m && poolEntries.has(m)) {
+        applyVariantBuyProvenance(v, m, { retained: true });
+        variantsRetained += 1;
+        return;
+      }
+      applyVariantBuyProvenance(v, null);
+    });
+  }
+
+  delete card.buyPriorSource;
+  delete card.buyPriceRetained;
+  delete card.buyLastKnown;
+  const freshRep = representativeBuyEntry(card, fresh);
+  if (freshRep) {
+    card.buyPrice = freshRep.price;
+    return { fresh: freshRep, retained: false, retainedEntry: null, cardReason: null, variantsFresh, variantsRetained };
+  }
+  const rep = pool.size > 0 ? representativeBuyEntry(card, combined) : null;
+  if (rep && poolEntries.has(rep)) {
+    card.buyPrice = rep.price;
+    card.buyPriceRetained = true;
+    card.buyLastKnown = {
+      price: rep.price,
+      version: rep.token === '' ? 'BASE' : rep.token,
+      source: rep.source,
+      timestamp: rep.timestamp,
+      ...(rep.sourceKey ? { sourceKey: rep.sourceKey } : {}),
+    };
+    return { fresh: null, retained: true, retainedEntry: rep, cardReason: null, variantsFresh, variantsRetained };
+  }
+  delete card.buyPrice;
+  return {
+    fresh: null, retained: false, retainedEntry: null,
+    cardReason: cardLevelFailReason(card, combined, conflicts), variantsFresh, variantsRetained,
+  };
 }
 
 /**
@@ -226,49 +486,221 @@ function representativeBuyPrice(card, buyEntries) {
   return srcByToken.get('') ?? null;
 }
 
-function main() {
-  console.log('[merge-buy] Starting...');
-  const buyIndex = buildBuyIndex(Date.now());
-  if (buyIndex.size === 0) {
-    console.log('[merge-buy] 沒有任何買取價可 merge，database.json 不變。');
-    return;
+/**
+ * 每日 merge：本輪新報價 → 套用 + 以「該報價自身觀測日（本機時區）」寫一筆 history；
+ * 沒有本輪新報價 → 只保留通過驗證的 last-known（buyPriceRetained），不寫 history。
+ * 來源檔缺失／403／過期／毀損時不再提早 return：仍需把 build-database 的 buyLastKnown holder
+ * 轉成明確的 retained 報價或清除（holder 不得留在輸出）。
+ */
+/** Retained quotes must be observed strictly before this instant (run start, else the merge clock). */
+function retainedBoundMs(runStartedAt, now) {
+  return runStartedAt == null ? now : runStartedAt;
+}
+
+/**
+ * The merge's not-fresh BOUND evidence: every valid entry of the source files in `dir` that is
+ * not fresh under (now, runStartedAt) and was observed before the retained bound, grouped by
+ * card number. merge-buy-prices.js offers these as retained-only candidates; regen rebuilds the
+ * exact same set from the digest-verified files to audit retained quotes (review N7).
+ */
+function notFreshBoundEvidence(dir, now, runStartedAt) {
+  const bound = retainedBoundMs(runStartedAt, now);
+  return groupByNumKey(readBuySourceEntries(dir, now).entries.filter((e) => {
+    const t = Date.parse(e.timestamp);
+    const fresh = runStartedAt != null && now - t <= MAX_SOURCE_AGE_HOURS * 3600 * 1000 && t >= runStartedAt;
+    return !fresh && t < bound;
+  }));
+}
+
+/**
+ * Audit every RETAINED quote of an artifact against the bound evidence (review N7), with the
+ * merge's own rules for that exact token:
+ *   - observed at/after the retained bound → `after-run-start`;
+ *   - bound evidence has a NEWER observation → `older-than-bound-evidence`;
+ *   - bound evidence at the same newest time with a different value/shop (or a different quote
+ *     under the same source key) → `conflicts-bound-evidence`;
+ *   - exactly one bound entry (value, shop, time, and source key for a card holder) → COVERED;
+ *   - strictly newer than every bound entry (or none exists) → CARRIED from an earlier run's
+ *     capture: listed in `carried`, whose sha256 (`carryDigest`) the merge records in its run
+ *     proof, so an edited carried quote invalidates the proof.
+ * A retained card without a complete holder, or a retained tuple that is not a valid exact
+ * quote, is `incomplete`. Keys: `${id}\u0000#card` or `${id}\u0000${variantIndex}`.
+ */
+function auditRetainedQuotes(db, cacheByNum, { now, runStartedAt, freshByNum = new Map() }) {
+  const bound = retainedBoundMs(runStartedAt, now);
+  const violations = new Map();
+  const carried = [];
+  let covered = 0;
+  const judge = (key, numKey, q, withSourceKey) => {
+    const t = Date.parse(q.timestamp);
+    if (!(t < bound)) { violations.set(key, 'after-run-start'); return; }
+    const ev = ((numKey && cacheByNum.get(numKey)) || []).filter((e) => e.token === q.token);
+    const newest = ev.length ? Math.max(...ev.map((e) => Date.parse(e.timestamp))) : -Infinity;
+    if (newest > t) { violations.set(key, 'older-than-bound-evidence'); return; }
+    // N8: the quote's OWN provider still quotes this exact token in the bound files. Its
+    // retained observation cannot be newer than that entry (a scrape writes this run's times; a
+    // 403 / missing file leaves the very file that was captured), so it is never "carried".
+    // Stricter than per-key: any own-provider entry for the token counts (a card holder's own
+    // sourceKey under the same provider included). A different provider, or an own provider that
+    // no longer quotes the token at all, remains the legitimate carried case.
+    const own = ev.filter((e) => e.source === q.source);
+    if (own.length && t > Math.max(...own.map((e) => Date.parse(e.timestamp)))) {
+      violations.set(key, 'newer-than-own-bound-entry');
+      return;
+    }
+    if (newest === t) {
+      const atNewest = ev.filter((e) => Date.parse(e.timestamp) === t);
+      const same = (e) => e.price === q.price && e.source === q.source && Date.parse(e.timestamp) === t
+        && (!withSourceKey || !q.sourceKey || e.sourceKey === q.sourceKey);
+      const distinct = new Set(atNewest.map((e) => `${e.price}|${e.source}`));
+      if (distinct.size === 1 && atNewest.some(same)) { covered += 1; return; }
+      violations.set(key, 'conflicts-bound-evidence');
+      return;
+    }
+    carried.push([key, q.token, q.price, q.source, q.timestamp, withSourceKey ? (q.sourceKey || '') : ''].join('|'));
+  };
+  for (const [id, card] of Object.entries(db.cards || {})) {
+    if (!card || typeof card !== 'object' || !card.cardNumber) continue;
+    const numKey = normalizeCardNumber(card.cardNumber);
+    (Array.isArray(card.prices) ? card.prices : []).forEach((v, i) => {
+      if (!v || v.buyPriceRetained !== true) return;
+      const key = `${id}\u0000${i}`;
+      const q = lastKnownBuyCandidate({ ...v, buyLastKnown: undefined }, now);
+      if (!q) { violations.set(key, 'incomplete'); return; }
+      judge(key, numKey, q, false);
+    });
+    if (card.buyPriceRetained === true) {
+      const key = `${id}\u0000#card`;
+      const h = card.buyLastKnown;
+      const q = h && typeof h === 'object' ? lastKnownBuyCandidate({ buyLastKnown: h }, now) : null;
+      if (!q || card.buyPrice !== q.price) { violations.set(key, 'incomplete'); return; }
+      judge(key, numKey, { ...q, sourceKey: typeof h.sourceKey === 'string' ? h.sourceKey : undefined }, true);
+    }
+    // N9: every retained quote must be exactly what the merge's OWN rules assign for this row —
+    // re-run the real reconcile on a CLONE whose only carriers are the artifact's retained quotes
+    // plus the bound evidence (ambiguity tokens), with the same fresh entries and bound. This
+    // re-applies the card printing rule (premium exact code / own-set bare with no own-code
+    // listing / reprint or unknown rarity → none) and the variant uniqueness rules (duplicate
+    // token, single plain parallel with a single unclaimed parallel listing). The original is
+    // never modified here; only mismatching quotes become violations (cleared by the caller).
+    const hasRetained = card.buyPriceRetained === true || (Array.isArray(card.prices) && card.prices.some((v) => v && v.buyPriceRetained === true));
+    if (hasRetained) {
+      const clone = JSON.parse(JSON.stringify(card));
+      reconcileCardBuyQuotes(clone, (numKey && freshByNum.get(numKey)) || [], now, {
+        cacheEntries: (numKey && cacheByNum.get(numKey)) || [], retainedBefore: bound,
+      });
+      (Array.isArray(card.prices) ? card.prices : []).forEach((v, i) => {
+        if (!v || v.buyPriceRetained !== true) return;
+        const key = `${id}\u0000${i}`;
+        const c = clone.prices && clone.prices[i];
+        const same = c && c.buyPriceRetained === true && c.buyPrice === v.buyPrice && c.buyPriceVersion === v.buyPriceVersion
+          && c.buyPriceSource === v.buyPriceSource && c.buyPriceTimestamp === v.buyPriceTimestamp;
+        if (!same && !violations.has(key)) violations.set(key, 'not-the-merge-assignment');
+      });
+      if (card.buyPriceRetained === true) {
+        const key = `${id}\u0000#card`;
+        const h = card.buyLastKnown || {};
+        const ch = clone.buyLastKnown || {};
+        const same = clone.buyPriceRetained === true && clone.buyPrice === card.buyPrice
+          && ch.price === h.price && ch.version === h.version && ch.source === h.source && ch.timestamp === h.timestamp;
+        if (!same && !violations.has(key)) violations.set(key, 'not-the-merge-assignment');
+      }
+    }
   }
+  // Carried quotes that are not violations; violations never enter the digest.
+  for (let i = carried.length - 1; i >= 0; i -= 1) if (violations.has(carried[i].split('|')[0])) carried.splice(i, 1);
+  carried.sort();
+  return { violations, carried: carried.length, covered, carryDigest: createHash('sha256').update(carried.join('\n')).digest('hex') };
+}
 
-  const db = JSON.parse(fs.readFileSync(DB_PATH, 'utf-8'));
-  const date = localDateStr();
-  let cardsUpdated = 0;
-  let variantsMatched = 0;
+/** Clear every audited violation (variant tuple / card quote + holder). Shared by merge and regen. */
+function clearRetainedViolations(db, violations) {
+  for (const key of violations.keys()) {
+    const [id, slot] = key.split('\u0000');
+    const card = db.cards && db.cards[id];
+    if (!card) continue;
+    if (slot === '#card') {
+      delete card.buyPrice;
+      delete card.buyPriceRetained;
+      delete card.buyLastKnown;
+    } else if (Array.isArray(card.prices) && card.prices[Number(slot)]) {
+      applyVariantBuyProvenance(card.prices[Number(slot)], null);
+    }
+  }
+}
 
+function mergeBuyPricesInto(db, { now = Date.now(), runStartedAt = runStartedAtMs(now), dir = BUY_DIR } = {}) {
+  if (runStartedAt == null) {
+    console.warn('[merge-buy] 無合法 HUNTERCARD_RUN_STARTED_AT：無法證明本輪新報價，所有報價只當 last-known 保留');
+  }
+  // 沒有本輪起始時間 → 沒有任何報價能被證明為本輪新報價。
+  const buyIndex = runStartedAt == null ? new Map() : buildBuyIndex(now, { dir, notBefore: runStartedAt });
+  // 來源檔中「未被證明為本輪新報價」的合法 entry（過期、早於本輪起始、或無 run marker）：
+  // 不再忽略，而是作為 retained-only 候選（原來源／原時間，永不當新鮮）。
+  // …observed before the retained bound (a quote at/after the run start is never "last known").
+  const cacheByNum = notFreshBoundEvidence(dir, now, runStartedAt);
+  const retainedBefore = retainedBoundMs(runStartedAt, now);
+  const timeZone = processTimeZone();
+  const stats = { buyIndexSize: buyIndex.size, cardsFresh: 0, cardsRetained: 0, variantsFresh: 0, variantsRetained: 0 };
   for (const card of Object.values(db.cards || {})) {
-    if (!card.cardNumber) continue;
+    if (!card || typeof card !== 'object') continue;
+    if (!card.cardNumber) {
+      // No card number → nothing can be aligned; internal holders never survive the merge.
+      delete card.buyPriorSource;
+      delete card.buyLastKnown;
+      continue;
+    }
     const numKey = normalizeCardNumber(card.cardNumber);
     const buyEntries = (numKey && buyIndex.get(numKey)) || [];
-
-    // 1) 每個版本自帶 matched buyPrice + provenance（對不到 → 清掉，fail closed）。
-    if (Array.isArray(card.prices) && card.prices.length > 0) {
-      const perVariant = assignVariantBuyMatches(card.prices, buyEntries);
-      card.prices.forEach((v, i) => {
-        const m = perVariant[i];
-        applyVariantBuyProvenance(v, m);
-        if (m != null) variantsMatched += 1;
-      });
-    }
-
-    // 2) card 層級只放「本列這個印次」被來源證明的價（無則清掉，不留舊的混版值）。
-    const rep = representativeBuyPrice(card, buyEntries);
-    if (rep != null) {
-      card.buyPrice = rep;
+    const r = reconcileCardBuyQuotes(card, buyEntries, now, { cacheEntries: (numKey && cacheByNum.get(numKey)) || [], retainedBefore });
+    stats.variantsFresh += r.variantsFresh;
+    stats.variantsRetained += r.variantsRetained;
+    if (r.fresh) {
       if (!card.buyPriceHistory || typeof card.buyPriceHistory !== 'object') card.buyPriceHistory = {};
-      card.buyPriceHistory[date] = rep;
-      cardsUpdated += 1;
-    } else {
-      delete card.buyPrice;
+      const key = historyDateKey(Date.parse(r.fresh.timestamp), timeZone);
+      // 既有歷史紀錄不改寫：同一觀測日已有紀錄則保留原值。
+      if (!Object.hasOwn(card.buyPriceHistory, key)) card.buyPriceHistory[key] = r.fresh.price;
+      else if (card.buyPriceHistory[key] !== r.fresh.price) stats.historyKept = (stats.historyKept || 0) + 1;
+      stats.cardsFresh += 1;
+    } else if (r.retained) {
+      stats.cardsRetained += 1;
     }
   }
+  // Run proof (review N5): exactly what this merge proved, bound to the bytes it read. Internal
+  // artifact metadata (stripped from every published profile). regen-buy-alignment.mjs uses it
+  // to REPRODUCE these fresh / retained decisions and history keys byte-for-byte, instead of
+  // re-deciding from snapshot age (which would turn retained quotes back into "fresh").
+  // N7: bind every retained quote — covered ones to the bound source entries (regen re-checks
+  // them against the same files), carried ones (newer than any bound entry; from an earlier
+  // run's capture) by digest.
+  let audit = auditRetainedQuotes(db, cacheByNum, { now, runStartedAt, freshByNum: buyIndex });
+  for (let pass = 0; audit.violations.size > 0 && pass < 5; pass += 1) {
+    // By construction the merge never produces these. If it ever does, fail CLOSED: the quote
+    // cannot be certified against its evidence, so it is not shown (never shown as new either).
+    console.warn(`[merge-buy] ${audit.violations.size} retained quote(s) failed the evidence audit and were cleared: ${[...audit.violations].slice(0, 5).map(([k, why]) => `${k.replace('\u0000', ' ')}=${why}`).join(', ')}`);
+    clearRetainedViolations(db, audit.violations);
+    audit = auditRetainedQuotes(db, cacheByNum, { now, runStartedAt, freshByNum: buyIndex });
+  }
+  if (audit.violations.size > 0) throw new Error('[merge-buy] retained evidence audit did not converge; refusing to certify the artifact');
+  stats.retainedCovered = audit.covered;
+  stats.retainedCarried = audit.carried;
+  db.buyQuoteRun = {
+    runStartedAt: runStartedAt == null ? null : new Date(runStartedAt).toISOString(),
+    now: new Date(now).toISOString(),
+    timeZone,
+    sourceDigest: buySourceDigest(dir),
+    retainedCarryDigest: audit.carryDigest,
+  };
+  return stats;
+}
 
+function main() {
+  console.log('[merge-buy] Starting...');
+  const db = JSON.parse(fs.readFileSync(DB_PATH, 'utf-8'));
+  const s = mergeBuyPricesInto(db);
   fs.writeFileSync(DB_PATH, `${JSON.stringify(db, null, 2)}\n`, 'utf-8');
   console.log(
-    `[merge-buy] ✅ Done — 買取卡號 ${buyIndex.size} 個；card 層級對齊 ${cardsUpdated} 張，版本層級對齊 ${variantsMatched} 筆（date ${date}）`
+    `[merge-buy] ✅ Done — 本輪買取卡號 ${s.buyIndexSize} 個；card 層級新報價 ${s.cardsFresh} 張、保留舊報價 ${s.cardsRetained} 張；版本層級新報價 ${s.variantsFresh} 筆、保留舊報價 ${s.variantsRetained} 筆（history 只記本輪新報價的觀測日）`
   );
 }
 
@@ -287,4 +719,26 @@ if (isMain) {
   }
 }
 
-export { main as mergeBuyPrices, buildBuyIndex, buyPriceByToken, assignVariantBuyMatches, assignVariantBuyPrices, applyVariantBuyProvenance, representativeBuyPrice };
+export {
+  main as mergeBuyPrices,
+  mergeBuyPricesInto,
+  reconcileCardBuyQuotes,
+  buildRetainedCandidatePool,
+  sourceEvidenceCandidate,
+  lastKnownBuyCandidate,
+  runStartedAtMs,
+  buildBuyIndex,
+  buyPriceByToken,
+  assignVariantBuyMatches,
+  assignVariantBuyPrices,
+  applyVariantBuyProvenance,
+  representativeBuyPrice,
+  representativeBuyEntry,
+  historyDateKey,
+  processTimeZone,
+  notFreshBoundEvidence,
+  auditRetainedQuotes,
+  clearRetainedViolations,
+  retainedBoundMs,
+  MAX_SOURCE_AGE_HOURS,
+};

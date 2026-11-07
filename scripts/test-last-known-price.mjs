@@ -97,7 +97,7 @@ await test('A1 classifier: fresh / last-known / unknown-date / no-quote, with th
   assert.equal(classifyPriceFreshness({ price: 980, quotedAt: at(PRICE_FRESH_MAX_AGE_MS), now }).state, 'fresh', 'exactly 7 days is still inside the window');
   assert.equal(classifyPriceFreshness({ price: 980, quotedAt: at(PRICE_FRESH_MAX_AGE_MS + 1), now }).state, 'last-known');
   const old = classifyPriceFreshness({ price: 980, quotedAt: '2026-08-25T03:04:05.678Z', now });
-  assert.deepEqual(old, { state: 'last-known', quotedAt: '2026-08-25T03:04:05.678Z', quoteDate: '2026-08-25' }, 'original time string and date kept verbatim');
+  assert.deepEqual(old, { state: 'last-known', quotedAt: '2026-08-25T03:04:05.678Z', quoteDate: '2026-08-25', retained: false }, 'original time string and date kept verbatim');
   for (const bad of [null, undefined, '', '   ', 'yesterday', '25/08/2026']) {
     assert.equal(classifyPriceFreshness({ price: 980, quotedAt: bad, now }).state, 'unknown-date', `unknown date stays unknown: ${bad}`);
   }

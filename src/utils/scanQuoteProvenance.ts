@@ -14,19 +14,29 @@ import { buildSourcePrintings, type SourceListing } from './printingIdentity';
 export interface ScanQuoteFields {
   priceQuotedAt: string | null;
   printingQuotedAt: Record<string, string>;
+  /** Present only when the row's writer marked its sell quote retained (no new quote this run). */
+  priceRetained?: true;
+  printingRetained?: Record<string, boolean>;
 }
 
 export function scanQuoteProvenance(card: {
-  provenance?: { quotedAt?: string | null } | null;
+  provenance?: { quotedAt?: string | null; retained?: boolean } | null;
   prices?: ReadonlyArray<SourceListing | null | undefined> | null;
 }): ScanQuoteFields {
   const raw = card?.provenance?.quotedAt;
   const quotedAt = typeof raw === 'string' && raw.trim() ? raw : null;
+  // Same row, same listings: the retained status applies to every printing the time does.
+  const retained = card?.provenance?.retained === true;
   const printingQuotedAt: Record<string, string> = {};
-  if (quotedAt) {
-    for (const p of buildSourcePrintings(card?.prices ?? [])) {
-      if (!p.ambiguous && p.sellPrice != null) printingQuotedAt[p.printing] = quotedAt;
-    }
+  const printingRetained: Record<string, boolean> = {};
+  for (const p of buildSourcePrintings(card?.prices ?? [])) {
+    if (p.ambiguous || p.sellPrice == null) continue;
+    if (quotedAt) printingQuotedAt[p.printing] = quotedAt;
+    if (retained) printingRetained[p.printing] = true;
   }
-  return { priceQuotedAt: quotedAt, printingQuotedAt };
+  return {
+    priceQuotedAt: quotedAt,
+    printingQuotedAt,
+    ...(retained ? { priceRetained: true as const, printingRetained } : {}),
+  };
 }

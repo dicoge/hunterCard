@@ -206,6 +206,11 @@ try {
   assert.ok(positiveOf(out1[Q.id]).length > 0, 'Q (B1): its preserved listings ship with the value (not the matched unpriced entry)');
   assert.equal(Math.min(...positiveOf(out1[Q.id])), Q.sellPrice, 'Q (B1): headline = cheapest preserved listing (headline and variants agree)');
   assert.equal(classifyExactPrintPayload(out1[Q.id]).proven, true, 'Q (B1): the shipped bundle stays exact-print proven for the next build');
+  // Explicit "no new quote this run" (2026-11-07): stated by the writer for P (2 days old,
+  // i.e. inside the 7-day window — age alone would have called it fresh) and Q; never for R.
+  assert.equal(out1[P.id]?.sellQuoteRetained, true, 'P: retained status is explicit even though its quote is < 7 days old');
+  assert.equal(out1[Q.id]?.sellQuoteRetained, true, 'Q: matched-but-unpriced → retained');
+  assert.equal(out1[R.id]?.sellQuoteRetained, undefined, 'R: freshly priced this run → no retained flag');
 
   assert.equal(out1[R.id]?.sellPrice, R.sellPrice, 'R: fresh exact-printing quote');
   assert.equal(out1[R.id]?.timestamp, NOW1, 'R: carries its own (fixture) quote time');
@@ -223,6 +228,8 @@ try {
   const out2 = JSON.parse(fs.readFileSync(dbPath, 'utf8')).cards;
   assert.equal(out2[P.id]?.sellPrice, P.sellPrice + 10, 'P: the new verified quote wins');
   assert.equal(out2[P.id]?.timestamp, NOW2, 'P: and carries its own new time');
+  assert.equal(out2[P.id]?.sellQuoteRetained, undefined, 'P: a new quote clears the retained status');
+  assert.equal(out2[Q.id]?.sellQuoteRetained, true, 'Q: still no new quote → still retained');
   const pRecs = readHistory(P.id)?.records || [];
   assert.ok(pRecs.some((r) => [today0, today1, today2].includes(r.date) && r.price === P.sellPrice + 10),
     'P: once quoted again, today\'s record IS written');

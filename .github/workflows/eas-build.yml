@@ -155,19 +155,16 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Install Android build-tools (apksigner)
+      # 2026-11-07: apksigner comes from the runner's PRE-INSTALLED build-tools only. No
+      # cmdline-tools download, no sdkmanager, no license acceptance; the guard fails
+      # closed when build-tools;35.0.0 / apksigner / the reviewed license file is missing
+      # or carries unreviewed terms (scripts/ci/android-sdk-policy.json).
+      - name: Verify pre-installed Android build-tools (apksigner)
         if: ${{ inputs.profile == 'production-apk' }}
         run: |
           set -euo pipefail
-          ANDROID_HOME=$HOME/android-sdk
-          SDK_TOOLS=$ANDROID_HOME/cmdline-tools/latest
-          mkdir -p "$SDK_TOOLS"
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O /tmp/cmdline-tools.zip
-          unzip -q /tmp/cmdline-tools.zip -d /tmp/
-          mv /tmp/cmdline-tools/* "$SDK_TOOLS/"
-          rm -f /tmp/cmdline-tools.zip
-          yes | "$SDK_TOOLS/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
-          "$SDK_TOOLS/bin/sdkmanager" "build-tools;35.0.0" > /dev/null
+          ANDROID_HOME=${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}
+          node scripts/ci/android-sdk-guard.mjs --profile apksigner --sdk-root "$ANDROID_HOME"
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           echo "$ANDROID_HOME/build-tools/35.0.0" >> $GITHUB_PATH
 

@@ -461,6 +461,9 @@ function findRecomputeViolations(cards, entriesFor) {
     if (!Array.isArray(c.prices) || c.prices.length === 0) continue;
     const expected = assignVariantBuyPrices(c.prices, entriesFor(normalizeCardNumber(c.cardNumber)));
     c.prices.forEach((v, i) => {
+      // 明確保留的上次已知報價（buyPriceRetained）不是本快照來源算出的值，另由
+      // retained invariant 驗證其完整 provenance；其餘版本必須與來源重算完全一致。
+      if (v && v.buyPriceRetained === true && expected[i] == null) return;
       scanned += 1;
       const stored = v.buyPrice ?? null;
       if (stored !== (expected[i] ?? null)) {
@@ -480,6 +483,7 @@ function findProvenanceViolations(cards, entriesFor) {
     const expected = assignVariantBuyMatches(c.prices, entriesFor(normalizeCardNumber(c.cardNumber)));
     c.prices.forEach((v, i) => {
       const e = expected[i];
+      if (v && v.buyPriceRetained === true && e == null) return;
       scanned += 1;
       const wantVersion = e ? (e.token === '' ? 'BASE' : e.token) : null;
       const wantSource = e ? e.source : null;
@@ -537,12 +541,41 @@ check('全庫 invariant: 每個版本 buyPrice 的 provenance（版本/來源/�
   console.log(`      （掃描 ${scanned} 個聚合版本；canonical 官方印次以 card.buyPrice invariant 驗證）`);
 });
 
+check('全庫 invariant: retained（上次已知）報價 provenance 完整、版本相容、無 holder 殘留', () => {
+  const violations = [];
+  for (const [id, c] of Object.entries(db)) {
+    for (const v of Array.isArray(c.prices) ? c.prices : []) {
+      if (!v) continue;
+      if (v.buyLastKnown !== undefined) violations.push(`${id} :: ${v.name} buyLastKnown holder 殘留於輸出`);
+      if (v.buyPriceRetained === undefined) continue;
+      if (v.buyPriceRetained !== true || !(v.buyPrice > 0)) { violations.push(`${id} :: ${v.name} retained 形狀錯誤`); continue; }
+      if (!['torecolo', 'fullahead', 'yuyu'].includes(v.buyPriceSource)) violations.push(`${id} :: ${v.name} retained 來源 ${v.buyPriceSource}`);
+      if (!Number.isFinite(Date.parse(v.buyPriceTimestamp))) violations.push(`${id} :: ${v.name} retained 時間無效`);
+      const own = classifyVariant(v.name);
+      const tok = v.buyPriceVersion === 'BASE' ? '' : v.buyPriceVersion;
+      const ok = own.token === null ? PARALLEL_RARITIES.has(tok) : own.token === tok;
+      if (!ok) violations.push(`${id} :: ${v.name} retained 版本 ${v.buyPriceVersion} 與本版本不相容`);
+    }
+  }
+  assert.equal(violations.length, 0, `retained 報價違規 ${violations.length} 筆，例：\n      ${violations.slice(0, 8).join('\n      ')}`);
+});
+
 check('全庫 invariant: card.buyPrice 等於 representativeBuyPrice（本列印次精確 token）', () => {
   const violations = [];
   for (const [id, c] of Object.entries(db)) {
     const num = normalizeCardNumber(c.cardNumber);
     const expected = representativeBuyPrice(c, buyEntriesFor(num));
     const stored = c.buyPrice ?? null;
+    if (c.buyPriceRetained === true && expected == null) {
+      // 保留的 card 層級價必須有證據：本列某個 retained 版本的報價，或 card 自身的 internal
+      // 證據 holder（N1：無版本 tuple 的 card 層級報價，值+版本+來源+觀測時間完整）。不得憑空出現。
+      const h = c.buyLastKnown;
+      const holderOk = h && typeof h === 'object' && h.price === stored && typeof h.version === 'string'
+        && ['torecolo', 'fullahead', 'yuyu'].includes(h.source) && Number.isFinite(Date.parse(h.timestamp));
+      const backed = holderOk || (c.prices || []).some((v) => v && v.buyPriceRetained === true && v.buyPrice === stored);
+      if (!backed) violations.push(`${id} retained buyPrice=${stored} 無對應 retained 版本或 card 證據`);
+      continue;
+    }
     if (stored !== (expected ?? null)) violations.push(`${id} stored=${stored} expected=${expected ?? null}`);
   }
   assert.equal(violations.length, 0, `card.buyPrice 與精確重算不符 ${violations.length} 筆，例：\n      ${violations.slice(0, 8).join('\n      ')}`);
@@ -583,6 +616,7 @@ check('全庫 invariant（獨立於 resolver）: 每個 card.buyPrice 都能綁�
   for (const [id, c] of Object.entries(db)) {
     const stored = c.buyPrice ?? null;
     if (stored === null) continue; // fail closed 永遠合法
+    if (c.buyPriceRetained === true) continue; // 上次已知報價：由 retained invariant 驗證
     priced += 1;
     const perNum = listings.get(normalizeCardNumber(c.cardNumber)) || new Map();
     const code = normalizeRarityCode(c.rarity);

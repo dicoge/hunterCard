@@ -167,12 +167,15 @@ function stripStoreMvpFields<T extends Record<string, any>>(card: T): T {
   delete out.buyPriceHistory;
   delete out.priceHistory;
   delete out.ytStats;
+  delete out.buyPriceRetained;
+  delete out.buyLastKnown;
+  delete out.buyPriorSource;
   if (Array.isArray(out.prices)) {
     out.prices = out.prices.map((p: any) => {
       if (p && typeof p === 'object') {
         const rest: Record<string, any> = { ...p };
-        // per-version buyPrice + its merge-buy-prices provenance stamps
-        for (const field of ['buyPrice', 'buyPriceVersion', 'buyPriceSource', 'buyPriceTimestamp']) {
+        // per-version buyPrice + its merge-buy-prices provenance / last-known stamps
+        for (const field of ['buyPrice', 'buyPriceVersion', 'buyPriceSource', 'buyPriceTimestamp', 'buyPriceRetained', 'buyLastKnown']) {
           delete rest[field];
         }
         return rest;
@@ -181,6 +184,17 @@ function stripStoreMvpFields<T extends Record<string, any>>(card: T): T {
     });
   }
   return out as T;
+}
+
+// Internal buy evidence holders (scripts INTERNAL_AUDIT_FIELDS) never cross the wire on ANY
+// profile: `fmt` passes prices[] through, so drop them there even for the full profile.
+function stripInternalBuyHolders(prices: any): any {
+  if (!Array.isArray(prices)) return prices;
+  return prices.map((p: any) => {
+    if (!p || typeof p !== 'object' || !('buyLastKnown' in p || 'buyPriorSource' in p)) return p;
+    const { buyLastKnown: _held, buyPriorSource: _prior, ...rest } = p;
+    return rest;
+  });
 }
 
 function fmt(entry: any, storeMvp = false) {
@@ -216,7 +230,7 @@ function fmt(entry: any, storeMvp = false) {
     series: entry.series,
     rarity: entry.rarity,
     imageUrl: entry.officialImage || entry.localImage || '',
-    prices: entry.prices,
+    prices: stripInternalBuyHolders(entry.prices),
     priceHistory: entry.priceHistory || {},
     ytStats: entry.ytStats ?? null,
     // v44: product / quote time / shop listing of THIS row's price, so the client can tell

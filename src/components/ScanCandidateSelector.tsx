@@ -83,10 +83,14 @@ export default function ScanCandidateSelector({
     // 最近已知售價 (2026-11-07, review R2): a SHOWN price is labelled from ITS OWN quote time —
     // older than the DIC-1229 window → 舊價 next to its original date; a price whose time is
     // missing / unparseable / in the future → 報價日期不明 (never presented as current).
-    const freshness = classifyPriceFreshness({ price: card.sellPrice, quotedAt: p.quotedAt, now });
+    // The row writer's explicit retained flag (no new quote this run) is shown even for a
+    // one-day-old quote — age alone never makes it current.
+    const freshness = classifyPriceFreshness({ price: card.sellPrice, quotedAt: p.quotedAt, now, retained: p.retained === true });
     const age = freshness.state === 'last-known'
-      ? t('price_quote_old_tag')
-      : freshness.state === 'unknown-date' ? t('price_quote_unknown_date') : '';
+      ? t(freshness.retained ? 'price_quote_retained_tag' : 'price_quote_old_tag')
+      : freshness.state === 'unknown-date'
+        ? t(freshness.retained ? 'price_quote_retained_unknown_date' : 'price_quote_unknown_date')
+        : '';
     const parts = [product, freshness.state === 'unknown-date' ? '' : date, age];
     if (card.priceConflict) parts.push(t('scan_quote_conflict'));
     if (card.lookalike) parts.push(t('scan_version_unconfirmed'));

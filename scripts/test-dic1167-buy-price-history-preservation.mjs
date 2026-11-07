@@ -23,6 +23,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { restoreBuyPriceHistory, sanitizeBuyPriceHistory } from './lib/preserve-market-fields.js';
+import { readBuySourceEntries } from './lib/buy-source-cache.js';
+import { normalizeCardNumber } from './lib/variant-key.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -118,7 +120,12 @@ console.log(`  ✓ mutation sensitivity: ${Object.keys(mutations).length}/${Obje
     const db = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
     const OLD = '2000-01-01';
     const listedId = Object.keys(db.cards).find((id) => db.cards[id].buyPrice != null);
-    const delistedId = Object.keys(db.cards).find((id) => db.cards[id].buyPrice == null && db.cards[id].cardNumber && db.cards[id].rarity);
+    // "Unlisted" = no buy evidence at all. Since review N1 (PR283) a printing whose number
+    // still has a valid entry in the source cache is legitimately RETAINED as last-known, so
+    // the null-buyPrice expectation is pinned on a number the cache never quoted.
+    const quotedNums = new Set(readBuySourceEntries(path.join(sandbox, 'data/buy-prices')).entries.map((e) => e.numKey));
+    const delistedId = Object.keys(db.cards).find((id) => db.cards[id].buyPrice == null && db.cards[id].cardNumber && db.cards[id].rarity
+      && !quotedNums.has(normalizeCardNumber(db.cards[id].cardNumber)));
     assert.ok(listedId && delistedId, 'artifact must contain a listed and an unlisted printing');
     db.cards[listedId].buyPriceHistory = { [OLD]: 111, ...(db.cards[listedId].buyPriceHistory || {}) };
     db.cards[delistedId].buyPriceHistory = { [OLD]: 222 };

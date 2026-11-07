@@ -7,8 +7,10 @@ import {
   findPreservedMatch,
   applyPreservedMarketFields,
   restoreBuyPriceHistory,
+  restoreBuyQuotes,
 } from './lib/preserve-market-fields.js';
 import { printingId, imageSuffix } from './lib/printing-identity.js';
+import { capturePriorBuySources } from './lib/buy-source-cache.js';
 import { broadcastYtStats } from './lib/yt-stats-fanout.js';
 import {
   classifyExactPrintPayload,
@@ -213,9 +215,11 @@ export function syncOfficialCatalogToDatabase({
   translationPath: nameZhMapPath = translationPath,
   effectsJpPath: jpEffectsPath = effectsJpPath,
   effectsZhPath: zhEffectsPath = effectsZhPath,
+  buyPricesDirectory = process.env.HUNTERCARD_BUY_PRICES_DIR || null,
 } = {}) {
   const db = readJson(databasePath);
   const imagesDirectory = path.join(path.dirname(databasePath), 'images');
+  const buyDirectory = buyPricesDirectory || path.join(path.dirname(databasePath), 'buy-prices');
   if (!db.cards || typeof db.cards !== 'object') throw new Error('data/database.json missing cards map');
 
   // DIC-1421: brand-new printings (new id, new sourceProduct) have no previous
@@ -312,6 +316,14 @@ export function syncOfficialCatalogToDatabase({
   // scalar `buyPrice` / `prices[].buyPrice` claims are never restored — the
   // buy-alignment step re-derives those from the committed sources.
   const buyPriceHistory = restoreBuyPriceHistory(db.cards, previousCards);
+  // Last-known BUY quote (2026-11-07): same exact-variant holder carry as build-database.js;
+  // merge-buy-prices.js (the next step in both callers: the DIC-1334 fallback and
+  // official-catalog-sync.yml — neither scrapes buy prices) re-verifies or clears every holder.
+  restoreBuyQuotes(db.cards, previousCards);
+  // Review N1/N4: the source cache on disk is this writer's only buy evidence and was observed
+  // by an EARLIER run; capture it as internal raw evidence. The merge offers it retained-only
+  // (original source/time, buyPriceRetained) and writes no buy history for it.
+  capturePriorBuySources(db.cards, { dir: buyDirectory, now: Date.now() });
 
   let pruned = 0;
   const prunedIds = new Set();
@@ -362,6 +374,16 @@ export function syncOfficialCatalogToDatabase({
     throw new Error(formatGateViolations('official catalog sync refused to write', gate.violations));
   }
 
+  // Last-known SELL status (2026-11-07): this writer never scrapes, so every price it ships
+  // was quoted by an earlier run — stated explicitly (never inferred from age).
+  for (const card of Object.values(db.cards)) {
+    if (isPricedRow(card)) card.sellQuoteRetained = true;
+    else delete card.sellQuoteRetained;
+  }
+
+  // A previous merge's run proof describes THAT merge's output; this rebuild replaced the buy
+  // state with holders, so the proof is void until the next merge writes its own (review N5).
+  delete db.buyQuoteRun;
   db.lastUpdated = new Date().toISOString();
   db.totalCards = Object.keys(db.cards).length;
   writeJsonAtomic(databasePath, db);

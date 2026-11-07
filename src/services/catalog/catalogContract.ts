@@ -44,9 +44,9 @@ export const LIMITS = {
  * FORBIDDEN_VARIANT_FIELDS, INTERNAL_AUDIT_FIELDS). scripts/test-remote-catalog-
  * contract.mjs fails if the two lists ever drift apart.
  */
-export const FORBIDDEN_CARD_FIELDS = ['buyPrice', 'buyPriceHistory', 'priceHistory', 'ytStats'] as const;
-export const FORBIDDEN_VARIANT_FIELDS = ['buyPrice', 'buyPriceVersion', 'buyPriceSource', 'buyPriceTimestamp'] as const;
-export const INTERNAL_AUDIT_FIELDS = ['_rawPricesArchive'] as const;
+export const FORBIDDEN_CARD_FIELDS = ['buyPrice', 'buyPriceHistory', 'priceHistory', 'ytStats', 'buyPriceRetained', 'buyLastKnown', 'buyPriorSource'] as const;
+export const FORBIDDEN_VARIANT_FIELDS = ['buyPrice', 'buyPriceVersion', 'buyPriceSource', 'buyPriceTimestamp', 'buyPriceRetained', 'buyLastKnown'] as const;
+export const INTERNAL_AUDIT_FIELDS = ['_rawPricesArchive', 'buyLastKnown', 'buyPriorSource'] as const;
 
 export interface CatalogAssetRef {
   path: string;

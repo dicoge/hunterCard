@@ -10,7 +10,7 @@ import { getCatalogRevision, loadCatalogSnapshot } from '../utils/staticData';
 import { useCatalogRevision } from '../hooks/useCatalogRevision';
 import { useTranslation } from '../i18n';
 import { uniformGridItemStyle } from '../utils/gridLayout';
-import { classifyPriceFreshness } from '../utils/priceFreshness';
+import { classifyPriceFreshness, quoteTagKey } from '../utils/priceFreshness';
 import { AppShell, buildShellTabs } from '../components/shell';
 import {
   ArrowLeftGlyph,
@@ -250,10 +250,11 @@ export function compactPriceMarker(
   now?: number,
 ): string | undefined {
   if (card.priceQuotedAt === undefined) return undefined;
-  const f = classifyPriceFreshness({ price, quotedAt: card.priceQuotedAt, now });
-  if (f.state === 'last-known') return t('price_quote_old_tag');
-  if (f.state === 'unknown-date') return t('price_quote_unknown_short');
-  return undefined;
+  // The writer's explicit retained flag (no new quote this run) marks the price even when the
+  // original quote is only a day old: 無新報價 instead of nothing.
+  const f = classifyPriceFreshness({ price, quotedAt: card.priceQuotedAt, now, retained: card.priceRetained === true });
+  const key = quoteTagKey(f);
+  return key ? t(key) : undefined;
 }
 
 export function applySearchRefinements(
@@ -798,8 +799,9 @@ export function CardListItem({ card, onPress, now }: { card: CardResult; onPress
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
       <View style={[styles.rarityStrip, { backgroundColor: rarityColors[card.rarity] || '#6b7280' }]} />
-      {/* Card Image */}
-      {card.imageUrl && !imgErr && (
+      {/* Card Image — a ternary, not `imageUrl && …`: an empty imageUrl ('') would render
+          as a raw text node inside this View (RN Web "Unexpected text node"). */}
+      {card.imageUrl && !imgErr ? (
         <View style={styles.cardImageContainer}>
           <Image
             source={{ uri: card.imageUrl }}
@@ -808,7 +810,7 @@ export function CardListItem({ card, onPress, now }: { card: CardResult; onPress
             onError={() => setImgErr(true)}
           />
         </View>
-      )}
+      ) : null}
       <View style={styles.cardContent}>
         <View style={styles.cardHeader} testID="search-card-header">
           <Text style={styles.cardNumber} numberOfLines={1} testID="search-card-number">{id}</Text>
@@ -830,7 +832,7 @@ export function CardListItem({ card, onPress, now }: { card: CardResult; onPress
           );
         })()}
 
-        {effects && <Text style={styles.cardEffect} numberOfLines={2}>{effects}</Text>}
+        {effects ? <Text style={styles.cardEffect} numberOfLines={2}>{effects}</Text> : null}
 
         <View style={styles.metaRow}>
           {card.seriesNames.map((s, i) => <Text key={i} style={styles.seriesTag}>{s}</Text>)}

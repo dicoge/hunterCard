@@ -325,6 +325,22 @@ export function resolvePrintingByCardNumber(
  * becomes one card: the representative row's id and identity, the latest same-listing
  * sell quote as its price (none on a conflict), every quote and every alias id kept.
  */
+/** The version's provenance re-pointed at its CURRENT quote row: that row's time, listing
+ * and retained status travel together (the primary row's retained flag never leaks). */
+function currentQuoteProvenance(
+  primary: PriceProvenance,
+  current: PriceQuote | null,
+  currentRow: CardInfo | undefined,
+): PriceProvenance {
+  const { retained: _primaryRetained, ...rest } = primary;
+  return {
+    ...rest,
+    quotedAt: current?.quotedAt ?? null,
+    listing: current?.listing ?? primary.listing,
+    ...(current && currentRow?.provenance?.retained === true ? { retained: true as const } : {}),
+  };
+}
+
 export function consolidatePrintingCards(cards: CardInfo[]): CardInfo[] {
   return buildPrintingVersions(cards).map((v) => {
     if (v.members.length === 1) return v.lookalike ? { ...v.primary, lookalike: true } : v.primary;
@@ -344,7 +360,7 @@ export function consolidatePrintingCards(cards: CardInfo[]): CardInfo[] {
       prices: current ? (currentRow?.prices ?? []) : [],
       priceHistory: history,
       provenance: v.primary.provenance
-        ? { ...v.primary.provenance, quotedAt: current?.quotedAt ?? null, listing: current?.listing ?? v.primary.provenance.listing }
+        ? currentQuoteProvenance(v.primary.provenance, current, currentRow)
         : null,
       aliasIds: v.memberIds,
       priceQuotes: v.quotes,

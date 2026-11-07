@@ -29,6 +29,9 @@ export const PRICE_FRESH_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 /** Mirrors DIC1229_MAX_TIMESTAMP_CLOCK_SKEW_MS (scripts/lib/preserve-market-fields.js). */
 export const PRICE_FRESH_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
+/** Mirrors MAX_SOURCE_AGE_HOURS (scripts/merge-buy-prices.js): the buy-quote age window. */
+export const BUY_QUOTE_FRESH_MAX_AGE_MS = 18 * 60 * 60 * 1000;
+
 export type PriceFreshnessState = 'fresh' | 'last-known' | 'unknown-date' | 'no-quote';
 
 export interface PriceFreshness {
@@ -37,28 +40,73 @@ export interface PriceFreshness {
   quotedAt: string | null;
   /** YYYY-MM-DD taken verbatim from `quotedAt`, or null when it is not an ISO date. */
   quoteDate: string | null;
+  /**
+   * True when the WRITER explicitly marked this quote as retained: the latest run produced
+   * no new quote for this exact printing, so the shown value is the previous quote with its
+   * original source/time (`sellQuoteRetained` / `buyPriceRetained`). Independent of age —
+   * a retained quote from yesterday is never 'fresh'.
+   */
+  retained: boolean;
 }
 
 const ISO_DATE_PREFIX = /^(\d{4}-\d{2}-\d{2})/;
 
+/**
+ * Age is only a classification aid: `maxAgeMs` (default the DIC-1229 7-day window, 18h for
+ * buy quotes) can make a quote 'last-known', never make a retained or missing quote current.
+ * `retained` comes only from explicit writer metadata, never from catalog time / file mtime.
+ */
 export function classifyPriceFreshness(input: {
   price: number | null | undefined;
   quotedAt: string | null | undefined;
   now?: number;
+  retained?: boolean;
+  maxAgeMs?: number;
 }): PriceFreshness {
   const raw = typeof input.quotedAt === 'string' && input.quotedAt.trim() ? input.quotedAt.trim() : null;
   const dateMatch = raw ? ISO_DATE_PREFIX.exec(raw) : null;
   const quoteDate = dateMatch ? dateMatch[1] : null;
+  const retained = input.retained === true;
   const price = input.price;
   if (typeof price !== 'number' || !Number.isFinite(price) || price <= 0) {
-    return { state: 'no-quote', quotedAt: raw, quoteDate };
+    return { state: 'no-quote', quotedAt: raw, quoteDate, retained: false };
   }
   const ms = raw ? Date.parse(raw) : NaN;
-  if (!Number.isFinite(ms) || !quoteDate) return { state: 'unknown-date', quotedAt: raw, quoteDate: null };
+  if (!Number.isFinite(ms) || !quoteDate) return { state: 'unknown-date', quotedAt: raw, quoteDate: null, retained };
   const now = Number.isFinite(input.now) ? (input.now as number) : Date.now();
-  if (ms - now > PRICE_FRESH_CLOCK_SKEW_MS) return { state: 'unknown-date', quotedAt: raw, quoteDate: null };
-  if (now - ms > PRICE_FRESH_MAX_AGE_MS) return { state: 'last-known', quotedAt: raw, quoteDate };
-  return { state: 'fresh', quotedAt: raw, quoteDate };
+  if (ms - now > PRICE_FRESH_CLOCK_SKEW_MS) return { state: 'unknown-date', quotedAt: raw, quoteDate: null, retained };
+  const maxAge = typeof input.maxAgeMs === 'number' && input.maxAgeMs > 0 ? input.maxAgeMs : PRICE_FRESH_MAX_AGE_MS;
+  if (retained || now - ms > maxAge) return { state: 'last-known', quotedAt: raw, quoteDate, retained };
+  return { state: 'fresh', quotedAt: raw, quoteDate, retained: false };
+}
+
+/**
+ * i18n key for the full quote line (detail / buy line). Pure: returns key names only.
+ *   retained + date   → price_quote_retained      (no new quote this run · original time)
+ *   retained, no date → price_quote_retained_unknown_date
+ *   old, not retained → price_quote_last_known      (buy: price_buy_quote_last_known)
+ *   no date, not retained → price_quote_unknown_date (buy: price_buy_quote_unknown_date)
+ * Fresh / retained wording is price-type neutral (報價); the two states whose wording names the
+ * price type (售價 vs 收購價) have a buy-specific key, so a buy quote is never called a sell price.
+ */
+export function quoteLineKey(f: PriceFreshness, kind: 'sell' | 'buy' = 'sell'): { key: string; stale: boolean } | null {
+  if (f.state === 'fresh') return { key: 'price_quote_fresh', stale: false };
+  if (f.state === 'last-known') {
+    if (f.retained) return { key: 'price_quote_retained', stale: true };
+    return { key: kind === 'buy' ? 'price_buy_quote_last_known' : 'price_quote_last_known', stale: true };
+  }
+  if (f.state === 'unknown-date') {
+    if (f.retained) return { key: 'price_quote_retained_unknown_date', stale: true };
+    return { key: kind === 'buy' ? 'price_buy_quote_unknown_date' : 'price_quote_unknown_date', stale: true };
+  }
+  return null;
+}
+
+/** i18n key for the compact marker next to a price (tile / list row / chooser). */
+export function quoteTagKey(f: PriceFreshness): string | null {
+  if (f.state === 'last-known') return f.retained ? 'price_quote_retained_tag' : 'price_quote_old_tag';
+  if (f.state === 'unknown-date') return f.retained ? 'price_quote_retained_tag' : 'price_quote_unknown_short';
+  return null;
 }
 
 /**

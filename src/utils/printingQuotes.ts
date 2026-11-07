@@ -49,6 +49,11 @@ export interface PriceProvenance {
   quoteSource: string | null;
   language: string | null;
   condition: string | null;
+  /**
+   * Present (true) only when the writer marked this row's sell quote as retained — no new
+   * quote this run, the original time above still applies (`sellQuoteRetained`).
+   */
+  retained?: true;
 }
 
 export interface PriceQuote {
@@ -114,6 +119,7 @@ export function provenanceFromRow(entry: Record<string, any>): PriceProvenance {
     quoteSource: listing && YUYU_HOST.test(listing) ? 'yuyu-tei' : clean(entry.quoteSource),
     language: clean(entry.language),
     condition: clean(entry.condition),
+    ...(entry.sellQuoteRetained === true ? { retained: true as const } : {}),
   };
 }
 

@@ -224,7 +224,9 @@ const REQUIRED_PIPELINE_COMMANDS = [
   // completeness gate on the rows it just added.
   'scripts/enrich-official-effects.mjs',
   'scripts/sync-official-catalog-to-database.mjs',
-  'scripts/regen-buy-alignment.mjs',
+  // Review N4: no buy scrape runs here, so the buy step must be the run-proof merge
+  // (retained-only, no history), never the snapshot regen that calls the cache fresh.
+  'scripts/merge-buy-prices.js',
   'scripts/generate-native-database.mjs',
   'scripts/test-official-catalog-sync.mjs',
 ];
@@ -234,6 +236,11 @@ for (const cmd of REQUIRED_PIPELINE_COMMANDS) {
     `official-catalog-sync.yml must invoke DIC-1167 pipeline step \`${cmd}\``,
   );
 }
+assert.ok(!stepRuns.includes('scripts/regen-buy-alignment.mjs'),
+  'official-catalog-sync.yml must not run regen-buy-alignment.mjs (it would present the unscraped buy cache as fresh)');
+assert.ok(stepRuns.indexOf('scripts/sync-official-catalog-to-database.mjs') < stepRuns.indexOf('scripts/merge-buy-prices.js')
+  && stepRuns.indexOf('scripts/merge-buy-prices.js') < stepRuns.indexOf('scripts/generate-native-database.mjs'),
+  'buy merge runs after the sync and before native generation');
 
 // The exact set of paths the pipeline may commit — same set the change
 // check uses AND the same set the extracted handoff freezes.

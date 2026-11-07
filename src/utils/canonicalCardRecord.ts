@@ -32,7 +32,7 @@ import { stripDisabledCardFields, type ReleaseCardFlags } from './cardReleaseFil
 import { normalizeCardIdentity, resolveCardColorsWithNestedFallback } from './cardNormalization';
 import { getCatalogRevision, loadCatalogSnapshot } from './staticData';
 import { adaptCardNumber, pickRepresentative, type RawCard } from './deckCardData';
-import { buildSourcePrintings, canonicalPrinting, type SourceListing } from './printingIdentity';
+import { buildSourcePrintings, canonicalPrinting, printingFromLabel, type SourceListing } from './printingIdentity';
 import { printingQuoteTimes } from './priceFreshness';
 
 export const COLOR_MAP: Record<string, string> = {
@@ -61,6 +61,14 @@ export interface CardRecord {
   skillsJp?: any; skillsZh?: any;
   /** When THIS row's sell payload was quoted (scrape time, kept verbatim by preservation). */
   timestamp?: string;
+  /**
+   * Set by the writer (build-database.js / official sync) when THIS run produced no new
+   * sell quote for the row and the shown payload is the preserved previous one. Absent =
+   * the row was freshly priced this run (or written before the flag existed).
+   */
+  sellQuoteRetained?: boolean;
+  /** merge-buy-prices: card-level buyPrice is a verified last-known quote (no new quote this run). */
+  buyPriceRetained?: boolean;
 }
 
 /** The canonical CardDetail payload. Every `CardDetail` route param is one of these. */
@@ -71,6 +79,7 @@ export interface CardResult {
   yuyuUrl: string; carousellUrl: string; officialUrl: string;
   yuyuPrice?: number | null;
   sellPrice?: number | null; buyPrice?: number | null; ytStats?: any;
+  buyPriceRetained?: true;
   prices?: {
     name: string; sellPrice: number | null; rarity: string; buyPrice?: number | null;
     imageUrl?: string;
@@ -98,6 +107,29 @@ export interface CardResult {
   priceQuotedAt?: string | null;
   /** printing token → that exact printing's own sell quote time (absent = unknown). */
   printingQuotedAt?: Record<string, string>;
+  /** The headline sell quote is a retained previous quote (writer's `sellQuoteRetained`). */
+  priceRetained?: boolean;
+  /** printing token → true when EVERY row stating that printing's price retained it this run. */
+  printingRetained?: Record<string, boolean>;
+}
+
+/**
+ * printing token → retained, for the PriceRecords `adaptCardNumber` derived. A printing is
+ * retained only when every row that lists it at that price carries the writer's explicit
+ * `sellQuoteRetained`; one freshly priced row proves a new quote. Never inferred from time.
+ */
+function printingRetainedMap(
+  rows: ReadonlyArray<CardRecord>,
+  records: ReadonlyArray<{ version: string; price: number }>,
+): Record<string, boolean> {
+  const out: Record<string, boolean> = {};
+  for (const r of records) {
+    const contributing = rows.filter((row) => (row.prices ?? []).some((l) => l
+      && printingFromLabel((l.name ?? '').trim()) === r.version
+      && typeof l.sellPrice === 'number' && l.sellPrice === r.price));
+    if (contributing.length > 0 && contributing.every((row) => row.sellQuoteRetained === true)) out[r.version] = true;
+  }
+  return out;
 }
 
 export interface DatabaseSchema {
@@ -153,6 +185,8 @@ export function toCanonicalCardRecord(
 
   // Use official image (400×559) first for sharp display, local image (100×140) as fallback
   const imageUrl = c.officialImage || c.localImage || '';
+  const hasRows = !!quoteRows && quoteRows.length > 0;
+  const quoteRecords = hasRows ? adaptCardNumber(quoteRows!.map(asQuoteRow)).priceRecords : [];
 
   return stripDisabledCardFields({
     id,
@@ -171,6 +205,8 @@ export function toCanonicalCardRecord(
     yuyuPrice: c.sellPrice || null,
     sellPrice: c.sellPrice ?? null,
     buyPrice: c.buyPrice ?? null,
+    // Card-level buy last-known status (merge-buy-prices); buy feature group, stripped with buyPrice.
+    ...(c.buyPriceRetained === true ? { buyPriceRetained: true as const } : {}),
     ytStats: c.ytStats ?? null,
     yuyuPriceName: c.yuyuName || '',
     prices: c.prices || [],
@@ -194,13 +230,14 @@ export function toCanonicalCardRecord(
     // timestamp — the two are written, and preserved, together. Only stated when the caller
     // supplied the card number's real rows (the search / favorites routes); otherwise
     // absent, so a payload built without provenance renders exactly as before.
-    priceQuotedAt: quoteRows && quoteRows.length > 0
+    priceQuotedAt: hasRows
       ? (typeof c.timestamp === 'string' && c.timestamp.trim() ? c.timestamp : null)
       : undefined,
     // Absent (not {}) without rows: nothing is claimed about per-printing quote times.
-    printingQuotedAt: quoteRows && quoteRows.length > 0
-      ? printingQuoteTimes(adaptCardNumber(quoteRows.map(asQuoteRow)).priceRecords)
-      : undefined,
+    printingQuotedAt: hasRows ? printingQuoteTimes(quoteRecords) : undefined,
+    // Retained (no new quote this run) travels with the same row / records as the time.
+    priceRetained: hasRows ? c.sellQuoteRetained === true : undefined,
+    printingRetained: hasRows ? printingRetainedMap(quoteRows!, quoteRecords) : undefined,
   }, flags);
 }
 
@@ -367,6 +404,7 @@ export function buildCanonicalCardIndex(
             // The exact printing's OWN quote time (the merged representative row's
             // timestamp belongs to a different payload). '' / no record → unknown.
             priceQuotedAt: record && record.timestamp ? record.timestamp : null,
+            priceRetained: record ? base.printingRetained?.[record.version] === true : false,
             yuyuPriceName: match.printingLabel || base.yuyuPriceName || '',
           },
         };
