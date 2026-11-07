@@ -66,8 +66,16 @@
       "currency": "JPY",
       "cardId": "hSD21-006_hSD21_R_hSD21-006_R",
       "sourceProduct": "hSD21"
+    },
+    {
+      "date": "2026-11-07",
+      "price": 320,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD21-006_hSD21_R_hSD21-006_R",
+      "sourceProduct": "hSD21"
     }
   ],
-  "lastUpdated": "2026-11-06T12:08:24.853Z",
+  "lastUpdated": "2026-11-07T12:07:12.899Z",
   "nameZh": "熱千梅拉"
 }

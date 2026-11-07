@@ -138,8 +138,16 @@
       "currency": "JPY",
       "cardId": "hBP03-109_hBP03_C_hBP03-109_C",
       "sourceProduct": "hBP03"
+    },
+    {
+      "date": "2026-11-07",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-109_hBP03_C_hBP03-109_C",
+      "sourceProduct": "hBP03"
     }
   ],
-  "lastUpdated": "2026-11-06T12:08:17.227Z",
+  "lastUpdated": "2026-11-07T12:07:07.554Z",
   "nameZh": "Ruffians"
 }
