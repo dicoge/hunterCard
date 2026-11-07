@@ -226,17 +226,37 @@ await test('unlisted alias that matches two printings joins neither (no guess)',
 });
 
 const metaOf = (html, id) => [...html.matchAll(new RegExp(`data-testid="${id}"[^>]*>(.*?)</div>`, 'gs'))].map((m) => m[1].replace(/<[^>]*>/g, '').replace(/<!--.*?-->/gs, ''));
-const render = (cards) => renderToStaticMarkup(React.createElement(Selector, {
+// `now` (2026-11-07 last-known price): the chooser labels a quote older than the DIC-1229
+// window 舊價. Exact-line assertions inject a clock one hour after THEIR OWN quote so the
+// pinned line is the fresh state, independent of the wall clock; omitted = Date.now.
+const HOUR = 60 * 60 * 1000;
+const render = (cards, now) => renderToStaticMarkup(React.createElement(Selector, {
   visible: true, tier: 'mid', candidates: cards.map((card) => ({ card, confidence: 0.5 })),
   onSelect() {}, onRescan() {}, onManualSearch() {}, onDismiss() {}, preferredCurrency: 'JPY', preferredLanguage: 'zh',
+  ...(now === undefined ? {} : { now }),
 }));
 await test('actual chooser: the proven version is ONE row "#hBD24-023 · P · 一般版 ¥8,980" with "PR 宣傳卡（hPR） · <latest quote day> 報價 · 原名：PRカード" (zh primary, 2026-10-19)', () => {
-  const html = render([resolved.card]);
+  const html = render([resolved.card], Date.parse(resolved.card.provenance.quotedAt) + HOUR);
   const meta = metaOf(html, 'scan-candidate-meta');
   const source = metaOf(html, 'scan-candidate-source');
   assert.equal(meta.length, 1);
   assert.match(meta[0], /#hBD24-023 · P · 一般版\s+¥8,980/);
   assert.deepEqual(source, [`PR 宣傳卡（hPR） · ${utcDay(HBD_LATEST.timestamp)} 報價 · 原名：PRカード`]);
+});
+await test('actual chooser, last-known price: the same quote 30 days later keeps its ORIGINAL day and is marked 舊價 (never current)', () => {
+  const quotedAt = resolved.card.provenance.quotedAt;
+  const html = render([resolved.card], Date.parse(quotedAt) + 30 * 24 * HOUR);
+  assert.match(metaOf(html, 'scan-candidate-meta')[0], /#hBD24-023 · P · 一般版\s+¥8,980/, 'same exact printing, same retained value');
+  assert.deepEqual(metaOf(html, 'scan-candidate-source'),
+    [`PR 宣傳卡（hPR） · ${utcDay(HBD_LATEST.timestamp)} 報價 · 舊價 · 原名：PRカード`]);
+});
+await test('actual chooser, unknown quote time: a priced candidate says 報價日期不明 instead of a date or a fresh claim', () => {
+  const card = { ...resolved.card, provenance: { ...resolved.card.provenance, quotedAt: null } };
+  const source = metaOf(render([card], Date.parse(HBD_LATEST.timestamp)), 'scan-candidate-source');
+  assert.deepEqual(source, ['PR 宣傳卡（hPR） · 報價日期不明，未確認為最新售價 · 原名：PRカード']);
+  const future = { ...resolved.card, provenance: { ...resolved.card.provenance, quotedAt: '2099-01-01T00:00:00.000Z' } };
+  assert.ok(!metaOf(render([future], Date.parse(HBD_LATEST.timestamp)), 'scan-candidate-source')[0].includes('2099-01-01'),
+    'a future quote time is never displayed as a quote date');
 });
 await test('actual chooser across re-quotes: the 2026-10-22 CI quote and month / year rollovers show that quote\'s own day; an older ent07 quote never takes over from hPR', () => {
   // [ent07 quote time, chooser day, current price] — written out by hand, then cross-checked
@@ -256,7 +276,7 @@ await test('actual chooser across re-quotes: the 2026-10-22 CI quote and month /
     assert.equal(res.card.sellPrice, price, at);
     assert.equal(res.card.provenance.quotedAt, want.timestamp, at);
     assert.deepEqual([...res.card.aliasIds].sort(), ['hBD24-023_ent07', 'hBD24-023_hPR_P_hBD24-023_P'], at);
-    const html = render([res.card]);
+    const html = render([res.card], Date.parse(want.timestamp) + HOUR);
     assert.match(metaOf(html, 'scan-candidate-meta')[0], new RegExp(`#hBD24-023 · P · 一般版\\s+¥${price.toLocaleString('en-US')}`), at);
     assert.deepEqual(metaOf(html, 'scan-candidate-source'), [`PR 宣傳卡（hPR） · ${day} 報價 · 原名：PRカード`], at);
   }

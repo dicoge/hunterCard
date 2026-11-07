@@ -490,6 +490,12 @@ export const zh = {
   // Store MVP 版本：不得指向被隱藏的「市場數據」區塊 (DIC-1319)。
   card_detail_set_original: '原名：{{title}}',
   card_detail_variant_price_conflict: '價格不一致',
+  // 2026-11-07 最近已知售價：日期一律取該版本自己的報價時間，不用 App / 目錄更新時間。
+  price_quote_fresh: '{{date}} 報價',
+  price_quote_last_known: '最近已知售價（舊價）・{{date}} 報價，非即時行情',
+  price_quote_unknown_date: '報價日期不明，未確認為最新售價',
+  price_quote_old_tag: '舊價',
+  price_quote_unknown_short: '日期不明',
   card_detail_variant_hint_store: '這張卡各版本的掛牌售價；請對照手上卡片的版本名稱與稀有度',
   card_detail_approx_price: '💰 約 {{price}}（{{currency}}）',
   card_detail_live_price: '🔍 查看遊々亭即時價格 →',

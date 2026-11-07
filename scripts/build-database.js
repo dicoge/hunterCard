@@ -2942,10 +2942,21 @@ async function buildDatabase() {
   }
   const priceRecords = [];
   let step5SkippedUnproven = 0;
+  let step5SkippedLastKnown = 0;
   for (const [cardId, card] of Object.entries(database.cards)) {
     if (card.sellPrice != null && card.sellPrice > 0) {
       if (!disableStep5Gate && !hasCurrentPriceProvenance(card, step5GateOptions)) {
         step5SkippedUnproven++;
+        continue;
+      }
+      // Last-known price (2026-11-07): a row priced ONLY by the DIC-1482 /
+      // DIC-1321 last-known-good preservation was not re-observed by this run's
+      // scrape. Its value and original `timestamp` ship unchanged, but writing a
+      // `date: today` history record would fabricate a same-day observation of a
+      // price the source did not quote today. Only rows THIS run's scrape priced
+      // (captured before preservation, per exact printing id) get today's record.
+      if (!freshlyPricedRowIds.has(cardId)) {
+        step5SkippedLastKnown++;
         continue;
       }
       priceRecords.push(stampHistoryRecord({
@@ -2959,6 +2970,9 @@ async function buildDatabase() {
   }
   if (step5SkippedUnproven > 0) {
     console.log(`  [DIC-1229] Step 5 skipped ${step5SkippedUnproven} unproven printings — no durable record written (DIC-1229 fail-closed)`);
+  }
+  if (step5SkippedLastKnown > 0) {
+    console.log(`  [last-known] Step 5 wrote no today record for ${step5SkippedLastKnown} last-known (not re-observed this run) printings`);
   }
 
   // Group by cardId and write history files

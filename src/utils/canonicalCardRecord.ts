@@ -33,6 +33,7 @@ import { normalizeCardIdentity, resolveCardColorsWithNestedFallback } from './ca
 import { getCatalogRevision, loadCatalogSnapshot } from './staticData';
 import { adaptCardNumber, pickRepresentative, type RawCard } from './deckCardData';
 import { buildSourcePrintings, canonicalPrinting, type SourceListing } from './printingIdentity';
+import { printingQuoteTimes } from './priceFreshness';
 
 export const COLOR_MAP: Record<string, string> = {
   white: '白色', blue: '藍色', green: '綠色', red: '紅色',
@@ -42,6 +43,8 @@ export const COLOR_MAP: Record<string, string> = {
 /** One card row exactly as the shipped database.json stores it. */
 export interface CardRecord {
   id: string; name: string; series: string; type: string; rarity: string;
+  /** The card number every printing row of the number shares (the shipped rows carry it). */
+  cardNumber?: string;
   color: string; localImage?: string; officialImage?: string;
   sellPrice?: number | null; buyPrice?: number | null; yuyuName?: string; yuyuImage?: string;
   prices?: {
@@ -56,6 +59,8 @@ export interface CardRecord {
   effects?: string[]; hp?: string; life?: string; arts?: string;
   nameZh?: string;
   skillsJp?: any; skillsZh?: any;
+  /** When THIS row's sell payload was quoted (scrape time, kept verbatim by preservation). */
+  timestamp?: string;
 }
 
 /** The canonical CardDetail payload. Every `CardDetail` route param is one of these. */
@@ -84,12 +89,30 @@ export interface CardResult {
   printing?: string;
   /** The source's own listing label for `printing`, preserved verbatim. */
   printingLabel?: string;
+  /**
+   * Last-known price (2026-11-07): the quote time of the HEADLINE sell price
+   * (`yuyuPrice` / `sellPrice`) — that row's own `timestamp` verbatim, or, on an exact-
+   * printing payload, that printing's own price-record time. null = unknown (never the
+   * catalog's publish time). Sell-price metadata only; no buy field is ever read.
+   */
+  priceQuotedAt?: string | null;
+  /** printing token → that exact printing's own sell quote time (absent = unknown). */
+  printingQuotedAt?: Record<string, string>;
 }
 
 export interface DatabaseSchema {
   cards: Record<string, CardRecord>;
   totalCards: number;
   lastUpdated: string;
+}
+
+/**
+ * A database row in the shape `adaptCardNumber` reads (`RawCard`, which requires the card
+ * number). A shallow copy — the caller's rows are never mutated — that states the card
+ * number explicitly (`cardNumber`, else the row id), the same fallback the mapper uses.
+ */
+function asQuoteRow(row: CardRecord): RawCard {
+  return { ...row, cardNumber: row.cardNumber || row.id || '' };
 }
 
 /**
@@ -102,6 +125,12 @@ export function toCanonicalCardRecord(
   c: CardRecord,
   nameMap: Record<string, string>,
   flags: ReleaseCardFlags = releaseCardFlags(),
+  /**
+   * Every database row of this card number, when the caller merged their listings into
+   * `c.prices`. Only real rows can state a printing's quote time; without them the
+   * per-printing times stay unknown rather than being attributed to `c`'s own time.
+   */
+  quoteRows?: ReadonlyArray<CardRecord>,
 ): CardResult {
   const id = c.id || '';
   const name = c.name || '';
@@ -161,6 +190,17 @@ export function toCanonicalCardRecord(
     yuyuUrl: `https://yuyu-tei.jp/sell/hocg/s/search?search_word=${encodeURIComponent(cardNumber)}`,
     carousellUrl: '',
     officialUrl: `https://hololive-official-cardgame.com/cardlist/?keyword=${encodeURIComponent(cardNumber)}&view=image`,
+    // The headline price is THIS row's own sellPrice, so its quote time is THIS row's own
+    // timestamp — the two are written, and preserved, together. Only stated when the caller
+    // supplied the card number's real rows (the search / favorites routes); otherwise
+    // absent, so a payload built without provenance renders exactly as before.
+    priceQuotedAt: quoteRows && quoteRows.length > 0
+      ? (typeof c.timestamp === 'string' && c.timestamp.trim() ? c.timestamp : null)
+      : undefined,
+    // Absent (not {}) without rows: nothing is claimed about per-printing quote times.
+    printingQuotedAt: quoteRows && quoteRows.length > 0
+      ? printingQuoteTimes(adaptCardNumber(quoteRows.map(asQuoteRow)).priceRecords)
+      : undefined,
   }, flags);
 }
 
@@ -282,7 +322,7 @@ export function buildCanonicalCardIndex(
             rows.flatMap((row) => row.prices ?? []) as NonNullable<CardRecord['prices']>,
           ),
         };
-        const base = toCanonicalCardRecord(merged, nameMap);
+        const base = toCanonicalCardRecord(merged, nameMap, undefined, rows);
         // The exact printing's OWN sell price. `adaptCardNumber` emits no record
         // for an unpriced or ambiguously priced printing, so this stays null and
         // CardDetail shows its unavailable state — never the card number's
@@ -324,6 +364,9 @@ export function buildCanonicalCardIndex(
             imageUrl: exactImage,
             yuyuPrice: exactPrice,
             sellPrice: exactPrice,
+            // The exact printing's OWN quote time (the merged representative row's
+            // timestamp belongs to a different payload). '' / no record → unknown.
+            priceQuotedAt: record && record.timestamp ? record.timestamp : null,
             yuyuPriceName: match.printingLabel || base.yuyuPriceName || '',
           },
         };

@@ -485,6 +485,12 @@ export const ja: Record<keyof typeof zh, string> = {
   // Store MVP 版：隠されている「市場データ」を指してはいけない (DIC-1319)。
   card_detail_set_original: '原題：{{title}}',
   card_detail_variant_price_conflict: '価格不一致',
+  // 2026-11-07 最終確認価格：日付はその版自身の取得時刻のみ（アプリ／カタログ更新時刻は使わない）。
+  price_quote_fresh: '{{date}} 時点',
+  price_quote_last_known: '最終確認価格（旧価格）・{{date}} 時点、最新の相場ではありません',
+  price_quote_unknown_date: '取得日不明・最新価格とは確認できません',
+  price_quote_old_tag: '旧価格',
+  price_quote_unknown_short: '日付不明',
   card_detail_variant_hint_store: 'このカードの各版の販売価格です。お手元の版名とレアリティで見比べてください',
   card_detail_approx_price: '💰 約 {{price}}（{{currency}}）',
   card_detail_live_price: '🔍 遊々亭の最新価格を見る →',

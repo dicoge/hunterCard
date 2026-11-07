@@ -24,6 +24,7 @@ import { buildPriceVersions, resolveVersionForCard, resolveDisplayedPrintingInde
 import { useTranslation } from '../i18n';
 import { ownershipKey } from '../utils/deckRules';
 import { resolveCardDisplayName } from '../utils/cardDisplayName';
+import { classifyPriceFreshness } from '../utils/priceFreshness';
 
 const gradeLabels: Record<string, string> = { debut: 'Debut', '1st': '1st', '2nd': '2nd', buzz: 'Buzz', spot: 'Spot' };
 // DIC-1141 CR: printing rarity palette imported from the shared source in
@@ -210,6 +211,20 @@ export default function CardDetailScreen({ route, navigation }: any) {
   const actualPrice = card.yuyuPrice;
   const priceName = card.yuyuPriceName || '';
   const hasActualPrice = actualPrice != null && actualPrice > 0;
+
+  // 最近已知售價 (2026-11-07): label a shown price from ITS OWN quote time only. A route
+  // payload that never carried quote provenance renders exactly as before (no invented
+  // date); one that carries it shows 報價日, 最近已知售價（舊價） or 報價日期不明.
+  const quoteLine = (price: number | null | undefined, quotedAt: string | null | undefined) => {
+    const f = classifyPriceFreshness({ price, quotedAt });
+    if (f.state === 'fresh') return { text: t('price_quote_fresh', { date: f.quoteDate ?? '' }), stale: false };
+    if (f.state === 'last-known') return { text: t('price_quote_last_known', { date: f.quoteDate ?? '' }), stale: true };
+    if (f.state === 'unknown-date') return { text: t('price_quote_unknown_date'), stale: true };
+    return null;
+  };
+  const headlineQuote = card.priceQuotedAt !== undefined ? quoteLine(actualPrice, card.priceQuotedAt) : null;
+  const printingQuoteTimes: Record<string, string> | null =
+    card.printingQuotedAt && typeof card.printingQuotedAt === 'object' ? card.printingQuotedAt : null;
 
   // Handle multiple price variants (signed vs unsigned)
   const priceVariants = card.prices || [];
@@ -529,6 +544,8 @@ export default function CardDetailScreen({ route, navigation }: any) {
                       <View style={styles.variantList}>
                         {[...printingRows].sort((a, b) => (a.sellPrice ?? Infinity) - (b.sellPrice ?? Infinity)).filter((v) => v.ambiguous || (v.sellPrice != null && v.sellPrice > 0)).map((v) => {
                           const converted = v.sellPrice != null ? convertPrice(v.sellPrice, preferredCurrency) : null;
+                          // This exact printing's OWN quote time; absent = unknown, never a sibling's.
+                          const rowQuote = printingQuoteTimes ? quoteLine(v.sellPrice, printingQuoteTimes[v.printing] ?? null) : null;
                           return (
                           <View key={v.printing} style={styles.variantRow} testID={`card-detail-variant-${v.printing}`}>
                             {v.imageUrl ? (
@@ -539,6 +556,15 @@ export default function CardDetailScreen({ route, navigation }: any) {
                             <View style={styles.variantText}>
                               <Text style={styles.variantName} numberOfLines={1}>{v.rarity ? `[${v.rarity}] ` : ''}{v.label}</Text>
                               <Text style={styles.variantSource} numberOfLines={1}>{v.sourceLabel}</Text>
+                              {rowQuote ? (
+                                <Text
+                                  style={[styles.variantSource, rowQuote.stale ? styles.priceStale : null]}
+                                  numberOfLines={2}
+                                  testID={`card-detail-quote-${v.printing}`}
+                                >
+                                  {rowQuote.text}
+                                </Text>
+                              ) : null}
                             </View>
                             <Text style={styles.variantPrice}>{converted ? `${converted.symbol}${converted.value?.toLocaleString()}` : t('card_detail_variant_price_conflict')}</Text>
                           </View>
@@ -563,6 +589,14 @@ export default function CardDetailScreen({ route, navigation }: any) {
                           <Text style={styles.priceValue}>¥{actualPrice.toLocaleString()}</Text>
                           {deltaChip}
                         </View>
+                        {headlineQuote ? (
+                          <Text
+                            style={[styles.priceNote, headlineQuote.stale ? styles.priceStale : null]}
+                            testID="card-detail-price-quote"
+                          >
+                            {headlineQuote.text}
+                          </Text>
+                        ) : null}
                         {FEATURES.trendPrediction && detailPriceTrend ? (
                           <Text style={styles.priceCompare} testID="card-detail-price-compare">
                             {t('card_detail_compare_line', {
@@ -1008,6 +1042,20 @@ function MarketDataPanel({ card, section = 'market' }: { card: any; section?: 'm
     ? (printingDisplayLabel(selectedVersion.name, language) ?? '')
     : (card?.series ?? '');
 
+  // 最近已知售價 (review R2): the SELECTED version's own quote time (search / favorites /
+  // scan routes supply printing → time). A route without that map shows nothing new; a
+  // priced version absent from the map has an unknown time and says so.
+  const quoteTimes: Record<string, string> | null =
+    card?.printingQuotedAt && typeof card.printingQuotedAt === 'object' ? card.printingQuotedAt : null;
+  const selectedQuote = (() => {
+    if (!quoteTimes || !aligned || !selectedVersion || !(typeof sellPrice === 'number' && sellPrice > 0)) return null;
+    const f = classifyPriceFreshness({ price: sellPrice, quotedAt: quoteTimes[selectedVersion.printing] ?? null });
+    if (f.state === 'fresh') return { text: t('price_quote_fresh', { date: f.quoteDate ?? '' }), stale: false };
+    if (f.state === 'last-known') return { text: t('price_quote_last_known', { date: f.quoteDate ?? '' }), stale: true };
+    if (f.state === 'unknown-date') return { text: t('price_quote_unknown_date'), stale: true };
+    return null;
+  })();
+
   const displayRarity = card?.sourceRarity ?? card?.rarity ?? '';
   // 店家收購價（賣出可得）：依「選中版本」對齊（DIC-856）。未對齊或此版本對不到收購價 → null，
   // 絕不退回卡號層級最高價/別版價（fail closed）。
@@ -1031,6 +1079,14 @@ function MarketDataPanel({ card, section = 'market' }: { card: any; section?: 'm
       {aligned && versionLabel ? (
         <Text style={styles.versionLabel}>
           {t('card_detail_price_version', { version: versionLabel, manual: manualPick ? t('card_detail_manual_selected') : '' })}
+        </Text>
+      ) : null}
+      {selectedQuote ? (
+        <Text
+          style={[styles.marketNote, selectedQuote.stale ? styles.priceStale : null]}
+          testID="card-detail-market-quote"
+        >
+          {selectedQuote.text}
         </Text>
       ) : null}
       {!aligned ? (
@@ -1291,6 +1347,8 @@ const styles = StyleSheet.create({
   priceDeltaText: { fontSize: 11.5, fontWeight: '700' },
   priceCompare: { fontSize: 11.5, color: SEMANTIC.onBgDim, marginBottom: 6 },
   priceNote: { fontSize: 11, color: COLORS.textSecondary + 'bb', marginBottom: 6 },
+  // 最近已知售價（舊價）／報價日期不明：與即時報價明確區分。
+  priceStale: { color: '#f59e0b' },
   priceChart: { flexDirection: 'row', alignItems: 'flex-end', gap: 4, height: 62, marginTop: 8 },
   priceChartBar: { flex: 1, borderTopLeftRadius: 3, borderTopRightRadius: 3 },
   checkPriceBtn: { backgroundColor: COLORS.primary, paddingVertical: 12, borderRadius: 10, alignItems: 'center', marginTop: 12 },

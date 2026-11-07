@@ -234,6 +234,9 @@ jobs:
       - name: Verify exact-print price-regression gate, last-known-good preservation, and canonical/public/native parity (DIC-1482)
         run: npm run test:dic1482-price-gate
 
+      - name: Verify the real builder keeps a dropped proven price with its original time and writes no today history for it; fresh quotes still record today (2026-11-07)
+        run: npm run test:last-known-price-builder
+
       - name: Verify every scraped cardNumber reconciles against the shipped artifact and fallback refusals are recorded (DIC-1167)
         run: npm run test:dic1167-price-coverage-reconciliation
 
@@ -676,6 +679,9 @@ jobs:
 
       - name: Verify hBP03-029 printings show zh version labels, own pictures and zh product names; same printing collapses, SR/R never merged (2026-10-19)
         run: npm run test:printing-display
+
+      - name: Verify last-known price keeps the exact printing's own value and original time, labelled old; no fake today history; privacy projection intact (2026-11-07)
+        run: npm run test:last-known-price
 
       - name: Verify the printing version / quote END TO END — native scan → handler → chooser → 加入 → session, latest and same-time conflict (v44)
         run: npm run test:scan-printing-version-flow

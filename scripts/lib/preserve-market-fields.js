@@ -901,6 +901,10 @@ export function seedCanonicalHistoryFiles({
   return { seededFiles, addedRecords };
 }
 
+function hasPositiveSellEntry(entries) {
+  return Array.isArray(entries) && entries.some((e) => e && Number.isFinite(e.sellPrice) && e.sellPrice > 0);
+}
+
 export function applyPreservedMarketFields(currentCard, previous, { matchKind = 'exact-id', preserveYuyuPayload = true } = {}) {
   const summary = { sellPrice: false, prices: false, priceHistory: false, ytStats: false, yuyu: false };
   if (!currentCard || !previous) return summary;
@@ -950,7 +954,14 @@ export function applyPreservedMarketFields(currentCard, previous, { matchKind = 
   // top-level yuyu provenance can vouch for those scalars, and only when
   // it points to this row's sourceProduct.
   const preservePrintingArrays = preserveYuyuPayload && anyProvenSurvivor && (matchKind === 'exact-id' || !isSignedPrinting(currentCard));
-  const useDerived = preservePrintingArrays;
+  // Review B1 (legacy shape): an artifact can already ship a positive top-level price whose
+  // own proven listings price NOTHING (sellPrice:null entries — what the pre-B1 code left on
+  // the matched-but-unpriced R1 row). Re-deriving from those entries yields null and drops a
+  // proven price on the next build. Only in that exact case — proven own-product entries
+  // exist but none is positive — use the existing top-level rule (`yuyuPayloadMatchesSource`,
+  // the same rule a payload without entries uses). Every other case is unchanged.
+  const strictEntriesPriceNothing = anyStrictSurvivor && !hasPositiveSellEntry(strictSurvivors);
+  const useDerived = preservePrintingArrays && !strictEntriesPriceNothing;
   const topLevelPayloadMatches = preserveYuyuPayload
     && yuyuPayloadMatchesSource(previous, currentSourceProduct, currentCard?.cardNumber);
   const derived = useDerived
@@ -968,11 +979,41 @@ export function applyPreservedMarketFields(currentCard, previous, { matchKind = 
     ? anyStrictSurvivor
     : topLevelPayloadMatches;
 
+  let droppedCurrentUnpriced = false;
   if (canSetTopLevel && derived.sellPrice != null && !(Number.isFinite(currentCard.sellPrice) && currentCard.sellPrice > 0)) {
     currentCard.sellPrice = derived.sellPrice;
+    // Last-known price (2026-11-07 review R1): the row's `timestamp` is the quote time
+    // of its sellPrice, so a preserved price MUST carry the preserved payload's own time.
+    // A current row whose scrape MATCHED a listing that yielded no positive price already
+    // holds that scrape's time (build-database.js `timestamp: yuyu.firstTimestamp`, the
+    // yuyu-only path even defaults it to now) — keeping it would present an old price as
+    // quoted today. Unknown stays unknown ('') rather than borrowing the scrape time.
+    currentCard.timestamp = derived.timestamp || '';
+    // Review B1: the preserved price, its time AND its listings are one bundle. The R1 row
+    // already holds the matched-but-unpriced listing (`sellPrice: null` entries), so the
+    // empty-array restore below never fires; shipping the old headline over listings that
+    // price nothing disagrees with the variant list and, on the next build, re-derives the
+    // top level from those unpriced entries (sellPrice null) — the proven price is lost and
+    // DIC-1482 refuses the build. When the current prices[] carries NO positive entry, treat
+    // it like empty: take the SAME provenance-filtered entries the empty case copies (only
+    // when that copy is allowed and they actually price something), otherwise ship no
+    // entries rather than unpriced ones. A current positive listing is never replaced.
+    if (!hasPositiveSellEntry(currentCard.prices)) {
+      if (preservePrintingArrays && hasPositiveSellEntry(filteredPrices)) {
+        currentCard.prices = filteredPrices;
+        summary.prices = true;
+      } else if (Array.isArray(currentCard.prices) && currentCard.prices.length > 0) {
+        // This scrape's own unpriced listing is dropped beside the retained value (the
+        // printing was freshly matched, so DIC-1482 sees the source's claim, not a loss),
+        // and the copy below must not put the previous unpriced entries back either.
+        currentCard.prices = [];
+        droppedCurrentUnpriced = true;
+      }
+    }
     summary.sellPrice = true;
   }
-  if (preservePrintingArrays && filteredPrices.length > 0 && !(Array.isArray(currentCard.prices) && currentCard.prices.length > 0)) {
+  if (preservePrintingArrays && filteredPrices.length > 0 && !droppedCurrentUnpriced
+      && !(Array.isArray(currentCard.prices) && currentCard.prices.length > 0)) {
     currentCard.prices = filteredPrices;
     summary.prices = true;
   }

@@ -76,7 +76,10 @@ assertSourceIncludes(cardRecognition, [
 assertSourceIncludes(scanScreen, [
   "import { mapApiCardToCardInfo } from '../utils/apiCardMapper'",
   'stripDisabledCardFields(mapApiCardToCardInfo(c), releaseCardFlags())',
-  "onViewCard={(card) => navigation?.navigate('CardDetail', { card })}",
+  // Last-known price (2026-11-07): the WHOLE session card still travels (spread first,
+  // so buyPrice/priceHistory/ytStats are untouched) plus that printing's own quote time.
+  "onViewCard={(card) => navigation?.navigate('CardDetail', { card: { ...card, ...scanQuoteProvenance(card) } })}",
+  "import { scanQuoteProvenance } from '../utils/scanQuoteProvenance'",
 ], 'src/screens/ScanScreen');
 
 // Search/favorites route regression: DIC-1430 moved the record → CardDetail
@@ -91,10 +94,17 @@ assertSourceIncludes(canonicalRecord, [
   'priceHistory: c.priceHistory || {}',
 ], 'src/utils/canonicalCardRecord');
 
+// Last-known price (2026-11-07): the 4th argument is the card number's own rows (or the
+// lone row), from which per-printing quote times are derived — never a sibling's.
 assertSourceIncludes(searchResults, [
   "from '../utils/canonicalCardRecord'",
-  'toCanonicalCardRecord(c, nameMap, cardFlags)',
+  'toCanonicalCardRecord(c, nameMap, cardFlags, siblings && siblings.length > 0 ? siblings : [row])',
 ], 'src/screens/SearchResultsScreen');
+assertSourceIncludes(canonicalRecord, [
+  'quoteRows?: ReadonlyArray<CardRecord>',
+  'printingQuoteTimes(adaptCardNumber(quoteRows.map(asQuoteRow)).priceRecords)',
+  'const base = toCanonicalCardRecord(merged, nameMap, undefined, rows);',
+], 'src/utils/canonicalCardRecord last-known quote provenance');
 
 // MarketDataPanel should render exact-version buy/subscriber sections, while
 // CardDetail routes price history through the DIC-1084 exact-identity validator.
