@@ -138,8 +138,16 @@
       "currency": "JPY",
       "cardId": "hBP05-032_hBP05_U_hBP05-032_U",
       "sourceProduct": "hBP05"
+    },
+    {
+      "date": "2026-11-08",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-032_hBP05_U_hBP05-032_U",
+      "sourceProduct": "hBP05"
     }
   ],
-  "lastUpdated": "2026-11-06T12:08:15.354Z",
+  "lastUpdated": "2026-11-08T12:05:31.156Z",
   "nameZh": "尾丸波爾卡"
 }
