@@ -1,0 +1,309 @@
+#!/usr/bin/env node
+/**
+ * android-sdk-provision.mjs — install EXACTLY `ndk;27.1.12297006` and `cmake;3.22.1` on an
+ * ephemeral GitHub-hosted Linux runner for the PR #284 branch, ONLY after proving from the
+ * official repository metadata that these packages are bound to terms the repository already
+ * evidences and the runner has already accepted (2026-11-08; owner-approved for these two
+ * packages on ephemeral CI only).
+ *
+ * It never accepts terms: no `--licenses`, no `yes`, stdin closed (a licence prompt reads EOF and
+ * the install is refused), no write / removal / rewrite under licenses/ (state snapshotted before
+ * and after; any change stops). No arguments are accepted (no URLs, packages, channels or SDK
+ * paths). Afterwards the UNCHANGED read-only guard (scripts/ci/android-sdk-guard.mjs) runs in its
+ * own step and re-validates every package.xml, tool and licence binding before Gradle.
+ *
+ * Pre-install checks (any failure → exit 2, nothing installed):
+ *   - context: Linux, GITHUB_ACTIONS=true, RUNNER_ENVIRONMENT=github-hosted, pull_request event
+ *     from THIS repository on branch fix/last-known-price-20261107;
+ *   - SDK root: the hosted runner's fixed path, a real directory (no symlink), env (if set) equal
+ *     to it; sdkmanager, licenses/, ndk/, cmake/ resolve inside it;
+ *   - metadata: the one pinned official URL over HTTPS, host pinned, no redirect, size capped;
+ *     no DOCTYPE/ENTITY; exactly one remotePackage per identity; exact revision; stable channel;
+ *     no preview; no dependencies; exactly one Linux archive (bare .zip name + checksum);
+ *     exactly one referenced <license>, decoded + trimmed SHA-1 ∈ policy authorizedHashes AND
+ *     ∈ the runner's existing accepted licenses/<id> file (which holds only authorized hashes).
+ *
+ * Usage (CI only): node scripts/ci/android-sdk-provision.mjs
+ * Exit: 0 ok (installed, or already present) · 2 refusal · 1 unexpected error.
+ */
+import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import fs from 'node:fs';
+import https from 'node:https';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { decodeXmlText, sha1Hex, parsePackageXml } from './android-sdk-guard.mjs';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/** The only packages this helper may ever install, with their exact revisions. */
+export const PACKAGES = Object.freeze([
+  Object.freeze({ id: 'ndk;27.1.12297006', revision: { major: '27', minor: '1', micro: '12297006' } }),
+  Object.freeze({ id: 'cmake;3.22.1', revision: { major: '3', minor: '22', micro: '1' } }),
+]);
+/** Official Google SDK repository metadata (schema 2-3, the one current sdkmanager reads). */
+export const METADATA_URL = 'https://dl.google.com/android/repository/repository2-3.xml';
+export const METADATA_HOST = 'dl.google.com';
+export const METADATA_MAX_BYTES = 32 * 1024 * 1024;
+export const HOSTED_SDK_ROOT = '/usr/local/lib/android/sdk';
+export const ALLOWED_BRANCH = 'fix/last-known-price-20261107';
+export const INSTALL_TIMEOUT_MS = 30 * 60 * 1000;
+
+export class ProvisionRefusal extends Error {}
+const refuse = (msg) => { throw new ProvisionRefusal(msg); };
+
+// ── context ─────────────────────────────────────────────────────────────────────
+export function assertContext({ env, platform, readFile = (f) => fs.readFileSync(f, 'utf8') }) {
+  if (platform !== 'linux') refuse(`platform ${platform}: only an ephemeral Linux Actions runner`);
+  if (env.GITHUB_ACTIONS !== 'true') refuse('not running in GitHub Actions');
+  if (env.RUNNER_ENVIRONMENT !== 'github-hosted') refuse(`RUNNER_ENVIRONMENT=${env.RUNNER_ENVIRONMENT}: only an ephemeral GitHub-hosted runner`);
+  if (env.RUNNER_OS !== 'Linux') refuse(`RUNNER_OS=${env.RUNNER_OS}`);
+  if (env.GITHUB_EVENT_NAME !== 'pull_request') refuse(`event ${env.GITHUB_EVENT_NAME}: pull_request only`);
+  if (env.GITHUB_HEAD_REF !== ALLOWED_BRANCH) refuse(`branch ${env.GITHUB_HEAD_REF}: only ${ALLOWED_BRANCH}`);
+  let event;
+  try {
+    event = JSON.parse(readFile(env.GITHUB_EVENT_PATH));
+  } catch {
+    refuse('GITHUB_EVENT_PATH unreadable');
+  }
+  const head = event?.pull_request?.head;
+  if (!head || head.ref !== ALLOWED_BRANCH || head.repo?.full_name !== env.GITHUB_REPOSITORY) {
+    refuse('pull request head is not this repository\'s allowed branch (fork or other branch)');
+  }
+}
+
+// ── SDK root / path hazards ─────────────────────────────────────────────────────
+function realInside(root, p, label) {
+  let real;
+  try { real = fs.realpathSync(p); } catch { return null; }
+  if (real !== root && !real.startsWith(`${root}${path.sep}`)) refuse(`${label} resolves outside the SDK root (${real})`);
+  return real;
+}
+
+export function assertSdkRoot(sdkRoot, env) {
+  for (const k of ['ANDROID_SDK_ROOT', 'ANDROID_HOME']) {
+    if (env[k] && path.resolve(env[k]) !== sdkRoot) refuse(`${k}=${env[k]} differs from the fixed SDK root ${sdkRoot}`);
+  }
+  let st;
+  try { st = fs.lstatSync(sdkRoot); } catch { refuse(`SDK root ${sdkRoot} missing`); }
+  if (st.isSymbolicLink() || !st.isDirectory()) refuse(`SDK root ${sdkRoot} must be a real directory`);
+  if (fs.realpathSync(sdkRoot) !== sdkRoot) refuse('SDK root is not canonical');
+  const sdkmanager = path.join(sdkRoot, 'cmdline-tools/latest/bin/sdkmanager');
+  if (!realInside(sdkRoot, sdkmanager, 'sdkmanager')) refuse('preinstalled sdkmanager missing (nothing is downloaded)');
+  if (!realInside(sdkRoot, path.join(sdkRoot, 'licenses'), 'licenses/')) refuse('licenses/ missing');
+  for (const dir of ['ndk', 'cmake']) {
+    const p = path.join(sdkRoot, dir);
+    if (fs.existsSync(p)) {
+      if (fs.lstatSync(p).isSymbolicLink()) refuse(`${dir}/ is a symlink`);
+      realInside(sdkRoot, p, `${dir}/`);
+    }
+  }
+  return sdkmanager;
+}
+
+/** Which fixed packages still need installing (an existing exact package.xml means none). */
+export function missingPackages(sdkRoot) {
+  const out = [];
+  for (const pkg of PACKAGES) {
+    const dir = path.join(sdkRoot, ...pkg.id.split(';'));
+    if (!fs.existsSync(dir)) { out.push(pkg); continue; }
+    if (fs.lstatSync(dir).isSymbolicLink()) refuse(`${pkg.id}: package directory is a symlink`);
+    realInside(sdkRoot, dir, pkg.id);
+    let parsed;
+    try {
+      parsed = parsePackageXml(fs.readFileSync(path.join(dir, 'package.xml'), 'utf8'));
+    } catch (err) {
+      refuse(`${pkg.id}: an existing partial / malformed install is not overwritten (${err.message})`);
+    }
+    if (parsed.path !== pkg.id) refuse(`${pkg.id}: existing directory declares ${parsed.path}`);
+  }
+  return out;
+}
+
+// ── accepted-terms state ────────────────────────────────────────────────────────
+export function snapshotLicenses(sdkRoot) {
+  const dir = path.join(sdkRoot, 'licenses');
+  return fs.readdirSync(dir).sort().map((name) => {
+    const p = path.join(dir, name);
+    const st = fs.lstatSync(p);
+    return `${name}|${st.isSymbolicLink() ? 'symlink' : st.isFile() ? 'file' : 'other'}|${st.isFile() ? createHash('sha256').update(fs.readFileSync(p)).digest('hex') : ''}`;
+  }).join('\n');
+}
+
+function acceptedHashes(sdkRoot, licenseId) {
+  const p = path.join(sdkRoot, 'licenses', licenseId);
+  if (fs.lstatSync(path.dirname(p)).isSymbolicLink()) refuse('licenses/ is a symlink');
+  let text;
+  try { text = fs.readFileSync(p, 'utf8'); } catch { refuse(`licenses/${licenseId} missing: terms were never accepted on this runner (not accepted here)`); }
+  return text.split(/\s+/).map((h) => h.trim().toLowerCase()).filter(Boolean);
+}
+
+// ── official metadata ───────────────────────────────────────────────────────────
+/** Default transport: one HTTPS GET of the pinned URL; no redirect, size capped. */
+export function httpsTransport(url) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    if (u.protocol !== 'https:' || u.hostname !== METADATA_HOST) { reject(new ProvisionRefusal(`refusing ${url}`)); return; }
+    const req = https.get(u, { headers: { 'User-Agent': 'holohunter-ci-sdk-provision' } }, (res) => {
+      if (res.statusCode !== 200) { res.resume(); reject(new ProvisionRefusal(`metadata HTTP ${res.statusCode}${res.headers.location ? ' (redirect refused)' : ''}`)); return; }
+      const chunks = [];
+      let size = 0;
+      res.on('data', (c) => {
+        size += c.length;
+        if (size > METADATA_MAX_BYTES) { req.destroy(new ProvisionRefusal('metadata exceeds size cap')); return; }
+        chunks.push(c);
+      });
+      res.on('end', () => resolve({ status: 200, url, body: Buffer.concat(chunks).toString('utf8') }));
+      res.on('error', reject);
+    });
+    req.setTimeout(120000, () => req.destroy(new ProvisionRefusal('metadata request timed out')));
+    req.on('error', reject);
+  });
+}
+
+const one = (re, text, what) => {
+  const all = [...text.matchAll(re)];
+  if (all.length !== 1) refuse(`metadata: expected exactly one ${what}, found ${all.length}`);
+  return all[0];
+};
+const attr = (attrs, name) => {
+  const all = [...String(attrs).matchAll(new RegExp(`\\b${name}\\s*=\\s*"([^"]*)"`, 'g'))];
+  return all.length === 1 ? all[0][1] : null;
+};
+const tag = (body, name) => {
+  const all = [...body.matchAll(new RegExp(`<${name}>([^<]*)</${name}>`, 'g'))];
+  return all.length === 1 ? all[0][1].trim() : null;
+};
+
+/**
+ * Validate the metadata for the two fixed packages. Returns
+ * { licenseId, licenseHash, archives: { [id]: { url, size, checksum } } } or throws.
+ */
+export function validateMetadata(xml, policy) {
+  const text = String(xml);
+  if (/<!DOCTYPE|<!ENTITY/i.test(text)) refuse('metadata: DOCTYPE / ENTITY declarations are refused');
+  if (!/<(?:\w+:)?sdk-repository\b/.test(text)) refuse('metadata: not an SDK repository document');
+  const channels = new Map([...text.matchAll(/<channel\b([^>]*)>([^<]*)<\/channel>/g)].map((m) => [attr(m[1], 'id'), m[2].trim()]));
+  const archives = {};
+  let licenseId = null;
+  for (const pkg of PACKAGES) {
+    const m = one(new RegExp(`<remotePackage\\b[^>]*\\bpath="${pkg.id.replace(/[.;]/g, (c) => `\\${c}`)}"[^>]*>([\\s\\S]*?)</remotePackage>`, 'g'), text, `remotePackage ${pkg.id}`);
+    const body = m[1];
+    if (/<remotePackage\b/.test(body)) refuse(`metadata: nested remotePackage in ${pkg.id}`);
+    const rev = one(/<revision>([\s\S]*?)<\/revision>/g, body, `${pkg.id} revision`)[1];
+    for (const k of ['major', 'minor', 'micro']) {
+      if (tag(rev, k) !== pkg.revision[k]) refuse(`metadata: ${pkg.id} revision ${k}=${tag(rev, k)} ≠ ${pkg.revision[k]}`);
+    }
+    if (/<preview>/.test(rev)) refuse(`metadata: ${pkg.id} is a preview revision`);
+    if (/<dependencies\b/.test(body)) refuse(`metadata: ${pkg.id} declares dependencies (not reviewed)`);
+    const chan = [...body.matchAll(/<channelRef\b([^>]*)\/?>/g)];
+    if (chan.length > 1) refuse(`metadata: ${pkg.id} has ${chan.length} channelRef`);
+    const chanId = chan.length ? attr(chan[0][1], 'ref') : 'channel-0';
+    if (chanId !== 'channel-0' || (channels.has('channel-0') && channels.get('channel-0') !== 'stable')) refuse(`metadata: ${pkg.id} channel ${chanId} is not the stable channel-0`);
+    const uses = one(/<uses-license\b([^>]*?)\/?>/g, body, `${pkg.id} uses-license`);
+    const ref = attr(uses[1], 'ref');
+    if (!ref || !(policy.licenses && policy.licenses[ref])) refuse(`metadata: ${pkg.id} uses licence "${ref}", which the policy does not authorize`);
+    if (licenseId && ref !== licenseId) refuse('metadata: the two packages use different licences');
+    licenseId = ref;
+    const linux = [...body.matchAll(/<archive>([\s\S]*?)<\/archive>/g)].map((a) => a[1]).filter((a) => tag(a, 'host-os') === 'linux');
+    if (linux.length !== 1) refuse(`metadata: ${pkg.id} needs exactly one linux archive, found ${linux.length}`);
+    const a = linux[0];
+    const arch = tag(a, 'host-arch');
+    if (arch !== null && arch !== 'x64') refuse(`metadata: ${pkg.id} linux archive arch ${arch}`);
+    const complete = one(/<complete>([\s\S]*?)<\/complete>/g, a, `${pkg.id} complete archive`)[1];
+    const url = tag(complete, 'url');
+    const size = tag(complete, 'size');
+    const ck = one(/<checksum\b([^>]*)>([^<]*)<\/checksum>/g, complete, `${pkg.id} checksum`);
+    const ckType = attr(ck[1], 'type');
+    const checksum = ck[2].trim().toLowerCase();
+    if (!url || !/^[A-Za-z0-9._-]+\.zip$/.test(url)) refuse(`metadata: ${pkg.id} archive url must be a bare .zip name, got ${url}`);
+    if (!size || !/^\d+$/.test(size)) refuse(`metadata: ${pkg.id} archive size invalid`);
+    const okCk = (ckType === null || ckType === 'sha1') ? /^[0-9a-f]{40}$/.test(checksum) : ckType === 'sha256' && /^[0-9a-f]{64}$/.test(checksum);
+    if (!okCk) refuse(`metadata: ${pkg.id} archive checksum invalid (${ckType || 'sha1'})`);
+    archives[pkg.id] = { url, size: Number(size), checksum, checksumType: ckType || 'sha1' };
+  }
+  const lic = [...text.matchAll(/<license\b([^>]*)>([\s\S]*?)<\/license>/g)].filter((m) => attr(m[1], 'id') === licenseId);
+  if (lic.length !== 1) refuse(`metadata: expected exactly one <license id="${licenseId}">, found ${lic.length}`);
+  let decoded;
+  try { decoded = decodeXmlText(lic[0][2]).trim(); } catch (err) { refuse(`metadata: licence text refused — ${err.message}`); }
+  if (!decoded) refuse('metadata: licence text is empty');
+  const licenseHash = sha1Hex(decoded);
+  const authorized = (policy.licenses[licenseId].authorizedHashes || []).map((h) => String(h).toLowerCase());
+  if (!authorized.includes(licenseHash)) refuse(`metadata: "${licenseId}" terms hash ${licenseHash} is not authorized by the policy (new / changed terms — STOP)`);
+  return { licenseId, licenseHash, archives };
+}
+
+// ── installer ───────────────────────────────────────────────────────────────────
+/** Default installer: the preinstalled sdkmanager, exact packages, stable channel, stdin closed. */
+export function spawnInstaller(sdkmanager, args, env) {
+  return new Promise((resolve) => {
+    const child = spawn(sdkmanager, args, { stdio: ['ignore', 'inherit', 'inherit'], env, shell: false });
+    const timer = setTimeout(() => child.kill('SIGKILL'), INSTALL_TIMEOUT_MS);
+    child.on('error', (err) => { clearTimeout(timer); resolve({ status: null, error: err.message }); });
+    child.on('exit', (code, signal) => { clearTimeout(timer); resolve({ status: code, signal }); });
+  });
+}
+
+const INSTALLER_ENV_KEYS = ['PATH', 'JAVA_HOME', 'HOME', 'LANG', 'TMPDIR'];
+
+/** Pure entry point (tests inject env / platform / sdkRoot / transport / runInstaller). */
+export async function provision({
+  env = process.env, platform = process.platform, sdkRoot = HOSTED_SDK_ROOT, policy,
+  transport = httpsTransport, runInstaller = spawnInstaller, readFile, log = console.log,
+} = {}) {
+  assertContext({ env, platform, ...(readFile ? { readFile } : {}) });
+  const sdkmanager = assertSdkRoot(sdkRoot, env);
+  const todo = missingPackages(sdkRoot);
+  if (todo.length === 0) {
+    log('[sdk-provision] both fixed packages already present; nothing installed (the guard re-validates them)');
+    return { installed: [] };
+  }
+  const res = await transport(METADATA_URL);
+  if (!res || res.status !== 200 || res.url !== METADATA_URL) refuse('metadata transport did not return the pinned URL with HTTP 200');
+  const meta = validateMetadata(res.body, policy);
+  const accepted = acceptedHashes(sdkRoot, meta.licenseId);
+  const authorized = new Set(policy.licenses[meta.licenseId].authorizedHashes.map((h) => String(h).toLowerCase()));
+  const unknown = accepted.filter((h) => !authorized.has(h));
+  if (unknown.length) refuse(`licenses/${meta.licenseId} already carries unreviewed hash(es) ${unknown.join(', ')}`);
+  if (!accepted.includes(meta.licenseHash)) refuse(`terms ${meta.licenseHash} are not already accepted on this runner; nothing is accepted here — STOP`);
+  const metaSha = createHash('sha256').update(res.body).digest('hex');
+  log(`[sdk-provision] metadata ${METADATA_URL} sha256=${metaSha}; terms ${meta.licenseId}=${meta.licenseHash} (authorized + already accepted)`);
+  for (const pkg of todo) log(`[sdk-provision] ${pkg.id}: linux archive ${meta.archives[pkg.id].url} size=${meta.archives[pkg.id].size} ${meta.archives[pkg.id].checksumType}=${meta.archives[pkg.id].checksum}`);
+
+  const before = snapshotLicenses(sdkRoot);
+  const installerEnv = Object.fromEntries(INSTALLER_ENV_KEYS.filter((k) => env[k] != null).map((k) => [k, env[k]]));
+  const args = [`--sdk_root=${sdkRoot}`, '--channel=0', '--install', ...todo.map((p) => p.id)];
+  const run = await runInstaller(sdkmanager, args, installerEnv);
+  const after = snapshotLicenses(sdkRoot);
+  if (after !== before) refuse('accepted-licence state CHANGED during install — STOP (nothing may be accepted)');
+  if (run.status !== 0) refuse(`sdkmanager exited ${run.status ?? run.signal ?? run.error}; install refused`);
+  const stillMissing = missingPackages(sdkRoot);
+  if (stillMissing.length) refuse(`not installed: ${stillMissing.map((p) => p.id).join(', ')} (e.g. a licence prompt was declined)`);
+  log(`[sdk-provision] installed ${todo.map((p) => p.id).join(', ')}; licence state unchanged`);
+  return { installed: todo.map((p) => p.id), metadataSha256: metaSha, licenseHash: meta.licenseHash };
+}
+
+const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMain) {
+  if (process.argv.length > 2) {
+    console.error('[sdk-provision] no arguments are accepted (fixed packages, URL and SDK root)');
+    process.exit(1);
+  }
+  let policy;
+  try {
+    policy = JSON.parse(fs.readFileSync(path.join(__dirname, 'android-sdk-policy.json'), 'utf8'));
+  } catch (err) {
+    console.error(`[sdk-provision] ${err.message}`);
+    process.exit(1);
+  }
+  try {
+    await provision({ policy });
+  } catch (err) {
+    if (err instanceof ProvisionRefusal) {
+      console.error(`[sdk-provision] REFUSED (fail closed; no terms accepted):\n${err.message}`);
+      process.exit(2);
+    }
+    console.error(`[sdk-provision] ${err.stack || err.message}`);
+    process.exit(1);
+  }
+}

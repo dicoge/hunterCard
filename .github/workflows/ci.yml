@@ -698,6 +698,9 @@ jobs:
       - name: Verify the offline Android SDK guard fails closed on missing/unauthorized packages, tools, licenses and unreviewed terms, and never installs or accepts anything (2026-11-07)
         run: npm run test:android-sdk-guard
 
+      - name: Verify the PR 284 SDK provisioning helper offline (fake transport + fake installer) — exact two packages, unknown/new terms stop before install, nothing accepted, one reviewed CI invocation (2026-11-08)
+        run: npm run test:android-sdk-provision
+
       - name: Verify the printing version / quote END TO END — native scan → handler → chooser → 加入 → session, latest and same-time conflict (v44)
         run: npm run test:scan-printing-version-flow
 
@@ -787,7 +790,20 @@ jobs:
           EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: dic1266-postpackage-guard-placeholder
         run: npx expo prebuild --platform android --no-install --clean
 
-      # 2026-11-07: CI never installs SDK packages and never accepts license terms
+      # 2026-11-08 (owner-approved, PR #284 branch ONLY): the hosted runner lacks
+      # ndk;27.1.12297006 and cmake;3.22.1. This step installs EXACTLY those two with the
+      # runner's preinstalled sdkmanager, and only after proving from the official repository
+      # metadata that both are bound to the policy's evidenced terms hash AND that hash is
+      # already in the runner's accepted licenses file. It accepts nothing (no --licenses,
+      # stdin closed, licenses/ snapshotted before/after). Unknown or new terms → STOP. The
+      # unchanged read-only guard below then re-validates everything before Gradle.
+      - name: Provision exactly NDK 27.1.12297006 + CMake 3.22.1 (PR 284 branch only; terms pre-verified; nothing accepted)
+        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository }}
+        run: |
+          set -euo pipefail
+          node scripts/ci/android-sdk-provision.mjs
+
+      # 2026-11-07: this guard never installs SDK packages and CI never accepts license terms
       # (the old `yes | sdkmanager --licenses … || true` accepted ANY terms, including
       # new ones). The guard only reads the runner's pre-installed SDK, resolves the
       # versions the build really needs from react-native's libs.versions.toml /

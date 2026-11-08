@@ -43,6 +43,7 @@
     "test:last-known-buy-fallback": "node scripts/test-last-known-buy-fallback.mjs",
     "test:buy-regen-fixed-point": "node scripts/test-buy-regen-fixed-point.mjs",
     "test:android-sdk-guard": "node scripts/test-android-sdk-guard.mjs",
+    "test:android-sdk-provision": "node scripts/test-android-sdk-provision.mjs",
     "replay:buy-transition": "node scripts/replay-buy-transition.mjs",
     "test:push-freshness": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-push-freshness.mjs",
     "test:push-backend": "node scripts/test-push-backend.cjs",
