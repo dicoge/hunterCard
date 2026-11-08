@@ -840,6 +840,201 @@ jobs:
           path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: warn
 
+      # ── LOCAL PROPOSAL R2 (2026-11-09): SYNTHETIC retained-UI fixture test client ──────────────
+      # Appended AFTER the unchanged baseline build, its post-package guard and its provenance upload.
+      # Every step below runs ONLY when everything before it succeeded AND the event is the real
+      # same-repository pull_request of draft PR #284 on fix/last-known-price-20261107; on push,
+      # manual dispatch, other PRs or forks they are skipped and the job result is unchanged.
+      # They reuse this job's Node / Java and the SDK the steps above already provisioned and verified
+      # (exactly once); they contain no SDK installer call. A read-only re-check of the fixture
+      # project uses the same unchanged guard. The fixture client is built from its OWN detached
+      # worktree of the exact d5 product commit (tree e030503e…) with exactly two data files replaced
+      # by the generator (ONE sellQuoteRetained flag on hBD24-010_hPR_P_hBD24-010_P) and its GENERATED
+      # manifest patched to testOnly=true / allowBackup=false. Rendering evidence only: not scraped
+      # data, not a missing-this-run observation, not a remote download, not corrupt-cache evidence.
+      # NEVER Alpha / Play / Production; nothing here deploys, signs with a release key or uses secrets.
+      - name: Fixture (PR 284 only) — fixed paths and pins
+        if: ${{ success() && github.event_name == 'pull_request' && github.event.pull_request.number == 284 && github.event.pull_request.draft && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository }}
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/retained-fixture" "$RUNNER_TEMP/retained-fixture/evidence"
+          {
+            echo "FX=$RUNNER_TEMP/retained-fixture"
+            echo "FX_EVIDENCE=$RUNNER_TEMP/retained-fixture/evidence"
+            echo "FX_BUILD=$RUNNER_TEMP/d5-fixture-build"
+            echo "FX_PRODUCT_COMMIT=d5b3c6cfb1c8c88261327f38f7b5d590dce8a50a"
+            echo "FX_PRODUCT_TREE=e030503eee9cf668b5c42a7e13f3c512a94a5e31"
+            echo "FX_DEBUG_CERT=fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c"
+          } >> "$GITHUB_ENV"
+
+      # The job's own checkout above is the default refs/pull/284/merge commit and is left untouched.
+      # The QA scripts come from the REAL PR head commit, fetched by an ordinary checkout into a
+      # separate path with the default token, credentials not persisted.
+      - name: Fixture (PR 284 only) — checkout the actual PR head commit separately
+        if: ${{ success() && github.event_name == 'pull_request' && github.event.pull_request.number == 284 && github.event.pull_request.draft && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: retained-fixture-pr-head
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fixture (PR 284 only) — bind the head, the exact 3-file delta on d5 and the QA script hashes
+        if: ${{ success() && github.event_name == 'pull_request' && github.event.pull_request.number == 284 && github.event.pull_request.draft && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository }}
+        working-directory: retained-fixture-pr-head
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # Filled from the reviewed local files before publication; a placeholder never matches.
+          GENERATOR_SHA256: 88a62408b215a2c14e5a997f191ce7c69dbc000b406f33cc622c99f84c23f884
+          PATCHER_SHA256: daf5760dfb1d7303f63c796da8c4fde9cd649a26841b8e4dc792d549b107ac31
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          test "$(git rev-parse HEAD^)" = "$FX_PRODUCT_COMMIT"
+          test "$(git rev-parse "$FX_PRODUCT_COMMIT^{tree}")" = "$FX_PRODUCT_TREE"
+          changed=$(git diff --name-only "$FX_PRODUCT_COMMIT" HEAD | sort)
+          expected=$(printf '%s\n' .github/workflows/ci.yml \
+            qa/retained-ui-fixture/generate_retained_fixture.mjs qa/retained-ui-fixture/patch-test-manifest.mjs | sort)
+          if [ "$changed" != "$expected" ]; then
+            echo "::error::PR head must add exactly the three QA files on top of $FX_PRODUCT_COMMIT"
+            printf '%s\n' "$changed"
+            exit 1
+          fi
+          test "$(sha256sum qa/retained-ui-fixture/generate_retained_fixture.mjs | cut -d' ' -f1)" = "$GENERATOR_SHA256"
+          test "$(sha256sum qa/retained-ui-fixture/patch-test-manifest.mjs | cut -d' ' -f1)" = "$PATCHER_SHA256"
+          printf '%s\n' "$changed" > "$FX_EVIDENCE/QA_DELTA_VS_D5.txt"
+
+      - name: Fixture (PR 284 only) — own detached worktree of the exact d5 product commit + locked deps
+        if: ${{ success() && github.event_name == 'pull_request' && github.event.pull_request.number == 284 && github.event.pull_request.draft && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository }}
+        run: |
+          set -euo pipefail
+          git -C retained-fixture-pr-head worktree add --detach "$FX_BUILD" "$FX_PRODUCT_COMMIT"
+          test "$(git -C "$FX_BUILD" rev-parse HEAD)" = "$FX_PRODUCT_COMMIT"
+          test "$(git -C "$FX_BUILD" rev-parse 'HEAD^{tree}')" = "$FX_PRODUCT_TREE"
+          test -z "$(git -C "$FX_BUILD" status --porcelain)"
+          cd "$FX_BUILD"
+          npm ci
+
+      - name: Fixture (PR 284 only) — generate the ONE-flag fixture and apply exactly two data files
+        if: ${{ success() && github.event_name == 'pull_request' && github.event.pull_request.number == 284 && github.event.pull_request.draft && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository }}
+        run: |
+          set -euo pipefail
+          GEN="$GITHUB_WORKSPACE/retained-fixture-pr-head/qa/retained-ui-fixture/generate_retained_fixture.mjs"
+          node "$GEN" --verify-inputs --product-root "$FX_BUILD"
+          node "$GEN" --generate --product-root "$FX_BUILD" --out "$FX/out"
+          cp "$FX/out/FIXTURE_MANIFEST.json" "$FX_EVIDENCE/"
+          cp "$FX/out/data/database.json" "$FX_BUILD/data/database.json"
+          cp "$FX/out/public/data/database.json" "$FX_BUILD/public/data/database.json"
+          cd "$FX_BUILD"
+          test "$(git status --porcelain | sort)" = "$(printf ' M data/database.json\n M public/data/database.json\n' | sort)"
+          git diff --numstat > "$FX_EVIDENCE/SOURCE_DIFF_NUMSTAT.txt"
+          cat "$FX_EVIDENCE/SOURCE_DIFF_NUMSTAT.txt"
+          grep -qx $'2\t1\tdata/database.json' "$FX_EVIDENCE/SOURCE_DIFF_NUMSTAT.txt"
+          grep -qx $'1\t1\tpublic/data/database.json' "$FX_EVIDENCE/SOURCE_DIFF_NUMSTAT.txt"
+
+      - name: Fixture (PR 284 only) — unchanged product data / privacy / native-parity / export gates
+        if: ${{ success() && github.event_name == 'pull_request' && github.event.pull_request.number == 284 && github.event.pull_request.draft && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository }}
+        working-directory: ${{ env.FX_BUILD }}
+        run: |
+          set -euo pipefail
+          node scripts/generate-native-database.mjs --check
+          npm run test:expo-native-compat
+          npm run test:store-mvp-strip
+          npm run test:store-mvp-native-export
+          npm run test:native-guest-data
+          npm run test:native-price-artifact
+          npm run test:last-known-price
+          npm run test:remote-catalog
+          npm run test:release-apk-pipeline
+          npm run test:release-apk-size-optim
+
+      - name: Fixture (PR 284 only) — prebuild the production-apk profile (Store MVP) in the fixture worktree
+        if: ${{ success() && github.event_name == 'pull_request' && github.event.pull_request.number == 284 && github.event.pull_request.draft && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository }}
+        working-directory: ${{ env.FX_BUILD }}
+        env:
+          EAS_BUILD_PROFILE: production-apk
+          EAS_BUILD_PLATFORM: android
+          EXPO_PUBLIC_STORE_MVP: '1'
+          EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: retained-ui-fixture-test-placeholder
+        run: npx expo prebuild --platform android --no-install --clean
+
+      - name: Fixture (PR 284 only) — patch the GENERATED manifest only (testOnly=true, allowBackup=false)
+        if: ${{ success() && github.event_name == 'pull_request' && github.event.pull_request.number == 284 && github.event.pull_request.draft && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository }}
+        working-directory: ${{ env.FX_BUILD }}
+        run: |
+          set -euo pipefail
+          M=android/app/src/main/AndroidManifest.xml
+          cp "$M" "$FX_EVIDENCE/AndroidManifest.generated.xml"
+          node "$GITHUB_WORKSPACE/retained-fixture-pr-head/qa/retained-ui-fixture/patch-test-manifest.mjs" \
+            --apply "$M" --record "$FX_EVIDENCE/MANIFEST_PATCH.json"
+          cp "$M" "$FX_EVIDENCE/AndroidManifest.patched.xml"
+          # diff exits 1 when the files differ (the expected outcome); 0 (no change) or >1 (error) fail.
+          rc=0
+          diff -u "$FX_EVIDENCE/AndroidManifest.generated.xml" "$FX_EVIDENCE/AndroidManifest.patched.xml" \
+            > "$FX_EVIDENCE/MANIFEST_DIFF.txt" || rc=$?
+          test "$rc" -eq 1
+          test "$(git status --porcelain -- . ':!android' | sort)" = "$(printf ' M data/database.json\n M public/data/database.json\n' | sort)"
+
+      # Read-only re-check of the fixture's own generated project with the same unchanged guard
+      # (no install); the SDK root is the one the baseline steps above already set and verified.
+      - name: Fixture (PR 284 only) — read-only SDK re-check for the fixture project
+        if: ${{ success() && github.event_name == 'pull_request' && github.event.pull_request.number == 284 && github.event.pull_request.draft && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository }}
+        working-directory: ${{ env.FX_BUILD }}
+        run: |
+          set -euo pipefail
+          node scripts/ci/android-sdk-guard.mjs --profile release --sdk-root "$ANDROID_HOME"
+
+      - name: Fixture (PR 284 only) — assemble the TEST client (template debug signer; no SDK auto-download)
+        if: ${{ success() && github.event_name == 'pull_request' && github.event.pull_request.number == 284 && github.event.pull_request.draft && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository }}
+        working-directory: ${{ env.FX_BUILD }}/android
+        env:
+          _JAVA_OPTIONS: "-Xmx4g -Dfile.encoding=UTF-8"
+        run: |
+          chmod +x gradlew
+          ./gradlew app:assembleRelease -Pandroid.builder.sdkDownload=false --no-daemon --console=plain --stacktrace
+
+      - name: Fixture (PR 284 only) — post-package guard, signer, package and test-only manifest checks
+        if: ${{ success() && github.event_name == 'pull_request' && github.event.pull_request.number == 284 && github.event.pull_request.draft && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository }}
+        working-directory: ${{ env.FX_BUILD }}
+        run: |
+          set -euo pipefail
+          npm run test:release-apk-postpackage
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          BT="$ANDROID_HOME/build-tools/36.0.0"
+          "$BT/apksigner" verify --print-certs "$APK" > "$FX_EVIDENCE/apksigner-certs.txt"
+          digests=$(sed -n 's/^Signer #[0-9]* certificate SHA-256 digest: \([0-9a-f]\{64\}\)$/\1/p' "$FX_EVIDENCE/apksigner-certs.txt")
+          test "$digests" = "$FX_DEBUG_CERT"
+          test "$("$BT/aapt2" dump packagename "$APK")" = "com.dicoge.holohunter"
+          "$BT/aapt2" dump xmltree --file AndroidManifest.xml "$APK" > "$FX_EVIDENCE/manifest-xmltree.txt"
+          # Value of android:<name>(<id>)= exactly as aapt2 prints it; one line per occurrence.
+          attr() { awk -v k="android:$1($2)=" 'index($0, k) { print substr($0, index($0, k) + length(k)) }' "$FX_EVIDENCE/manifest-xmltree.txt"; }
+          to=$(attr testOnly 0x01010272)
+          ab=$(attr allowBackup 0x01010280)
+          dbg=$(attr debuggable 0x0101000f)
+          # aapt2 prints booleans either as true/false or as the typed form; both are the same value.
+          case "$to" in true|'(type 0x12)0xffffffff') ;; *) echo "::error::android:testOnly is '$to' (want true)"; exit 1 ;; esac
+          case "$ab" in false|'(type 0x12)0x0') ;; *) echo "::error::android:allowBackup is '$ab' (want false)"; exit 1 ;; esac
+          case "$dbg" in ''|false|'(type 0x12)0x0') ;; *) echo "::error::android:debuggable is '$dbg'"; exit 1 ;; esac
+          sha256sum "$APK" > "$FX_EVIDENCE/APK_SHA256.txt"
+          cp "$APK" "$FX_EVIDENCE/hh-retained-ui-fixture-TEST-ONLY.apk"
+          cat > "$FX_EVIDENCE/LABEL.txt" <<EOF
+          SYNTHETIC TEST-ONLY RENDERING FIXTURE CLIENT — NEVER ALPHA / PLAY / PRODUCTION / RELEASE.
+          Product code: $FX_PRODUCT_COMMIT (tree $FX_PRODUCT_TREE) + ONE synthetic sellQuoteRetained flag
+          (hBD24-010_hPR_P_hBD24-010_P). Not scraped data, not a missing-this-run observation, not a
+          remote download, not corrupt-cache evidence. android:testOnly=true (adb install -t),
+          allowBackup=false, not debuggable, template debug signer $FX_DEBUG_CERT. Run OFFLINE ONLY: an
+          online launch legitimately replaces the fixture bundle with the official catalog.
+          run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          EOF
+
+      - name: Fixture (PR 284 only) — upload the labelled test-only artifact
+        if: ${{ success() && github.event_name == 'pull_request' && github.event.pull_request.number == 284 && github.event.pull_request.draft && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: SYNTHETIC-retained-ui-fixture-TEST-ONLY-never-release
+          path: ${{ env.FX_EVIDENCE }}
+          if-no-files-found: error
+
   # DIC-1430 Actions registry recovery — the registered-CI trampoline.
   #
   # `.github/workflows/holohunter-exact-sha-deploy.yml` exists on the default
