@@ -20,8 +20,11 @@
  *   - metadata: the one pinned official URL over HTTPS, host pinned, no redirect, size capped;
  *     no DOCTYPE/ENTITY; exactly one remotePackage per identity; exact revision; stable channel;
  *     no preview; no dependencies; exactly one Linux archive (bare .zip name + checksum);
- *     exactly one referenced <license>, decoded + trimmed SHA-1 ∈ policy authorizedHashes AND
- *     ∈ the runner's existing accepted licenses/<id> file (which holds only authorized hashes).
+ *     exactly one referenced <license>, canonicalized EXACTLY as sdkmanager does (see
+ *     officialLicenseText) and its SHA-1 ∈ policy authorizedHashes AND ∈ the runner's existing
+ *     accepted licenses/<id> file (which holds only authorized hashes);
+ *   - runner evidence (logged before any fetch/install; non-sensitive): the preinstalled
+ *     cmdline-tools source.properties revision/path and every hash token already in licenses/.
  *
  * Usage (CI only): node scripts/ci/android-sdk-provision.mjs
  * Exit: 0 ok (installed, or already present) · 2 refusal · 1 unexpected error.
@@ -120,6 +123,43 @@ export function missingPackages(sdkRoot) {
   return out;
 }
 
+// ── runner evidence (read-only; hex hashes, versions and file names only) ───────
+/**
+ * Preinstalled cmdline-tools version evidence for the CI log (read-only, never blocks: the host
+ * reads it after CI; sdkmanager's own licence check + closed stdin + the guard are the gates).
+ */
+export function cmdlineToolsVersion(sdkRoot) {
+  const p = path.join(sdkRoot, 'cmdline-tools/latest/source.properties');
+  let text;
+  try {
+    if (!realInside(sdkRoot, p, 'cmdline-tools source.properties')) return { revision: 'unknown', path: 'unknown' };
+    text = fs.readFileSync(p, 'utf8');
+  } catch (err) {
+    if (err instanceof ProvisionRefusal) throw err;
+    return { revision: 'unknown', path: 'unknown' };
+  }
+  const props = {};
+  for (const line of text.split(/\r?\n/)) {
+    const m = /^\s*(Pkg\.Revision|Pkg\.Path)\s*=\s*(.*?)\s*$/.exec(line);
+    if (m) props[m[1]] = m[2];
+  }
+  const safe = (v) => (v && /^[A-Za-z0-9.;_ -]{1,64}$/.test(v) ? v : 'unknown');
+  return { revision: safe(props['Pkg.Revision']), path: safe(props['Pkg.Path']) };
+}
+
+/** Every licenses/ entry with its 40-hex tokens, each marked against the policy (logged; never changed). */
+export function observeAcceptedState(sdkRoot, policy) {
+  const dir = path.join(sdkRoot, 'licenses');
+  return fs.readdirSync(dir).sort().map((name) => {
+    const st = fs.lstatSync(path.join(dir, name));
+    if (!st.isFile()) return { name, type: st.isSymbolicLink() ? 'symlink' : 'other', hashes: [], otherTokens: 0 };
+    const tokens = fs.readFileSync(path.join(dir, name), 'utf8').split(/\s+/).map((t) => t.trim().toLowerCase()).filter(Boolean);
+    const known = new Set((policy?.licenses?.[name]?.authorizedHashes || []).map((h) => String(h).toLowerCase()));
+    const hashes = tokens.filter((t) => /^[0-9a-f]{40}$/.test(t)).map((h) => ({ hash: h, authorized: known.has(h) }));
+    return { name, type: 'file', hashes, otherTokens: tokens.length - hashes.length };
+  });
+}
+
 // ── accepted-terms state ────────────────────────────────────────────────────────
 export function snapshotLicenses(sdkRoot) {
   const dir = path.join(sdkRoot, 'licenses');
@@ -175,9 +215,42 @@ const tag = (body, name) => {
   return all.length === 1 ? all[0][1].trim() : null;
 };
 
+// ── official licence canonicalization ───────────────────────────────────────────
+// sdkmanager does NOT hash the raw (trimmed) XML text. In Android SDK Command-line Tools
+// (22.0 verified by static javap of tools.repository.jar: LicenseType.value carries
+// @XmlJavaTypeAdapter(TrimStringAdapter.class)) the parsed text first passes through the AOSP
+// adapter, unchanged since 2015:
+// https://android.googlesource.com/platform/tools/base/+/refs/heads/mirror-goog-studio-main/repository/src/main/java/com/android/repository/impl/meta/TrimStringAdapter.java
+//   v.replaceAll("(?<=\\s)[ \t]*", "")      remove spaces/tabs preceded by whitespace
+//    .replaceAll("(?<!\n)\n(?!\n)", " ")    lone newline → space (blank lines kept)
+//    .replaceAll(" +", " ")                 collapse spaces
+//    .trim()                                Java trim
+// License.getLicenseHash() is the SHA-1 of that value. This is a literal port, NOT a generic
+// whitespace collapse: Java's default \s is ASCII [ \t\n\x0B\f\r] (JS \s also matches NBSP etc.),
+// tabs not preceded by whitespace survive, paragraph breaks survive, and Java String.trim()
+// strips code units <= U+0020 only.
+export function officialTrimStringAdapter(v) {
+  return String(v)
+    .replace(/(?<=[ \t\n\x0B\f\r])[ \t]*/g, '')
+    .replace(/(?<!\n)\n(?!\n)/g, ' ')
+    .replace(/ +/g, ' ')
+    .replace(/^[\x00-\x20]+|[\x00-\x20]+$/g, '');
+}
+
+/**
+ * The value sdkmanager hashes for a <license> element body: XML 1.0 §2.11 end-of-line handling
+ * (the parser turns CRLF / lone CR in the document into LF; a &#13; reference stays CR), the
+ * guard's strict decodeXmlText (5 predefined entities, numeric refs, CDATA; anything else
+ * throws), then the official adapter. Also returns the raw decoded+trimmed form for provenance only.
+ */
+export function officialLicenseText(rawBody) {
+  const decoded = decodeXmlText(String(rawBody).replace(/\r\n?/g, '\n'));
+  return { canonical: officialTrimStringAdapter(decoded), rawTrimmed: decoded.trim() };
+}
+
 /**
  * Validate the metadata for the two fixed packages. Returns
- * { licenseId, licenseHash, archives: { [id]: { url, size, checksum } } } or throws.
+ * { licenseId, licenseHash, rawTrimHash, archives: { [id]: { url, size, checksum } } } or throws.
  */
 export function validateMetadata(xml, policy) {
   const text = String(xml);
@@ -224,13 +297,14 @@ export function validateMetadata(xml, policy) {
   }
   const lic = [...text.matchAll(/<license\b([^>]*)>([\s\S]*?)<\/license>/g)].filter((m) => attr(m[1], 'id') === licenseId);
   if (lic.length !== 1) refuse(`metadata: expected exactly one <license id="${licenseId}">, found ${lic.length}`);
-  let decoded;
-  try { decoded = decodeXmlText(lic[0][2]).trim(); } catch (err) { refuse(`metadata: licence text refused — ${err.message}`); }
-  if (!decoded) refuse('metadata: licence text is empty');
-  const licenseHash = sha1Hex(decoded);
+  let text2;
+  try { text2 = officialLicenseText(lic[0][2]); } catch (err) { refuse(`metadata: licence text refused — ${err.message}`); }
+  if (!text2.canonical) refuse('metadata: licence text is empty');
+  const licenseHash = sha1Hex(text2.canonical);
+  const rawTrimHash = sha1Hex(text2.rawTrimmed);
   const authorized = (policy.licenses[licenseId].authorizedHashes || []).map((h) => String(h).toLowerCase());
-  if (!authorized.includes(licenseHash)) refuse(`metadata: "${licenseId}" terms hash ${licenseHash} is not authorized by the policy (new / changed terms — STOP)`);
-  return { licenseId, licenseHash, archives };
+  if (!authorized.includes(licenseHash)) refuse(`metadata: "${licenseId}" terms hash ${licenseHash} (official TrimStringAdapter form; raw-trim ${rawTrimHash}) is not authorized by the policy (new / changed terms — STOP)`);
+  return { licenseId, licenseHash, rawTrimHash, archives };
 }
 
 // ── installer ───────────────────────────────────────────────────────────────────
@@ -253,10 +327,15 @@ export async function provision({
 } = {}) {
   assertContext({ env, platform, ...(readFile ? { readFile } : {}) });
   const sdkmanager = assertSdkRoot(sdkRoot, env);
+  const tools = cmdlineToolsVersion(sdkRoot);
+  log(`[sdk-provision] preinstalled cmdline-tools Pkg.Revision=${tools.revision} Pkg.Path=${tools.path} (official TrimStringAdapter licence form statically verified on 22.0; sdkmanager itself still decides — any prompt reads closed stdin and fails)`);
+  for (const f of observeAcceptedState(sdkRoot, policy)) {
+    log(`[sdk-provision] runner licenses/${f.name} (${f.type}, ${f.hashes.length} hash(es)): ${f.hashes.map((h) => `${h.hash}${h.authorized ? ' [policy-authorized]' : ' [not in policy]'}`).join(', ') || '(no hash tokens)'}${f.otherTokens ? `; ${f.otherTokens} non-hash token(s)` : ''}`);
+  }
   const todo = missingPackages(sdkRoot);
   if (todo.length === 0) {
     log('[sdk-provision] both fixed packages already present; nothing installed (the guard re-validates them)');
-    return { installed: [] };
+    return { installed: [], cmdlineTools: tools };
   }
   const res = await transport(METADATA_URL);
   if (!res || res.status !== 200 || res.url !== METADATA_URL) refuse('metadata transport did not return the pinned URL with HTTP 200');
@@ -267,7 +346,7 @@ export async function provision({
   if (unknown.length) refuse(`licenses/${meta.licenseId} already carries unreviewed hash(es) ${unknown.join(', ')}`);
   if (!accepted.includes(meta.licenseHash)) refuse(`terms ${meta.licenseHash} are not already accepted on this runner; nothing is accepted here — STOP`);
   const metaSha = createHash('sha256').update(res.body).digest('hex');
-  log(`[sdk-provision] metadata ${METADATA_URL} sha256=${metaSha}; terms ${meta.licenseId}=${meta.licenseHash} (authorized + already accepted)`);
+  log(`[sdk-provision] metadata ${METADATA_URL} sha256=${metaSha}; terms ${meta.licenseId}=${meta.licenseHash} (official TrimStringAdapter form = what sdkmanager hashes; authorized + already accepted). Provenance only: raw decoded+trimmed XML text SHA-1 ${meta.rawTrimHash} is NOT the SDK fingerprint and is never authorized`);
   for (const pkg of todo) log(`[sdk-provision] ${pkg.id}: linux archive ${meta.archives[pkg.id].url} size=${meta.archives[pkg.id].size} ${meta.archives[pkg.id].checksumType}=${meta.archives[pkg.id].checksum}`);
 
   const before = snapshotLicenses(sdkRoot);
@@ -280,7 +359,7 @@ export async function provision({
   const stillMissing = missingPackages(sdkRoot);
   if (stillMissing.length) refuse(`not installed: ${stillMissing.map((p) => p.id).join(', ')} (e.g. a licence prompt was declined)`);
   log(`[sdk-provision] installed ${todo.map((p) => p.id).join(', ')}; licence state unchanged`);
-  return { installed: todo.map((p) => p.id), metadataSha256: metaSha, licenseHash: meta.licenseHash };
+  return { installed: todo.map((p) => p.id), metadataSha256: metaSha, licenseHash: meta.licenseHash, rawTrimHash: meta.rawTrimHash, cmdlineTools: tools };
 }
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);

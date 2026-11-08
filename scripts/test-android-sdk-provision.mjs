@@ -16,8 +16,15 @@
  *             extra hash, lacking the hash), installer (non-zero, declined prompt, licence write).
  *   wiring:   exactly one reviewed invocation, PR #284-only condition, before the unchanged
  *             unconditional guard, no other workflow — plus mutation controls.
+ *   normalization (2026-11-08): the official AOSP TrimStringAdapter port against hand-derived
+ *             vectors (Java ASCII \s / trim, NBSP, VT, U+2028, tabs, lone vs paragraph LF) with
+ *             wrong-port mutants; formatted text → same canonical hash accepted, while wording /
+ *             paragraph / NBSP / entity / licence-ref / raw-trim-only / unknown-hash changes STOP
+ *             before the fake installer; runner tool-version + accepted-hash evidence logged first.
  *
  * Run: node scripts/test-android-sdk-provision.mjs
+ *      HH_SDK_REPOSITORY_XML=<saved official repository2-3.xml> node scripts/test-android-sdk-provision.mjs
+ *        (adds the real-metadata positive: must yield 24333 under the unchanged policy; no network)
  */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -25,14 +32,18 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
+import { createHash } from 'node:crypto';
 import {
   provision, validateMetadata, httpsTransport, ProvisionRefusal, PACKAGES, METADATA_URL, ALLOWED_BRANCH,
+  officialTrimStringAdapter, officialLicenseText,
 } from './ci/android-sdk-provision.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(__dirname, '..');
 const REAL_POLICY = JSON.parse(fs.readFileSync(path.join(__dirname, 'ci/android-sdk-policy.json'), 'utf8'));
 const ABC_SHA1 = 'a9993e364706816aba3e25717850c26c9cd0d89d';
+// Independent of the helper / guard hashing code (node:crypto directly).
+const sha1 = (s) => createHash('sha1').update(s, 'utf8').digest('hex');
 const POLICY = { ...JSON.parse(JSON.stringify(REAL_POLICY)), licenses: { 'android-sdk-license': { authorizedHashes: [ABC_SHA1] } } };
 
 let passed = 0;
@@ -44,9 +55,10 @@ const refusesAsync = async (p, re) => {
   await assert.rejects(p, (e) => e instanceof ProvisionRefusal && re.test(e.message), `expected refusal ${re}`);
 };
 
-function sdk({ accepted = ABC_SHA1 } = {}) {
+function sdk({ accepted = ABC_SHA1, tools = 'Pkg.Revision=22.0\nPkg.Path=cmdline-tools;22.0\nPkg.Desc=Android SDK Command-line Tools\n' } = {}) {
   const root = tmp('sdk');
   write(path.join(root, 'cmdline-tools/latest/bin/sdkmanager'), '#!/bin/sh\nexit 99\n');
+  if (tools != null) write(path.join(root, 'cmdline-tools/latest/source.properties'), tools);
   fs.mkdirSync(path.join(root, 'licenses'), { recursive: true });
   if (accepted != null) write(path.join(root, 'licenses/android-sdk-license'), `\n${accepted}`);
   return root;
@@ -106,6 +118,9 @@ function installer(sdkRoot, { status = 0, install = true, touchLicense = false }
   return f;
 }
 const quiet = () => {};
+/** Independent licences/ snapshot (names + bytes), not the helper's own snapshot function. */
+const snapshotOf = (root) => fs.readdirSync(path.join(root, 'licenses')).sort()
+  .map((n) => `${n}=${fs.readFileSync(path.join(root, 'licenses', n), 'hex')}`).join('|');
 const run = (root, over = {}) => provision({ env: env(root, over.env), platform: over.platform || 'linux', sdkRoot: root, policy: over.policy || POLICY, transport: over.transport || transportOf(metadata()), runInstaller: over.runInstaller || installer(root), log: quiet });
 
 try {
@@ -137,6 +152,161 @@ try {
     await provision({ env: env(root3), platform: 'linux', sdkRoot: root3, policy: POLICY, transport: transportOf(metadata()), runInstaller: inst3, log: quiet });
     assert.deepEqual(inst3.calls[0].args.slice(-1), ['ndk;27.1.12297006']);
     ok('exact two packages, stable channel, minimal env, licence state unchanged; present → no fetch/install; only missing installed');
+  }
+
+  console.log('── official TrimStringAdapter port: hand-derived vectors (independent oracle) ──');
+  // Each expected value was derived by hand from the AOSP rules (Java default \s = [ \t\n\x0B\f\r];
+  // String.trim() strips code units <= U+0020), NOT by running the helper.
+  const VECTORS = [
+    ['a  b', 'a b'],                                   // repeated spaces collapse
+    ['line one\nline two', 'line one line two'],       // lone LF → space
+    ['para one.\n\npara two.', 'para one.\n\npara two.'], // blank paragraph preserved
+    ['a\n\n\nb', 'a\n\n\nb'],                          // any LF run ≥ 2 preserved
+    ['x\n   y', 'x y'],                                // indentation after LF removed, then LF → space
+    ['use\tclause', 'use\tclause'],                    // tab NOT preceded by whitespace survives
+    ['a \tb', 'a b'],                                  // tab preceded by space removed
+    ['a\t\tb', 'a\tb'],                                // second tab preceded by tab removed
+    ['a  b', 'a  b'],                        // NBSP is not Java \s: following space kept
+    [' x ', ' x '],                // Java trim keeps NBSP
+    [' x', ' x'],                            // Java trim keeps U+2028 (JS trim would not)
+    ['a\u000B b', 'a\u000Bb'],                         // vertical tab IS Java \s: following space removed
+    ['\u000Bx ', 'x'],                                 // Java trim strips VT and trailing space
+    [' \n  lead\n', 'lead'],                           // leading/trailing layout
+    ['a \n b', 'a b'],
+    ['p1.\n \np2.', 'p1.\n\np2.'],                     // whitespace-only line becomes a blank paragraph
+    ['x\r\n y', 'x\r y'],                              // adapter level: CR is \s, LF after CR is lone
+  ];
+  {
+    for (const [input, expected] of VECTORS) assert.equal(officialTrimStringAdapter(input), expected, JSON.stringify(input));
+    // Mutation controls: plausible-but-wrong ports must each fail at least one vector.
+    const generic = (s) => s.replace(/\s+/g, ' ').trim();
+    const MUTANTS = {
+      'generic whitespace collapse': generic,
+      'JS \\s in the lookbehind': (s) => s.replace(/(?<=\s)[ \t]*/g, '').replace(/(?<!\n)\n(?!\n)/g, ' ').replace(/ +/g, ' ').replace(/^[\x00-\x20]+|[\x00-\x20]+$/g, ''),
+      'JS String.trim': (s) => s.replace(/(?<=[ \t\n\x0B\f\r])[ \t]*/g, '').replace(/(?<!\n)\n(?!\n)/g, ' ').replace(/ +/g, ' ').trim(),
+      'lone-LF rule dropped': (s) => s.replace(/(?<=[ \t\n\x0B\f\r])[ \t]*/g, '').replace(/ +/g, ' ').replace(/^[\x00-\x20]+|[\x00-\x20]+$/g, ''),
+      'every LF run → space': (s) => s.replace(/(?<=[ \t\n\x0B\f\r])[ \t]*/g, '').replace(/\n+/g, ' ').replace(/ +/g, ' ').replace(/^[\x00-\x20]+|[\x00-\x20]+$/g, ''),
+      'step 1 dropped': (s) => s.replace(/(?<!\n)\n(?!\n)/g, ' ').replace(/ +/g, ' ').replace(/^[\x00-\x20]+|[\x00-\x20]+$/g, ''),
+      'tabs collapsed too': (s) => s.replace(/(?<=[ \t\n\x0B\f\r])[ \t]*/g, '').replace(/(?<!\n)\n(?!\n)/g, ' ').replace(/[ \t]+/g, ' ').replace(/^[\x00-\x20]+|[\x00-\x20]+$/g, ''),
+      'raw trim only (old false preflight)': (s) => s.trim(),
+    };
+    for (const [name, fn] of Object.entries(MUTANTS)) {
+      assert.ok(VECTORS.some(([i, e]) => fn(i) !== e), `mutant "${name}" must fail at least one vector`);
+    }
+    // XML layer: §2.11 end-of-line handling + the guard's strict decoder, then the adapter.
+    const XML_VECTORS = [
+      ['x\r\ny', 'x y'],                 // CRLF in the document → LF → lone → space
+      ['x\ry', 'x y'],                   // lone CR → LF
+      ['x&#13;\ny', 'x\r y'],            // a CR character reference is NOT end-of-line normalized
+      ['a&amp;b  c', 'a&b c'],
+      ['<![CDATA[ a  b ]]>', 'a b'],
+    ];
+    for (const [raw, expected] of XML_VECTORS) assert.equal(officialLicenseText(raw).canonical, expected, JSON.stringify(raw));
+    assert.equal(officialLicenseText('  x\n   y \n').rawTrimmed, 'x\n   y', 'raw-trim form kept for provenance only');
+    for (const bad of ['&nbsp;', 'a <b>x</b>', '&amp', '<![CDATA[x']) assert.throws(() => officialLicenseText(bad), Error, `malformed ${bad} refused`);
+    ok(`${VECTORS.length} adapter + ${XML_VECTORS.length} XML vectors match the hand-derived oracle; ${Object.keys(MUTANTS).length} wrong ports each caught; malformed entities/markup/CDATA still refused`);
+  }
+
+  console.log('── formatted licence: same canonical terms accepted, substantive changes STOP before installer ──');
+  {
+    // RAW is CANON laid out the way repository XML wraps text (indentation, lone line breaks, a tab
+    // after a line break, repeated spaces). CANON was derived by hand from the AOSP rules.
+    const RAW = '\n  Terms and Conditions\n\n  This is the Android SDK\n  test agreement.   1. Introduction\n\tapplies.\n\n  2. Second clause.\n';
+    const CANON = 'Terms and Conditions\n\nThis is the Android SDK test agreement. 1. Introduction applies.\n\n2. Second clause.';
+    const CANON_SHA1 = sha1(CANON);
+    const RAW_TRIM_SHA1 = sha1(RAW.trim());
+    assert.notEqual(CANON_SHA1, RAW_TRIM_SHA1, 'fixture really exercises normalization');
+    const FMT = { ...JSON.parse(JSON.stringify(REAL_POLICY)), licenses: { 'android-sdk-license': { authorizedHashes: [CANON_SHA1] } } };
+    const fmtRun = (root, over = {}) => run(root, { policy: FMT, ...over });
+
+    // positive (LF and CRLF documents), with runner evidence logged BEFORE the metadata fetch
+    for (const doc of [RAW, RAW.replace(/\n/g, '\r\n')]) {
+      const root = sdk({ accepted: CANON_SHA1 });
+      write(path.join(root, 'licenses/android-sdk-preview-license'), `\n${'f'.repeat(40)}`);
+      const logs = [];
+      const t = async (u) => { logs.push(`FETCH ${u}`); return { status: 200, url: METADATA_URL, body: metadata({ license: doc }) }; };
+      const inst = installer(root);
+      const before = snapshotOf(root);
+      const r = await provision({ env: env(root), platform: 'linux', sdkRoot: root, policy: FMT, transport: t, runInstaller: inst, log: (l) => logs.push(l) });
+      assert.deepEqual(r.installed, ['ndk;27.1.12297006', 'cmake;3.22.1']);
+      assert.equal(r.licenseHash, CANON_SHA1, 'canonical (adapter) hash is the authorized one');
+      assert.equal(r.rawTrimHash, RAW_TRIM_SHA1, 'raw-trim provenance hash (CRLF is end-of-line normalized first)');
+      assert.equal(snapshotOf(root), before, 'licences byte-identical');
+      const all = logs.join('\n');
+      const fetchAt = logs.findIndex((l) => l.startsWith('FETCH'));
+      const toolsAt = logs.findIndex((l) => l.includes('cmdline-tools Pkg.Revision=22.0 Pkg.Path=cmdline-tools;22.0'));
+      const acceptedAt = logs.findIndex((l) => l.includes(`runner licenses/android-sdk-license (file, 1 hash(es)): ${CANON_SHA1} [policy-authorized]`));
+      assert.ok(toolsAt >= 0 && acceptedAt >= 0 && toolsAt < fetchAt && acceptedAt < fetchAt, 'tool version + existing accepted hashes logged before fetch');
+      assert.ok(all.includes(`runner licenses/android-sdk-preview-license (file, 1 hash(es)): ${'f'.repeat(40)} [not in policy]`), 'other licence files observed, not used, not refused');
+      assert.ok(all.includes(`android-sdk-license=${CANON_SHA1} (official TrimStringAdapter form`), 'canonical hash logged');
+      assert.ok(all.includes(`raw decoded+trimmed XML text SHA-1 ${r.rawTrimHash} is NOT the SDK fingerprint`), 'raw-trim provenance logged');
+      assert.ok(!all.includes('must-not-reach-installer') && !all.includes('GITHUB_TOKEN'), 'no env / token in logs');
+      assert.equal(inst.calls.length, 1);
+    }
+
+    // substantive changes → STOP before the fake installer
+    const generic = (s) => s.replace(/\s+/g, ' ').trim();
+    const merged = RAW.replace('applies.\n\n  2.', 'applies.\n  2.');
+    assert.equal(generic(merged), generic(RAW), 'a generic collapse could not tell a merged paragraph apart');
+    const stops = [
+      ['wording change', { license: RAW.replace('Second clause', 'Second clauses') }, FMT, /not authorized by the policy/],
+      ['new paragraph', { license: `${RAW}\n  3. New clause.\n` }, FMT, /not authorized by the policy/],
+      ['paragraph merged', { license: merged }, FMT, /not authorized by the policy/],
+      ['NBSP inserted', { license: RAW.replace('Android SDK', 'Android SDK') }, FMT, /not authorized by the policy/],
+      ['malformed entity', { license: `${RAW}&nbsp;` }, FMT, /licence text refused/],
+      ['real policy (24333 only)', { license: RAW }, REAL_POLICY, /not authorized by the policy \(new \/ changed terms — STOP\)/],
+      ['raw-trim hash authorized instead (old false preflight)', { license: RAW }, { ...FMT, licenses: { 'android-sdk-license': { authorizedHashes: [RAW_TRIM_SHA1] } } }, new RegExp(`raw-trim ${RAW_TRIM_SHA1}\\) is not authorized`)],
+      ['one package changes licence ref', { license: RAW, pkg: { 'ndk;27.1.12297006': { licenseRef: 'android-sdk-preview-license' } } },
+        { ...FMT, licenses: { 'android-sdk-license': { authorizedHashes: [CANON_SHA1] }, 'android-sdk-preview-license': { authorizedHashes: [CANON_SHA1] } } }, /different licences/],
+      ['both packages change licence ref', { license: `${RAW}</license><license id="android-sdk-preview-license" type="text">${RAW}`, pkg: { 'ndk;27.1.12297006': { licenseRef: 'android-sdk-preview-license' }, 'cmake;3.22.1': { licenseRef: 'android-sdk-preview-license' } } },
+        { ...FMT, licenses: { 'android-sdk-license': { authorizedHashes: [CANON_SHA1] }, 'android-sdk-preview-license': { authorizedHashes: [CANON_SHA1] } } }, /licenses\/android-sdk-preview-license missing/],
+    ];
+    for (const [name, meta, policy, re] of stops) {
+      const root = sdk({ accepted: CANON_SHA1 });
+      const inst = installer(root);
+      await assert.rejects(fmtRun(root, { policy, transport: transportOf(metadata(meta)), runInstaller: inst }), (e) => e instanceof ProvisionRefusal && re.test(e.message), name);
+      assert.equal(inst.calls.length, 0, `${name}: installer never invoked`);
+    }
+    ok(`LF + CRLF formatted text → canonical hash accepted with runner evidence logged first; ${stops.length} substantive / structural / ref / entity / unknown-hash changes STOP before install`);
+  }
+
+  console.log('── cmdline-tools version evidence (read-only; never invokes a tool) ──');
+  {
+    const cases = [
+      [null, 'Pkg.Revision=unknown Pkg.Path=unknown'],
+      ['Pkg.Desc=Android SDK Command-line Tools\n', 'Pkg.Revision=unknown Pkg.Path=unknown'],
+      ['Pkg.Revision=$(curl evil)\nPkg.Path=cmdline-tools;latest\n', 'Pkg.Revision=unknown Pkg.Path=cmdline-tools;latest'],
+      ['Pkg.Revision=16.0\r\nPkg.Path=cmdline-tools;16.0\r\n', 'Pkg.Revision=16.0 Pkg.Path=cmdline-tools;16.0'],
+    ];
+    for (const [props, expected] of cases) {
+      const root = sdk({ tools: props });
+      const logs = [];
+      const r = await provision({ env: env(root), platform: 'linux', sdkRoot: root, policy: POLICY, transport: transportOf(metadata()), runInstaller: installer(root), log: (l) => logs.push(l) });
+      assert.ok(logs.some((l) => l.includes(`cmdline-tools ${expected}`)), `logged ${expected}`);
+      assert.equal(r.installed.length, 2, 'version evidence is observational (the sdkmanager licence check + closed stdin + guard are the gates)');
+    }
+    const root = sdk({ tools: null });
+    const foreign = path.join(tmp('props'), 'source.properties');
+    write(foreign, 'Pkg.Revision=22.0\n');
+    fs.symlinkSync(foreign, path.join(root, 'cmdline-tools/latest/source.properties'));
+    const inst = installer(root);
+    await refusesAsync(run(root, { runInstaller: inst }), /source\.properties resolves outside the SDK root/);
+    assert.equal(inst.calls.length, 0);
+    ok('missing / incomplete / injected / CRLF source.properties logged safely; symlink outside root refused');
+  }
+
+  if (process.env.HH_SDK_REPOSITORY_XML) {
+    console.log('── host-supplied saved official repository2-3.xml (read from disk; no network) ──');
+    const meta = validateMetadata(fs.readFileSync(process.env.HH_SDK_REPOSITORY_XML, 'utf8'), REAL_POLICY);
+    assert.equal(meta.licenseId, 'android-sdk-license');
+    assert.equal(meta.licenseHash, '24333f8a63b6825ea9c5514f83c2829b004d1fee', 'official adapter form = policy 24333');
+    assert.notEqual(meta.rawTrimHash, meta.licenseHash);
+    for (const p of PACKAGES) assert.match(meta.archives[p.id].url, /^[A-Za-z0-9._-]+\.zip$/);
+    console.log(`    rawTrim=${meta.rawTrimHash} canonical=${meta.licenseHash}`);
+    for (const p of PACKAGES) console.log(`    ${p.id}: ${meta.archives[p.id].url} size=${meta.archives[p.id].size} ${meta.archives[p.id].checksumType}=${meta.archives[p.id].checksum}`);
+    ok('real saved official metadata → 24333 under the unchanged policy; both linux archives valid');
+  } else {
+    console.log('  (skipped: set HH_SDK_REPOSITORY_XML=<saved repository2-3.xml> for the real-metadata positive)');
   }
 
   console.log('── unknown / new terms stop BEFORE the installer ──');
