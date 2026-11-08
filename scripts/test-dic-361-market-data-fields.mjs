@@ -100,11 +100,84 @@ assertSourceIncludes(searchResults, [
   "from '../utils/canonicalCardRecord'",
   'toCanonicalCardRecord(c, nameMap, cardFlags, siblings && siblings.length > 0 ? siblings : [row])',
 ], 'src/screens/SearchResultsScreen');
+// The per-printing records are derived ONCE from the card number's own rows through the deck
+// adapter, and BOTH the quote times and the retained status are taken from those same records
+// (2026-11-07 retained-status refactor; previously the adapter call was inlined in
+// printingQuoteTimes(...)). The runtime control below proves the behaviour, not just the text.
 assertSourceIncludes(canonicalRecord, [
   'quoteRows?: ReadonlyArray<CardRecord>',
-  'printingQuoteTimes(adaptCardNumber(quoteRows.map(asQuoteRow)).priceRecords)',
+  'const quoteRecords = hasRows ? adaptCardNumber(quoteRows!.map(asQuoteRow)).priceRecords : [];',
+  'printingQuotedAt: hasRows ? printingQuoteTimes(quoteRecords) : undefined,',
+  'printingRetained: hasRows ? printingRetainedMap(quoteRows!, quoteRecords) : undefined,',
   'const base = toCanonicalCardRecord(merged, nameMap, undefined, rows);',
 ], 'src/utils/canonicalCardRecord last-known quote provenance');
+
+// Runtime control (synthetic rows; no market data): each exact physical printing keeps ITS OWN
+// sale quote time and retained status through the canonical adapter — never a sibling's, never
+// a global / catalog date — and equals the adapter-derived records.
+{
+  process.env.EXPO_PUBLIC_STORE_MVP = '0';
+  const { JSDOM } = await import('jsdom');
+  const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://holohunter.dicoge.com/' });
+  globalThis.window = dom.window;
+  globalThis.document = dom.window.document;
+  for (const key of Object.getOwnPropertyNames(dom.window)) {
+    if (key in globalThis) continue;
+    try { globalThis[key] = dom.window[key]; } catch {}
+  }
+  let mods;
+  try {
+    mods = {
+      ...(await import('../src/utils/canonicalCardRecord.ts')),
+      ...(await import('../src/utils/deckCardData.ts')),
+      ...(await import('../src/utils/priceFreshness.ts')),
+    };
+  } catch (err) {
+    throw new Error(`DIC-361 runtime control needs the TS loader (npm run test:market-fields): ${err.message}`);
+  }
+  const { toCanonicalCardRecord, buildCanonicalCardIndex, dedupeListings, adaptCardNumber, printingQuoteTimes } = mods;
+  const FULL = { buyPrice: true, trendPrediction: true, ytStats: true };
+  const FRESH_TS = '2026-11-06T12:00:00.000Z';
+  const OLD_TS = '2026-08-25T03:04:05.678Z';
+  const row = (over) => ({
+    cardNumber: 'hZZ97-361', name: 'テスト', nameZh: '測試卡', type: 'ホロメン', color: 'white', hp: '100',
+    officialImage: '', localImage: '', yuyuName: '', yuyuImage: '', ...over,
+  });
+  const base = row({ id: 'hZZ97-361_hBP01_R', series: 'hBP01', sourceProduct: 'hBP01', rarity: 'R', sellPrice: 120, timestamp: FRESH_TS,
+    prices: [{ name: 'テスト', sellPrice: 120, rarity: 'R' }] });
+  const parallel = row({ id: 'hZZ97-361_hBP08_SR', series: 'hBP08', sourceProduct: 'hBP08', rarity: 'SR', sellPrice: 3480, timestamp: OLD_TS,
+    sellQuoteRetained: true, prices: [{ name: 'テスト(パラレル)', sellPrice: 3480, rarity: 'SR' }] });
+  const rows = [base, parallel];
+  const merged = (rep) => ({ ...rep, prices: dedupeListings(rows.flatMap((r) => r.prices)) });
+
+  const card = toCanonicalCardRecord(merged(base), {}, FULL, rows);
+  assert.deepEqual(card.printingQuotedAt, { BASE: FRESH_TS, PARALLEL: OLD_TS }, 'each printing keeps its own quote time (no sibling borrowing)');
+  assert.deepEqual(card.printingQuotedAt, printingQuoteTimes(adaptCardNumber(rows).priceRecords), 'quote times are exactly the adapter-derived records');
+  assert.deepEqual(card.printingRetained, { PARALLEL: true }, 'retained status follows the printing whose own row retained it');
+  assert.equal(card.priceQuotedAt, FRESH_TS, 'headline = the elected row\'s own time');
+  assert.equal(card.priceRetained, false);
+  assert.equal(card.sellPrice, 120, 'market field still passes through');
+
+  const viaParallel = toCanonicalCardRecord(merged(parallel), {}, FULL, rows);
+  assert.equal(viaParallel.priceQuotedAt, OLD_TS, 'electing the other printing changes the headline to ITS time');
+  assert.equal(viaParallel.priceRetained, true);
+  assert.deepEqual(viaParallel.printingQuotedAt, card.printingQuotedAt, 'per-printing times do not depend on the representative');
+
+  const index = buildCanonicalCardIndex(rows, {});
+  const p = index.resolve('hZZ97-361', 'PARALLEL');
+  const b = index.resolve('hZZ97-361', 'BASE');
+  assert.equal(p.status, 'ok');
+  assert.equal(p.card.priceQuotedAt, OLD_TS, 'exact PARALLEL payload: its own time, not the representative BASE row\'s');
+  assert.equal(p.card.priceRetained, true);
+  assert.equal(b.card.priceQuotedAt, FRESH_TS);
+  assert.equal(b.card.priceRetained, false);
+
+  const bare = toCanonicalCardRecord(merged(base), {}, FULL);
+  assert.equal(bare.priceQuotedAt, undefined, 'no rows → no invented quote time (never a catalog date)');
+  assert.equal(bare.printingQuotedAt, undefined);
+  assert.equal(bare.printingRetained, undefined);
+  console.log('DIC-361 runtime: exact printings keep their own sale quote time / retained status through the canonical adapter');
+}
 
 // MarketDataPanel should render exact-version buy/subscriber sections, while
 // CardDetail routes price history through the DIC-1084 exact-identity validator.
