@@ -138,8 +138,16 @@
       "currency": "JPY",
       "cardId": "hBP03-014_hBP03_SR_hBP03-014_SR",
       "sourceProduct": "hBP03"
+    },
+    {
+      "date": "2026-11-08",
+      "price": 420,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-014_hBP03_SR_hBP03-014_SR",
+      "sourceProduct": "hBP03"
     }
   ],
-  "lastUpdated": "2026-11-06T12:08:16.855Z",
+  "lastUpdated": "2026-11-08T12:05:31.972Z",
   "nameZh": "姬森璐娜"
 }

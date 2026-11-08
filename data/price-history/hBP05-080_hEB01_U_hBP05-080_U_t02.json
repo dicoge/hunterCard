@@ -122,8 +122,16 @@
       "currency": "JPY",
       "cardId": "hBP05-080_hEB01_U_hBP05-080_U_t02",
       "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-11-08",
+      "price": 680,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-080_hEB01_U_hBP05-080_U_t02",
+      "sourceProduct": "hEB01"
     }
   ],
-  "lastUpdated": "2026-11-06T12:08:17.939Z",
+  "lastUpdated": "2026-11-08T12:05:32.451Z",
   "nameZh": "SorAZ慶典"
 }

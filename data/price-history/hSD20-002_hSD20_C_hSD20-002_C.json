@@ -66,8 +66,16 @@
       "currency": "JPY",
       "cardId": "hSD20-002_hSD20_C_hSD20-002_C",
       "sourceProduct": "hSD20"
+    },
+    {
+      "date": "2026-11-08",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD20-002_hSD20_C_hSD20-002_C",
+      "sourceProduct": "hSD20"
     }
   ],
-  "lastUpdated": "2026-11-06T12:08:24.786Z",
+  "lastUpdated": "2026-11-08T12:05:33.167Z",
   "nameZh": "百燈京子"
 }

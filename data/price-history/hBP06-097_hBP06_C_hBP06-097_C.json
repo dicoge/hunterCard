@@ -138,8 +138,16 @@
       "currency": "JPY",
       "cardId": "hBP06-097_hBP06_C_hBP06-097_C",
       "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-11-08",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-097_hBP06_C_hBP06-097_C",
+      "sourceProduct": "hBP06"
     }
   ],
-  "lastUpdated": "2026-11-06T12:08:18.398Z",
+  "lastUpdated": "2026-11-08T12:05:32.597Z",
   "nameZh": "可愛風尚夾克"
 }
