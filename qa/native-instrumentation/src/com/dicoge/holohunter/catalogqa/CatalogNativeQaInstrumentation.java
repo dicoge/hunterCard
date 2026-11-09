@@ -6,17 +6,21 @@
  * com.dicoge.holohunter signed with the CI "Android Debug" certificate on an emulator.
  *
  * Phases (one per `am instrument -e phase <name>`; the controller restarts the process):
- *   online_download       genuine production manifest preflight (fixed origin, no redirects,
- *                         401/403/451 => REFUSED, no retry) -> launch the real app -> poll the
- *                         pointer + revision files THE APP ITSELF writes -> verify bytes,
- *                         sha256, card count and the new card -> public UI positive.
+ *   online_download       launch the real app (ordinary launch; its own startup attempts its normal
+ *                         public catalog load) -> READ-ONLY foreground-network gate (own app window
+ *                         foreground + caller network present, INTERNET+VALIDATED, CONNECTED, not
+ *                         BLOCKED; one bounded deadline; ZERO test HTTP while not ready) -> ONE genuine
+ *                         production manifest preflight (fixed origin, no redirects, 401/403/451 =>
+ *                         REFUSED, no retry) -> poll the pointer + revision files THE APP ITSELF
+ *                         writes -> verify bytes, sha256, card count and the new card -> public UI positive.
  *   offline_restore       real offline bound (no active network AND manifest unreachable) ->
  *                         verify persisted files against the pointer -> cold launch -> positive.
  *   corrupt_public_cache  offline -> flip one byte of the owned revision database (same size,
  *                         wrong hash) -> cold launch -> bundled Home: old series positive AND an
  *                         EXHAUSTIVE scroll of the series list without hSD20 (else LIMITATION).
  *   offline_recovery      offline -> second cold launch -> same bundled-Home assertions.
- *   online_restoration    (optional) preflight -> the app re-downloads valid files -> positive.
+ *   online_restoration    (optional) launch -> same foreground-network gate -> ONE preflight -> the
+ *                         app re-downloads valid files -> positive.
  *
  * R2 (review P0-C + P1): symmetric selectors (testID view id, visible text, description) with
  * the matched kind recorded; the scroller is the scrollable ANCESTOR of the known old tile;
@@ -36,6 +40,20 @@
  * capability, NetworkInfo DetailedState and restrict-background enum. A preflight IOException
  * additionally records hh_manifest_error_{class,message,cause1..3}, sanitized FIRST then capped
  * (EvidenceSanitizer). Same fetch, same assertions, no retry, no new permission or request.
+ *
+ * 2026-11-09 R3 LOCAL PROPOSAL (foreground-network gate; NOT published, NOT built, NOT approved):
+ * the online phases previously fetched the manifest BEFORE launching the app, i.e. from a
+ * background caller that the R2 DNS evidence showed as BLOCKED (EAI_NODATA). They now launch the
+ * app FIRST with the unchanged launchApp(), then wait — read-only, polling public APIs only, one
+ * monotonic deadline — until the own app window is foreground AND this caller's active network is
+ * present, INTERNET+VALIDATED and CONNECTED (not BLOCKED), and only then issue the ONE unchanged
+ * preflight. While not ready no test HTTP request is made; at the deadline the phase ends as a
+ * LIMITATION (FOREGROUND_NETWORK_NOT_READY) with no request and no retry. The ordinary launch starts
+ * the app, whose normal startup attempts its own public catalog load BEFORE this test's preflight:
+ * this is not a zero-traffic run, and an explicit 401/403/451 now stops the TEST after the app's own
+ * startup attempt (see AUTHOR_REPORT). No new permission, priority, foreground service, bucket,
+ * allowlist, bind, requestNetwork, DNS or netpolicy change. The gate logic is the pure static
+ * nested class ForegroundNetworkGate (plain-JVM self-test: its main()); hh_fg_gate_* notes record it.
  */
 package com.dicoge.holohunter.catalogqa;
 
@@ -208,10 +226,12 @@ public final class CatalogNativeQaInstrumentation extends Instrumentation {
 
     Outcome onlineDownload() throws Exception {
         if (anyPointerExists()) return fail("stale state: pointer already present; requires a fresh install of the test client");
-        Object pre = preflight();
+        launchApp();   // R3: ordinary launch FIRST (its own startup attempts its normal public catalog load)
+        ForegroundNetworkGate.Gated g = gatedPreflight();
+        if (!g.gate.ready) return gateNotReady(g.gate);
+        Object pre = g.preflightResult;
         if (pre instanceof Outcome) return (Outcome) pre;
         Manifest m = (Manifest) pre;
-        launchApp();
         Object committed = waitForCommittedFiles(m);
         if (committed instanceof Outcome) return (Outcome) committed;
         Outcome ui = assertNewSeriesUi((Verified) committed);
@@ -276,16 +296,282 @@ public final class CatalogNativeQaInstrumentation extends Instrumentation {
     }
 
     Outcome onlineRestoration() throws Exception {
-        Object pre = preflight();
+        launchApp();   // R3: same ordinary-launch-first order as online_download
+        ForegroundNetworkGate.Gated g = gatedPreflight();
+        if (!g.gate.ready) return gateNotReady(g.gate);
+        Object pre = g.preflightResult;
         if (pre instanceof Outcome) return (Outcome) pre;
         Manifest m = (Manifest) pre;
-        launchApp();
         Object committed = waitForCommittedFiles(m);
         if (committed instanceof Outcome) return (Outcome) committed;
         Outcome ui = assertNewSeriesUi((Verified) committed);
         if (ui != null) return ui;
         note("revision", m.revision);
         return pass("online restart re-downloaded and committed a valid revision");
+    }
+
+    // ── R3: read-only foreground-network gate (Android adapter of the pure ForegroundNetworkGate) ──
+    /** At most ONE preflight, and only after the gate is ready; the gate result is recorded as hh_fg_gate_*. */
+    ForegroundNetworkGate.Gated gatedPreflight() throws Exception {
+        ForegroundNetworkGate.Gated g = ForegroundNetworkGate.run(
+                new ForegroundNetworkGate.Probe() {
+                    @Override public ForegroundNetworkGate.Sample sample() { return sampleForegroundNetwork(); }
+                },
+                new ForegroundNetworkGate.Clock() {
+                    @Override public long now() { return SystemClock.uptimeMillis(); }
+                    @Override public void sleep(long ms) { SystemClock.sleep(ms); }
+                },
+                new ForegroundNetworkGate.Preflight() {
+                    @Override public Object run() { return preflight(); }
+                },
+                ForegroundNetworkGate.WAIT_MS, ForegroundNetworkGate.POLL_MS, ForegroundNetworkGate.STABLE_POLLS);
+        note("fg_gate_status", g.gate.ready ? "ready" : "not_ready");
+        note("fg_gate_polls", g.gate.polls);
+        note("fg_gate_elapsed_ms", g.gate.elapsedMs);
+        note("fg_gate_last", g.gate.last);
+        note("fg_gate_preflight_calls", g.preflightCalls);
+        return g;
+    }
+
+    static Outcome gateNotReady(ForegroundNetworkGate.Result r) {
+        return new Outcome(ForegroundNetworkGate.notReadyStatus(r.last),
+                "FOREGROUND_NETWORK_NOT_READY: " + r.reason + "; no test HTTP request was made, not retried");
+    }
+
+    /** Read-only snapshot with the same public APIs recordNetworkContext() already uses. */
+    @SuppressWarnings("deprecation")
+    ForegroundNetworkGate.Sample sampleForegroundNetwork() {
+        ForegroundNetworkGate.Sample s = new ForegroundNetworkGate.Sample();
+        try {
+            AccessibilityNodeInfo root = getUiAutomation().getRootInActiveWindow();
+            s.ownPackageForeground = ForegroundNetworkGate.isOwnPackage(root == null ? null : root.getPackageName());
+            Context target = getTargetContext();
+            int targetUid = target.getPackageManager().getApplicationInfo(TARGET_PACKAGE, 0).uid;
+            s.uidMatch = Process.myUid() == targetUid;
+            ConnectivityManager cm = (ConnectivityManager) target.getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm == null) {
+                s.activeNetwork = "cm_unavailable";
+                return s;
+            }
+            Network n = cm.getActiveNetwork();
+            s.activeNetwork = n != null ? "present" : "none";
+            if (n != null) {
+                NetworkCapabilities nc = cm.getNetworkCapabilities(n);
+                if (nc != null) {
+                    s.capInternet = nc.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+                    s.capValidated = nc.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
+                }
+            }
+            NetworkInfo ni = cm.getActiveNetworkInfo();
+            s.detailedState = ni == null ? "none" : ni.getDetailedState().name();
+        } catch (Exception e) {   // incl. SecurityException / NameNotFoundException: never ready, never a request
+            s.probeError = true;
+        }
+        return s;
+    }
+
+    /**
+     * Pure gate logic (no Android type; plain-JVM self-test in main()). Ready only when STABLE_POLLS
+     * consecutive samples show: same process/target UID, the own app window foreground, the caller's
+     * active network present, INTERNET + VALIDATED, and NetworkInfo CONNECTED (never BLOCKED). One
+     * monotonic deadline; every sleep is clipped to the time left. The preflight runs at most ONCE and
+     * only when ready; its outcome (incl. 401/403/451 REFUSED) is returned as is, never retried.
+     */
+    static final class ForegroundNetworkGate {
+        static final long WAIT_MS = 60_000;
+        static final long POLL_MS = 1_000;
+        static final int STABLE_POLLS = 2;
+
+        static final class Sample {
+            boolean probeError;
+            boolean ownPackageForeground;
+            boolean uidMatch;
+            String activeNetwork;
+            Boolean capInternet;
+            Boolean capValidated;
+            String detailedState;
+        }
+
+        interface Probe { Sample sample(); }
+        interface Clock { long now(); void sleep(long ms); }
+        interface Preflight { Object run() throws Exception; }
+
+        static final class Result {
+            boolean ready; String reason = ""; String last = ""; int polls; long elapsedMs;
+        }
+
+        static final class Gated {
+            Result gate; Object preflightResult; int preflightCalls;
+        }
+
+        private ForegroundNetworkGate() {}
+
+        /** The active window's package is exactly the target (no prefix / suffix / null match). */
+        static boolean isOwnPackage(CharSequence windowPackage) {
+            return windowPackage != null && TARGET_PACKAGE.contentEquals(windowPackage);
+        }
+
+        /** Phase status when the gate is not ready: a UID mismatch is a refusal, anything else a precondition limitation. */
+        static String notReadyStatus(String last) {
+            return "uid_mismatch".equals(last) ? "REFUSED" : "LIMITATION";
+        }
+
+        /** null = ready; otherwise the first unmet condition (fixed tokens only). */
+        static String blockedReason(Sample s) {
+            if (s == null) return "no_sample";
+            if (s.probeError) return "probe_error";
+            if (!s.uidMatch) return "uid_mismatch";
+            if (!s.ownPackageForeground) return "own_app_not_foreground";
+            if (!"present".equals(s.activeNetwork)) return "active_network_" + (s.activeNetwork == null ? "unknown" : s.activeNetwork);
+            if (!Boolean.TRUE.equals(s.capInternet) || !Boolean.TRUE.equals(s.capValidated)) return "not_internet_validated";
+            if ("BLOCKED".equals(s.detailedState)) return "networkinfo_BLOCKED";
+            if (!"CONNECTED".equals(s.detailedState)) return "networkinfo_not_connected";
+            return null;
+        }
+
+        static Result await(Probe probe, Clock clock, long waitMs, long pollMs, int stable) {
+            Result r = new Result();
+            long start = clock.now();
+            long deadline = start + waitMs;
+            int streak = 0;
+            while (true) {
+                Sample s;
+                try {
+                    s = probe.sample();
+                } catch (RuntimeException e) {
+                    s = null;
+                }
+                r.polls++;
+                String why = blockedReason(s);
+                streak = why == null ? streak + 1 : 0;
+                r.last = why == null ? "ready" : why;
+                if (streak >= stable) {
+                    r.ready = true;
+                    r.reason = "ready";
+                    r.elapsedMs = clock.now() - start;
+                    return r;
+                }
+                long now = clock.now();
+                if (now >= deadline) {
+                    r.reason = "deadline after " + waitMs + " ms (last: " + r.last + ")";
+                    r.elapsedMs = now - start;
+                    return r;
+                }
+                clock.sleep(Math.min(pollMs, deadline - now));
+            }
+        }
+
+        static Gated run(Probe probe, Clock clock, Preflight preflight, long waitMs, long pollMs, int stable) throws Exception {
+            Gated g = new Gated();
+            g.gate = await(probe, clock, waitMs, pollMs, stable);
+            if (g.gate.ready) {
+                g.preflightCalls = 1;
+                g.preflightResult = preflight.run();
+            }
+            return g;
+        }
+
+        // ── plain-JVM self-test (fake probe / clock / preflight; no Android, no network) ──
+        static final class FakeClock implements Clock {
+            long t = 1_000; List<Long> sleeps = new ArrayList<>();
+            @Override public long now() { return t; }
+            @Override public void sleep(long ms) { sleeps.add(ms); t += ms; }
+        }
+
+        static Sample ok() {
+            Sample s = new Sample();
+            s.ownPackageForeground = true; s.uidMatch = true; s.activeNetwork = "present";
+            s.capInternet = Boolean.TRUE; s.capValidated = Boolean.TRUE; s.detailedState = "CONNECTED";
+            return s;
+        }
+
+        static Sample blockedSample() {
+            Sample s = ok();
+            s.activeNetwork = "none"; s.capInternet = null; s.capValidated = null; s.detailedState = "BLOCKED";
+            return s;
+        }
+
+        static final class Seq implements Probe {
+            final Sample[] seq; int i;
+            Seq(Sample... seq) { this.seq = seq; }
+            @Override public Sample sample() { Sample s = seq[Math.min(i, seq.length - 1)]; i++; return s; }
+        }
+
+        static final class CountingPreflight implements Preflight {
+            int calls; final Object answer;
+            CountingPreflight(Object answer) { this.answer = answer; }
+            @Override public Object run() { calls++; return answer; }
+        }
+
+        private static void req(boolean ok, String what) {
+            if (!ok) throw new AssertionError("ForegroundNetworkGate check failed: " + what);
+        }
+
+        public static void main(String[] args) throws Exception {
+            int n = 0;
+            Object refusedMarker = new Object();
+            // 1. already foreground + unblocked: ready after STABLE_POLLS, exactly one preflight
+            FakeClock c = new FakeClock(); CountingPreflight p = new CountingPreflight("manifest");
+            Gated g = run(new Seq(ok()), c, p, WAIT_MS, POLL_MS, STABLE_POLLS);
+            req(g.gate.ready && g.gate.polls == 2 && p.calls == 1 && g.preflightCalls == 1 && "manifest".equals(g.preflightResult), "ready"); n++;
+            // 2. caller BLOCKED for the whole window: deadline, ZERO preflight, exact deadline
+            c = new FakeClock(); p = new CountingPreflight("x");
+            g = run(new Seq(blockedSample()), c, p, WAIT_MS, POLL_MS, STABLE_POLLS);
+            req(!g.gate.ready && p.calls == 0 && g.preflightCalls == 0 && g.gate.elapsedMs == WAIT_MS, "blocked => no preflight " + g.gate.elapsedMs); n++;
+            req(g.gate.last.equals("active_network_none") && g.gate.reason.startsWith("deadline after 60000 ms"), "blocked reason " + g.gate.reason); n++;
+            long slept = 0; for (long s : c.sleeps) { req(s > 0 && s <= POLL_MS, "sleep clipped " + s); slept += s; }
+            req(slept == WAIT_MS, "sleeps sum to the one deadline " + slept); n++;
+            // 3. BLOCKED -> foreground unblocked transition: ready only after 2 consecutive good samples
+            c = new FakeClock(); p = new CountingPreflight("m");
+            g = run(new Seq(blockedSample(), blockedSample(), blockedSample(), ok()), c, p, WAIT_MS, POLL_MS, STABLE_POLLS);
+            req(g.gate.ready && g.gate.polls == 5 && p.calls == 1, "transition polls " + g.gate.polls); n++;
+            // 4. flapping: a bad sample resets the streak
+            c = new FakeClock(); p = new CountingPreflight("m");
+            g = run(new Seq(ok(), blockedSample(), ok(), ok()), c, p, WAIT_MS, POLL_MS, STABLE_POLLS);
+            req(g.gate.ready && g.gate.polls == 4 && p.calls == 1, "flap reset " + g.gate.polls); n++;
+            // 5. foreground not proven / wrong UID / not validated / NetworkInfo not CONNECTED: never ready
+            Sample notFg = ok(); notFg.ownPackageForeground = false;
+            Sample wrongUid = ok(); wrongUid.uidMatch = false;
+            Sample notValidated = ok(); notValidated.capValidated = Boolean.FALSE;
+            Sample notConnected = ok(); notConnected.detailedState = "DISCONNECTED";
+            Sample blockedInfo = ok(); blockedInfo.detailedState = "BLOCKED";
+            Sample cmMissing = ok(); cmMissing.activeNetwork = "cm_unavailable";
+            Sample error = ok(); error.probeError = true;
+            String[] want = {"own_app_not_foreground", "uid_mismatch", "not_internet_validated", "networkinfo_not_connected",
+                    "networkinfo_BLOCKED", "active_network_cm_unavailable", "probe_error"};
+            Sample[] bad = {notFg, wrongUid, notValidated, notConnected, blockedInfo, cmMissing, error};
+            for (int i = 0; i < bad.length; i++) {
+                c = new FakeClock(); p = new CountingPreflight("m");
+                g = run(new Seq(bad[i]), c, p, 5_000, POLL_MS, STABLE_POLLS);
+                req(!g.gate.ready && p.calls == 0 && g.gate.last.equals(want[i]), "never ready: " + want[i] + " got " + g.gate.last); n++;
+            }
+            // 6. no data / malformed sample / probe exception: never ready, zero preflight
+            c = new FakeClock(); p = new CountingPreflight("m");
+            g = run(new Probe() { public Sample sample() { return null; } }, c, p, 3_000, POLL_MS, STABLE_POLLS);
+            req(!g.gate.ready && p.calls == 0 && g.gate.last.equals("no_sample"), "null sample"); n++;
+            c = new FakeClock(); p = new CountingPreflight("m");
+            g = run(new Probe() { public Sample sample() { throw new IllegalStateException("boom"); } }, c, p, 3_000, POLL_MS, STABLE_POLLS);
+            req(!g.gate.ready && p.calls == 0 && g.gate.last.equals("no_sample"), "probe exception"); n++;
+            Sample malformed = ok(); malformed.activeNetwork = null; malformed.detailedState = null;
+            req("active_network_unknown".equals(blockedReason(malformed)), "malformed sample"); n++;
+            // 7. the preflight's own outcome (e.g. REFUSED for 401/403/451) is returned once, never retried
+            c = new FakeClock(); p = new CountingPreflight(refusedMarker);
+            g = run(new Seq(ok()), c, p, WAIT_MS, POLL_MS, STABLE_POLLS);
+            req(g.preflightResult == refusedMarker && p.calls == 1, "refusal returned once, no retry"); n++;
+            // 8. a deadline shorter than a poll: one clipped sleep, exact deadline
+            c = new FakeClock(); p = new CountingPreflight("m");
+            g = run(new Seq(blockedSample()), c, p, 400, POLL_MS, STABLE_POLLS);
+            req(!g.gate.ready && c.sleeps.size() == 1 && c.sleeps.get(0) == 400 && g.gate.elapsedMs == 400, "clipped " + c.sleeps); n++;
+            // 9. wrong / partial package in the active window is never "own app foreground"
+            req(isOwnPackage("com.dicoge.holohunter") && !isOwnPackage(null) && !isOwnPackage("")
+                    && !isOwnPackage("com.google.android.apps.nexuslauncher") && !isOwnPackage("com.dicoge.holohunter.catalogqa")
+                    && !isOwnPackage("com.dicoge.holohunte") && !isOwnPackage(" com.dicoge.holohunter"), "isOwnPackage"); n++;
+            // 10. not-ready status: UID mismatch => REFUSED; everything else (incl. BLOCKED) => LIMITATION
+            req("REFUSED".equals(notReadyStatus("uid_mismatch")) && "LIMITATION".equals(notReadyStatus("active_network_none"))
+                    && "LIMITATION".equals(notReadyStatus("own_app_not_foreground")) && "LIMITATION".equals(notReadyStatus("no_sample"))
+                    && "LIMITATION".equals(notReadyStatus(null)), "notReadyStatus"); n++;
+            System.out.println("ForegroundNetworkGate offline checks passed: " + n);
+        }
     }
 
     // ── genuine manifest preflight ────────────────────────────────────────────
