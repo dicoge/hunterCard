@@ -54,6 +54,23 @@
  * startup attempt (see AUTHOR_REPORT). No new permission, priority, foreground service, bucket,
  * allowlist, bind, requestNetwork, DNS or netpolicy change. The gate logic is the pure static
  * nested class ForegroundNetworkGate (plain-JVM self-test: its main()); hh_fg_gate_* notes record it.
+ *
+ * 2026-11-10 GUEST-ENTRY LOCAL PROPOSAL (NOT published, NOT built, NOT approved; base 1b3a034a):
+ * run r3h-20261109T185442Z failed in online_download with "Home did not show the known series hBP01"
+ * because a fresh install opens the client's Landing screen (signed-out, not guest) and nothing in
+ * this instrumentation entered the app. homeAnchor() — the single Home precondition of all five
+ * phases — now runs the pure nested HomeEntry helper inside the SAME unchanged HOME_WAIT_MS bound:
+ * if the own app window already shows the known old series it proceeds unchanged; otherwise it
+ * reads the own window only and, when the own-package Landing marker (testID landing-screen) and
+ * exactly ONE visible, enabled guest CTA (testID landing-cta-guest; exact visible text 以訪客登入 only
+ * when no testID is exposed) are present, issues ONE ordinary ACTION_CLICK — the same public guest
+ * button a person taps — and then waits for the known old series. It never clicks a foreign package,
+ * Google / sign-in or any other button, never dismisses a dialog, forces the foreground, deep-links or
+ * writes auth / prefs / tokens, and never clicks twice. The app's own guest handler sets its local
+ * guest mode (persisted by the app itself) and the app then makes its normal Home data requests.
+ * Notes: hh_home_entry (none|already_home|guest_cta_testid|guest_cta_text) and hh_home_entry_outcome
+ * (fixed tokens, see HomeEntry.OUTCOMES). Every later assertion, the R3 gate and 401/403/451 handling
+ * are unchanged; a failed entry still ends with the unchanged "Home did not show ..." FAIL.
  */
 package com.dicoge.holohunter.catalogqa;
 
@@ -1116,11 +1133,382 @@ public final class CatalogNativeQaInstrumentation extends Instrumentation {
         return false;
     }
 
-    /** Home must be populated: the known old series is present (never a blank catalog). */
+    /**
+     * Home must be populated: the known old series is present (never a blank catalog).
+     * 2026-11-10 guest entry: one HomeEntry run inside the unchanged HOME_WAIT_MS bound (see the header).
+     * The returned Hit comes from the same own-window snapshot in which HomeEntry saw the old series.
+     */
     Hit homeAnchor() {
-        Hit old = waitFor(oldSeriesSelector(), HOME_WAIT_MS);
+        lastOldHit = null;
+        HomeEntry.Result r = HomeEntry.run(
+                new HomeEntry.Probe() {
+                    @Override public HomeEntry.Screen snapshot() { return homeEntrySnapshot(); }
+                },
+                new HomeEntry.Clicker() {
+                    @Override public boolean click(HomeEntry.Candidate c) { return clickGuestCta(c); }
+                },
+                new HomeEntry.Clock() {
+                    @Override public long now() { return SystemClock.uptimeMillis(); }
+                    @Override public void sleep(long ms) { SystemClock.sleep(ms); }
+                },
+                HOME_WAIT_MS, HomeEntry.POLL_MS);
+        note("home_entry", r.method);
+        note("home_entry_outcome", r.outcome);
+        Hit old = r.entered ? lastOldHit : null;
         if (old != null) note("old_series_by", old.by);
         return old;
+    }
+
+    /** Old-series hit of the latest HomeEntry snapshot (reset at every snapshot). */
+    private Hit lastOldHit;
+
+    /** Read-only: own window package, old series, own-package Landing marker, guest CTA candidates. */
+    HomeEntry.Screen homeEntrySnapshot() {
+        lastOldHit = null;
+        AccessibilityNodeInfo root = getUiAutomation().getRootInActiveWindow();
+        if (root == null) return null;
+        HomeEntry.Screen s = new HomeEntry.Screen();
+        CharSequence wp = root.getPackageName();
+        s.windowPackage = wp == null ? null : wp.toString();
+        Selector old = oldSeriesSelector();
+        for (AccessibilityNodeInfo n : nodes()) {
+            if (lastOldHit == null && TARGET_PACKAGE.equals(pkgOf(n))) {   // own-package node only
+                String by = old.match(n);
+                if (by != null) { Hit h = new Hit(); h.node = n; h.by = by; lastOldHit = h; s.oldSeriesVisible = true; }
+            }
+            String id = HomeEntry.shortId(n.getViewIdResourceName());
+            if (HomeEntry.LANDING_TEST_ID.equals(id) && n.isVisibleToUser() && TARGET_PACKAGE.equals(pkgOf(n))) s.landingVisible = true;
+            if (HomeEntry.GUEST_TEST_ID.equals(id)) s.byId.add(guestCandidate(n));
+            if (HomeEntry.isGuestText(n.getText())) s.byText.add(guestCandidate(n));
+        }
+        return s;
+    }
+
+    static String pkgOf(AccessibilityNodeInfo n) {
+        CharSequence p = n == null ? null : n.getPackageName();
+        return p == null ? null : p.toString();
+    }
+
+    /** The node itself or its nearest clickable ancestor (<= 8 levels, as click()); the ancestor's id is recorded. */
+    static HomeEntry.Candidate guestCandidate(AccessibilityNodeInfo shown) {
+        AccessibilityNodeInfo t = shown;
+        for (int depth = 0; t != null && depth < 8 && !t.isClickable(); depth++) t = t.getParent();
+        HomeEntry.Candidate c = new HomeEntry.Candidate();
+        if (t == null || !t.isClickable()) {
+            c.pkg = pkgOf(shown);
+            c.targetViewId = HomeEntry.shortId(shown.getViewIdResourceName());
+            return c;                                       // not clickable: never usable
+        }
+        c.clickable = true;
+        c.visible = shown.isVisibleToUser() && t.isVisibleToUser();
+        c.enabled = t.isEnabled();
+        c.pkg = pkgOf(t);
+        c.targetViewId = HomeEntry.shortId(t.getViewIdResourceName());
+        c.handle = t;
+        return c;
+    }
+
+    /** ONE ordinary ACTION_CLICK on the selected own-package target after a fresh refresh; nothing else. */
+    boolean clickGuestCta(HomeEntry.Candidate c) {
+        if (c == null || !(c.handle instanceof AccessibilityNodeInfo)) return false;
+        AccessibilityNodeInfo t = (AccessibilityNodeInfo) c.handle;
+        if (!t.refresh()) return false;                                  // stale node: no click
+        if (!TARGET_PACKAGE.equals(pkgOf(t)) || !t.isVisibleToUser() || !t.isEnabled() || !t.isClickable()) return false;
+        if (!HomeEntry.shortId(t.getViewIdResourceName()).equals(c.targetViewId)) return false;
+        return t.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+    }
+
+    /**
+     * Pure Home-entry decision logic (no Android type; plain-JVM self-test in main()). One monotonic
+     * deadline, sleeps clipped to the time left (never negative). Home = the own window shows the known
+     * old series. Otherwise, at most ONE click, only on exactly one usable guest CTA of the own-package
+     * Landing screen: preferred by testID landing-cta-guest; by exact visible text 以訪客登入 only when no
+     * testID node exists. A click target carrying any other view id (e.g. landing-cta-google) refuses the
+     * whole step. A failed / stale click ends the step at once (no second click, no rerun).
+     */
+    static final class HomeEntry {
+        static final String LANDING_TEST_ID = "landing-screen";
+        static final String GUEST_TEST_ID = "landing-cta-guest";
+        static final String GUEST_TEXT = "以訪客登入";
+        static final long POLL_MS = 500;
+        static final Set<String> METHODS = new HashSet<>(Arrays.asList(
+                "none", "already_home", "guest_cta_testid", "guest_cta_text"));
+        static final Set<String> OUTCOMES = new HashSet<>(Arrays.asList(
+                "home", "click_failed", "timeout_after_click", "timeout_no_snapshot", "timeout_foreign_package",
+                "timeout_no_landing", "timeout_no_cta", "timeout_cta_not_ready", "timeout_ambiguous_cta", "timeout_unknown_cta"));
+
+        static final class Candidate {
+            String targetViewId = ""; boolean visible; boolean enabled; boolean clickable; String pkg; Object handle;
+        }
+
+        static final class Screen {
+            String windowPackage; boolean oldSeriesVisible; boolean landingVisible;
+            final List<Candidate> byId = new ArrayList<>();
+            final List<Candidate> byText = new ArrayList<>();
+        }
+
+        static final class Choice { Candidate candidate; String method = "none"; String why = ""; }
+
+        interface Probe { Screen snapshot(); }
+        interface Clicker { boolean click(Candidate c); }
+        interface Clock { long now(); void sleep(long ms); }
+
+        static final class Result {
+            boolean entered; String method = "none"; String outcome = ""; String last = ""; int polls; int clicks; long elapsedMs;
+        }
+
+        private HomeEntry() {}
+
+        static String shortId(String viewId) {
+            if (viewId == null) return "";
+            int i = viewId.lastIndexOf('/');
+            return i >= 0 ? viewId.substring(i + 1) : viewId;
+        }
+
+        static boolean isGuestText(CharSequence text) {
+            return text != null && GUEST_TEXT.equals(text.toString().trim());
+        }
+
+        static boolean usable(Candidate c) {
+            return c != null && TARGET_PACKAGE.equals(c.pkg) && c.visible && c.enabled && c.clickable && c.handle != null
+                    && (c.targetViewId.isEmpty() || GUEST_TEST_ID.equals(c.targetViewId));
+        }
+
+        static Choice select(Screen s) {
+            Choice ch = new Choice();
+            if (s == null) { ch.why = "no_snapshot"; return ch; }
+            if (!TARGET_PACKAGE.equals(s.windowPackage)) { ch.why = "foreign_package"; return ch; }
+            if (!s.landingVisible) { ch.why = "no_landing"; return ch; }
+            boolean viaId = !s.byId.isEmpty();
+            List<Candidate> pool = viaId ? s.byId : s.byText;
+            if (pool.isEmpty()) { ch.why = "no_cta"; return ch; }
+            for (Candidate c : pool) {
+                if (c == null || (c.pkg != null && !TARGET_PACKAGE.equals(c.pkg))
+                        || (!c.targetViewId.isEmpty() && !GUEST_TEST_ID.equals(c.targetViewId))) {
+                    ch.why = "unknown_cta";
+                    return ch;
+                }
+            }
+            List<Candidate> ok = new ArrayList<>();
+            for (Candidate c : pool) if (usable(c)) ok.add(c);
+            if (ok.isEmpty()) { ch.why = "cta_not_ready"; return ch; }
+            if (ok.size() > 1) { ch.why = "ambiguous_cta"; return ch; }
+            ch.candidate = ok.get(0);
+            ch.method = viaId ? "guest_cta_testid" : "guest_cta_text";
+            return ch;
+        }
+
+        static Result run(Probe probe, Clicker clicker, Clock clock, long waitMs, long pollMs) {
+            Result r = new Result();
+            long start = clock.now();
+            long deadline = start + Math.max(0L, waitMs);
+            while (true) {
+                Screen s;
+                try {
+                    s = probe.snapshot();
+                } catch (RuntimeException e) {
+                    s = null;
+                }
+                r.polls++;
+                if (s != null && TARGET_PACKAGE.equals(s.windowPackage) && s.oldSeriesVisible) {
+                    r.entered = true;
+                    if (r.clicks == 0) r.method = "already_home";
+                    r.outcome = "home";
+                    r.last = "home";
+                    r.elapsedMs = clock.now() - start;
+                    return r;
+                }
+                if (r.clicks == 0) {
+                    Choice ch = select(s);
+                    if (ch.candidate != null) {
+                        r.clicks = 1;                               // counted before the attempt: never a second click
+                        r.method = ch.method;
+                        boolean ok;
+                        try {
+                            ok = clicker.click(ch.candidate);
+                        } catch (RuntimeException e) {
+                            ok = false;
+                        }
+                        if (!ok) {
+                            r.outcome = "click_failed";
+                            r.last = "click_failed";
+                            r.elapsedMs = clock.now() - start;
+                            return r;
+                        }
+                        r.last = "after_click";
+                    } else {
+                        r.last = ch.why;
+                    }
+                } else {
+                    r.last = "after_click";
+                }
+                long now = clock.now();
+                if (now >= deadline) {
+                    r.outcome = r.clicks == 1 ? "timeout_after_click" : "timeout_" + r.last;
+                    r.elapsedMs = now - start;
+                    return r;
+                }
+                clock.sleep(Math.min(pollMs, deadline - now));
+            }
+        }
+
+        // ── plain-JVM self-test (fake screens / clicker / clock; no Android, no device) ──
+        static final class FakeClock implements Clock {
+            long t = 5_000; List<Long> sleeps = new ArrayList<>();
+            @Override public long now() { return t; }
+            @Override public void sleep(long ms) { sleeps.add(ms); t += ms; }
+        }
+
+        static final class Seq implements Probe {
+            final Screen[] seq; int i;
+            Seq(Screen... seq) { this.seq = seq; }
+            @Override public Screen snapshot() { Screen s = seq[Math.min(i, seq.length - 1)]; i++; return s; }
+        }
+
+        static final class FakeClicker implements Clicker {
+            int calls; final boolean answer; final boolean boom; Candidate last;
+            FakeClicker(boolean answer) { this(answer, false); }
+            FakeClicker(boolean answer, boolean boom) { this.answer = answer; this.boom = boom; }
+            @Override public boolean click(Candidate c) {
+                calls++; last = c;
+                if (boom) throw new IllegalStateException("stale node");
+                return answer;
+            }
+        }
+
+        static Candidate cand(String targetId) {
+            Candidate c = new Candidate();
+            c.targetViewId = targetId; c.visible = true; c.enabled = true; c.clickable = true; c.pkg = TARGET_PACKAGE;
+            c.handle = new Object();
+            return c;
+        }
+
+        static Screen screen(String pkg, boolean home, boolean landing) {
+            Screen s = new Screen(); s.windowPackage = pkg; s.oldSeriesVisible = home; s.landingVisible = landing;
+            return s;
+        }
+
+        static Screen home() { return screen(TARGET_PACKAGE, true, false); }
+
+        static Screen landingId(Candidate... cs) {
+            Screen s = screen(TARGET_PACKAGE, false, true);
+            s.byId.addAll(Arrays.asList(cs));
+            return s;
+        }
+
+        static Screen landingText(Candidate... cs) {
+            Screen s = screen(TARGET_PACKAGE, false, true);
+            s.byText.addAll(Arrays.asList(cs));
+            return s;
+        }
+
+        private static void req(boolean ok, String what) {
+            if (!ok) throw new AssertionError("HomeEntry check failed: " + what);
+        }
+
+        private static void tokens(Result r) {
+            req(METHODS.contains(r.method) && OUTCOMES.contains(r.outcome), "fixed tokens " + r.method + "/" + r.outcome);
+            req(r.clicks <= 1, "at most one click");
+        }
+
+        public static void main(String[] args) {
+            int n = 0;
+            final long W = 90_000, P = POLL_MS;
+            // 1. already Home: proceed unchanged, no click
+            FakeClock c = new FakeClock(); FakeClicker k = new FakeClicker(true);
+            Result r = run(new Seq(home()), k, c, W, P);
+            tokens(r);
+            req(r.entered && "already_home".equals(r.method) && "home".equals(r.outcome) && r.clicks == 0 && k.calls == 0
+                    && r.polls == 1 && c.sleeps.isEmpty(), "already home"); n++;
+            // 2. exact normal guest path: Landing + testID CTA -> one click -> Home
+            Candidate guest = cand(GUEST_TEST_ID);
+            c = new FakeClock(); k = new FakeClicker(true);
+            r = run(new Seq(landingId(guest), landingId(guest), home()), k, c, W, P);
+            tokens(r);
+            req(r.entered && "guest_cta_testid".equals(r.method) && "home".equals(r.outcome) && k.calls == 1 && k.last == guest
+                    && r.polls == 3, "normal guest path " + r.method + " " + k.calls); n++;
+            // 3. max one click: Landing + CTA stays forever -> one click only, exact deadline, clipped sleeps
+            c = new FakeClock(); k = new FakeClicker(true);
+            r = run(new Seq(landingId(cand(GUEST_TEST_ID))), k, c, W, P);
+            tokens(r);
+            req(!r.entered && "timeout_after_click".equals(r.outcome) && k.calls == 1 && r.elapsedMs == W, "one click " + k.calls); n++;
+            long slept = 0; for (long s : c.sleeps) { req(s > 0 && s <= P, "sleep bound " + s); slept += s; }
+            req(slept == W && r.polls == (int) (W / P) + 1, "one deadline " + slept + " polls " + r.polls); n++;
+            // 4. exact-text fallback (no testID exposed), own package Landing
+            c = new FakeClock(); k = new FakeClicker(true);
+            r = run(new Seq(landingText(cand("")), home()), k, c, W, P);
+            tokens(r);
+            req(r.entered && "guest_cta_text".equals(r.method) && k.calls == 1, "text fallback"); n++;
+            // 5..13. never a click: no Landing / no CTA / foreign package / Google / unknown / hidden / disabled /
+            //        not clickable / ambiguous / no snapshot
+            Candidate hidden = cand(GUEST_TEST_ID); hidden.visible = false;
+            Candidate disabled = cand(GUEST_TEST_ID); disabled.enabled = false;           // loading spinner state
+            Candidate notClickable = cand(GUEST_TEST_ID); notClickable.clickable = false;
+            Candidate noHandle = cand(GUEST_TEST_ID); noHandle.handle = null;
+            Candidate foreignPkg = cand(GUEST_TEST_ID); foreignPkg.pkg = "com.google.android.gms";
+            Candidate google = cand("landing-cta-google");
+            Screen foreign = landingId(cand(GUEST_TEST_ID)); foreign.windowPackage = "com.google.android.apps.nexuslauncher";
+            Screen foreignHome = home(); foreignHome.windowPackage = "com.google.android.gms";
+            Screen noLanding = screen(TARGET_PACKAGE, false, false); noLanding.byId.add(cand(GUEST_TEST_ID));
+            Object[][] never = {
+                    {noLanding, "timeout_no_landing"}, {landingId(), "timeout_no_cta"}, {foreign, "timeout_foreign_package"},
+                    {foreignHome, "timeout_foreign_package"}, {landingText(google), "timeout_unknown_cta"},
+                    {landingId(google), "timeout_unknown_cta"}, {landingId(foreignPkg), "timeout_unknown_cta"},
+                    {landingId(hidden), "timeout_cta_not_ready"}, {landingId(disabled), "timeout_cta_not_ready"},
+                    {landingId(notClickable), "timeout_cta_not_ready"}, {landingId(noHandle), "timeout_cta_not_ready"},
+                    {landingId(cand(GUEST_TEST_ID), cand(GUEST_TEST_ID)), "timeout_ambiguous_cta"},
+                    {landingText(cand(""), cand("")), "timeout_ambiguous_cta"}, {null, "timeout_no_snapshot"}};
+            for (Object[] row : never) {
+                c = new FakeClock(); k = new FakeClicker(true);
+                r = run(new Seq((Screen) row[0]), k, c, 3_000, P);
+                tokens(r);
+                req(!r.entered && row[1].equals(r.outcome) && k.calls == 0 && r.clicks == 0 && "none".equals(r.method)
+                        && r.elapsedMs == 3_000, "never click: " + row[1] + " got " + r.outcome); n++;
+            }
+            // 14. a testID node exists (but is hidden): the visible text button is NOT used as a fallback
+            Screen mixed = landingId(hidden); mixed.byText.add(cand(""));
+            c = new FakeClock(); k = new FakeClicker(true);
+            r = run(new Seq(mixed), k, c, 3_000, P);
+            req("timeout_cta_not_ready".equals(r.outcome) && k.calls == 0, "no fallback past a testID node"); n++;
+            // 15. click failure / stale node / clicker exception: stop at once, exactly one attempt, no rerun
+            c = new FakeClock(); k = new FakeClicker(false);
+            r = run(new Seq(landingId(cand(GUEST_TEST_ID)), home()), k, c, W, P);
+            tokens(r);
+            req(!r.entered && "click_failed".equals(r.outcome) && k.calls == 1 && r.polls == 1 && c.sleeps.isEmpty(), "click failed"); n++;
+            c = new FakeClock(); k = new FakeClicker(true, true);
+            r = run(new Seq(landingId(cand(GUEST_TEST_ID)), home()), k, c, W, P);
+            req("click_failed".equals(r.outcome) && k.calls == 1 && r.polls == 1, "clicker exception"); n++;
+            // 16. probe exception -> no snapshot, never a click
+            c = new FakeClock(); k = new FakeClicker(true);
+            r = run(new Probe() { public Screen snapshot() { throw new IllegalStateException("x"); } }, k, c, 2_000, P);
+            req("timeout_no_snapshot".equals(r.outcome) && k.calls == 0, "probe exception"); n++;
+            // 17. transitions: CTA loading -> ready -> click -> foreign transient -> Landing again -> Home; one click only
+            c = new FakeClock(); k = new FakeClicker(true);
+            r = run(new Seq(landingId(disabled), landingId(cand(GUEST_TEST_ID)), foreign, landingId(cand(GUEST_TEST_ID)), home()), k, c, W, P);
+            tokens(r);
+            req(r.entered && k.calls == 1 && r.polls == 5 && "guest_cta_testid".equals(r.method), "transitions one click"); n++;
+            // 18. old series seen only in a foreign window is never Home; own Landing later still entered once
+            c = new FakeClock(); k = new FakeClicker(true);
+            r = run(new Seq(foreignHome, landingId(cand(GUEST_TEST_ID)), home()), k, c, W, P);
+            req(r.entered && k.calls == 1 && r.polls == 3, "foreign old series ignored"); n++;
+            // 19. deadline shorter than a poll; negative / zero wait: one snapshot, no negative sleep
+            c = new FakeClock(); k = new FakeClicker(true);
+            r = run(new Seq(landingId()), k, c, 300, P);
+            req(c.sleeps.size() == 1 && c.sleeps.get(0) == 300 && r.elapsedMs == 300 && r.polls == 2, "clipped " + c.sleeps); n++;
+            c = new FakeClock(); k = new FakeClicker(true);
+            r = run(new Seq(landingId()), k, c, -5, P);
+            req(c.sleeps.isEmpty() && r.polls == 1 && "timeout_no_cta".equals(r.outcome), "negative wait"); n++;
+            c = new FakeClock(); k = new FakeClicker(true);
+            r = run(new Seq(home()), k, c, 0, P);
+            req(r.entered && "already_home".equals(r.method), "zero wait still checks once"); n++;
+            // 20. exact token helpers (the adapter only builds candidates through these)
+            req(isGuestText("以訪客登入") && isGuestText(" 以訪客登入 ") && !isGuestText("以訪客登入吧") && !isGuestText("訪客")
+                    && !isGuestText("使用 Google 登入") && !isGuestText(null) && !isGuestText("以訪客登入  →") && !isGuestText(""),
+                    "isGuestText"); n++;
+            req("landing-cta-guest".equals(shortId("com.dicoge.holohunter:id/landing-cta-guest")) && "".equals(shortId(null))
+                    && "landing-screen".equals(shortId("landing-screen")), "shortId"); n++;
+            System.out.println("HomeEntry offline checks passed: " + n);
+        }
     }
 
     /** Positive public-UI evidence for the genuinely downloaded new series and its cards. */
