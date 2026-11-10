@@ -154,8 +154,16 @@
       "currency": "JPY",
       "cardId": "hBP07-107_hBP07_U_hBP07-107_U",
       "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-11-10",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-107_hBP07_U_hBP07-107_U",
+      "sourceProduct": "hBP07"
     }
   ],
-  "lastUpdated": "2026-11-08T12:05:32.691Z",
+  "lastUpdated": "2026-11-10T12:07:43.785Z",
   "nameZh": "Boros"
 }

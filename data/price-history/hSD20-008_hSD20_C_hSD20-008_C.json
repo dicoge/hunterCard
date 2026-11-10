@@ -82,8 +82,16 @@
       "currency": "JPY",
       "cardId": "hSD20-008_hSD20_C_hSD20-008_C",
       "sourceProduct": "hSD20"
+    },
+    {
+      "date": "2026-11-10",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD20-008_hSD20_C_hSD20-008_C",
+      "sourceProduct": "hSD20"
     }
   ],
-  "lastUpdated": "2026-11-08T12:05:33.171Z",
+  "lastUpdated": "2026-11-10T12:07:45.317Z",
   "nameZh": "宙科索比亞"
 }
