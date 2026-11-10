@@ -797,8 +797,11 @@ jobs:
       # already in the runner's accepted licenses file. It accepts nothing (no --licenses,
       # stdin closed, licenses/ snapshotted before/after). Unknown or new terms → STOP. The
       # unchanged read-only guard below then re-validates everything before Gradle.
-      - name: Provision exactly NDK 27.1.12297006 + CMake 3.22.1 (PR 284 branch only; terms pre-verified; nothing accepted)
-        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository }}
+      # 2026-11-10 follow-up: the SAME two packages, helper and terms proof also run on an ordinary
+      # push to main of this repository (post-merge CI 42802314758 failed because this step was
+      # PR-284-only). No other event, branch, tag, fork, staging PR, schedule or workflow_dispatch.
+      - name: Provision exactly NDK 27.1.12297006 + CMake 3.22.1 (PR 284 branch or push to main only; terms pre-verified; nothing accepted)
+        if: ${{ (github.event_name == 'pull_request' && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository) || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
         run: |
           set -euo pipefail
           node scripts/ci/android-sdk-provision.mjs
