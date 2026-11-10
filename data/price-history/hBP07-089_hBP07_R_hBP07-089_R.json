@@ -154,8 +154,16 @@
       "currency": "JPY",
       "cardId": "hBP07-089_hBP07_R_hBP07-089_R",
       "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-11-10",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-089_hBP07_R_hBP07-089_R",
+      "sourceProduct": "hBP07"
     }
   ],
-  "lastUpdated": "2026-11-08T12:05:31.413Z",
+  "lastUpdated": "2026-11-10T12:07:40.327Z",
   "nameZh": "虎金妃笑虎"
 }

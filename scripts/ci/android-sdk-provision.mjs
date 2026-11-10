@@ -15,7 +15,9 @@
  *
  * Pre-install checks (any failure → exit 2, nothing installed):
  *   - context: Linux, GITHUB_ACTIONS=true, RUNNER_ENVIRONMENT=github-hosted, and EITHER a
- *     pull_request event from THIS repository on branch fix/last-known-price-20261107, OR a push
+ *     pull_request event from THIS repository on branch fix/last-known-price-20261107 (or, PR #287
+ *     repair R2, a daily data branch matching exactly bot/scrape/YYYY-MM-DD with a real date, same
+ *     repository, base main — env head == event head), OR a push
  *     event to refs/heads/main of THIS repository (no head ref, not a fork) whose workflow is
  *     ci.yml or build-android.yml at refs/heads/main. Any other event (workflow_dispatch, schedule,
  *     pull_request_target, …), ref, tag, branch, fork or workflow is refused;
@@ -54,6 +56,23 @@ export const METADATA_HOST = 'dl.google.com';
 export const METADATA_MAX_BYTES = 32 * 1024 * 1024;
 export const HOSTED_SDK_ROOT = '/usr/local/lib/android/sdk';
 export const ALLOWED_BRANCH = 'fix/last-known-price-20261107';
+/**
+ * 2026-11-10 (PR #287 repair R2; standing owner CI exception for these SAME two packages): the
+ * daily data handoff family `bot/scrape/YYYY-MM-DD` that local-scrape-and-push.sh pushes
+ * (`${ISOLATED_BRANCH_PREFIX}/$(date +%Y-%m-%d)`). Anchored, whole-ref match of a REAL calendar date
+ * (2020–2099); same repository; base must be main. Not a prefix grant: `bot/scrape/x`,
+ * `bot/scrape/2026-11-10-x`, `bot/scrape/2026-02-30`, forks, other bases are refused. This is the
+ * recurring daily CI root cause only — no other package, term, workflow or access is added.
+ */
+export const DAILY_DATA_BRANCH_RE = /^bot\/scrape\/(20[2-9]\d)-(\d{2})-(\d{2})$/;
+export function isDailyDataBranch(ref) {
+  const m = typeof ref === 'string' ? DAILY_DATA_BRANCH_RE.exec(ref) : null;
+  if (!m) return false;
+  const [y, mo, d] = m.slice(1).map(Number);
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d;
+}
+const isAllowedPrBranch = (ref) => ref === ALLOWED_BRANCH || isDailyDataBranch(ref);
 export const ALLOWED_PUSH_REF = 'refs/heads/main';
 /** The only workflows (on main) whose push run may provision (2026-11-10 follow-up). */
 export const ALLOWED_PUSH_WORKFLOWS = Object.freeze(['.github/workflows/ci.yml', '.github/workflows/build-android.yml']);
@@ -70,7 +89,10 @@ export function assertContext({ env, platform, readFile = (f) => fs.readFileSync
   if (env.RUNNER_OS !== 'Linux') refuse(`RUNNER_OS=${env.RUNNER_OS}`);
   const ev = env.GITHUB_EVENT_NAME;
   if (ev !== 'pull_request' && ev !== 'push') refuse(`event ${ev}: pull_request (PR 284 branch) or push to main only`);
-  if (ev === 'pull_request' && env.GITHUB_HEAD_REF !== ALLOWED_BRANCH) refuse(`branch ${env.GITHUB_HEAD_REF}: only ${ALLOWED_BRANCH}`);
+  if (ev === 'pull_request' && !isAllowedPrBranch(env.GITHUB_HEAD_REF)) refuse(`branch ${env.GITHUB_HEAD_REF}: only ${ALLOWED_BRANCH} or bot/scrape/YYYY-MM-DD`);
+  if (ev === 'pull_request' && isDailyDataBranch(env.GITHUB_HEAD_REF) && env.GITHUB_BASE_REF !== 'main') {
+    refuse(`base ${env.GITHUB_BASE_REF}: a daily data branch may provision only for a pull request into main`);
+  }
   if (ev === 'push') {
     if (env.GITHUB_REF !== ALLOWED_PUSH_REF) refuse(`push ref ${env.GITHUB_REF}: only ${ALLOWED_PUSH_REF}`);
     if (env.GITHUB_HEAD_REF) refuse('push event must not carry a head ref');
@@ -86,8 +108,12 @@ export function assertContext({ env, platform, readFile = (f) => fs.readFileSync
   }
   if (ev === 'pull_request') {
     const head = event?.pull_request?.head;
-    if (!head || head.ref !== ALLOWED_BRANCH || head.repo?.full_name !== env.GITHUB_REPOSITORY) {
+    if (!head || !isAllowedPrBranch(head.ref) || head.ref !== env.GITHUB_HEAD_REF || head.repo?.full_name !== env.GITHUB_REPOSITORY) {
       refuse('pull request head is not this repository\'s allowed branch (fork or other branch)');
+    }
+    const base = event?.pull_request?.base;
+    if (isDailyDataBranch(head.ref) && (base?.ref !== 'main' || base?.ref !== env.GITHUB_BASE_REF || base?.repo?.full_name !== env.GITHUB_REPOSITORY)) {
+      refuse('pull request base is not this repository\'s main for the daily data branch');
     }
   } else if (event?.ref !== ALLOWED_PUSH_REF || event?.repository?.full_name !== env.GITHUB_REPOSITORY || event?.repository?.fork === true) {
     refuse('push event is not this repository\'s main');

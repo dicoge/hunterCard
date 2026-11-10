@@ -116,7 +116,9 @@ const card = (id, series, over = {}) => ({
   id, cardNumber: 'hZZ98-001', rarity: 'C', series, name: 'テスト',
   prices: [
     { name: BASE_NAME, sellPrice: 100 },
-    { name: PAR_NAME, sellPrice: 3000 },
+    // 2026-11-10 (PR #287 matcher): the plain parallel names its own printing (yuyu listing rarity),
+    // the explicit proof the matcher now requires on an aggregated (C) row.
+    { name: PAR_NAME, sellPrice: 3000, rarity: 'SR' },
     { name: SIGN_NAME, sellPrice: 9000 },
   ],
   ...over,
@@ -283,9 +285,12 @@ await test('B2 yesterday\'s file (403 today) is NOT a new quote even though it i
 });
 
 await test('B7 PR283 shape — card-level-only quote: prior source cache captured at rebuild → partial fresh file → retained with exact source/time; survives rebuild + repeated misses; fresh lower wins', () => {
-  // A card-level-only row: own-set C printing whose prices[] has NO base listing (no tuple to carry).
+  // A card-level-only row: own-set U printing with NO variant tuple to carry. (2026-11-10: this used to
+  // be a row whose only variant was `(パラレル/SR)`; under PR #287 guard B such a row is provably not
+  // the base printing and may not take the bare listing — asserted at the end — so the card-level-only
+  // shape is now the real one: empty prices[].)
   const ONLY = 'hZZ97-004_hZZ97_U';
-  const mk = () => ({ cards: { [ONLY]: { id: ONLY, cardNumber: 'hZZ97-004', rarity: 'U', series: 'hZZ97', prices: [{ name: 'テスト(パラレル/SR)', sellPrice: 900 }] } } });
+  const mk = () => ({ cards: { [ONLY]: { id: ONLY, cardNumber: 'hZZ97-004', rarity: 'U', series: 'hZZ97', prices: [] } } });
   const TP = '2026-11-06T12:09:18.847Z';
   const prior = sourceDir({ 'fullahead-prices.json': { 'hZZ97-004': entry(10, null, TP), 'hZZ99-001': entry(3, null, TP) } });
   const partial = sourceDir({ 'fullahead-prices.json': { 'hZZ99-001': entry(4, null, iso(Date.parse(TP) + DAY)) } }); // key omitted
@@ -302,7 +307,7 @@ await test('B7 PR283 shape — card-level-only quote: prior source cache capture
   assert.deepEqual(db.cards[ONLY].buyLastKnown, { price: 10, version: 'BASE', source: 'fullahead', timestamp: TP, sourceKey: 'hZZ97-004' });
   assert.equal(db.cards[ONLY].buyPriorSource, undefined, 'raw capture consumed by the merge');
   assert.equal(db.cards[ONLY].buyPriceHistory, undefined, 'no history for a retained quote');
-  assert.equal(db.cards[ONLY].prices[0].buyPrice, undefined, 'the SR variant never takes the bare listing');
+  assert.deepEqual(db.cards[ONLY].prices, [], 'no variant tuple exists to carry: the quote is card-level only');
   // run B: full rebuild (no buy fields), cache is now the PARTIAL file → card holder carries it
   const rebuilt = mk();
   restoreBuyQuotes(rebuilt.cards, clone(db.cards));
@@ -320,6 +325,14 @@ await test('B7 PR283 shape — card-level-only quote: prior source cache capture
   assert.equal(rebuilt.cards[ONLY].buyPriceRetained, undefined);
   assert.equal(rebuilt.cards[ONLY].buyLastKnown, undefined);
   assert.deepEqual(rebuilt.cards[ONLY].buyPriceHistory, { [localDay(Date.parse(TF))]: 7 });
+  // guard B: the former fixture shape (only a parallel variant) gets NO card-level bare quote, and the
+  // parallel variant never takes it either
+  const par = { cards: { [ONLY]: { id: ONLY, cardNumber: 'hZZ97-004', rarity: 'U', series: 'hZZ97', prices: [{ name: 'テスト(パラレル/SR)', sellPrice: 900 }] } } };
+  capturePriorBuySources(par.cards, { dir: prior, now });
+  mergeBuyPricesInto(par, { now, runStartedAt: now - 2 * HOUR, dir: partial });
+  assert.equal(par.cards[ONLY].buyPrice, undefined, 'parallel-only row never takes the bare (base-printing) listing');
+  assert.equal(par.cards[ONLY].buyLastKnown, undefined);
+  assert.equal(par.cards[ONLY].prices[0].buyPrice, undefined, 'the SR variant never takes the bare listing');
 });
 
 await test('B8 card-level prior source: reprint / unknown rarity / premium token / conflicts / future / non-market keys fail closed or match exactly', () => {

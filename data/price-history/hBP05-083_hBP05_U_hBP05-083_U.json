@@ -154,8 +154,16 @@
       "currency": "JPY",
       "cardId": "hBP05-083_hBP05_U_hBP05-083_U",
       "sourceProduct": "hBP05"
+    },
+    {
+      "date": "2026-11-10",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-083_hBP05_U_hBP05-083_U",
+      "sourceProduct": "hBP05"
     }
   ],
-  "lastUpdated": "2026-11-08T12:05:32.454Z",
+  "lastUpdated": "2026-11-10T12:07:43.083Z",
   "nameZh": "涅莉莎·雷文克羅夫特之杖"
 }

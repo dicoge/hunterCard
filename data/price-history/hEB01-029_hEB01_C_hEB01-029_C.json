@@ -138,8 +138,16 @@
       "currency": "JPY",
       "cardId": "hEB01-029_hEB01_C_hEB01-029_C",
       "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-11-10",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hEB01-029_hEB01_C_hEB01-029_C",
+      "sourceProduct": "hEB01"
     }
   ],
-  "lastUpdated": "2026-11-08T12:05:33.017Z",
+  "lastUpdated": "2026-11-10T12:07:44.961Z",
   "nameZh": "水花射擊"
 }

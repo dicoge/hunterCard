@@ -154,8 +154,16 @@
       "currency": "JPY",
       "cardId": "hBP06-100_hBP06_C_hBP06-100_C",
       "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-11-10",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-100_hBP06_C_hBP06-100_C",
+      "sourceProduct": "hBP06"
     }
   ],
-  "lastUpdated": "2026-11-08T12:05:32.664Z",
+  "lastUpdated": "2026-11-10T12:07:43.649Z",
   "nameZh": "Chattino"
 }

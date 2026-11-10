@@ -19,6 +19,10 @@
  *   main push (2026-11-10): push to refs/heads/main of this repository from ci.yml / build-android.yml
  *             only; other refs / tags / forks / dispatch / schedule / other workflows refused; the
  *             terms proof is unchanged (unknown / unaccepted terms STOP before the installer).
+ *   daily data family (2026-11-10, PR #287 R2): same-repo bot/scrape/YYYY-MM-DD (anchored, real
+ *             calendar date) → main only; malformed / invalid-date / prefix / suffix refs, other or
+ *             mismatched base, forks, env/event head mismatch, pull_request_target / dispatch /
+ *             schedule refused; a daily ref is no push grant; PR 284 and push paths unchanged.
  *   normalization (2026-11-08): the official AOSP TrimStringAdapter port against hand-derived
  *             vectors (Java ASCII \s / trim, NBSP, VT, U+2028, tabs, lone vs paragraph LF) with
  *             wrong-port mutants; formatted text → same canonical hash accepted, while wording /
@@ -37,7 +41,7 @@ import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 import { createHash } from 'node:crypto';
 import {
-  provision, validateMetadata, httpsTransport, ProvisionRefusal, PACKAGES, METADATA_URL, ALLOWED_BRANCH,
+  provision, validateMetadata, httpsTransport, ProvisionRefusal, PACKAGES, METADATA_URL, ALLOWED_BRANCH, isDailyDataBranch,
   officialTrimStringAdapter, officialLicenseText,
 } from './ci/android-sdk-provision.mjs';
 
@@ -80,6 +84,14 @@ function pushEventFile(over = {}) {
 function pushEnv(sdkRoot, over = {}) {
   return env(sdkRoot, { GITHUB_EVENT_NAME: 'push', GITHUB_REF: 'refs/heads/main', GITHUB_HEAD_REF: '',
     GITHUB_WORKFLOW_REF: 'dicoge/holohunter/.github/workflows/ci.yml@refs/heads/main', GITHUB_EVENT_PATH: pushEventFile(), ...over });
+}
+/** PR #287 repair R2: a pull_request from a same-repo daily data branch bot/scrape/YYYY-MM-DD into main. */
+const DATA_BRANCH = 'bot/scrape/2026-11-10';
+function dataPrEnv(sdkRoot, over = {}, eventOver = {}, baseRef = 'main', branch = DATA_BRANCH) {
+  const f = path.join(tmp('data-pr-event'), 'event.json');
+  write(f, JSON.stringify({ pull_request: { head: { ref: branch, repo: { full_name: 'dicoge/holohunter' } },
+    base: { ref: baseRef, repo: { full_name: 'dicoge/holohunter' } }, ...eventOver } }));
+  return env(sdkRoot, { GITHUB_HEAD_REF: branch, GITHUB_BASE_REF: 'main', GITHUB_EVENT_PATH: f, ...over });
 }
 function env(sdkRoot, over = {}) {
   return {
@@ -458,6 +470,87 @@ try {
     ok(`push to main from ci.yml / build-android.yml installs exactly the two packages under the unchanged terms proof; 4 terms STOPs; ${cases.length} broadened contexts refused`);
   }
 
+  console.log('── daily data branch family (same-repo bot/scrape/YYYY-MM-DD → main only): same terms proof, nothing else generalized ──');
+  {
+    // anchored whole-ref family of REAL calendar dates; everything else is refused
+    for (const ref of ['bot/scrape/2026-11-10', 'bot/scrape/2026-12-31', 'bot/scrape/2027-01-01', 'bot/scrape/2028-02-29']) {
+      assert.equal(isDailyDataBranch(ref), true, ref);
+    }
+    const BAD_REFS = [
+      'bot/scrape/2026-13-01', 'bot/scrape/2026-00-10', 'bot/scrape/2026-11-00', 'bot/scrape/2026-11-31', 'bot/scrape/2026-02-30',
+      'bot/scrape/2027-02-29', 'bot/scrape/2026-1-10', 'bot/scrape/2026-11-1', 'bot/scrape/26-11-10', 'bot/scrape/1999-11-10',
+      'bot/scrape/2026_11_10', 'bot/scrape/2026-11-10x', 'bot/scrape/2026-11-10-x', 'bot/scrape/2026-11-10/x', 'bot/scrape/2026-11-10\n',
+      ' bot/scrape/2026-11-10', 'xbot/scrape/2026-11-10', 'refs/heads/bot/scrape/2026-11-10', 'Bot/scrape/2026-11-10', 'bot/scrapes/2026-11-10',
+      'bot/scrape/', 'bot/scrape/x', 'bot/2026-11-10', '2026-11-10', '', undefined, null, ['bot/scrape/2026-11-10'],
+    ];
+    for (const ref of BAD_REFS) assert.equal(isDailyDataBranch(ref), false, JSON.stringify(ref));
+    const runPr = (root, over = {}, eventOver = {}, baseRef = 'main', extra = {}) => provision({ env: dataPrEnv(root, over, eventOver, baseRef, extra.branch), platform: 'linux',
+      sdkRoot: root, policy: extra.policy || POLICY, transport: extra.transport || transportOf(metadata()), runInstaller: extra.runInstaller || installer(root), log: quiet });
+    for (const branch of ['bot/scrape/2026-11-10', 'bot/scrape/2026-11-11', 'bot/scrape/2027-01-01']) {
+      const root = sdk();
+      const inst = installer(root);
+      const t = transportOf(metadata());
+      const before = snapshotOf(root);
+      const r = await runPr(root, {}, {}, 'main', { transport: t, runInstaller: inst, branch });
+      assert.deepEqual(r.installed, ['ndk;27.1.12297006', 'cmake;3.22.1'], branch);
+      assert.deepEqual(inst.calls[0].args, [`--sdk_root=${root}`, '--channel=0', '--install', 'ndk;27.1.12297006', 'cmake;3.22.1'], 'exact packages, no --licenses');
+      assert.deepEqual(t.calls, [METADATA_URL]);
+      assert.equal(snapshotOf(root), before, 'accepted terms untouched');
+    }
+    {
+      // unknown / unaccepted terms STOP before the installer exactly as on every other path
+      const r1 = sdk(); const i1 = installer(r1);
+      await refusesAsync(runPr(r1, {}, {}, 'main', { runInstaller: i1, transport: transportOf(metadata({ license: 'abd' })) }), /not authorized by the policy/);
+      const r2 = sdk({ accepted: null }); const i2 = installer(r2);
+      await refusesAsync(runPr(r2, {}, {}, 'main', { runInstaller: i2 }), /never accepted on this runner/);
+      const r3 = sdk(); const i3 = installer(r3);
+      await refusesAsync(runPr(r3, {}, {}, 'main', { policy: REAL_POLICY, runInstaller: i3 }), /not authorized by the policy/);
+      assert.equal(i1.calls.length + i2.calls.length + i3.calls.length, 0, 'installer never reached');
+    }
+    const root = sdk();
+    const inst = installer(root);
+    const ONLY = /only fix\/last-known-price-20261107 or bot\/scrape\/YYYY-MM-DD/;
+    const BASE = /base is not this repository's main for the daily data branch/;
+    const SAME_REPO = { full_name: 'dicoge/holohunter' };
+    const cases = [
+      // malformed / invalid-date / prefix / suffix refs, carried consistently by env AND event
+      ...BAD_REFS.filter((r) => typeof r === 'string' && r !== '').map((branch) => [{}, {}, 'main', ONLY, branch]),
+      // other base (env and event), missing env base, event base mismatch / other repo / missing
+      [{ GITHUB_BASE_REF: 'staging' }, {}, 'staging', /may provision only for a pull request into main/],
+      [{ GITHUB_BASE_REF: undefined }, {}, 'main', /may provision only for a pull request into main/],
+      [{}, {}, 'staging', BASE],
+      [{}, { base: { ref: 'main', repo: { full_name: 'someone/fork' } } }, 'main', BASE],
+      [{}, { base: { ref: 'main' } }, 'main', BASE],
+      [{}, { base: undefined }, 'main', BASE],
+      // fork with the same branch name; env/event head mismatch (other valid date, PR 284 branch, malformed)
+      [{}, { head: { ref: DATA_BRANCH, repo: { full_name: 'someone/fork' } } }, 'main', /fork or other branch/],
+      [{}, { head: { ref: DATA_BRANCH } }, 'main', /fork or other branch/],
+      [{}, { head: { ref: 'bot/scrape/2026-11-09', repo: SAME_REPO } }, 'main', /fork or other branch/],
+      [{}, { head: { ref: ALLOWED_BRANCH, repo: SAME_REPO } }, 'main', /fork or other branch/],
+      [{}, { head: { ref: 'bot/scrape/2026-11-10x', repo: SAME_REPO } }, 'main', /fork or other branch/],
+      [{ GITHUB_HEAD_REF: 'bot/scrape/2026-11-09' }, {}, 'main', /fork or other branch/],
+      // other events / runners
+      [{ GITHUB_EVENT_NAME: 'pull_request_target' }, {}, 'main', /push to main only/],
+      [{ GITHUB_EVENT_NAME: 'workflow_dispatch' }, {}, 'main', /push to main only/],
+      [{ GITHUB_EVENT_NAME: 'schedule' }, {}, 'main', /push to main only/],
+      [{ RUNNER_ENVIRONMENT: 'self-hosted' }, {}, 'main', /only an ephemeral GitHub-hosted runner/],
+    ];
+    for (const [over, eventOver, baseRef, re, branch] of cases) await refusesAsync(runPr(root, over, eventOver, baseRef, { runInstaller: inst, branch }), re);
+    assert.equal(inst.calls.length, 0);
+    // a daily ref is never a push grant: push paths keep requiring refs/heads/main from ci.yml / build-android.yml
+    const rp = sdk();
+    const ip = installer(rp);
+    await refusesAsync(provision({ env: pushEnv(rp, { GITHUB_REF: `refs/heads/${DATA_BRANCH}` }), platform: 'linux', sdkRoot: rp, policy: POLICY,
+      transport: transportOf(metadata()), runInstaller: ip, log: quiet }), /push ref refs\/heads\/bot\/scrape\/2026-11-10: only refs\/heads\/main/);
+    assert.equal(ip.calls.length, 0);
+    // the original PR 284 path is unchanged: no base-ref requirement was added there
+    const r284 = sdk();
+    const i284 = installer(r284);
+    assert.deepEqual((await provision({ env: env(r284), platform: 'linux', sdkRoot: r284, policy: POLICY, transport: transportOf(metadata()), runInstaller: i284, log: quiet })).installed,
+      ['ndk;27.1.12297006', 'cmake;3.22.1']);
+    ok(`same-repo bot/scrape/YYYY-MM-DD (real dates) → main installs the same two packages under the unchanged terms proof; ${BAD_REFS.length} malformed refs rejected by the family; 3 terms STOPs; ${cases.length} other refs / bases / forks / head mismatches / events refused; daily ref not a push grant; PR 284 path unchanged`);
+  }
+
   console.log('── installer outcomes ──');
   {
     let root = sdk();
@@ -492,7 +585,10 @@ try {
   {
     const PR_IF = "github.event_name == 'pull_request' && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository";
     const MAIN_IF = "github.event_name == 'push' && github.ref == 'refs/heads/main'";
-    const CI_IF = `\${{ (${PR_IF}) || (${MAIN_IF}) }}`;
+    // PR #287 repair R2: the same-repo daily data family into main only. The expression is a prefilter
+    // (no regex in Actions); the helper enforces the anchored bot/scrape/YYYY-MM-DD real-date family.
+    const DATA_IF = "github.event_name == 'pull_request' && startsWith(github.head_ref, 'bot/scrape/') && github.base_ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository";
+    const CI_IF = `\${{ (${PR_IF}) || (${DATA_IF}) || (${MAIN_IF}) }}`;
     const DEBUG_IF = `\${{ ${MAIN_IF} }}`;
     const DEPLOY_IF = "github.event_name == 'workflow_dispatch' && inputs.deploy_production && needs.preflight.result == 'success' && needs.validate.result == 'success' && needs['release-apk-postpackage-guard'].result == 'success'";
     const RUN = 'set -euo pipefail\nnode scripts/ci/android-sdk-provision.mjs';
@@ -564,6 +660,14 @@ try {
       'ci any PR branch': [rep(" && github.head_ref == 'fix/last-known-price-20261107'", ''), debug, /ci\.yml: provisioning condition/],
       'ci staging PR': [rep("github.head_ref == 'fix/last-known-price-20261107'", "github.base_ref == 'staging'"), debug, /ci\.yml: provisioning condition/],
       'ci fork allowed': [rep(' && github.event.pull_request.head.repo.full_name == github.repository', ''), debug, /ci\.yml: provisioning condition/],
+      'ci data prefix generalized': [rep("startsWith(github.head_ref, 'bot/scrape/')", "startsWith(github.head_ref, 'bot/')"), debug, /ci\.yml: provisioning condition/],
+      'ci data prefix unanchored': [rep("startsWith(github.head_ref, 'bot/scrape/')", "contains(github.head_ref, 'bot/scrape/')"), debug, /ci\.yml: provisioning condition/],
+      'ci data prefix changed': [rep("startsWith(github.head_ref, 'bot/scrape/')", "startsWith(github.head_ref, 'bot/scrapes/')"), debug, /ci\.yml: provisioning condition/],
+      'ci data branch any base': [rep(" && github.base_ref == 'main'", ''), debug, /ci\.yml: provisioning condition/],
+      'ci data branch staging base': [rep("github.base_ref == 'main'", "github.base_ref == 'staging'"), debug, /ci\.yml: provisioning condition/],
+      'ci data branch fork allowed': [rep("github.base_ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository", "github.base_ref == 'main'"), debug, /ci\.yml: provisioning condition/],
+      'ci any same-repo PR': [rep("startsWith(github.head_ref, 'bot/scrape/') && ", ''), debug, /ci\.yml: provisioning condition/],
+      'ci data branch pull_request_target': [rep("(github.event_name == 'pull_request' && startsWith(", "(github.event_name == 'pull_request_target' && startsWith("), debug, /ci\.yml: provisioning condition/],
       'ci push any branch': [rep(" && github.ref == 'refs/heads/main') }}", ') }}'), debug, /ci\.yml: provisioning condition/],
       'ci dispatch added': [rep("github.ref == 'refs/heads/main') }}", "github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch' }}"), debug, /ci\.yml: provisioning condition/],
       'ci argument added': [rep(runLine, '          node scripts/ci/android-sdk-provision.mjs https://evil.example/repo.xml\n'), debug, /fixed no-argument helper/],
@@ -588,7 +692,7 @@ try {
     }
     const otherProbs = provisionWiringProblems(ci, debug, [...others, ['eas-build.yml', 'run: node scripts/ci/android-sdk-provision.mjs']]);
     assert.ok(otherProbs.some((x) => /eas-build\.yml must not provision/.test(x)), 'another workflow provisioning is caught');
-    ok(`ci.yml (PR 284 | push main) + build-android.yml (push main) invocations before the unconditional guards; triggers + deploy gate unchanged; ${Object.keys(mutants).length + 1} wiring mutations caught`);
+    ok(`ci.yml (PR 284 | daily bot/scrape/* prefilter → main | push main) + build-android.yml (push main) invocations before the unconditional guards; triggers + deploy gate unchanged; ${Object.keys(mutants).length + 1} wiring mutations caught`);
   }
 } finally {
   for (const d of tmpRoots) fs.rmSync(d, { recursive: true, force: true });

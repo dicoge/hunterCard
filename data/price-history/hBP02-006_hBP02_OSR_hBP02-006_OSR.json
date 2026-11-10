@@ -154,8 +154,16 @@
       "currency": "JPY",
       "cardId": "hBP02-006_hBP02_OSR_hBP02-006_OSR",
       "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-11-10",
+      "price": 320,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-006_hBP02_OSR_hBP02-006_OSR",
+      "sourceProduct": "hBP02"
     }
   ],
-  "lastUpdated": "2026-11-08T12:05:31.684Z",
+  "lastUpdated": "2026-11-10T12:07:41.096Z",
   "nameZh": "克蕾伊姬·歐莉"
 }

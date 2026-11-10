@@ -34,6 +34,8 @@ import {
   PARALLEL_RARITIES,
   UNKNOWN_TOKEN,
   classifyVariant,
+  plainParallelRarity,
+  variantTokenCompatible,
   sourceToken,
 } from './lib/variant-key.js';
 import { readBuySourceEntries, groupByNumKey, buySourceDigest } from './lib/buy-source-cache.js';
@@ -190,14 +192,20 @@ function buyPriceByToken(buyEntries) {
  *
  * 規則（精確 token 比對）：
  *   - base（''）      只吃來源 bare('')；signed（'SEC'）只吃 'SEC'；帶標籤替代版只吃完全相同 token。
- *   - 純 (パラレル)（token=null）：唯一一個純平行版本、且唯一一個「未被具體 token 宣告的標準平行來源」
- *     才可對齊，否則 fail closed（避免 hBP02-017 兩個 (パラレル) 對 {SR,UR} 塌成同價）。
- *   - 任一具體 token 被兩個以上版本宣告（含同名重複）→ 全部 null（歧義，無法證明精確 provenance）。
+ *   - 純 (パラレル)（token=null）且版本自身 `rarity` 為已知代碼（遊々亭 listing 標示）：綁定該印次，
+ *     只吃完全相同的標準平行 token；非平行代碼（S/C/SEC/產品碼…）、重複綁定、或該 token 無 listing
+ *     → null，絕不借別印次（2026-11-10 PR #287：SR 版本曾吃 UR、S 版本曾吃 HR/SR）。
+ *   - 純 (パラレル) 而 rarity 缺失／未知（未綁定）：只有在「本列只有這一個純平行版本」、「唯一一個未被
+ *     宣告的標準平行來源」且「該 token 等於本列自身印次代碼 rowRarity」時才可對齊；否則 fail closed。
+ *     不由兄弟版本的綁定推論剩餘 listing（review MATCHER R1 P1-1），不讓別列印次的 listing 落到
+ *     本列（P1-2）。rowRarity 缺省／未知 → 未綁定一律 null。
+ *   - 任一具體（或綁定）token 被兩個以上版本宣告（含同名重複）→ 全部 null（歧義）。
  *
- * @param {Array<{name?:string}>} variants  database 卡片的 prices[]（至少含 name）
+ * @param {Array<{name?:string, rarity?:string}>} variants  database 卡片的 prices[]（至少含 name）
  * @param {Array<{token:string, price:number, source?:string, timestamp?:string}>} buyEntries 該卡號買取版本
+ * @param {string} [rowRarity]  該 card 列自身的 rarity（本列印次）；未提供 → 未綁定純平行 fail closed
  */
-function assignVariantBuyMatches(variants, buyEntries) {
+function assignVariantBuyMatches(variants, buyEntries, rowRarity) {
   const list = Array.isArray(variants) ? variants : [];
   // token → 完整比對 entry（{ price, token, source, timestamp }）。同 token＝同版本兩報價取高
   // （非跨版本）；保留該報價的來源店家與時間戳以寫入 provenance。
@@ -207,22 +215,37 @@ function assignVariantBuyMatches(variants, buyEntries) {
     if (prev == null || b.price > prev.price) srcByToken.set(b.token, b);
   }
   const cls = list.map((v) => classifyVariant(v && v.name));
+  // 純 (パラレル) 自身 rarity 明確 → 綁定該印次；缺失／未知 → null（未綁定）。
+  const bound = list.map((v) => plainParallelRarity(v));
 
-  const tokenCount = new Map(); // 具體 token 出現次數 → 判重複歧義
-  for (const c of cls) if (c.token != null) tokenCount.set(c.token, (tokenCount.get(c.token) || 0) + 1);
+  const tokenCount = new Map(); // 具體 token（含綁定的純平行）出現次數 → 判重複歧義
+  const count = (t) => tokenCount.set(t, (tokenCount.get(t) || 0) + 1);
+  cls.forEach((c, i) => { if (c.token != null) count(c.token); else if (bound[i] != null) count(bound[i]); });
 
-  // 被具體版本宣告的標準平行 rarity；純 (パラレル) 不可再吃這些。
+  // 被具體版本（或綁定的純平行）宣告的標準平行 rarity；未綁定的純 (パラレル) 不可再吃這些。
   const claimed = new Set();
-  for (const c of cls) if (c.token && PARALLEL_RARITIES.has(c.token)) claimed.add(c.token);
+  cls.forEach((c, i) => {
+    const t = c.token != null ? c.token : bound[i];
+    if (t && PARALLEL_RARITIES.has(t)) claimed.add(t);
+  });
 
-  // 可供純 (パラレル) 對齊的標準平行來源（未被具體版本宣告）。
+  // 可供未綁定純 (パラレル) 對齊的標準平行來源（未被宣告）。
   const parallelPool = [...srcByToken.keys()].filter((t) => PARALLEL_RARITIES.has(t) && !claimed.has(t));
-  const plainCount = cls.filter((c) => c.versionClass === 'parallel' && c.token === null).length;
+  // 本列所有純平行版本（綁定與未綁定合計）：>1 時未綁定者不得以「剩餘」推論（P1-1）。
+  const plainTotal = cls.filter((c) => c.versionClass === 'parallel' && c.token === null).length;
+  const rowCode = normalizeRarityCode(rowRarity);
 
-  return cls.map((c) => {
+  return cls.map((c, i) => {
     if (c.token === null) {
-      if (plainCount === 1 && parallelPool.length === 1) return srcByToken.get(parallelPool[0]) ?? null;
-      return null; // 0 個或多個平行來源／多個純平行版本 → 無法精確判定
+      const b = bound[i];
+      if (b != null) {
+        // 明確 rarity 證明：只吃同一標準平行 token；非平行代碼、重複宣告或該 token 無 listing → null。
+        if (!PARALLEL_RARITIES.has(b) || (tokenCount.get(b) || 0) > 1) return null;
+        return srcByToken.get(b) ?? null;
+      }
+      // 未綁定：唯一純平行 + 唯一未宣告平行來源 + 該 token 就是本列印次（列印次證明），否則 null。
+      if (plainTotal === 1 && parallelPool.length === 1 && parallelPool[0] === rowCode) return srcByToken.get(rowCode) ?? null;
+      return null;
     }
     if ((tokenCount.get(c.token) || 0) > 1) return null; // 重複宣告同 token → 歧義
     const p = srcByToken.get(c.token);
@@ -234,8 +257,8 @@ function assignVariantBuyMatches(variants, buyEntries) {
  * assignVariantBuyPrices 的相容版：只回傳每個版本的 buyPrice（null = 對不到）。內部以
  * assignVariantBuyMatches 精確對齊，供舊呼叫點／驗證腳本使用。
  */
-function assignVariantBuyPrices(variants, buyEntries) {
-  return assignVariantBuyMatches(variants, buyEntries).map((m) => (m ? m.price : null));
+function assignVariantBuyPrices(variants, buyEntries, rowRarity) {
+  return assignVariantBuyMatches(variants, buyEntries, rowRarity).map((m) => (m ? m.price : null));
 }
 
 /**
@@ -335,9 +358,9 @@ function buildRetainedCandidatePool(card, fresh, now, cacheEntries, retainedBefo
     card.prices.forEach((v) => {
       const c = lastKnownBuyCandidate(v, now);
       if (!c) return;
-      const own = classifyVariant(v && v.name);
-      const compatible = own.token === null ? PARALLEL_RARITIES.has(c.token) : own.token === c.token;
-      if (compatible) raw.push(c);
+      // 只收與本版本相容的 held tuple（同 assignVariantBuyMatches 判準：綁定的純平行只收同 token，
+      // 未綁定的只收本列印次 token；SR 版本上的 UR tuple 不是證據）。
+      if (variantTokenCompatible(v, c.token, card.rarity)) raw.push(c);
     });
   }
   if (card.buyLastKnown && typeof card.buyLastKnown === 'object') {
@@ -384,6 +407,7 @@ function cardLevelFailReason(card, combined, conflicts) {
   }
   if (!isOwnSetPrinting(card && card.cardNumber, card && card.series)) return 'reprint-row-cannot-take-bare-listing';
   if (tokens.has(code)) return `bare-and-${code}-listings-both-present`;
+  if (isParallelOnlyRow(card)) return 'parallel-only-row-cannot-take-bare-listing';
   if (conflicts.has('')) return 'conflicting-evidence:BASE';
   return 'no-evidence-for-token:BASE';
 }
@@ -415,8 +439,8 @@ function reconcileCardBuyQuotes(card, freshEntries, now, { cacheEntries = [], re
   let variantsFresh = 0;
   let variantsRetained = 0;
   if (Array.isArray(card.prices) && card.prices.length > 0) {
-    const freshMatches = assignVariantBuyMatches(card.prices, fresh);
-    const combinedMatches = assignVariantBuyMatches(card.prices, combined);
+    const freshMatches = assignVariantBuyMatches(card.prices, fresh, card.rarity);
+    const combinedMatches = assignVariantBuyMatches(card.prices, combined, card.rarity);
     card.prices.forEach((v, i) => {
       if (freshMatches[i] != null) {
         applyVariantBuyProvenance(v, freshMatches[i]);
@@ -470,6 +494,9 @@ function reconcileCardBuyQuotes(card, freshEntries, now, { cacheEntries = [], re
  *   - premium rarity（SEC/HR/UR/S/P/產品碼…）→ 只吃完全同 token 的 listing。
  *   - 一般集內 rarity（OC/C/U/R/RR/SR）→ 只有「卡號原印集那一列」可吃無標記 listing；
  *     再刷／促銷列（series ≠ 卡號集前綴）與無標記 listing 無從連結 → fail closed。
+ *   - 本列自己的遊々亭版本全是 (パラレル)／サイン（沒有任何 base 版本）→ 來源已證明本列不是原印版，
+ *     不可吃無標記 listing → fail closed（2026-11-10 PR #287 B：hBP06-081 SR 列曾吃原印 RR 的 bare ¥5）。
+ *     prices[] 缺失／空 → 規則不變（揭露的殘餘，由 audit 列舉）。
  *   - 同一代碼同時有無標記與帶標記 listing（SR 卡又有 -SR listing）→ 無法證明本列是
  *     哪一個 → fail closed（與 app 端 dropConflictingPrices 同一判準）。
  *   - rarity 缺失或不在已知詞彙 → fail closed；別名（02_HR / UR_02 / P_02）先正規化成
@@ -483,7 +510,16 @@ function representativeBuyPrice(card, buyEntries) {
   if (isPremiumRarityCode(code)) return srcByToken.get(code) ?? null;
   if (!isOwnSetPrinting(card && card.cardNumber, card && card.series)) return null;
   if (srcByToken.has(code)) return null;
+  // 無標記 listing ＝卡號的原印版；本列版本全為 (パラレル)／サイン → 不是原印版。只看本列自己的
+  // 版本名稱，不看報價日期、不看圖片。
+  if (isParallelOnlyRow(card)) return null;
   return srcByToken.get('') ?? null;
+}
+
+/** 本列 prices[] 非空且沒有任何 base 類版本（全為 (パラレル)／サイン）→ true；prices[] 缺失／空 → false。 */
+function isParallelOnlyRow(card) {
+  const list = card && Array.isArray(card.prices) ? card.prices.filter((v) => v && typeof v === 'object') : [];
+  return list.length > 0 && !list.some((v) => classifyVariant(v.name).versionClass === 'base');
 }
 
 /**
@@ -734,6 +770,7 @@ export {
   applyVariantBuyProvenance,
   representativeBuyPrice,
   representativeBuyEntry,
+  isParallelOnlyRow,
   historyDateKey,
   processTimeZone,
   notFreshBoundEvidence,
