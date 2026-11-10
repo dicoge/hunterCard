@@ -486,7 +486,9 @@ exit 0
   for (const required of [
     'build-database.js',
     'sync-official-catalog-to-database.mjs',
-    'regen-buy-alignment.mjs',
+    // Review N4: the fallback scrapes no buy prices, so its buy step is the run-proof merge
+    // (every on-disk quote predates HUNTERCARD_RUN_STARTED_AT → retained, no history).
+    'merge-buy-prices.js',
     'generate-native-database.mjs',
     'test-official-catalog-sync.mjs',
     'verify-official-catalog-completeness.mjs',
@@ -496,6 +498,11 @@ exit 0
   ]) {
     assert.ok(indexOfCall(lines, required) !== -1, `official-only fallback must reach ${required}`);
   }
+  assert.strictEqual(indexOfCall(lines, 'regen-buy-alignment.mjs'), -1,
+    'official-only fallback must not run regen-buy-alignment.mjs (it would present the previous run\'s buy cache as fresh)');
+  assert.ok(indexOfCall(lines, 'sync-official-catalog-to-database.mjs') < indexOfCall(lines, 'merge-buy-prices.js')
+    && indexOfCall(lines, 'merge-buy-prices.js') < indexOfCall(lines, 'generate-native-database.mjs'),
+    'fallback order: sync → buy merge → native generation');
 }
 
 // ── 0b. Red-before-green (DIC-1321): a build that "succeeds" but emits NO

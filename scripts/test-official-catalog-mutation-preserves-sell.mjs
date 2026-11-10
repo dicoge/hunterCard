@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { syncOfficialCatalogToDatabase } from './sync-official-catalog-to-database.mjs';
 import { regenerateBuyAlignment } from './regen-buy-alignment.mjs';
+import { mergeBuyPricesInto } from './merge-buy-prices.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'huntercard-official-sync-'));
@@ -118,6 +119,17 @@ regenerateBuyAlignment(afterSync, { now: Date.parse('2026-08-24T12:00:01.000Z'),
 assert.deepEqual(afterSync.cards[id].sellPrice, provenSellPayload.sellPrice, 'regen-buy scheduled step must not wipe sellPrice');
 assert.equal(afterSync.cards[id].prices[0]?.sellPrice, provenSellPayload.prices[0].sellPrice, 'regen-buy scheduled step must not wipe prices[].sellPrice');
 assert.equal(afterSync.cards[id].prices[0]?.name, provenSellPayload.prices[0].name, 'regen-buy scheduled step must not wipe prices[].name');
+
+// Review N4: the scheduled sync's buy step is now the run-proof merge (no buy scrape → no run
+// marker → retained-only, no history). Same sell-preservation contract on the sync output.
+{
+  const syncedAgain = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+  const emptyCache = fs.mkdtempSync(path.join(tmp, 'buy-'));
+  mergeBuyPricesInto(syncedAgain, { now: Date.parse('2026-08-24T12:00:01.000Z'), runStartedAt: null, dir: emptyCache });
+  assert.deepEqual(syncedAgain.cards[id].sellPrice, provenSellPayload.sellPrice, 'merge-buy scheduled step must not wipe sellPrice');
+  assert.equal(syncedAgain.cards[id].prices[0]?.sellPrice, provenSellPayload.prices[0].sellPrice, 'merge-buy scheduled step must not wipe prices[].sellPrice');
+  assert.equal(syncedAgain.cards[id].prices[0]?.name, provenSellPayload.prices[0].name, 'merge-buy scheduled step must not wipe prices[].name');
+}
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log('✓ official catalog mutation preserves exact-id sell payloads');

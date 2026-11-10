@@ -122,8 +122,24 @@
       "currency": "JPY",
       "cardId": "hEB01-017_hEB01_SR_hEB01-017_SR",
       "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-11-07",
+      "price": 420,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hEB01-017_hEB01_SR_hEB01-017_SR",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-11-08",
+      "price": 420,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hEB01-017_hEB01_SR_hEB01-017_SR",
+      "sourceProduct": "hEB01"
     }
   ],
-  "lastUpdated": "2026-11-06T12:08:23.872Z",
+  "lastUpdated": "2026-11-08T12:05:33.005Z",
   "nameZh": "寶鍾瑪琳"
 }

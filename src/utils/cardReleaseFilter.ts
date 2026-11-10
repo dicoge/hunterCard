@@ -20,6 +20,9 @@ export interface ReleaseCardFlags {
   ytStats: boolean;
 }
 
+/** Mirrors the buy-holder part of INTERNAL_AUDIT_FIELDS (scripts/lib/store-mvp-sanitize.mjs). */
+export const INTERNAL_BUY_HOLDERS = ['buyLastKnown', 'buyPriorSource'] as const;
+
 /**
  * Return a shallow clone of `card` with every disabled advanced field removed.
  * Fail-closed: the keys are deleted (not nulled) so a Store MVP object genuinely
@@ -32,16 +35,30 @@ export function stripDisabledCardFields<T extends Record<string, any>>(
 ): T {
   const out: Record<string, any> = { ...card };
 
+  // Internal buy evidence holders (merge-buy-prices / build-database) are NEVER a client
+  // field, on any profile — full included. Card level and prices[] level.
+  for (const field of INTERNAL_BUY_HOLDERS) delete out[field];
+  if (Array.isArray(out.prices) && out.prices.some((p: any) => p && typeof p === 'object' && INTERNAL_BUY_HOLDERS.some((f) => f in p))) {
+    out.prices = out.prices.map((p: any) => {
+      if (!p || typeof p !== 'object') return p;
+      const rest: Record<string, any> = { ...p };
+      for (const field of INTERNAL_BUY_HOLDERS) delete rest[field];
+      return rest;
+    });
+  }
+
   if (!flags.buyPrice) {
     delete out.buyPrice;
     // buyPriceHistory is buy-back history — same feature group as buyPrice.
     delete out.buyPriceHistory;
+    // last-known (no new quote this run) status of the card-level buy quote.
+    delete out.buyPriceRetained;
     if (Array.isArray(out.prices)) {
       out.prices = out.prices.map((p: any) => {
         if (p && typeof p === 'object') {
           const rest: Record<string, any> = { ...p };
-          // per-version buyPrice + its merge-buy-prices provenance stamps
-          for (const field of ['buyPrice', 'buyPriceVersion', 'buyPriceSource', 'buyPriceTimestamp']) {
+          // per-version buyPrice + its merge-buy-prices provenance / last-known stamps
+          for (const field of ['buyPrice', 'buyPriceVersion', 'buyPriceSource', 'buyPriceTimestamp', 'buyPriceRetained', 'buyLastKnown']) {
             delete rest[field];
           }
           return rest;

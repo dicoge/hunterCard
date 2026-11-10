@@ -384,10 +384,14 @@ function testGateStepsAreEnabledAndInvokeTheirGuards() {
       command: `bash ${SCRIPTS.verify} eas-build.json holohunter-production.apk`,
     },
     { name: 'Setup Java', if: RELEASE_APK_ONLY, uses: 'actions/setup-java@v4' },
-    // Tool provisioning, not a gate: `sdkmanager --licenses` is allowed its
-    // customary `|| true` because a missing apksigner makes the verify step
-    // below fail closed anyway (command not found → non-zero exit).
-    { name: 'Install Android build-tools (apksigner)', if: RELEASE_APK_ONLY, mayTolerate: true },
+    // 2026-11-07: a gate, not provisioning. apksigner must come from the runner's
+    // pre-installed, pre-authorized build-tools; the offline guard fails closed and
+    // nothing may be installed or license-accepted here (no `|| true` tolerated).
+    {
+      name: 'Verify pre-installed Android build-tools (apksigner)',
+      if: RELEASE_APK_ONLY,
+      mustInvoke: 'node scripts/ci/android-sdk-guard.mjs --profile apksigner',
+    },
     {
       name: 'Upload production APK + provenance',
       if: RELEASE_APK_ONLY,
@@ -846,7 +850,7 @@ function testGuardsRunBeforeAnythingIsBuilt() {
   const chain = [
     'EAS Build (production APK, wait for artifact)',
     'Setup Java',
-    'Install Android build-tools (apksigner)',
+    'Verify pre-installed Android build-tools (apksigner)',
     'Verify signature and record build provenance',
     'Upload production APK + provenance',
   ];

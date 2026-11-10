@@ -195,6 +195,77 @@ for (const p of mvpBest.prices) {
   assert.ok('sellPrice' in p, 'Store MVP API response keeps prices[].sellPrice');
 }
 
+// ── 2026-11-07 buy last-known holders / status: isolated nested sentinel fixture ──
+// Card-level and prices[]-level sentinels through EVERY boundary: DB sanitizer (Store
+// MVP / native), full web export (internal strip), the in-app mapper on BOTH profiles,
+// the real copy path on both profiles, and the recognize-card API on both profiles.
+const REAL_DATA_INTERNAL_FIELDS = ['_rawPricesArchive'];
+const BUY_HOLDERS = ['buyLastKnown', 'buyPriorSource'];
+for (const f of [...REAL_DATA_INTERNAL_FIELDS, ...BUY_HOLDERS]) {
+  assert.ok(INTERNAL_AUDIT_FIELDS.includes(f), `INTERNAL_AUDIT_FIELDS must list ${f}`);
+}
+assert.ok(FORBIDDEN_CARD_FIELDS.includes('buyPriceRetained'), 'card buyPriceRetained is a Store MVP forbidden field');
+{
+  const S = {
+    cardHeld: 'SENTINEL_CARD_HELD_7a1', cardPrior: 'SENTINEL_CARD_PRIOR_7a2', variantHeld: 'SENTINEL_VARIANT_HELD_7a3',
+    retainedPrice: 70707,
+  };
+  const holderCard = () => ({
+    ...sampleCard(),
+    buyPrice: S.retainedPrice,
+    buyPriceRetained: true,
+    buyLastKnown: { price: S.retainedPrice, version: 'BASE', source: 'fullahead', timestamp: '2026-11-06T12:09:18.847Z', sourceKey: S.cardHeld },
+    buyPriorSource: [{ sourceKey: S.cardPrior, token: '', price: 10, source: 'fullahead', timestamp: '2026-11-06T12:09:18.847Z' }],
+    prices: sampleCard().prices.map((p, i) => (i === 0
+      ? { ...p, buyPriceRetained: true, buyLastKnown: { price: 800, version: 'BASE', source: 'torecolo', timestamp: S.variantHeld } }
+      : p)),
+  });
+  const holderText = (o) => [S.cardHeld, S.cardPrior, S.variantHeld].filter((s) => JSON.stringify(o).includes(s));
+  // top-level run proof (merge-buy-prices.js, review N5) rides along as a sentinel too
+  const db = { cards: { 'hZZ98-001::held': holderCard() }, buyQuoteRun: { runStartedAt: null, now: 'SENTINEL_RUN_PROOF_7a4', timeZone: 'Asia/Taipei', sourceDigest: 'x' } };
+  for (const f of ['buyQuoteRun']) {
+    assert.ok(!(f in sanitizeDatabase(db)), `Store MVP / native projection drops top-level ${f}`);
+    assert.ok(!(f in stripInternalAuditDatabase(db)), `full web projection drops top-level ${f}`);
+  }
+
+  const pub = sanitizeDatabase(db);
+  assert.deepEqual(holderText(pub), [], 'Store MVP / native projection: no holder at any depth');
+  assert.ok(!JSON.stringify(pub).includes(String(S.retainedPrice)), 'Store MVP / native projection: no retained buy value');
+  assert.ok(!/buyPriceRetained|buyLastKnown|buyPriorSource/.test(JSON.stringify(pub)), 'Store MVP / native projection: no status / holder key');
+
+  const fullWeb = stripInternalAuditDatabase(db);
+  assert.deepEqual(holderText(fullWeb), [], 'full web export: holders stripped even on the full profile');
+  assert.equal(fullWeb.cards['hZZ98-001::held'].buyPriceRetained, true, 'full web export keeps the full-profile retained status');
+  assert.equal(fullWeb.cards['hZZ98-001::held'].buyPrice, S.retainedPrice, 'full web export keeps the retained buy value');
+
+  for (const [flags, label] of [[FULL_FLAGS, 'full'], [MVP_FLAGS, 'Store MVP']]) {
+    const mapped = stripDisabledCardFields(holderCard(), flags);
+    assert.deepEqual(holderText(mapped), [], `in-app mapper (${label}): holders never reach the client`);
+    for (const f of BUY_HOLDERS) assert.ok(!(f in mapped), `in-app mapper (${label}): card ${f} removed`);
+  }
+
+  const tmpHeld = fs.mkdtempSync(path.join(os.tmpdir(), 'store-mvp-holders-'));
+  try {
+    const src = path.join(tmpHeld, 'src.json');
+    fs.writeFileSync(src, JSON.stringify(db));
+    for (const storeMvp of [false, true]) {
+      const dest = path.join(tmpHeld, storeMvp ? 'mvp.json' : 'full.json');
+      copyDatabaseFile(src, dest, storeMvp);
+      assert.deepEqual(holderText(fs.readFileSync(dest, 'utf-8')), [], `copy path (storeMvp=${storeMvp}): no holder bytes`);
+    }
+  } finally {
+    fs.rmSync(tmpHeld, { recursive: true, force: true });
+  }
+
+  const apiHeld = { 'hZZ98-001::held': { ...holderCard(), cardNumber: 'hBP04-005', rarity: 'R', series: 'hbp', officialImage: 'https://example/x.png' } };
+  for (const storeMvp of [false, true]) {
+    const best = rankCandidates(apiHeld, extracted, storeMvp).candidates[0];
+    assert.ok(best, `API ranks the sentinel card (storeMvp=${storeMvp})`);
+    assert.deepEqual(holderText(best), [], `API response (storeMvp=${storeMvp}): no holder bytes`);
+  }
+  console.log('  ✓ buy holders / retained status: nested sentinels stripped at every boundary (fixture, not committed data)');
+}
+
 // ── Real built-artifact copy path against the shipped database.json ──
 const realDb = path.join(__dirname, '..', 'data', 'database.json');
 if (fs.existsSync(realDb)) {
@@ -215,10 +286,13 @@ if (fs.existsSync(realDb)) {
       'non-MVP export equals stripInternalAuditDatabase(source) — internal audit fields dropped, every user field preserved',
     );
     // Confirm the stripped fields were actually present in the source, so the
-    // pass proves the strip removed real bytes (not vacuously green).
-    const srcAudit = Object.fromEntries(INTERNAL_AUDIT_FIELDS.map((f) => [f, 0]));
+    // pass proves the strip removed real bytes (not vacuously green). Only the
+    // PRE-EXISTING internal field is a property of committed data; the 2026-11-07
+    // buy evidence holders are ephemeral pipeline state that must never be committed
+    // in a published shape, so they are proven by the isolated sentinel fixture below.
+    const srcAudit = Object.fromEntries(REAL_DATA_INTERNAL_FIELDS.map((f) => [f, 0]));
     for (const entry of Object.values(JSON.parse(fs.readFileSync(realDb, 'utf-8')).cards ?? {})) {
-      for (const field of INTERNAL_AUDIT_FIELDS) if (Object.prototype.hasOwnProperty.call(entry, field)) srcAudit[field]++;
+      for (const field of REAL_DATA_INTERNAL_FIELDS) if (Object.prototype.hasOwnProperty.call(entry, field)) srcAudit[field]++;
     }
     for (const [field, count] of Object.entries(srcAudit)) {
       assert.ok(count > 0, `source database must carry ${field} for the strip to be meaningful`);

@@ -36,8 +36,10 @@ import {
   isKnownPromoPath,
   promoPathMatchesCardNumber,
   restoreBuyPriceHistory,
+  restoreBuyQuotes,
 } from './lib/preserve-market-fields.js';
 import { orderCardsForDetailAlignment } from './lib/order-cards-for-detail-alignment.js';
+import { capturePriorBuySources } from './lib/buy-source-cache.js';
 import { collectPriceEvidence, writePriceEvidenceAtomic } from './lib/price-evidence.js';
 import {
   classifyExactPrintPayload,
@@ -2867,6 +2869,15 @@ async function buildDatabase() {
     }
   }
 
+  // Last-known SELL status (2026-11-07): a priced row this run's scrape did NOT price (it
+  // carries a preserved payload) is explicitly marked `sellQuoteRetained: true` — whatever
+  // its age, "no new quote this run" is stated, never inferred from timestamps or the
+  // catalog's build time. A row this run priced from its own listing carries no flag.
+  for (const [id, card] of Object.entries(database.cards)) {
+    if (isPricedRow(card) && !freshlyPricedRowIds.has(id)) card.sellQuoteRetained = true;
+    else delete card.sellQuoteRetained;
+  }
+
   // Write database.json
   fs.writeFileSync(OUTPUT_PATH, `${JSON.stringify(database, null, 2)}\n`, 'utf-8');
 
@@ -2942,10 +2953,21 @@ async function buildDatabase() {
   }
   const priceRecords = [];
   let step5SkippedUnproven = 0;
+  let step5SkippedLastKnown = 0;
   for (const [cardId, card] of Object.entries(database.cards)) {
     if (card.sellPrice != null && card.sellPrice > 0) {
       if (!disableStep5Gate && !hasCurrentPriceProvenance(card, step5GateOptions)) {
         step5SkippedUnproven++;
+        continue;
+      }
+      // Last-known price (2026-11-07): a row priced ONLY by the DIC-1482 /
+      // DIC-1321 last-known-good preservation was not re-observed by this run's
+      // scrape. Its value and original `timestamp` ship unchanged, but writing a
+      // `date: today` history record would fabricate a same-day observation of a
+      // price the source did not quote today. Only rows THIS run's scrape priced
+      // (captured before preservation, per exact printing id) get today's record.
+      if (!freshlyPricedRowIds.has(cardId)) {
+        step5SkippedLastKnown++;
         continue;
       }
       priceRecords.push(stampHistoryRecord({
@@ -2959,6 +2981,9 @@ async function buildDatabase() {
   }
   if (step5SkippedUnproven > 0) {
     console.log(`  [DIC-1229] Step 5 skipped ${step5SkippedUnproven} unproven printings — no durable record written (DIC-1229 fail-closed)`);
+  }
+  if (step5SkippedLastKnown > 0) {
+    console.log(`  [last-known] Step 5 wrote no today record for ${step5SkippedLastKnown} last-known (not re-observed this run) printings`);
   }
 
   // Group by cardId and write history files
@@ -3172,6 +3197,21 @@ async function buildDatabase() {
   const buyHistory = restoreBuyPriceHistory(database.cards, prevCards);
   console.log(`  [buyPriceHistory] Carried ${buyHistory.observations} observations onto ${buyHistory.cards} cards`
     + (buyHistory.skippedIdentityMismatch > 0 ? `; skipped ${buyHistory.skippedIdentityMismatch} identity mismatches` : ''));
+  // Last-known BUY quote (2026-11-07): carry each exact variant's previous buy evidence as a
+  // `buyLastKnown` HOLDER (never a current claim — merge-buy-prices.js re-verifies it).
+  const buyQuotes = restoreBuyQuotes(database.cards, prevCards);
+  console.log(`  [buyLastKnown] Held ${buyQuotes.variants} previous buy quote(s) and ${buyQuotes.cardHolders} card-level holder(s) for the buy merge`
+    + (buyQuotes.converted > 0 ? `; converted ${buyQuotes.converted} carried claim(s) to holders` : ''));
+  // Review N1 (PR283): this step runs BEFORE local-scrape-and-push.sh's buy scrapes, so the
+  // previous run's data/buy-prices/*.json is still on disk. Capture it now as internal raw
+  // evidence (exact source key / token / shop / own time) — a partial fresh scrape that then
+  // overwrites a file can no longer erase a proven quote. merge-buy-prices.js offers these as
+  // retained-only candidates and removes the holder.
+  const priorBuy = capturePriorBuySources(database.cards, {
+    dir: process.env.HUNTERCARD_BUY_PRICES_DIR || path.join(DATA_DIR, 'buy-prices'),
+    now: Date.now(),
+  });
+  console.log(`  [buyPriorSource] Captured ${priorBuy.records} prior buy-source record(s) onto ${priorBuy.cards} card(s) (${JSON.stringify(priorBuy.files)})`);
 
   // Step 7: Merge VTuber YouTube stats (subscriber/view counts + growth) (DIC-249)
   console.log('\n── Step 7: Merge VTuber YouTube stats ──');

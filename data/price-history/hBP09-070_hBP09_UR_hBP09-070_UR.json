@@ -138,8 +138,24 @@
       "currency": "JPY",
       "cardId": "hBP09-070_hBP09_UR_hBP09-070_UR",
       "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-11-07",
+      "price": 6980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-070_hBP09_UR_hBP09-070_UR",
+      "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-11-08",
+      "price": 6980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-070_hBP09_UR_hBP09-070_UR",
+      "sourceProduct": "hBP09"
     }
   ],
-  "lastUpdated": "2026-11-06T12:08:23.162Z",
+  "lastUpdated": "2026-11-08T12:05:32.945Z",
   "nameZh": "綺綺羅羅薇薇"
 }

@@ -74,6 +74,7 @@ import { useAuthStore } from '../store/authStore';
 import { useScanQuotaStore } from '../store/scanQuotaStore';
 import { canScanWithRemaining } from '../services/permissionService';
 import { stripDisabledCardFields } from '../utils/cardReleaseFilter';
+import { scanQuoteProvenance } from '../utils/scanQuoteProvenance';
 import { FEATURES, releaseCardFlags, STORE_MVP } from '../config/releaseFlags';
 import { useTranslation, type TranslationKey } from '../i18n';
 
@@ -2192,7 +2193,9 @@ export default function ScanScreen({ navigation }: any) {
       <ScanSessionPanel
         preferredCurrency={preferredCurrency}
         expandRequest={sessionOpenRequest}
-        onViewCard={(card) => navigation?.navigate('CardDetail', { card })}
+        // Last-known price: the scanned printing's OWN quote time travels with it (never
+        // the representative's); unknown provenance → null → 報價日期不明 on the detail page.
+        onViewCard={(card) => navigation?.navigate('CardDetail', { card: { ...card, ...scanQuoteProvenance(card) } })}
         onContinueScanning={() => {
           setLastScannedCard(null);
           setScanComplete(false);

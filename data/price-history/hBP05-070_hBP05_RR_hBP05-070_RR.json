@@ -138,8 +138,24 @@
       "currency": "JPY",
       "cardId": "hBP05-070_hBP05_RR_hBP05-070_RR",
       "sourceProduct": "hBP05"
+    },
+    {
+      "date": "2026-11-07",
+      "price": 280,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-070_hBP05_RR_hBP05-070_RR",
+      "sourceProduct": "hBP05"
+    },
+    {
+      "date": "2026-11-08",
+      "price": 280,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-070_hBP05_RR_hBP05-070_RR",
+      "sourceProduct": "hBP05"
     }
   ],
-  "lastUpdated": "2026-11-06T12:08:17.906Z",
+  "lastUpdated": "2026-11-08T12:05:32.439Z",
   "nameZh": "白上吹雪"
 }

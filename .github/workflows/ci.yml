@@ -234,6 +234,18 @@ jobs:
       - name: Verify exact-print price-regression gate, last-known-good preservation, and canonical/public/native parity (DIC-1482)
         run: npm run test:dic1482-price-gate
 
+      - name: Verify the real builder keeps a dropped proven price with its original time and writes no today history for it; fresh quotes still record today (2026-11-07)
+        run: npm run test:last-known-price-builder
+
+      - name: Verify the real builder + buy merge keep the exact version's last-known BUY quote with its original source/time, marked retained, no fake buy history; network blocked (2026-11-07)
+        run: npm run test:last-known-buy-pipeline
+
+      - name: Verify the official-only fallback (no buy scrape) presents every buy quote as retained with its original source/time and writes no buy history; old regen wiring is caught (review N4)
+        run: npm run test:last-known-buy-fallback
+
+      - name: Verify merge artifacts (scheduled sync / fallback / daily) are fixed points of the regen byte-identity gate, retained state included; previous gate logic, newer/lower sources and tampering are caught (review N5)
+        run: npm run test:buy-regen-fixed-point
+
       - name: Verify every scraped cardNumber reconciles against the shipped artifact and fallback refusals are recorded (DIC-1167)
         run: npm run test:dic1167-price-coverage-reconciliation
 
@@ -677,6 +689,18 @@ jobs:
       - name: Verify hBP03-029 printings show zh version labels, own pictures and zh product names; same printing collapses, SR/R never merged (2026-10-19)
         run: npm run test:printing-display
 
+      - name: Verify last-known price keeps the exact printing's own value and original time, labelled old; no fake today history; privacy projection intact (2026-11-07)
+        run: npm run test:last-known-price
+
+      - name: Verify last-known BUY quotes (exact version, original source/time, retained ≠ fresh regardless of age), buy privacy strip and full-profile buy line (2026-11-07)
+        run: npm run test:last-known-buy
+
+      - name: Verify the offline Android SDK guard fails closed on missing/unauthorized packages, tools, licenses and unreviewed terms, and never installs or accepts anything (2026-11-07)
+        run: npm run test:android-sdk-guard
+
+      - name: Verify the PR 284 SDK provisioning helper offline (fake transport + fake installer) — exact two packages, unknown/new terms stop before install, nothing accepted, one reviewed CI invocation (2026-11-08)
+        run: npm run test:android-sdk-provision
+
       - name: Verify the printing version / quote END TO END — native scan → handler → chooser → 加入 → session, latest and same-time conflict (v44)
         run: npm run test:scan-printing-version-flow
 
@@ -753,25 +777,6 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK (pinned; no legacy `tools` package, DIC-1443)
-        run: |
-          set -euo pipefail
-          ANDROID_HOME=${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}
-          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          test -x "$SDKMANAGER"
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
-          # `android-actions/setup-android@v3` asked sdkmanager for the legacy
-          # `tools` package, which Google removed from the repository
-          # (`Warning: Failed to find package 'tools'`, DIC-1443). Pin the
-          # explicit packages the release build needs instead; gradle
-          # auto-provisions NDK/CMake under $ANDROID_HOME as before.
-          "$SDKMANAGER" --sdk_root="$ANDROID_HOME" \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
-          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
-
       - name: Install dependencies
         run: npm ci
 
@@ -785,14 +790,44 @@ jobs:
           EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: dic1266-postpackage-guard-placeholder
         run: npx expo prebuild --platform android --no-install --clean
 
+      # 2026-11-08 (owner-approved, PR #284 branch ONLY): the hosted runner lacks
+      # ndk;27.1.12297006 and cmake;3.22.1. This step installs EXACTLY those two with the
+      # runner's preinstalled sdkmanager, and only after proving from the official repository
+      # metadata that both are bound to the policy's evidenced terms hash AND that hash is
+      # already in the runner's accepted licenses file. It accepts nothing (no --licenses,
+      # stdin closed, licenses/ snapshotted before/after). Unknown or new terms → STOP. The
+      # unchanged read-only guard below then re-validates everything before Gradle.
+      - name: Provision exactly NDK 27.1.12297006 + CMake 3.22.1 (PR 284 branch only; terms pre-verified; nothing accepted)
+        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository }}
+        run: |
+          set -euo pipefail
+          node scripts/ci/android-sdk-provision.mjs
+
+      # 2026-11-07: this guard never installs SDK packages and CI never accepts license terms
+      # (the old `yes | sdkmanager --licenses … || true` accepted ANY terms, including
+      # new ones). The guard only reads the runner's pre-installed SDK, resolves the
+      # versions the build really needs from react-native's libs.versions.toml /
+      # android/ (after npm ci + prebuild), and fails closed on a missing package,
+      # tool or license file, on an unauthorized package, or on unreviewed terms
+      # (scripts/ci/android-sdk-policy.json is evidence-bound — see its provenance).
+      - name: Verify pre-installed Android SDK (fail-closed; no install, no license acceptance)
+        run: |
+          set -euo pipefail
+          ANDROID_HOME=${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}
+          node scripts/ci/android-sdk-guard.mjs --profile release --sdk-root "$ANDROID_HOME"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+
       - name: Assemble release APK
         env:
           # Set on the JVM so gradle daemons never leak between jobs.
           _JAVA_OPTIONS: "-Xmx4g -Dfile.encoding=UTF-8"
+        # -Pandroid.builder.sdkDownload=false: AGP must not auto-provision (and
+        # silently license) any SDK component the guard above did not verify.
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew app:assembleRelease --no-daemon --console=plain --stacktrace
+          ./gradlew app:assembleRelease -Pandroid.builder.sdkDownload=false --no-daemon --console=plain --stacktrace
 
       - name: Verify packaged ABI set + size (DIC-1277 blocker)
         run: npm run test:release-apk-postpackage

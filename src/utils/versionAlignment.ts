@@ -23,7 +23,26 @@ export interface PriceVersion {
   printing: string;
   sellPrice: number | null;
   buyPrice: number | null; // 對齊到此版本的店家收購價；對不到為 null（fail closed，不借別版）
+  /**
+   * 收購價自身的來源證據（merge-buy-prices.js 寫入，與 buyPrice 同一筆 tuple）。只在
+   * buyPrice 存在時給；`retained` = 本輪沒有新報價、這是上次已知報價（原來源／原時間）。
+   * 只供完整市場檢視（FEATURES.priceSpread）顯示；Store MVP 在 mapping 邊界已整組剝除。
+   */
+  buyQuote?: BuyQuoteProvenance;
 }
+
+export interface BuyQuoteProvenance {
+  source: string | null;
+  quotedAt: string | null;
+  retained: boolean;
+}
+
+type RawBuyFields = {
+  buyPrice?: number | null;
+  buyPriceSource?: unknown;
+  buyPriceTimestamp?: unknown;
+  buyPriceRetained?: unknown;
+};
 
 /** 對齊邏輯只需要這些欄位；CardInfo 與資料庫原始 record 都符合此結構。
  * rarity 不在其中：它描述整個卡號，不指向任何一筆掛牌。 */
@@ -31,7 +50,17 @@ export interface CardLike {
   series?: string;
   sellPrice?: number | null;
   buyPrice?: number | null;
-  prices?: Array<{ name?: string; sellPrice: number | null; buyPrice?: number | null } | null | undefined> | null;
+  buyPriceRetained?: unknown;
+  prices?: Array<({ name?: string; sellPrice: number | null } & RawBuyFields) | null | undefined> | null;
+}
+
+function buyQuoteOf(p: RawBuyFields): BuyQuoteProvenance | undefined {
+  if (p.buyPrice == null || !(p.buyPrice > 0)) return undefined;
+  const source = typeof p.buyPriceSource === 'string' && p.buyPriceSource.trim() ? p.buyPriceSource : null;
+  const quotedAt = typeof p.buyPriceTimestamp === 'string' && p.buyPriceTimestamp.trim() ? p.buyPriceTimestamp : null;
+  const retained = p.buyPriceRetained === true;
+  if (source == null && quotedAt == null && !retained) return undefined;
+  return { source, quotedAt, retained };
 }
 
 export interface VersionResolution {
@@ -50,7 +79,7 @@ export interface VersionResolution {
  */
 export function buildPriceVersions(card: CardLike): PriceVersion[] {
   const raw = (card.prices || []).filter(
-    (p): p is { name?: string; sellPrice: number | null; buyPrice?: number | null } =>
+    (p): p is { name?: string; sellPrice: number | null } & RawBuyFields =>
       !!p && p.sellPrice != null && p.sellPrice > 0
   );
   const seen = new Set<string>();
@@ -59,20 +88,25 @@ export function buildPriceVersions(card: CardLike): PriceVersion[] {
     const key = `${p.name || ''}|${p.sellPrice}`;
     if (seen.has(key)) continue;
     seen.add(key);
+    const buyQuote = buyQuoteOf(p);
     versions.push({
       name: p.name || card.series || '版本',
       printing: printingFromLabel(p.name || ''),
       sellPrice: p.sellPrice,
       buyPrice: p.buyPrice ?? null,
+      ...(buyQuote ? { buyQuote } : {}),
     });
   }
   if (versions.length === 0) {
     // 無明細版本 → 退回卡號層級。單一版本時 card.buyPrice 即該版本收購價（未混版）。
+    // card 層級沒有來源／時間欄位：只能如實標示 retained，時間為未知。
+    const buyQuote = buyQuoteOf({ buyPrice: card.buyPrice, buyPriceRetained: card.buyPriceRetained });
     versions.push({
       name: card.series || '估值',
       printing: BASE_PRINTING,
       sellPrice: card.sellPrice ?? null,
       buyPrice: card.buyPrice ?? null,
+      ...(buyQuote ? { buyQuote } : {}),
     });
   }
   return versions;

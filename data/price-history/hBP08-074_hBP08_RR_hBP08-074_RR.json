@@ -138,8 +138,24 @@
       "currency": "JPY",
       "cardId": "hBP08-074_hBP08_RR_hBP08-074_RR",
       "sourceProduct": "hBP08"
+    },
+    {
+      "date": "2026-11-07",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-074_hBP08_RR_hBP08-074_RR",
+      "sourceProduct": "hBP08"
+    },
+    {
+      "date": "2026-11-08",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-074_hBP08_RR_hBP08-074_RR",
+      "sourceProduct": "hBP08"
     }
   ],
-  "lastUpdated": "2026-11-06T12:08:18.809Z",
+  "lastUpdated": "2026-11-08T12:05:32.780Z",
   "nameZh": "一伊那爾棲"
 }

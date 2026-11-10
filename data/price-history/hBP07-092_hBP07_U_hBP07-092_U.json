@@ -138,8 +138,24 @@
       "currency": "JPY",
       "cardId": "hBP07-092_hBP07_U_hBP07-092_U",
       "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-11-07",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-092_hBP07_U_hBP07-092_U",
+      "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-11-08",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-092_hBP07_U_hBP07-092_U",
+      "sourceProduct": "hBP07"
     }
   ],
-  "lastUpdated": "2026-11-06T12:08:18.474Z",
+  "lastUpdated": "2026-11-08T12:05:32.678Z",
   "nameZh": "存檔電腦"
 }

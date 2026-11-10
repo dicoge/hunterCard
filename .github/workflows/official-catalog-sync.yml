@@ -87,8 +87,12 @@ jobs:
       - name: Merge official catalog into database
         run: node scripts/sync-official-catalog-to-database.mjs
 
+      # No buy scrape runs in this workflow, so no buy quote is new: merge-buy-prices.js
+      # (no HUNTERCARD_RUN_STARTED_AT here) keeps every proven quote as RETAINED with its own
+      # source/time and writes / prunes no buy history. regen-buy-alignment.mjs would present
+      # the committed cache as fresh and key history on its snapshot date (review N4).
       - name: Re-apply exact-version buy price alignment
-        run: node scripts/regen-buy-alignment.mjs
+        run: node scripts/merge-buy-prices.js
 
       - name: Generate native database asset
         run: node scripts/generate-native-database.mjs

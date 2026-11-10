@@ -138,8 +138,24 @@
       "currency": "JPY",
       "cardId": "hBP08-026_hBP08_U_hBP08-026_U",
       "sourceProduct": "hBP08"
+    },
+    {
+      "date": "2026-11-07",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-026_hBP08_U_hBP08-026_U",
+      "sourceProduct": "hBP08"
+    },
+    {
+      "date": "2026-11-08",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-026_hBP08_U_hBP08-026_U",
+      "sourceProduct": "hBP08"
     }
   ],
-  "lastUpdated": "2026-11-06T12:08:18.642Z",
+  "lastUpdated": "2026-11-08T12:05:32.721Z",
   "nameZh": "塞西莉亞·伊瑪格林"
 }

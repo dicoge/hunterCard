@@ -1,0 +1,48 @@
+{
+  "$comment": [
+    "Pre-installed Android SDK packages and the ONE license terms text CI may rely on (2026-11-07).",
+    "CI never installs SDK packages and never accepts license terms: scripts/ci/android-sdk-guard.mjs only READS the machine's pre-installed SDK and fails closed when a required package is missing / not exact, when its package.xml binds it to any other license or to terms whose text hash is not listed here, when the accepted licenses/<id> file lacks that hash or carries any other hash, or when the build requires a package not listed here.",
+    "Nothing here is an acceptance of new terms. The only authorized hash is the one already present in the existing accepted file and matched by every required installed package (see provenance).",
+    "platforms;android-35 is listed only because build-tools;35.0.0 / apksigner and the historical CI pin reference that API; it is NOT installed locally and must not be installed by CI. A build that resolves to it fails closed if it is absent."
+  ],
+  "authorizedPackages": [
+    "platform-tools",
+    "platforms;android-35",
+    "platforms;android-36",
+    "build-tools;35.0.0",
+    "build-tools;36.0.0",
+    "ndk;27.1.12297006",
+    "cmake;3.22.1"
+  ],
+  "licenses": {
+    "android-sdk-license": {
+      "authorizedHashes": [
+        "24333f8a63b6825ea9c5514f83c2829b004d1fee"
+      ],
+      "provenance": {
+        "kind": "read-only local evidence; no SDK program was run, nothing installed, no terms accepted",
+        "acceptedFile": "existing <sdk>/licenses/android-sdk-license on the owner's Mac contains exactly this one hash (evidence/daily-20261107/ANDROID_SDK_EXISTING_TOOLCHAIN_EVIDENCE.json: acceptedHashCount 1)",
+        "packageBinding": "platform-tools, platforms;android-36, build-tools;35.0.0, build-tools;36.0.0, ndk;27.1.12297006, cmake;3.22.1: each package.xml <uses-license ref=\"android-sdk-license\"> and that license text's SHA-1 (raw and trimmed) is this hash (evidence/daily-20261107/ANDROID_SDK_PACKAGE_LICENSE_BINDING_EVIDENCE.json)",
+        "toolchain": "react-native 0.81.5 (existing node_modules lock): compileSdk 36, buildTools 36.0.0, ndkVersion 27.1.12297006",
+        "recordedAt": "2026-11-07"
+      }
+    }
+  },
+  "profiles": {
+    "release": {
+      "resolveFromBuild": true,
+      "extraPackages": ["platform-tools", "cmake;3.22.1"],
+      "requiredTools": ["build-tools/{buildTools}/aapt"]
+    },
+    "debug": {
+      "resolveFromBuild": true,
+      "extraPackages": ["platform-tools", "cmake;3.22.1"],
+      "requiredTools": []
+    },
+    "apksigner": {
+      "resolveFromBuild": false,
+      "extraPackages": ["build-tools;35.0.0"],
+      "requiredTools": ["build-tools/35.0.0/apksigner"]
+    }
+  }
+}

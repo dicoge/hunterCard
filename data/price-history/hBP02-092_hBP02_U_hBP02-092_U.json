@@ -138,8 +138,24 @@
       "currency": "JPY",
       "cardId": "hBP02-092_hBP02_U_hBP02-092_U",
       "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-11-07",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-092_hBP02_U_hBP02-092_U",
+      "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-11-08",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-092_hBP02_U_hBP02-092_U",
+      "sourceProduct": "hBP02"
     }
   ],
-  "lastUpdated": "2026-11-06T12:08:16.643Z",
+  "lastUpdated": "2026-11-08T12:05:31.915Z",
   "nameZh": "吹布拉"
 }

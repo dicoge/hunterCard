@@ -138,8 +138,24 @@
       "currency": "JPY",
       "cardId": "hBP08-005_hBP08_OSR_hBP08-005_OSR",
       "sourceProduct": "hBP08"
+    },
+    {
+      "date": "2026-11-07",
+      "price": 280,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-005_hBP08_OSR_hBP08-005_OSR",
+      "sourceProduct": "hBP08"
+    },
+    {
+      "date": "2026-11-08",
+      "price": 280,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-005_hBP08_OSR_hBP08-005_OSR",
+      "sourceProduct": "hBP08"
     }
   ],
-  "lastUpdated": "2026-11-06T12:08:18.567Z",
+  "lastUpdated": "2026-11-08T12:05:32.701Z",
   "nameZh": "鷹嶺琉衣"
 }

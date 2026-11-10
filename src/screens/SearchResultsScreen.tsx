@@ -10,6 +10,7 @@ import { getCatalogRevision, loadCatalogSnapshot } from '../utils/staticData';
 import { useCatalogRevision } from '../hooks/useCatalogRevision';
 import { useTranslation } from '../i18n';
 import { uniformGridItemStyle } from '../utils/gridLayout';
+import { classifyPriceFreshness, quoteTagKey } from '../utils/priceFreshness';
 import { AppShell, buildShellTabs } from '../components/shell';
 import {
   ArrowLeftGlyph,
@@ -209,7 +210,9 @@ export function searchCards(database: DatabaseSchema, query: string, nameMap: Re
           ),
         }
       : row;
-    return toCanonicalCardRecord(c, nameMap, cardFlags);
+    // Last-known price: every real row of the number states its own printings' quote
+    // times; a lone row states its own (2026-11-07).
+    return toCanonicalCardRecord(c, nameMap, cardFlags, siblings && siblings.length > 0 ? siblings : [row]);
   });
 }
 
@@ -232,6 +235,26 @@ const SR_PLUS_RARITIES = new Set(['SR', 'OSR', 'UR', 'OUR', 'SEC', 'SY', 'SP', '
 function cardPriceValue(card: CardResult): number | null {
   const price = card.sellPrice ?? card.yuyuPrice ?? null;
   return typeof price === 'number' && price > 0 ? price : null;
+}
+
+/**
+ * 最近已知售價 on the compact result price (2026-11-07): the shown price is the elected
+ * row's own sellPrice, and `priceQuotedAt` is that same row's quote time, so the shared
+ * classifier decides old / unknown exactly as CardDetail does. Fresh or no price → no
+ * marker; a payload that carries no quote provenance (undefined) → no marker (no claim).
+ */
+export function compactPriceMarker(
+  card: CardResult,
+  price: number | null | undefined,
+  t: (key: any) => string,
+  now?: number,
+): string | undefined {
+  if (card.priceQuotedAt === undefined) return undefined;
+  // The writer's explicit retained flag (no new quote this run) marks the price even when the
+  // original quote is only a day old: 無新報價 instead of nothing.
+  const f = classifyPriceFreshness({ price, quotedAt: card.priceQuotedAt, now, retained: card.priceRetained === true });
+  const key = quoteTagKey(f);
+  return key ? t(key) : undefined;
 }
 
 export function applySearchRefinements(
@@ -686,11 +709,15 @@ export function SearchResultTile({
   card,
   width,
   onPress,
+  now,
 }: {
   card: CardResult;
   width?: number;
   onPress: () => void;
+  /** Clock for the last-known marker (ms); defaults to Date.now. Tests inject it. */
+  now?: number;
 }) {
+  const { t } = useTranslation();
   const { preferredCurrency, preferredLanguage } = useSettingsStore();
   const { primary } = resolveCardDisplayName(card, preferredLanguage);
   const price = cardPriceValue(card);
@@ -700,6 +727,7 @@ export function SearchResultTile({
       name={primary || card.cardNumber || card.id}
       rarity={card.rarity || undefined}
       price={showPrice ? formatCardPrice(price, preferredCurrency) : undefined}
+      priceNote={showPrice ? compactPriceMarker(card, price, t, now) : undefined}
       imageUrl={card.imageUrl || undefined}
       onPress={onPress}
       width={width}
@@ -759,7 +787,7 @@ function CardIdentityBadges({
   );
 }
 
-export function CardListItem({ card, onPress }: { card: CardResult; onPress: () => void }) {
+export function CardListItem({ card, onPress, now }: { card: CardResult; onPress: () => void; now?: number }) {
   const { t } = useTranslation();
   const [imgErr, setImgErr] = React.useState(false);
   const id = card.cardNumber || card.id;
@@ -771,8 +799,9 @@ export function CardListItem({ card, onPress }: { card: CardResult; onPress: () 
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
       <View style={[styles.rarityStrip, { backgroundColor: rarityColors[card.rarity] || '#6b7280' }]} />
-      {/* Card Image */}
-      {card.imageUrl && !imgErr && (
+      {/* Card Image — a ternary, not `imageUrl && …`: an empty imageUrl ('') would render
+          as a raw text node inside this View (RN Web "Unexpected text node"). */}
+      {card.imageUrl && !imgErr ? (
         <View style={styles.cardImageContainer}>
           <Image
             source={{ uri: card.imageUrl }}
@@ -781,7 +810,7 @@ export function CardListItem({ card, onPress }: { card: CardResult; onPress: () 
             onError={() => setImgErr(true)}
           />
         </View>
-      )}
+      ) : null}
       <View style={styles.cardContent}>
         <View style={styles.cardHeader} testID="search-card-header">
           <Text style={styles.cardNumber} numberOfLines={1} testID="search-card-number">{id}</Text>
@@ -803,7 +832,7 @@ export function CardListItem({ card, onPress }: { card: CardResult; onPress: () 
           );
         })()}
 
-        {effects && <Text style={styles.cardEffect} numberOfLines={2}>{effects}</Text>}
+        {effects ? <Text style={styles.cardEffect} numberOfLines={2}>{effects}</Text> : null}
 
         <View style={styles.metaRow}>
           {card.seriesNames.map((s, i) => <Text key={i} style={styles.seriesTag}>{s}</Text>)}
@@ -832,6 +861,12 @@ export function CardListItem({ card, onPress }: { card: CardResult; onPress: () 
           card.yuyuPrice != null && card.yuyuPrice > 0 ? (
             <View style={styles.priceRowList} testID="search-result-price-row">
               <Text style={styles.priceBadgeList}>{formatPrice(card.yuyuPrice)}</Text>
+              {(() => {
+                const marker = compactPriceMarker(card, card.yuyuPrice, t, now);
+                return marker ? (
+                  <Text style={styles.priceAgeBadgeList} testID="search-result-price-age">{marker}</Text>
+                ) : null;
+              })()}
               {card.prices && card.prices.length > 1 && (
                 <Text style={styles.variantBadge}>+{card.prices.length - 1}</Text>
               )}
@@ -1100,6 +1135,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 'auto',
     alignSelf: 'flex-end',
+  },
+  // 最近已知售價 marker beside the list price (same row; amber like CardDetail's 舊價).
+  priceAgeBadgeList: {
+    color: '#f59e0b',
+    fontSize: 10,
+    fontWeight: '700',
   },
   variantBadge: {
     color: COLORS.primary,

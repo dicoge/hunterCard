@@ -138,8 +138,24 @@
       "currency": "JPY",
       "cardId": "hBP01-067_hBP01_RR_hBP01-067_RR",
       "sourceProduct": "hBP01"
+    },
+    {
+      "date": "2026-11-07",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-067_hBP01_RR_hBP01-067_RR",
+      "sourceProduct": "hBP01"
+    },
+    {
+      "date": "2026-11-08",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-067_hBP01_RR_hBP01-067_RR",
+      "sourceProduct": "hBP01"
     }
   ],
-  "lastUpdated": "2026-11-06T12:08:16.029Z",
+  "lastUpdated": "2026-11-08T12:05:31.584Z",
   "nameZh": "小鳥遊琪亞拉"
 }

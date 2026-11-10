@@ -30,6 +30,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { printingId } from './lib/printing-identity.js';
+import { readBuySourceEntries } from './lib/buy-source-cache.js';
+import { normalizeCardNumber } from './lib/variant-key.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -187,7 +189,11 @@ console.log('  ✓ fixture: exact-printing history carried, no sibling leak, cla
     const isOfficial = (c) => products.has(c.sourceProduct || c.series || '');
     const OLD = '2000-01-01';
     const listedId = Object.keys(db.cards).find((id) => isOfficial(db.cards[id]) && db.cards[id].buyPrice != null);
-    const delistedId = Object.keys(db.cards).find((id) => isOfficial(db.cards[id]) && db.cards[id].buyPrice == null && db.cards[id].rarity);
+    // "Unlisted" = no buy evidence at all (review N1: a number still quoted in the source
+    // cache is legitimately retained as last-known, so pin the null case on an unquoted one).
+    const quotedNums = new Set(readBuySourceEntries(path.join(sandbox, 'data/buy-prices')).entries.map((e) => e.numKey));
+    const delistedId = Object.keys(db.cards).find((id) => isOfficial(db.cards[id]) && db.cards[id].buyPrice == null && db.cards[id].rarity
+      && !quotedNums.has(normalizeCardNumber(db.cards[id].cardNumber)));
     assert.ok(listedId && delistedId, 'committed data must contain a listed and an unlisted official printing');
     db.cards[listedId].buyPriceHistory = { [OLD]: 111, ...(db.cards[listedId].buyPriceHistory || {}) };
     db.cards[delistedId].buyPriceHistory = { [OLD]: 222 };

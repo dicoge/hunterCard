@@ -446,7 +446,12 @@ officialCatalogFallback() {
       echo "[$(date)] ❌ official-only fallback sync FAILED" >> "$LOG_FILE"
       return 1
     fi
-    if ! node scripts/regen-buy-alignment.mjs >> "$LOG_FILE" 2>&1; then
+    # No buy scrape runs in this path: data/buy-prices/*.json is the PREVIOUS run's cache.
+    # merge-buy-prices.js (not regen-buy-alignment.mjs) proves "this run" from the exported
+    # HUNTERCARD_RUN_STARTED_AT, so every on-disk quote predates the run and is RETAINED with
+    # its own source/time (buyPriceRetained), and no buy history is written or pruned. regen
+    # would call those quotes fresh and key/prune history on the snapshot's UTC date (review N4).
+    if ! node scripts/merge-buy-prices.js >> "$LOG_FILE" 2>&1; then
       echo "[$(date)] ❌ official-only fallback buy alignment FAILED" >> "$LOG_FILE"
       return 1
     fi

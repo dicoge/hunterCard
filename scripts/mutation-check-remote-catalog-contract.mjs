@@ -47,8 +47,8 @@ const FILES = [
   'public/data/database.json',
 ];
 
-const ORIGINAL_LIST = "export const FORBIDDEN_CARD_FIELDS = ['buyPrice', 'buyPriceHistory', 'priceHistory', 'ytStats'] as const;";
-const MUTATED_LIST = "export const FORBIDDEN_CARD_FIELDS = ['buyPriceHistory', 'priceHistory', 'ytStats'] as const;";
+const ORIGINAL_LIST = "export const FORBIDDEN_CARD_FIELDS = ['buyPrice', 'buyPriceHistory', 'priceHistory', 'ytStats', 'buyPriceRetained', 'buyLastKnown', 'buyPriorSource'] as const;";
+const MUTATED_LIST = "export const FORBIDDEN_CARD_FIELDS = ['buyPriceHistory', 'priceHistory', 'ytStats', 'buyPriceRetained', 'buyLastKnown', 'buyPriorSource'] as const;";
 
 function makeCopy(tag) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `holo-remote-catalog-${tag}-`));
