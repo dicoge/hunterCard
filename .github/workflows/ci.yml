@@ -884,17 +884,30 @@ jobs:
         working-directory: retained-fixture-pr-head
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          # Filled from the reviewed local files before publication; a placeholder never matches.
+          # Unchanged pins (R4(b)).
           GENERATOR_SHA256: 88a62408b215a2c14e5a997f191ce7c69dbc000b406f33cc622c99f84c23f884
           PATCHER_SHA256: daf5760dfb1d7303f63c796da8c4fde9cd649a26841b8e4dc792d549b107ac31
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$HEAD_SHA"
-          test "$(git rev-parse HEAD^)" = "$FX_PRODUCT_COMMIT"
           test "$(git rev-parse "$FX_PRODUCT_COMMIT^{tree}")" = "$FX_PRODUCT_TREE"
-          changed=$(git diff --name-only "$FX_PRODUCT_COMMIT" HEAD | sort)
           expected=$(printf '%s\n' .github/workflows/ci.yml \
             qa/retained-ui-fixture/generate_retained_fixture.mjs qa/retained-ui-fixture/patch-test-manifest.mjs | sort)
+          # R4(a) ancestry: d5 is an ancestor of the head; replaces the old `HEAD^ == d5`.
+          git merge-base --is-ancestor "$FX_PRODUCT_COMMIT" HEAD
+          # R4(a) history shape: no merge commit anywhere in d5..HEAD, and at least one commit.
+          test -z "$(git rev-list --merges "$FX_PRODUCT_COMMIT..HEAD")"
+          test "$(git rev-list --count "$FX_PRODUCT_COMMIT..HEAD")" -ge 1
+          # R4(a) every single commit touches only QA files (subset of the fixed set; never product files).
+          for c in $(git rev-list "$FX_PRODUCT_COMMIT..HEAD"); do
+            touched=$(git diff-tree --no-commit-id --name-only -r "$c" | sort)
+            extra=$(comm -23 <(printf '%s\n' "$touched") <(printf '%s\n' "$expected"))
+            if [ -n "$extra" ]; then
+              echo "::error::commit $c touches non-QA path(s)"; printf '%s\n' "$extra"; exit 1
+            fi
+          done
+          # Unchanged: the cumulative delta is exactly the three QA files.
+          changed=$(git diff --name-only "$FX_PRODUCT_COMMIT" HEAD | sort)
           if [ "$changed" != "$expected" ]; then
             echo "::error::PR head must add exactly the three QA files on top of $FX_PRODUCT_COMMIT"
             printf '%s\n' "$changed"
@@ -903,6 +916,7 @@ jobs:
           test "$(sha256sum qa/retained-ui-fixture/generate_retained_fixture.mjs | cut -d' ' -f1)" = "$GENERATOR_SHA256"
           test "$(sha256sum qa/retained-ui-fixture/patch-test-manifest.mjs | cut -d' ' -f1)" = "$PATCHER_SHA256"
           printf '%s\n' "$changed" > "$FX_EVIDENCE/QA_DELTA_VS_D5.txt"
+          git rev-list "$FX_PRODUCT_COMMIT..HEAD" > "$FX_EVIDENCE/QA_COMMITS_SINCE_D5.txt"
 
       - name: Fixture (PR 284 only) — own detached worktree of the exact d5 product commit + locked deps
         if: ${{ success() && github.event_name == 'pull_request' && github.event.pull_request.number == 284 && github.event.pull_request.draft && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository }}
@@ -1034,6 +1048,199 @@ jobs:
           name: SYNTHETIC-retained-ui-fixture-TEST-ONLY-never-release
           path: ${{ env.FX_EVIDENCE }}
           if-no-files-found: error
+
+      # REAL candidate public bundle, Store MVP, BUY hidden. Not a synthetic fixture, not Alpha / Play / Production.
+      # Build input = d5 product (tree e030503e) + EXACTLY two files taken from the already-public PR #285 head
+      # commit bb0852d4 (same repository): public/data/database.json (142b3bf9, the ONLY bundled data) and
+      # data/database.json (#285 canonical 21885ecc, present ONLY so the unchanged `--check` gate can run; never in
+      # the artifact). No data file is pushed; the local candidate canonical 531500a7 and every private report stay
+      # on the host.
+      - name: Whole (PR 284 only) — fixed paths and pins
+        if: ${{ success() && github.event_name == 'pull_request' && github.event.pull_request.number == 284 && github.event.pull_request.draft && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository }}
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/whole" "$RUNNER_TEMP/whole/evidence"
+          {
+            echo "WH_EVIDENCE=$RUNNER_TEMP/whole/evidence"
+            echo "WH_BUILD=$RUNNER_TEMP/d5-whole-build"
+            echo "WH_SOURCE_COMMIT=bb0852d4ce1dc248faeada146315e94e5dc30910"
+            echo "WH_PUBLIC_SHA256=142b3bf9b5038b66c399113b05a10def80eb3e158be35f5cef9c160fa86d651e"
+            echo "WH_CANONICAL285_SHA256=21885ecc559eae3c86db3a5ab1b574df9a61c808f44640bbf84d1f3c4ece2c9c"
+            echo "WH_CARDS=3975"
+            echo "WH_MIN_FREE_KB=20971520"
+          } >> "$GITHUB_ENV"
+
+      # R4(g): free only this job's own fixture worktree (its evidence was already uploaded), then fail closed
+      # if the runner does not have >= 20 GiB free for the third Gradle build.
+      - name: Whole (PR 284 only) — release the fixture worktree and require free disk
+        if: ${{ success() && github.event_name == 'pull_request' && github.event.pull_request.number == 284 && github.event.pull_request.draft && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository }}
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          case "$FX_BUILD" in "$RUNNER_TEMP"/*) ;; *) echo "::error::unexpected fixture path"; exit 1 ;; esac
+          git -C retained-fixture-pr-head worktree remove --force "$FX_BUILD"
+          free=$(df -Pk "$RUNNER_TEMP" | awk 'NR==2 {print $4}')
+          echo "free KiB: $free" | tee "$WH_EVIDENCE/DISK.txt"
+          test "$free" -ge "$WH_MIN_FREE_KB"
+
+      # Read-only checkout of the already-public PR #285 head object; only the two named files are materialised.
+      - name: Whole (PR 284 only) — sparse read-only checkout of the two PR 285 blobs
+        if: ${{ success() && github.event_name == 'pull_request' && github.event.pull_request.number == 284 && github.event.pull_request.draft && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository }}
+        uses: actions/checkout@v4
+        with:
+          ref: bb0852d4ce1dc248faeada146315e94e5dc30910
+          path: whole-source
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: |
+            public/data/database.json
+            data/database.json
+          sparse-checkout-cone-mode: false
+
+      - name: Whole (PR 284 only) — own detached d5 worktree, exactly two files replaced
+        if: ${{ success() && github.event_name == 'pull_request' && github.event.pull_request.number == 284 && github.event.pull_request.draft && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository }}
+        timeout-minutes: 25
+        run: |
+          set -euo pipefail
+          test "$(git -C whole-source rev-parse HEAD)" = "$WH_SOURCE_COMMIT"
+          test "$(sha256sum whole-source/public/data/database.json | cut -d' ' -f1)" = "$WH_PUBLIC_SHA256"
+          test "$(sha256sum whole-source/data/database.json | cut -d' ' -f1)" = "$WH_CANONICAL285_SHA256"
+          git -C retained-fixture-pr-head worktree add --detach "$WH_BUILD" "$FX_PRODUCT_COMMIT"
+          test "$(git -C "$WH_BUILD" rev-parse HEAD)" = "$FX_PRODUCT_COMMIT"
+          test "$(git -C "$WH_BUILD" rev-parse 'HEAD^{tree}')" = "$FX_PRODUCT_TREE"
+          test -z "$(git -C "$WH_BUILD" status --porcelain)"
+          cp whole-source/public/data/database.json "$WH_BUILD/public/data/database.json"
+          cp whole-source/data/database.json "$WH_BUILD/data/database.json"
+          cd "$WH_BUILD"
+          test "$(git status --porcelain | sort)" = "$(printf ' M data/database.json\n M public/data/database.json\n' | sort)"
+          git diff --numstat > "$WH_EVIDENCE/SOURCE_DIFF_NUMSTAT.txt"
+          npm ci
+
+      # Unchanged product gates (a data-dependent failure on #285 data is a FINDING, never skipped) + one inline
+      # assertion on the shipped bytes using the product's own field lists.
+      - name: Whole (PR 284 only) — unchanged product data / privacy / native-parity / export gates
+        if: ${{ success() && github.event_name == 'pull_request' && github.event.pull_request.number == 284 && github.event.pull_request.draft && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository }}
+        working-directory: ${{ env.WH_BUILD }}
+        timeout-minutes: 40
+        run: |
+          set -euo pipefail
+          node scripts/generate-native-database.mjs --check
+          npm run test:expo-native-compat
+          npm run test:store-mvp-strip
+          npm run test:store-mvp-native-export
+          npm run test:native-guest-data
+          npm run test:native-price-artifact
+          npm run test:last-known-price
+          npm run test:remote-catalog
+          npm run test:release-apk-pipeline
+          npm run test:release-apk-size-optim
+          node --input-type=module -e "
+            import fs from 'node:fs';
+            import { FORBIDDEN_CARD_FIELDS as C, FORBIDDEN_VARIANT_FIELDS as V, INTERNAL_AUDIT_FIELDS as I, INTERNAL_DATABASE_FIELDS as D } from './scripts/lib/store-mvp-sanitize.mjs';
+            const db = JSON.parse(fs.readFileSync('public/data/database.json', 'utf8'));
+            const cards = Object.values(db.cards || {});
+            const bad = cards.filter((c) => [...C, ...I].some((f) => Object.hasOwn(c, f))
+              || (c.prices || []).some((p) => p && [...V, ...I].some((f) => Object.hasOwn(p, f)))).length;
+            const retained = cards.filter((c) => c.sellQuoteRetained === true).length;
+            const top = D.filter((f) => Object.hasOwn(db, f));
+            if (cards.length !== Number(process.env.WH_CARDS) || bad || retained || top.length) {
+              console.error('shipped asset check failed', { cards: cards.length, bad, retained, top }); process.exit(1);
+            }
+            console.log('shipped asset: ' + cards.length + ' cards, 0 forbidden, 0 retained, no internal top-level field');
+          " | tee "$WH_EVIDENCE/SHIPPED_ASSET_CHECK.txt"
+          printf '%s\n' generate-native-database--check expo-native-compat store-mvp-strip store-mvp-native-export \
+            native-guest-data native-price-artifact last-known-price remote-catalog release-apk-pipeline release-apk-size-optim \
+            shipped-asset-check > "$WH_EVIDENCE/GATES_PASSED.txt"
+
+      - name: Whole (PR 284 only) — prebuild the production-apk profile (Store MVP), NO manifest patch
+        if: ${{ success() && github.event_name == 'pull_request' && github.event.pull_request.number == 284 && github.event.pull_request.draft && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository }}
+        working-directory: ${{ env.WH_BUILD }}
+        timeout-minutes: 20
+        env:
+          EAS_BUILD_PROFILE: production-apk
+          EAS_BUILD_PLATFORM: android
+          EXPO_PUBLIC_STORE_MVP: '1'
+          EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: whole-candidate-test-placeholder
+        run: npx expo prebuild --platform android --no-install --clean
+
+      - name: Whole (PR 284 only) — read-only SDK re-check for the whole project
+        if: ${{ success() && github.event_name == 'pull_request' && github.event.pull_request.number == 284 && github.event.pull_request.draft && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository }}
+        working-directory: ${{ env.WH_BUILD }}
+        run: |
+          set -euo pipefail
+          node scripts/ci/android-sdk-guard.mjs --profile release --sdk-root "$ANDROID_HOME"
+
+      - name: Whole (PR 284 only) — assemble (template debug signer; no SDK auto-download)
+        if: ${{ success() && github.event_name == 'pull_request' && github.event.pull_request.number == 284 && github.event.pull_request.draft && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository }}
+        working-directory: ${{ env.WH_BUILD }}/android
+        timeout-minutes: 75
+        env:
+          _JAVA_OPTIONS: "-Xmx4g -Dfile.encoding=UTF-8"
+        run: |
+          chmod +x gradlew
+          ./gradlew app:assembleRelease -Pandroid.builder.sdkDownload=false --no-daemon --console=plain --stacktrace
+
+      - name: Whole (PR 284 only) — post-package guard, signer, package, manifest record, provenance, artifact listing
+        if: ${{ success() && github.event_name == 'pull_request' && github.event.pull_request.number == 284 && github.event.pull_request.draft && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository }}
+        working-directory: ${{ env.WH_BUILD }}
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          npm run test:release-apk-postpackage
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          BT="$ANDROID_HOME/build-tools/36.0.0"
+          "$BT/apksigner" verify --print-certs "$APK" > "$WH_EVIDENCE/apksigner-certs.txt"
+          digests=$(sed -n 's/^Signer #[0-9]* certificate SHA-256 digest: \([0-9a-f]\{64\}\)$/\1/p' "$WH_EVIDENCE/apksigner-certs.txt")
+          test "$digests" = "$FX_DEBUG_CERT"
+          test "$("$BT/aapt2" dump packagename "$APK")" = "com.dicoge.holohunter"
+          "$BT/aapt2" dump xmltree --file AndroidManifest.xml "$APK" > "$WH_EVIDENCE/manifest-xmltree.txt"
+          attr() { awk -v k="android:$1($2)=" 'index($0, k) { print substr($0, index($0, k) + length(k)) }' "$WH_EVIDENCE/manifest-xmltree.txt"; }
+          dbg=$(attr debuggable 0x0101000f)
+          case "$dbg" in ''|false|'(type 0x12)0x0') ;; *) echo "::error::android:debuggable is '$dbg'"; exit 1 ;; esac
+          apk_sha=$(sha256sum "$APK" | cut -d' ' -f1)
+          echo "$apk_sha  hh-whole-candidate-TEST-ONLY.apk" > "$WH_EVIDENCE/APK_SHA256.txt"
+          cp "$APK" "$WH_EVIDENCE/hh-whole-candidate-TEST-ONLY.apk"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          node --input-type=module -e "
+            import fs from 'node:fs';
+            const e = process.env;
+            const p = {
+              schema: 'hh-whole-candidate-apk-provenance/1',
+              label: 'REAL candidate public bundle; Store MVP; BUY hidden; TEST-ONLY; never Alpha/Play/Production; do not redistribute',
+              productCommit: e.FX_PRODUCT_COMMIT, productTree: e.FX_PRODUCT_TREE, qaHead: e.HEAD_SHA,
+              dataSourceCommit: e.WH_SOURCE_COMMIT,
+              bundledPublicSha256: e.WH_PUBLIC_SHA256,
+              buildOnlyCanonicalSha256: e.WH_CANONICAL285_SHA256,
+              provenLinksInCi: ['public/data/database.json == ' + e.WH_SOURCE_COMMIT + ':public/data/database.json (sha256 ' + e.WH_PUBLIC_SHA256 + ')',
+                'generate-native-database --check: ' + e.WH_PUBLIC_SHA256 + ' == sanitizeDatabase(#285 canonical ' + e.WH_CANONICAL285_SHA256 + ') under d5 code'],
+              hostAttestedLinkNotProvenInCi: 'sanitizeDatabase(local candidate canonical 531500a726ebfe760eaeb66505dc8bd72b0c38440f3fec76374957014888c1d4) == ' + e.WH_PUBLIC_SHA256 + ' — host G1 evidence evidence/daily-20261109/latest-price-whole-prep/runs/verify-20261109T203314Z/VERIFY_REPORT.json; the canonical is not published and is not in this artifact',
+              apkSha256: process.argv[1], signer: e.FX_DEBUG_CERT, package: 'com.dicoge.holohunter', profile: 'production-apk, EXPO_PUBLIC_STORE_MVP=1, manifest unpatched',
+              onlineNote: 'an online launch commits the official remote catalog (higher sequence, trusted-rollback design) and shows it; bundle checks are offline-before-first-launch only',
+              run: process.argv[2],
+            };
+            fs.writeFileSync(e.WH_EVIDENCE + '/PROVENANCE.json', JSON.stringify(p, null, 2) + '\n');
+          " "$apk_sha" "$run_url"
+          cat > "$WH_EVIDENCE/LABEL.txt" <<EOF
+          REAL CANDIDATE DATA TEST CLIENT — TEST-ONLY. NEVER ALPHA / PLAY / PRODUCTION / RELEASE. DO NOT REDISTRIBUTE.
+          Non-testOnly release-profile APK signed with the public template DEBUG key $FX_DEBUG_CERT (not a release key).
+          Product $FX_PRODUCT_COMMIT (tree $FX_PRODUCT_TREE); bundled public catalog $WH_PUBLIC_SHA256 from $WH_SOURCE_COMMIT.
+          Store MVP: BUY hidden. Bundle checks OFFLINE before first launch only. run: $run_url
+          EOF
+          # R4(f): the artifact may contain ONLY these files — no data/, no database.json, no canonical, no report.
+          want=$(printf '%s\n' APK_SHA256.txt DISK.txt GATES_PASSED.txt LABEL.txt PROVENANCE.json SHIPPED_ASSET_CHECK.txt \
+            SOURCE_DIFF_NUMSTAT.txt apksigner-certs.txt hh-whole-candidate-TEST-ONLY.apk manifest-xmltree.txt | sort)
+          have=$(cd "$WH_EVIDENCE" && find . -mindepth 1 -printf '%P\n' | sort)
+          if [ "$have" != "$want" ]; then echo "::error::unexpected artifact content"; printf '%s\n' "$have"; exit 1; fi
+
+      - name: Whole (PR 284 only) — upload the labelled test-only artifact (short retention)
+        if: ${{ success() && github.event_name == 'pull_request' && github.event.pull_request.number == 284 && github.event.pull_request.draft && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: WHOLE-CANDIDATE-DATA-client-TEST-ONLY-never-release-do-not-redistribute
+          path: ${{ env.WH_EVIDENCE }}
+          if-no-files-found: error
+          retention-days: 3
 
   # DIC-1430 Actions registry recovery — the registered-CI trampoline.
   #
