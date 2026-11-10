@@ -156,8 +156,15 @@ const rawPrice = (id) => {
 };
 const rawRetained = (id) => RAW[id].sellQuoteRetained === true;
 const yen = (p) => `¥${p.toLocaleString('en-US')}`;
-// zh chooser source line for hBD24-023 (product · day · age tag · original name)
-const hbdSourceLine = (day, tag) => ['PR 宣傳卡（hPR）', `${day} 報價`, tag, '原名：PRカード'].filter(Boolean).join(' · ');
+// zh chooser source line for hBD24-023. 2026-11-10 USER OVERRIDE (Android: 「本次更新無新報價・
+// 沿用 2026-08-25 的原報價（舊價）」—「如果會請拿掉 我可沒叫你這樣顯示」): product + original name
+// only — no quote day, no 舊價 / 無新報價 / 報價日期不明. The card's provenance still carries the
+// current quote's own time and retained flag (asserted where it matters, never rendered).
+const HBD_SOURCE_LINE = 'PR 宣傳卡（hPR） · 原名：PRカード';
+const CHOOSER_HINT_RE = /舊價|無新報價|報價日期不明|未確認為最新|\d{4}-\d{2}-\d{2}/;
+const assertNoChooserHint = (lines, label) => {
+  for (const s of lines) assert.doesNotMatch(s, CHOOSER_HINT_RE, `${label}: no quote date / age hint in "${s}"`);
+};
 await test('real rows hBD24-023: the ent07 aggregation row and the hPR row are proven the SAME listing alias (same yuyu listing + official image + rarity)', () => {
   const rows = real.map((r) => ({ id: r.id, cardNumber: r.cardNumber, rarity: r.rarity, sellPrice: r.sellPrice, imageUrl: r.officialImage, provenance: provenanceFromRow(r) }));
   assert.equal(samePrintingProof(rows[0], rows[1]), 'aggregate-alias-same-listing');
@@ -254,9 +261,8 @@ await test('unlisted alias that matches two printings joins neither (no guess)',
 });
 
 const metaOf = (html, id) => [...html.matchAll(new RegExp(`data-testid="${id}"[^>]*>(.*?)</div>`, 'gs'))].map((m) => m[1].replace(/<[^>]*>/g, '').replace(/<!--.*?-->/gs, ''));
-// `now` (2026-11-07 last-known price): the chooser labels a quote older than the DIC-1229
-// window 舊價. Exact-line assertions inject a clock one hour after THEIR OWN quote so the
-// pinned line is the fresh state, independent of the wall clock; omitted = Date.now.
+// The chooser no longer takes a clock (no age label); `now` here is only passed to prove the
+// rendered line is identical at any time after the quote (fresh, 30 days, unknown).
 const HOUR = 60 * 60 * 1000;
 const render = (cards, now) => renderToStaticMarkup(React.createElement(Selector, {
   visible: true, tier: 'mid', candidates: cards.map((card) => ({ card, confidence: 0.5 })),
@@ -264,29 +270,35 @@ const render = (cards, now) => renderToStaticMarkup(React.createElement(Selector
   ...(now === undefined ? {} : { now }),
 }));
 const priceRe = (p) => new RegExp(`#hBD24-023 · P · 一般版\\s+${yen(p).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\d)`);
-await test('actual chooser: the proven version is ONE row "#hBD24-023 · P · 一般版 ¥<latest raw quote>" with "PR 宣傳卡（hPR） · <latest quote day> 報價 · 原名：PRカード" (zh primary, 2026-10-19)', () => {
+await test('actual chooser: the proven version is ONE row "#hBD24-023 · P · 一般版 ¥<latest raw quote>" with "PR 宣傳卡（hPR） · 原名：PRカード" (zh primary; no quote-date / age hint)', () => {
   const html = render([resolved.card], Date.parse(resolved.card.provenance.quotedAt) + HOUR);
   const meta = metaOf(html, 'scan-candidate-meta');
   const source = metaOf(html, 'scan-candidate-source');
   assert.equal(meta.length, 1);
   assert.match(meta[0], priceRe(HBD_LATEST.sellPrice));
-  // fresh one hour after its own quote — unless the writer marked that current row retained
-  assert.deepEqual(source, [hbdSourceLine(utcDay(HBD_LATEST.timestamp), rawRetained(HBD_LATEST.id) ? '無新報價' : '')]);
+  assert.deepEqual(source, [HBD_SOURCE_LINE]);
+  assertNoChooserHint([...meta, ...source], 'fresh');
+  // internal provenance still carries the current quote's own time + the writer's retained flag
+  assert.equal(resolved.card.provenance.quotedAt, HBD_LATEST.timestamp);
+  assert.equal(resolved.card.provenance.retained === true, rawRetained(HBD_LATEST.id));
 });
-await test('actual chooser, last-known price: the same quote 30 days later keeps its ORIGINAL day and is marked 舊價 / 無新報價 (never current)', () => {
+await test('actual chooser, last-known price: the same quote 30 days later renders the SAME line and price (no 舊價 / 無新報價 / date)', () => {
   const quotedAt = resolved.card.provenance.quotedAt;
   const html = render([resolved.card], Date.parse(quotedAt) + 30 * 24 * HOUR);
-  assert.match(metaOf(html, 'scan-candidate-meta')[0], priceRe(HBD_LATEST.sellPrice), 'same exact printing, same retained value');
-  assert.deepEqual(metaOf(html, 'scan-candidate-source'),
-    [hbdSourceLine(utcDay(HBD_LATEST.timestamp), rawRetained(HBD_LATEST.id) ? '無新報價' : '舊價')]);
+  const meta = metaOf(html, 'scan-candidate-meta');
+  const source = metaOf(html, 'scan-candidate-source');
+  assert.match(meta[0], priceRe(HBD_LATEST.sellPrice), 'same exact printing, same retained value');
+  assert.deepEqual(source, [HBD_SOURCE_LINE]);
+  assertNoChooserHint([...meta, ...source], '30 days');
 });
-await test('actual chooser, unknown quote time: a priced candidate says 報價日期不明 instead of a date or a fresh claim', () => {
+await test('actual chooser, unknown / future quote time: same product line, no 報價日期不明 and no date', () => {
   const card = { ...resolved.card, provenance: { ...resolved.card.provenance, quotedAt: null } };
   const source = metaOf(render([card], Date.parse(HBD_LATEST.timestamp)), 'scan-candidate-source');
-  assert.deepEqual(source, ['PR 宣傳卡（hPR） · 報價日期不明，未確認為最新售價 · 原名：PRカード']);
+  assert.deepEqual(source, [HBD_SOURCE_LINE]);
   const future = { ...resolved.card, provenance: { ...resolved.card.provenance, quotedAt: '2099-01-01T00:00:00.000Z' } };
-  assert.ok(!metaOf(render([future], Date.parse(HBD_LATEST.timestamp)), 'scan-candidate-source')[0].includes('2099-01-01'),
-    'a future quote time is never displayed as a quote date');
+  const fsource = metaOf(render([future], Date.parse(HBD_LATEST.timestamp)), 'scan-candidate-source');
+  assert.deepEqual(fsource, [HBD_SOURCE_LINE]);
+  assertNoChooserHint([...source, ...fsource], 'unknown / future');
 });
 await test('actual chooser across re-quotes: the 2026-10-22 CI quote and month / year rollovers show that quote\'s own day; an older ent07 quote never takes over from hPR', () => {
   // SYNTHETIC re-quote fixture (in memory; the catalog file is not touched). Deterministic: the
@@ -322,22 +334,26 @@ await test('actual chooser across re-quotes: the 2026-10-22 CI quote and month /
     assert.deepEqual([...res.card.aliasIds].sort(), ['hBD24-023_ent07', 'hBD24-023_hPR_P_hBD24-023_P'], at);
     const html = render([res.card], Date.parse(want.timestamp) + HOUR);
     assert.match(metaOf(html, 'scan-candidate-meta')[0], priceRe(price), at);
-    assert.deepEqual(metaOf(html, 'scan-candidate-source'), [hbdSourceLine(day, '')], at);
+    // the current quote's own day is provenance (asserted above via quotedAt), never rendered
+    assert.deepEqual(metaOf(html, 'scan-candidate-source'), [HBD_SOURCE_LINE], at);
+    assert.ok(!html.includes(day), `${at}: quote day ${day} not rendered`);
   }
-  // Explicit retained cases: the CURRENT row's flag is shown (無新報價, even one hour after its
-  // quote); the non-current row's flag never leaks onto the shown price.
-  for (const [at, retainedRow, shown] of [
-    ['2026-08-01T00:00:00.000Z', HPR_ID, '無新報價'],     // hPR current + retained (today's real state)
-    ['2026-08-01T00:00:00.000Z', ENT07_ID, ''],            // ent07 retained but older → not shown
-    ['2026-10-22T12:10:01.865Z', ENT07_ID, '無新報價'],    // ent07 current + retained
-    ['2026-10-22T12:10:01.865Z', HPR_ID, ''],              // hPR retained but older → not shown
+  // Explicit retained cases: the retained flag travels INTERNALLY with the current row only (the
+  // non-current row's flag never leaks); the rendered line is the same either way (no hint).
+  for (const [at, retainedRow, isCurrent] of [
+    ['2026-08-01T00:00:00.000Z', HPR_ID, true],      // hPR current + retained (today's real state)
+    ['2026-08-01T00:00:00.000Z', ENT07_ID, false],   // ent07 retained but older
+    ['2026-10-22T12:10:01.865Z', ENT07_ID, true],    // ent07 current + retained
+    ['2026-10-22T12:10:01.865Z', HPR_ID, false],     // hPR retained but older
   ]) {
     const res = resolvePrintingByCardNumber(variant(at, { [retainedRow]: true }), 'hBD24-023');
     const t = Date.parse(res.card.provenance.quotedAt);
-    assert.equal(res.card.provenance.retained === true, shown !== '', `${at} / ${retainedRow}: retained travels only with the current row`);
-    const day = utcDay(res.card.provenance.quotedAt);
-    assert.deepEqual(metaOf(render([res.card], t + HOUR), 'scan-candidate-source'), [hbdSourceLine(day, shown)], `${at} / ${retainedRow}`);
-    if (shown) assert.deepEqual(metaOf(render([res.card], t + 30 * 24 * HOUR), 'scan-candidate-source'), [hbdSourceLine(day, '無新報價')], `${at} / ${retainedRow} (30 days: retained wording kept)`);
+    assert.equal(res.card.provenance.retained === true, isCurrent, `${at} / ${retainedRow}: retained travels only with the current row`);
+    for (const now of [t + HOUR, t + 30 * 24 * HOUR]) {
+      const lines = metaOf(render([res.card], now), 'scan-candidate-source');
+      assert.deepEqual(lines, [HBD_SOURCE_LINE], `${at} / ${retainedRow} @ +${Math.round((now - t) / HOUR)}h`);
+      assertNoChooserHint(lines, `${at} / ${retainedRow}`);
+    }
   }
   assert.equal(all.find((c) => c.id === ENT07_ID).provenance.quotedAt, RAW[ENT07_ID].timestamp, 'variants never leak into the loaded catalog');
   assert.equal(all.find((c) => c.id === HPR_ID).provenance.retained === true, rawRetained(HPR_ID), 'retained reset never leaks into the loaded catalog');
@@ -362,24 +378,33 @@ await test('actual chooser: hBP03-029 rows carry zh version, zh primary series (
   });
   // (the R rows and the SR rows are told apart by version, not by price alone)
   assert.equal(new Set(metaRows.map((m) => m.trim().replace(/\s+¥[\d,]+$/, ''))).size, 4, 'four distinct version labels');
-  const source = metaOf(html, 'scan-candidate-source').join('|');
+  const sourceLines = metaOf(html, 'scan-candidate-source');
+  const source = sourceLines.join('|');
   assert.match(source, /補充包 第 3 彈（hBP03） · [^|]*原名：ブースターパック「エリートスパーク」/);
   assert.match(source, /額外補充包 第 1 彈（hEB01） · [^|]*原名：エクストラブースター サマー・ホログラム/);
+  assertNoChooserHint([...metaRows, ...sourceLines], 'hBP03-029');
   assert.equal((html.match(/data-testid="scan-candidate-image"/g) || []).length, 4);
   // RN-web's static markup omits the <img> src; the source is the row's own listing picture.
   const pics = miko.printings.map((c) => buildPrintingDisplayRows(c.prices, 'zh')[0].imageUrl).sort();
   assert.deepEqual(pics.map((u) => u.replace(/^.*100_140\//, '')), ['hbp03/10062.jpg', 'hbp03/10063.jpg', 'heb01/10135.jpg', 'heb01/10136.jpg']);
 });
-await test('actual chooser: unproven lookalikes are told apart by source + date, marked 版本未確認 (not by price alone)', () => {
+await test('actual chooser: unproven lookalikes are told apart by their source product (+ own price), marked 版本未確認; no quote date (user override)', () => {
   const rows = caseRows('same_images_but_alias_unproven_no_blind_merge').map((r) => ({
     id: r.id, name: 'x', cardNumber: r.cardNumber, type: '', rarity: r.rarity, series: '', sellPrice: r.sellPrice,
     yuyuName: '', color: '', imageUrl: r.artIdentity, provenance: r.provenance,
   }));
   const cards = consolidatePrintingCards(rows);
-  const source = metaOf(render(cards), 'scan-candidate-source');
+  const html = render(cards);
+  const source = metaOf(html, 'scan-candidate-source');
+  const meta = metaOf(html, 'scan-candidate-meta');
   assert.equal(source.length, 2);
-  assert.notEqual(source[0], source[1]);
-  assert.ok(source.every((s) => /\d{4}-\d{2}-\d{2} 報價/.test(s) && s.includes('版本未確認')), source.join(' | '));
+  assert.notEqual(source[0], source[1], 'the two source products stay distinguishable');
+  assert.ok(source.every((s) => s.includes('版本未確認')), source.join(' | '));
+  // each lookalike keeps ITS OWN price (8,980 / 9,980), never one borrowed for both
+  assert.deepEqual(meta.map((m) => (m.match(/¥([\d,]+)/) || [])[1]).sort(), ['8,980', '9,980']);
+  assertNoChooserHint(source, 'lookalikes');
+  // the quote dates stay internal provenance on each card (fixture: 2026-10-17 / 2026-08-25)
+  assert.deepEqual(cards.map((c) => c.provenance.quotedAt).sort(), rows.map((r) => r.provenance.quotedAt).sort());
 });
 await test('actual chooser: a same-time quote conflict shows 報價不一致 and no price', () => {
   const rows = caseRows('same_timestamp_conflicting_quote_no_arbitrary_max_or_min').map((r) => ({

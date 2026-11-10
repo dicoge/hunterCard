@@ -21,10 +21,9 @@ import { hasDisplayableSubscriberStats, isValidatedTrendPrediction, bloomLevelBa
 import { computeValidatedPriceTrend } from '../utils/priceTrend';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { buildPriceVersions, resolveVersionForCard, resolveDisplayedPrintingIndex } from '../utils/versionAlignment';
-import { useTranslation, type TranslationKey } from '../i18n';
+import { useTranslation } from '../i18n';
 import { ownershipKey } from '../utils/deckRules';
 import { resolveCardDisplayName } from '../utils/cardDisplayName';
-import { BUY_QUOTE_FRESH_MAX_AGE_MS, classifyPriceFreshness, quoteLineKey } from '../utils/priceFreshness';
 
 const gradeLabels: Record<string, string> = { debut: 'Debut', '1st': '1st', '2nd': '2nd', buzz: 'Buzz', spot: 'Spot' };
 // DIC-1141 CR: printing rarity palette imported from the shared source in
@@ -212,23 +211,10 @@ export default function CardDetailScreen({ route, navigation }: any) {
   const priceName = card.yuyuPriceName || '';
   const hasActualPrice = actualPrice != null && actualPrice > 0;
 
-  // 最近已知售價 (2026-11-07): label a shown price from ITS OWN quote time only. A route
-  // payload that never carried quote provenance renders exactly as before (no invented
-  // date); one that carries it shows 報價日, 最近已知售價（舊價） or 報價日期不明.
-  // `retained` is the writer's explicit "no new quote this run" (sellQuoteRetained): it is
-  // labelled as such even when the original quote is only a day old.
-  const quoteLine = (price: number | null | undefined, quotedAt: string | null | undefined, retained = false) => {
-    const f = classifyPriceFreshness({ price, quotedAt, retained });
-    const line = quoteLineKey(f);
-    return line ? { text: t(line.key as TranslationKey, { date: f.quoteDate ?? '' }), stale: line.stale } : null;
-  };
-  const headlineQuote = card.priceQuotedAt !== undefined
-    ? quoteLine(actualPrice, card.priceQuotedAt, card.priceRetained === true)
-    : null;
-  const printingQuoteTimes: Record<string, string> | null =
-    card.printingQuotedAt && typeof card.printingQuotedAt === 'object' ? card.printingQuotedAt : null;
-  const printingRetained: Record<string, boolean> =
-    card.printingRetained && typeof card.printingRetained === 'object' ? card.printingRetained : {};
+  // 2026-11-10 (user override of the 2026-11-07 last-known labels): the shown price carries
+  // NO quote-date / 舊價 / 無新報價 / 報價日期不明 hint. The route payload still carries each
+  // printing's own quote time and retained flag (priceQuotedAt / printingQuotedAt /
+  // printingRetained) as internal provenance; they are simply not rendered.
 
   // Handle multiple price variants (signed vs unsigned)
   const priceVariants = card.prices || [];
@@ -548,10 +534,6 @@ export default function CardDetailScreen({ route, navigation }: any) {
                       <View style={styles.variantList}>
                         {[...printingRows].sort((a, b) => (a.sellPrice ?? Infinity) - (b.sellPrice ?? Infinity)).filter((v) => v.ambiguous || (v.sellPrice != null && v.sellPrice > 0)).map((v) => {
                           const converted = v.sellPrice != null ? convertPrice(v.sellPrice, preferredCurrency) : null;
-                          // This exact printing's OWN quote time; absent = unknown, never a sibling's.
-                          const rowQuote = printingQuoteTimes
-                            ? quoteLine(v.sellPrice, printingQuoteTimes[v.printing] ?? null, printingRetained[v.printing] === true)
-                            : null;
                           return (
                           <View key={v.printing} style={styles.variantRow} testID={`card-detail-variant-${v.printing}`}>
                             {v.imageUrl ? (
@@ -562,15 +544,6 @@ export default function CardDetailScreen({ route, navigation }: any) {
                             <View style={styles.variantText}>
                               <Text style={styles.variantName} numberOfLines={1}>{v.rarity ? `[${v.rarity}] ` : ''}{v.label}</Text>
                               <Text style={styles.variantSource} numberOfLines={1}>{v.sourceLabel}</Text>
-                              {rowQuote ? (
-                                <Text
-                                  style={[styles.variantSource, rowQuote.stale ? styles.priceStale : null]}
-                                  numberOfLines={2}
-                                  testID={`card-detail-quote-${v.printing}`}
-                                >
-                                  {rowQuote.text}
-                                </Text>
-                              ) : null}
                             </View>
                             <Text style={styles.variantPrice}>{converted ? `${converted.symbol}${converted.value?.toLocaleString()}` : t('card_detail_variant_price_conflict')}</Text>
                           </View>
@@ -595,14 +568,6 @@ export default function CardDetailScreen({ route, navigation }: any) {
                           <Text style={styles.priceValue}>¥{actualPrice.toLocaleString()}</Text>
                           {deltaChip}
                         </View>
-                        {headlineQuote ? (
-                          <Text
-                            style={[styles.priceNote, headlineQuote.stale ? styles.priceStale : null]}
-                            testID="card-detail-price-quote"
-                          >
-                            {headlineQuote.text}
-                          </Text>
-                        ) : null}
                         {FEATURES.trendPrediction && detailPriceTrend ? (
                           <Text style={styles.priceCompare} testID="card-detail-price-compare">
                             {t('card_detail_compare_line', {
@@ -1048,37 +1013,20 @@ function MarketDataPanel({ card, section = 'market' }: { card: any; section?: 'm
     ? (printingDisplayLabel(selectedVersion.name, language) ?? '')
     : (card?.series ?? '');
 
-  // 最近已知售價 (review R2): the SELECTED version's own quote time (search / favorites /
-  // scan routes supply printing → time). A route without that map shows nothing new; a
-  // priced version absent from the map has an unknown time and says so.
-  const quoteTimes: Record<string, string> | null =
-    card?.printingQuotedAt && typeof card.printingQuotedAt === 'object' ? card.printingQuotedAt : null;
-  const selectedQuote = (() => {
-    if (!quoteTimes || !aligned || !selectedVersion || !(typeof sellPrice === 'number' && sellPrice > 0)) return null;
-    const retained = card?.printingRetained?.[selectedVersion.printing] === true;
-    const f = classifyPriceFreshness({ price: sellPrice, quotedAt: quoteTimes[selectedVersion.printing] ?? null, retained });
-    const line = quoteLineKey(f);
-    return line ? { text: t(line.key as TranslationKey, { date: f.quoteDate ?? '' }), stale: line.stale } : null;
-  })();
+  // 2026-11-10 (user override): no quote-date / age line for the selected version's sell price.
 
   const displayRarity = card?.sourceRarity ?? card?.rarity ?? '';
   // 店家收購價（賣出可得）：依「選中版本」對齊（DIC-856）。未對齊或此版本對不到收購價 → null，
   // 絕不退回卡號層級最高價/別版價（fail closed）。
   const buyPrice = aligned ? (selectedVersion?.buyPrice ?? null) : null;
-  // The buy quote's OWN source/time (merge-buy-prices tuple). `retained` = no new buy quote
-  // this run → labelled last-known even within the 18h window. Rendered only inside the
-  // FEATURES.priceSpread block below; Store MVP strips these fields at the mapping boundary.
+  // The buy quote's merchant (merge-buy-prices tuple) is shown as a reference; its quote time /
+  // retained state stay internal (2026-11-10 user override: no date / 舊價 / 無新報價 hint).
+  // Rendered only inside the FEATURES.priceSpread block below; Store MVP strips these fields
+  // at the mapping boundary.
   const buyQuoteLine = (() => {
     const q = aligned && typeof buyPrice === 'number' && buyPrice > 0 ? selectedVersion?.buyQuote : undefined;
-    if (!q) return null;
-    const f = classifyPriceFreshness({
-      price: buyPrice, quotedAt: q.quotedAt, retained: q.retained, maxAgeMs: BUY_QUOTE_FRESH_MAX_AGE_MS,
-    });
-    const line = quoteLineKey(f, 'buy'); // buy wording (收購價), never the sell-price wording
-    if (!line) return null;
-    const when = t(line.key as TranslationKey, { date: f.quoteDate ?? '' });
-    const from = q.source ? t('price_buy_quote_source', { source: q.source }) : '';
-    return { text: from ? `${when}・${from}` : when, stale: line.stale };
+    if (!q || !q.source) return null;
+    return { text: t('price_buy_quote_source', { source: q.source }) };
   })();
   const ytStats = card?.ytStats ?? null;
   const hasSpread = typeof sellPrice === 'number' && sellPrice > 0 && typeof buyPrice === 'number' && buyPrice > 0;
@@ -1099,14 +1047,6 @@ function MarketDataPanel({ card, section = 'market' }: { card: any; section?: 'm
       {aligned && versionLabel ? (
         <Text style={styles.versionLabel}>
           {t('card_detail_price_version', { version: versionLabel, manual: manualPick ? t('card_detail_manual_selected') : '' })}
-        </Text>
-      ) : null}
-      {selectedQuote ? (
-        <Text
-          style={[styles.marketNote, selectedQuote.stale ? styles.priceStale : null]}
-          testID="card-detail-market-quote"
-        >
-          {selectedQuote.text}
         </Text>
       ) : null}
       {!aligned ? (
@@ -1166,7 +1106,7 @@ function MarketDataPanel({ card, section = 'market' }: { card: any; section?: 'm
           )}
           {buyQuoteLine ? (
             <Text
-              style={[styles.marketNote, buyQuoteLine.stale ? styles.priceStale : null]}
+              style={styles.marketNote}
               testID="card-detail-buy-quote"
             >
               {buyQuoteLine.text}
@@ -1375,8 +1315,6 @@ const styles = StyleSheet.create({
   priceDeltaText: { fontSize: 11.5, fontWeight: '700' },
   priceCompare: { fontSize: 11.5, color: SEMANTIC.onBgDim, marginBottom: 6 },
   priceNote: { fontSize: 11, color: COLORS.textSecondary + 'bb', marginBottom: 6 },
-  // 最近已知售價（舊價）／報價日期不明：與即時報價明確區分。
-  priceStale: { color: '#f59e0b' },
   priceChart: { flexDirection: 'row', alignItems: 'flex-end', gap: 4, height: 62, marginTop: 8 },
   priceChartBar: { flex: 1, borderTopLeftRadius: 3, borderTopRightRadius: 3 },
   checkPriceBtn: { backgroundColor: COLORS.primary, paddingVertical: 12, borderRadius: 10, alignItems: 'center', marginTop: 12 },

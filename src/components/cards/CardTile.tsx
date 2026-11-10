@@ -14,12 +14,6 @@ import {
 export interface CardTileProps {
   name: string;
   price?: string;
-  /**
-   * Short age marker for the price (最近已知售價: 舊價 / 日期不明), shown INLINE after the
-   * price on the same line so the Pen price node, its token colour and the tile height
-   * stay exactly as before. Absent = nothing rendered (fresh or no quote provenance).
-   */
-  priceNote?: string;
   rarity?: string;
   imageUrl?: string;
   onPress?: () => void;
@@ -37,7 +31,6 @@ export interface CardTileProps {
 export function CardTile({
   name,
   price,
-  priceNote,
   rarity,
   imageUrl,
   onPress,
@@ -84,16 +77,8 @@ export function CardTile({
       <Text style={styles.name} numberOfLines={1} testID={`${testID}-name`}>
         {name}
       </Text>
-      {price && priceNote ? (
-        <View style={styles.priceRow} testID={`${testID}-price-row`}>
-          <Text style={styles.price} testID={`${testID}-price`} numberOfLines={1}>
-            {price}
-          </Text>
-          <Text style={styles.priceNote} testID={`${testID}-price-note`} numberOfLines={1}>
-            {priceNote}
-          </Text>
-        </View>
-      ) : price ? (
+      {/* 2026-11-10 (user override): the price only — no quote-age / retained marker. */}
+      {price ? (
         <Text style={styles.price} testID={`${testID}-price`} numberOfLines={1}>
           {price}
         </Text>
@@ -196,23 +181,6 @@ const styles = StyleSheet.create({
     color: PALETTE.accent2,
     fontWeight: '600',
     marginTop: 7,
-  },
-  // Last-known price marker: same line as the price (no extra row height), amber like the
-  // CardDetail 舊價 label; the price node keeps its own Pen style untouched.
-  priceRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    flexWrap: 'nowrap',
-  },
-  priceNote: {
-    fontFamily: Platform.OS === 'web' ? FONTS.body : undefined,
-    fontSize: 9,
-    lineHeight: TYPE_SCALE.micro.lineHeight + 3,
-    color: '#f59e0b',
-    fontWeight: '700',
-    marginTop: 7,
-    marginLeft: 4,
-    flexShrink: 1,
   },
 });
 

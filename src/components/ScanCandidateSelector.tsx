@@ -26,7 +26,6 @@ import { CardInfo, RecognizedCandidate } from '../services/cardRecognition';
 import { useTranslation } from '../i18n';
 import { resolveCardDisplayName } from '../utils/cardDisplayName';
 import { AGGREGATE_SOURCE_PRODUCTS } from '../utils/printingQuotes';
-import { classifyPriceFreshness } from '../utils/priceFreshness';
 import { buildPrintingDisplayRows, seriesLabel } from '../utils/printingDisplay';
 
 export interface ScanCandidateSelectorProps {
@@ -39,8 +38,6 @@ export interface ScanCandidateSelectorProps {
   onDismiss: () => void;
   preferredCurrency?: string;
   preferredLanguage?: string;
-  /** Clock for the last-known-price label (ms). Defaults to Date.now; tests inject it. */
-  now?: number;
 }
 
 export default function ScanCandidateSelector({
@@ -53,7 +50,6 @@ export default function ScanCandidateSelector({
   onDismiss,
   preferredCurrency = 'TWD',
   preferredLanguage = 'zh',
-  now,
 }: ScanCandidateSelectorProps) {
   const { t } = useTranslation();
   const lang = preferredLanguage === 'ja' ? 'ja' : 'zh';
@@ -67,8 +63,10 @@ export default function ScanCandidateSelector({
     return `${symbol}${value.toLocaleString()}`;
   };
 
-  // Product label · quote date (+ "not confirmed the same" / "quotes disagree"). Missing
-  // values are left out, never guessed.
+  // Product label (+ "not confirmed the same" / "quotes disagree" / original title). Missing
+  // values are left out, never guessed. 2026-11-10 (user override): no quote date and no
+  // 舊價 / 無新報價 / 報價日期不明 hint — the card's provenance keeps its own quote time and
+  // retained flag internally, it is just not rendered here.
   const sourceLine = (card: CardInfo): string => {
     const p = card.provenance;
     if (!p) return '';
@@ -79,19 +77,7 @@ export default function ScanCandidateSelector({
       || p.sourceProductName
       || (p.sourceProduct && AGGREGATE_SOURCE_PRODUCTS.has(p.sourceProduct) ? t('scan_source_aggregate') : p.sourceProduct)
       || '';
-    const date = p.quotedAt && /^\d{4}-\d{2}-\d{2}/.test(p.quotedAt) ? t('scan_quote_date', { date: p.quotedAt.slice(0, 10) }) : '';
-    // 最近已知售價 (2026-11-07, review R2): a SHOWN price is labelled from ITS OWN quote time —
-    // older than the DIC-1229 window → 舊價 next to its original date; a price whose time is
-    // missing / unparseable / in the future → 報價日期不明 (never presented as current).
-    // The row writer's explicit retained flag (no new quote this run) is shown even for a
-    // one-day-old quote — age alone never makes it current.
-    const freshness = classifyPriceFreshness({ price: card.sellPrice, quotedAt: p.quotedAt, now, retained: p.retained === true });
-    const age = freshness.state === 'last-known'
-      ? t(freshness.retained ? 'price_quote_retained_tag' : 'price_quote_old_tag')
-      : freshness.state === 'unknown-date'
-        ? t(freshness.retained ? 'price_quote_retained_unknown_date' : 'price_quote_unknown_date')
-        : '';
-    const parts = [product, freshness.state === 'unknown-date' ? '' : date, age];
+    const parts = [product];
     if (card.priceConflict) parts.push(t('scan_quote_conflict'));
     if (card.lookalike) parts.push(t('scan_version_unconfirmed'));
     if (label?.original) parts.push(t('card_detail_set_original', { title: label.original }));
