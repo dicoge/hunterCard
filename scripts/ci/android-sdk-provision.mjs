@@ -17,7 +17,9 @@
  *   - context: Linux, GITHUB_ACTIONS=true, RUNNER_ENVIRONMENT=github-hosted, and EITHER a
  *     pull_request event from THIS repository on branch fix/last-known-price-20261107 (or, PR #287
  *     repair R2, a daily data branch matching exactly bot/scrape/YYYY-MM-DD with a real date, same
- *     repository, base main — env head == event head), OR a push
+ *     repository, base main — env head == event head; or, 2026-11-11, exactly PR #288 from
+ *     fix/price-hints-20261110 into main: number 288 in GITHUB_REF and the event, same-repo head
+ *     and base), OR a push
  *     event to refs/heads/main of THIS repository (no head ref, not a fork) whose workflow is
  *     ci.yml or build-android.yml at refs/heads/main. Any other event (workflow_dispatch, schedule,
  *     pull_request_target, …), ref, tag, branch, fork or workflow is refused;
@@ -72,7 +74,18 @@ export function isDailyDataBranch(ref) {
   const dt = new Date(Date.UTC(y, mo - 1, d));
   return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d;
 }
-const isAllowedPrBranch = (ref) => ref === ALLOWED_BRANCH || isDailyDataBranch(ref);
+/**
+ * 2026-11-11 (PR #288, user-prioritised corrected test build; standing owner CI exception for these
+ * SAME two packages, no new term): EXACTLY the same-repository pull request #288 from
+ * `fix/price-hints-20261110` into main. All of the following must hold, in env AND in the event
+ * payload: head ref == this branch, PR number == 288 (`GITHUB_REF` refs/pull/288/merge, event
+ * `number` and `pull_request.number`), base main of this repository, head repository == this
+ * repository. Any other branch / number / base / repo / fork / event is refused.
+ */
+export const PR288_BRANCH = 'fix/price-hints-20261110';
+export const PR288_NUMBER = 288;
+const PR288_MERGE_REF = `refs/pull/${PR288_NUMBER}/merge`;
+const isAllowedPrBranch = (ref) => ref === ALLOWED_BRANCH || ref === PR288_BRANCH || isDailyDataBranch(ref);
 export const ALLOWED_PUSH_REF = 'refs/heads/main';
 /** The only workflows (on main) whose push run may provision (2026-11-10 follow-up). */
 export const ALLOWED_PUSH_WORKFLOWS = Object.freeze(['.github/workflows/ci.yml', '.github/workflows/build-android.yml']);
@@ -89,9 +102,13 @@ export function assertContext({ env, platform, readFile = (f) => fs.readFileSync
   if (env.RUNNER_OS !== 'Linux') refuse(`RUNNER_OS=${env.RUNNER_OS}`);
   const ev = env.GITHUB_EVENT_NAME;
   if (ev !== 'pull_request' && ev !== 'push') refuse(`event ${ev}: pull_request (PR 284 branch) or push to main only`);
-  if (ev === 'pull_request' && !isAllowedPrBranch(env.GITHUB_HEAD_REF)) refuse(`branch ${env.GITHUB_HEAD_REF}: only ${ALLOWED_BRANCH} or bot/scrape/YYYY-MM-DD`);
+  if (ev === 'pull_request' && !isAllowedPrBranch(env.GITHUB_HEAD_REF)) refuse(`branch ${env.GITHUB_HEAD_REF}: only ${ALLOWED_BRANCH} or bot/scrape/YYYY-MM-DD (or ${PR288_BRANCH} as PR #${PR288_NUMBER})`);
   if (ev === 'pull_request' && isDailyDataBranch(env.GITHUB_HEAD_REF) && env.GITHUB_BASE_REF !== 'main') {
     refuse(`base ${env.GITHUB_BASE_REF}: a daily data branch may provision only for a pull request into main`);
+  }
+  if (ev === 'pull_request' && env.GITHUB_HEAD_REF === PR288_BRANCH) {
+    if (env.GITHUB_BASE_REF !== 'main') refuse(`base ${env.GITHUB_BASE_REF}: ${PR288_BRANCH} may provision only as PR #${PR288_NUMBER} into main`);
+    if (env.GITHUB_REF !== PR288_MERGE_REF) refuse(`ref ${env.GITHUB_REF}: ${PR288_BRANCH} may provision only as PR #${PR288_NUMBER} (${PR288_MERGE_REF})`);
   }
   if (ev === 'push') {
     if (env.GITHUB_REF !== ALLOWED_PUSH_REF) refuse(`push ref ${env.GITHUB_REF}: only ${ALLOWED_PUSH_REF}`);
@@ -114,6 +131,13 @@ export function assertContext({ env, platform, readFile = (f) => fs.readFileSync
     const base = event?.pull_request?.base;
     if (isDailyDataBranch(head.ref) && (base?.ref !== 'main' || base?.ref !== env.GITHUB_BASE_REF || base?.repo?.full_name !== env.GITHUB_REPOSITORY)) {
       refuse('pull request base is not this repository\'s main for the daily data branch');
+    }
+    if (head.ref === PR288_BRANCH) {
+      const pr = event.pull_request;
+      if (pr.number !== PR288_NUMBER || event.number !== PR288_NUMBER
+          || base?.ref !== 'main' || base?.ref !== env.GITHUB_BASE_REF || base?.repo?.full_name !== env.GITHUB_REPOSITORY) {
+        refuse(`pull request is not this repository's PR #${PR288_NUMBER} from ${PR288_BRANCH} into main`);
+      }
     }
   } else if (event?.ref !== ALLOWED_PUSH_REF || event?.repository?.full_name !== env.GITHUB_REPOSITORY || event?.repository?.fork === true) {
     refuse('push event is not this repository\'s main');
