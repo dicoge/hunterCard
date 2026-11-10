@@ -138,8 +138,24 @@
       "currency": "JPY",
       "cardId": "hBP08-091_hBP08_U_hBP08-091_U",
       "sourceProduct": "hBP08"
+    },
+    {
+      "date": "2026-11-07",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-091_hBP08_U_hBP08-091_U",
+      "sourceProduct": "hBP08"
+    },
+    {
+      "date": "2026-11-08",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-091_hBP08_U_hBP08-091_U",
+      "sourceProduct": "hBP08"
     }
   ],
-  "lastUpdated": "2026-11-06T12:08:18.888Z",
+  "lastUpdated": "2026-11-08T12:05:32.815Z",
   "nameZh": "創作者電腦"
 }

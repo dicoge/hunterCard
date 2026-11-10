@@ -66,8 +66,24 @@
       "currency": "JPY",
       "cardId": "hSD20-004_hSD20_C_hSD20-004_C",
       "sourceProduct": "hSD20"
+    },
+    {
+      "date": "2026-11-07",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD20-004_hSD20_C_hSD20-004_C",
+      "sourceProduct": "hSD20"
+    },
+    {
+      "date": "2026-11-08",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD20-004_hSD20_C_hSD20-004_C",
+      "sourceProduct": "hSD20"
     }
   ],
-  "lastUpdated": "2026-11-06T12:08:24.789Z",
+  "lastUpdated": "2026-11-08T12:05:33.168Z",
   "nameZh": "百燈京子"
 }

@@ -138,8 +138,24 @@
       "currency": "JPY",
       "cardId": "hBP02-101_hBP02_C_hBP02-101_C",
       "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-11-07",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-101_hBP02_C_hBP02-101_C",
+      "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-11-08",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-101_hBP02_C_hBP02-101_C",
+      "sourceProduct": "hBP02"
     }
   ],
-  "lastUpdated": "2026-11-06T12:08:16.683Z",
+  "lastUpdated": "2026-11-08T12:05:31.937Z",
   "nameZh": "澪友"
 }

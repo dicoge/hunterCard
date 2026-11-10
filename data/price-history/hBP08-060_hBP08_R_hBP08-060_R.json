@@ -138,8 +138,24 @@
       "currency": "JPY",
       "cardId": "hBP08-060_hBP08_R_hBP08-060_R",
       "sourceProduct": "hBP08"
+    },
+    {
+      "date": "2026-11-07",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-060_hBP08_R_hBP08-060_R",
+      "sourceProduct": "hBP08"
+    },
+    {
+      "date": "2026-11-08",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-060_hBP08_R_hBP08-060_R",
+      "sourceProduct": "hBP08"
     }
   ],
-  "lastUpdated": "2026-11-06T12:08:18.767Z",
+  "lastUpdated": "2026-11-08T12:05:32.758Z",
   "nameZh": "FUWAMOCO"
 }

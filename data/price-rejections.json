@@ -1,7 +1,7 @@
 {
   "schema": "huntercard.price-rejections/v1",
   "label": "build-database",
-  "generatedAt": "2026-11-06T12:08:10.413Z",
+  "generatedAt": "2026-11-08T12:05:29.877Z",
   "before": {
     "pricedRows": 2543,
     "pricedUniqueCardNumbers": 1310,
@@ -31,7 +31,7 @@
         "entryImageProducts": [
           "promo-hsd10"
         ],
-        "timestamp": "2026-11-06T12:07:42.379Z"
+        "timestamp": "2026-11-08T12:05:06.679Z"
       }
     },
     {
@@ -47,7 +47,7 @@
         "entryImageProducts": [
           "promo-hbp10"
         ],
-        "timestamp": "2026-11-06T12:07:42.379Z"
+        "timestamp": "2026-11-08T12:05:06.679Z"
       }
     },
     {
@@ -63,7 +63,7 @@
         "entryImageProducts": [
           "promo-hbp10"
         ],
-        "timestamp": "2026-11-06T12:07:42.379Z"
+        "timestamp": "2026-11-08T12:05:06.679Z"
       }
     }
   ],
@@ -2391,7 +2391,7 @@
       "listingSellPrices": [
         8980,
         1480,
-        420,
+        580,
         4980,
         220,
         120,
@@ -5126,7 +5126,7 @@
       "listingSellPrices": [
         3480,
         780,
-        320,
+        220,
         780,
         3480
       ],
@@ -5645,7 +5645,7 @@
       ],
       "listingSellPrices": [
         1280,
-        180,
+        120,
         1280
       ],
       "candidatePrintings": [
@@ -11815,11 +11815,11 @@
       "listingSellPrices": [
         7980,
         1480,
-        280,
+        220,
         7980,
         7980,
         1480,
-        280
+        220
       ],
       "candidatePrintings": [
         "hBP09-057_hBP09_RR_hBP09-057_RR",

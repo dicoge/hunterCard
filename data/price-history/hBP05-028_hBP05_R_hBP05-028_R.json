@@ -138,8 +138,24 @@
       "currency": "JPY",
       "cardId": "hBP05-028_hBP05_R_hBP05-028_R",
       "sourceProduct": "hBP05"
+    },
+    {
+      "date": "2026-11-07",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-028_hBP05_R_hBP05-028_R",
+      "sourceProduct": "hBP05"
+    },
+    {
+      "date": "2026-11-08",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-028_hBP05_R_hBP05-028_R",
+      "sourceProduct": "hBP05"
     }
   ],
-  "lastUpdated": "2026-11-06T12:08:17.839Z",
+  "lastUpdated": "2026-11-08T12:05:32.410Z",
   "nameZh": "獅白牡丹"
 }

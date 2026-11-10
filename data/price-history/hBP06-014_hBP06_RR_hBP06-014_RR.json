@@ -138,8 +138,24 @@
       "currency": "JPY",
       "cardId": "hBP06-014_hBP06_RR_hBP06-014_RR",
       "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-11-07",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-014_hBP06_RR_hBP06-014_RR",
+      "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-11-08",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-014_hBP06_RR_hBP06-014_RR",
+      "sourceProduct": "hBP06"
     }
   ],
-  "lastUpdated": "2026-11-06T12:08:17.982Z",
+  "lastUpdated": "2026-11-08T12:05:32.483Z",
   "nameZh": "勞菈·潘德菈"
 }

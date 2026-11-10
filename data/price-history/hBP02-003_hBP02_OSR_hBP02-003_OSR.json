@@ -138,8 +138,24 @@
       "currency": "JPY",
       "cardId": "hBP02-003_hBP02_OSR_hBP02-003_OSR",
       "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-11-07",
+      "price": 420,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-003_hBP02_OSR_hBP02-003_OSR",
+      "sourceProduct": "hBP02"
+    },
+    {
+      "date": "2026-11-08",
+      "price": 420,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-003_hBP02_OSR_hBP02-003_OSR",
+      "sourceProduct": "hBP02"
     }
   ],
-  "lastUpdated": "2026-11-06T12:08:16.218Z",
+  "lastUpdated": "2026-11-08T12:05:31.677Z",
   "nameZh": "寶鍾瑪琳"
 }

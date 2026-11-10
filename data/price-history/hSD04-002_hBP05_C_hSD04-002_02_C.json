@@ -138,8 +138,24 @@
       "currency": "JPY",
       "cardId": "hSD04-002_hBP05_C_hSD04-002_02_C",
       "sourceProduct": "hBP05"
+    },
+    {
+      "date": "2026-11-07",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD04-002_hBP05_C_hSD04-002_02_C",
+      "sourceProduct": "hBP05"
+    },
+    {
+      "date": "2026-11-08",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD04-002_hBP05_C_hSD04-002_02_C",
+      "sourceProduct": "hBP05"
     }
   ],
-  "lastUpdated": "2026-11-06T12:08:13.918Z",
+  "lastUpdated": "2026-11-08T12:05:30.976Z",
   "nameZh": "癒月巧可"
 }

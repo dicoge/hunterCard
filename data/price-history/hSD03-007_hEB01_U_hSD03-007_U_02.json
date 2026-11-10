@@ -122,8 +122,24 @@
       "currency": "JPY",
       "cardId": "hSD03-007_hEB01_U_hSD03-007_U_02",
       "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-11-07",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD03-007_hEB01_U_hSD03-007_U_02",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-11-08",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD03-007_hEB01_U_hSD03-007_U_02",
+      "sourceProduct": "hEB01"
     }
   ],
-  "lastUpdated": "2026-11-06T12:08:15.825Z",
+  "lastUpdated": "2026-11-08T12:05:31.426Z",
   "nameZh": "貓又小粥"
 }

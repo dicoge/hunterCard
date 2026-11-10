@@ -122,8 +122,24 @@
       "currency": "JPY",
       "cardId": "hBP05-016_hEB01_RR_hBP05-016_RR_02",
       "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-11-07",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-016_hEB01_RR_hBP05-016_RR_02",
+      "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-11-08",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-016_hEB01_RR_hBP05-016_RR_02",
+      "sourceProduct": "hEB01"
     }
   ],
-  "lastUpdated": "2026-11-06T12:08:17.816Z",
+  "lastUpdated": "2026-11-08T12:05:32.400Z",
   "nameZh": "兔田佩克拉"
 }
