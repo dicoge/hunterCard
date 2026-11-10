@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * android-sdk-provision.mjs — install EXACTLY `ndk;27.1.12297006` and `cmake;3.22.1` on an
- * ephemeral GitHub-hosted Linux runner for the PR #284 branch, ONLY after proving from the
+ * ephemeral GitHub-hosted Linux runner for the PR #284 branch or an ordinary push to main of this
+ * repository (ci.yml / build-android.yml only; 2026-11-10 follow-up), ONLY after proving from the
  * official repository metadata that these packages are bound to terms the repository already
  * evidences and the runner has already accepted (2026-11-08; owner-approved for these two
  * packages on ephemeral CI only).
@@ -13,8 +14,11 @@
  * own step and re-validates every package.xml, tool and licence binding before Gradle.
  *
  * Pre-install checks (any failure → exit 2, nothing installed):
- *   - context: Linux, GITHUB_ACTIONS=true, RUNNER_ENVIRONMENT=github-hosted, pull_request event
- *     from THIS repository on branch fix/last-known-price-20261107;
+ *   - context: Linux, GITHUB_ACTIONS=true, RUNNER_ENVIRONMENT=github-hosted, and EITHER a
+ *     pull_request event from THIS repository on branch fix/last-known-price-20261107, OR a push
+ *     event to refs/heads/main of THIS repository (no head ref, not a fork) whose workflow is
+ *     ci.yml or build-android.yml at refs/heads/main. Any other event (workflow_dispatch, schedule,
+ *     pull_request_target, …), ref, tag, branch, fork or workflow is refused;
  *   - SDK root: the hosted runner's fixed path, a real directory (no symlink), env (if set) equal
  *     to it; sdkmanager, licenses/, ndk/, cmake/ resolve inside it;
  *   - metadata: the one pinned official URL over HTTPS, host pinned, no redirect, size capped;
@@ -50,6 +54,9 @@ export const METADATA_HOST = 'dl.google.com';
 export const METADATA_MAX_BYTES = 32 * 1024 * 1024;
 export const HOSTED_SDK_ROOT = '/usr/local/lib/android/sdk';
 export const ALLOWED_BRANCH = 'fix/last-known-price-20261107';
+export const ALLOWED_PUSH_REF = 'refs/heads/main';
+/** The only workflows (on main) whose push run may provision (2026-11-10 follow-up). */
+export const ALLOWED_PUSH_WORKFLOWS = Object.freeze(['.github/workflows/ci.yml', '.github/workflows/build-android.yml']);
 export const INSTALL_TIMEOUT_MS = 30 * 60 * 1000;
 
 export class ProvisionRefusal extends Error {}
@@ -61,17 +68,29 @@ export function assertContext({ env, platform, readFile = (f) => fs.readFileSync
   if (env.GITHUB_ACTIONS !== 'true') refuse('not running in GitHub Actions');
   if (env.RUNNER_ENVIRONMENT !== 'github-hosted') refuse(`RUNNER_ENVIRONMENT=${env.RUNNER_ENVIRONMENT}: only an ephemeral GitHub-hosted runner`);
   if (env.RUNNER_OS !== 'Linux') refuse(`RUNNER_OS=${env.RUNNER_OS}`);
-  if (env.GITHUB_EVENT_NAME !== 'pull_request') refuse(`event ${env.GITHUB_EVENT_NAME}: pull_request only`);
-  if (env.GITHUB_HEAD_REF !== ALLOWED_BRANCH) refuse(`branch ${env.GITHUB_HEAD_REF}: only ${ALLOWED_BRANCH}`);
+  const ev = env.GITHUB_EVENT_NAME;
+  if (ev !== 'pull_request' && ev !== 'push') refuse(`event ${ev}: pull_request (PR 284 branch) or push to main only`);
+  if (ev === 'pull_request' && env.GITHUB_HEAD_REF !== ALLOWED_BRANCH) refuse(`branch ${env.GITHUB_HEAD_REF}: only ${ALLOWED_BRANCH}`);
+  if (ev === 'push') {
+    if (env.GITHUB_REF !== ALLOWED_PUSH_REF) refuse(`push ref ${env.GITHUB_REF}: only ${ALLOWED_PUSH_REF}`);
+    if (env.GITHUB_HEAD_REF) refuse('push event must not carry a head ref');
+    if (!ALLOWED_PUSH_WORKFLOWS.some((w) => env.GITHUB_WORKFLOW_REF === `${env.GITHUB_REPOSITORY}/${w}@${ALLOWED_PUSH_REF}`)) {
+      refuse(`workflow ${env.GITHUB_WORKFLOW_REF}: only ci.yml / build-android.yml on main`);
+    }
+  }
   let event;
   try {
     event = JSON.parse(readFile(env.GITHUB_EVENT_PATH));
   } catch {
     refuse('GITHUB_EVENT_PATH unreadable');
   }
-  const head = event?.pull_request?.head;
-  if (!head || head.ref !== ALLOWED_BRANCH || head.repo?.full_name !== env.GITHUB_REPOSITORY) {
-    refuse('pull request head is not this repository\'s allowed branch (fork or other branch)');
+  if (ev === 'pull_request') {
+    const head = event?.pull_request?.head;
+    if (!head || head.ref !== ALLOWED_BRANCH || head.repo?.full_name !== env.GITHUB_REPOSITORY) {
+      refuse('pull request head is not this repository\'s allowed branch (fork or other branch)');
+    }
+  } else if (event?.ref !== ALLOWED_PUSH_REF || event?.repository?.full_name !== env.GITHUB_REPOSITORY || event?.repository?.fork === true) {
+    refuse('push event is not this repository\'s main');
   }
 }
 

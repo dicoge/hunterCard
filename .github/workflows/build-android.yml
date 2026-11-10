@@ -56,6 +56,15 @@ jobs:
           EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
         run: npx expo prebuild --platform android --no-install
 
+      # 2026-11-10 follow-up (push to main ONLY; workflow_dispatch NOT included): install EXACTLY
+      # ndk;27.1.12297006 + cmake;3.22.1 with the reviewed no-argument helper, only after the official
+      # metadata binds them to the evidenced terms the runner has ALREADY accepted. Nothing is accepted.
+      - name: Provision exactly NDK 27.1.12297006 + CMake 3.22.1 (push to main only; terms pre-verified; nothing accepted)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        run: |
+          set -euo pipefail
+          node scripts/ci/android-sdk-provision.mjs
+
       # 2026-11-07: no SDK download, no sdkmanager, no license acceptance in CI. The
       # guard reads the runner's pre-installed SDK and fails closed on anything missing,
       # unauthorized or carrying unreviewed terms (scripts/ci/android-sdk-policy.json).

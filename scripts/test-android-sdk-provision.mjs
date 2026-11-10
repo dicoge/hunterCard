@@ -16,6 +16,9 @@
  *             extra hash, lacking the hash), installer (non-zero, declined prompt, licence write).
  *   wiring:   exactly one reviewed invocation, PR #284-only condition, before the unchanged
  *             unconditional guard, no other workflow — plus mutation controls.
+ *   main push (2026-11-10): push to refs/heads/main of this repository from ci.yml / build-android.yml
+ *             only; other refs / tags / forks / dispatch / schedule / other workflows refused; the
+ *             terms proof is unchanged (unknown / unaccepted terms STOP before the installer).
  *   normalization (2026-11-08): the official AOSP TrimStringAdapter port against hand-derived
  *             vectors (Java ASCII \s / trim, NBSP, VT, U+2028, tabs, lone vs paragraph LF) with
  *             wrong-port mutants; formatted text → same canonical hash accepted, while wording /
@@ -67,6 +70,16 @@ function eventFile(over = {}) {
   const f = path.join(tmp('event'), 'event.json');
   write(f, JSON.stringify({ pull_request: { head: { ref: ALLOWED_BRANCH, repo: { full_name: 'dicoge/holohunter' }, ...over } } }));
   return f;
+}
+function pushEventFile(over = {}) {
+  const f = path.join(tmp('push-event'), 'event.json');
+  write(f, JSON.stringify({ ref: 'refs/heads/main', repository: { full_name: 'dicoge/holohunter', fork: false }, ...over }));
+  return f;
+}
+/** A push to main of this repository from ci.yml (the post-merge context of CI 42802314758). */
+function pushEnv(sdkRoot, over = {}) {
+  return env(sdkRoot, { GITHUB_EVENT_NAME: 'push', GITHUB_REF: 'refs/heads/main', GITHUB_HEAD_REF: '',
+    GITHUB_WORKFLOW_REF: 'dicoge/holohunter/.github/workflows/ci.yml@refs/heads/main', GITHUB_EVENT_PATH: pushEventFile(), ...over });
 }
 function env(sdkRoot, over = {}) {
   return {
@@ -361,7 +374,8 @@ try {
     await refusesAsync(run(root, { env: { GITHUB_ACTIONS: undefined } }), /not running in GitHub Actions/);
     await refusesAsync(run(root, { env: { RUNNER_ENVIRONMENT: 'self-hosted' } }), /only an ephemeral GitHub-hosted runner/);
     await refusesAsync(run(root, { env: { RUNNER_OS: 'macOS' } }), /RUNNER_OS=macOS/);
-    await refusesAsync(run(root, { env: { GITHUB_EVENT_NAME: 'push' } }), /pull_request only/);
+    await refusesAsync(run(root, { env: { GITHUB_EVENT_NAME: 'push' } }), /push ref undefined: only refs\/heads\/main/);
+    await refusesAsync(run(root, { env: { GITHUB_EVENT_NAME: 'workflow_dispatch' } }), /pull_request \(PR 284 branch\) or push to main only/);
     await refusesAsync(run(root, { env: { GITHUB_HEAD_REF: 'main' } }), /only fix\/last-known-price-20261107/);
     await refusesAsync(run(root, { env: { GITHUB_EVENT_PATH: eventFile({ repo: { full_name: 'someone/fork' } }) } }), /fork or other branch/);
     await refusesAsync(run(root, { env: { GITHUB_EVENT_PATH: path.join(root, 'nope.json') } }), /GITHUB_EVENT_PATH unreadable/);
@@ -386,6 +400,62 @@ try {
     fs.mkdirSync(path.join(partial, 'ndk/27.1.12297006'), { recursive: true });
     await refusesAsync(run(partial), /partial \/ malformed install is not overwritten/);
     ok('non-Linux / non-Actions / self-hosted / non-PR / other branch / fork / no event file / env mismatch / symlinked root / sdkmanager outside root / missing sdkmanager / ndk symlink / partial install → refused');
+  }
+
+  console.log('── push to main (2026-11-10 follow-up): same terms proof, nothing broadened ──');
+  {
+    const runPush = (root, over = {}, extra = {}) => provision({ env: pushEnv(root, over), platform: 'linux', sdkRoot: root,
+      policy: extra.policy || POLICY, transport: extra.transport || transportOf(metadata()), runInstaller: extra.runInstaller || installer(root), log: quiet });
+    for (const wf of ['ci.yml', 'build-android.yml']) {
+      const root = sdk();
+      const inst = installer(root);
+      const t = transportOf(metadata());
+      const before = snapshotOf(root);
+      const r = await runPush(root, { GITHUB_WORKFLOW_REF: `dicoge/holohunter/.github/workflows/${wf}@refs/heads/main` }, { transport: t, runInstaller: inst });
+      assert.deepEqual(r.installed, ['ndk;27.1.12297006', 'cmake;3.22.1'], wf);
+      assert.deepEqual(inst.calls[0].args, [`--sdk_root=${root}`, '--channel=0', '--install', 'ndk;27.1.12297006', 'cmake;3.22.1'], 'exact packages, no --licenses');
+      assert.deepEqual(t.calls, [METADATA_URL], 'one fetch of the pinned official URL');
+      assert.equal(snapshotOf(root), before, 'accepted terms untouched');
+    }
+    {
+      // the terms proof is exactly the PR path's: new / unknown / unaccepted terms STOP before the installer
+      const root = sdk();
+      const inst = installer(root);
+      await refusesAsync(runPush(root, {}, { runInstaller: inst, transport: transportOf(metadata({ license: 'abd' })) }), /not authorized by the policy/);
+      const root2 = sdk({ accepted: null });
+      const inst2 = installer(root2);
+      await refusesAsync(runPush(root2, {}, { runInstaller: inst2 }), /never accepted on this runner/);
+      const root3 = sdk({ accepted: `${ABC_SHA1}\nffffffffffffffffffffffffffffffffffffffff` });
+      const inst3 = installer(root3);
+      await refusesAsync(runPush(root3, {}, { runInstaller: inst3 }), /unreviewed hash/);
+      const root4 = sdk();
+      const inst4 = installer(root4);
+      await refusesAsync(runPush(root4, {}, { policy: REAL_POLICY, runInstaller: inst4 }), /not authorized by the policy/);
+      assert.equal(inst.calls.length + inst2.calls.length + inst3.calls.length + inst4.calls.length, 0, 'installer never reached');
+    }
+    const root = sdk();
+    const inst = installer(root);
+    const cases = [
+      [{ GITHUB_REF: 'refs/heads/staging' }, /only refs\/heads\/main/],
+      [{ GITHUB_REF: 'refs/heads/fix/last-known-price-20261107' }, /only refs\/heads\/main/],
+      [{ GITHUB_REF: 'refs/tags/v1.0.0' }, /only refs\/heads\/main/],
+      [{ GITHUB_REF: undefined }, /only refs\/heads\/main/],
+      [{ GITHUB_HEAD_REF: 'fix/last-known-price-20261107' }, /must not carry a head ref/],
+      [{ GITHUB_WORKFLOW_REF: 'dicoge/holohunter/.github/workflows/eas-build.yml@refs/heads/main' }, /only ci\.yml \/ build-android\.yml on main/],
+      [{ GITHUB_WORKFLOW_REF: 'dicoge/holohunter/.github/workflows/ci.yml@refs/heads/staging' }, /only ci\.yml \/ build-android\.yml on main/],
+      [{ GITHUB_WORKFLOW_REF: 'someone/fork/.github/workflows/ci.yml@refs/heads/main' }, /only ci\.yml \/ build-android\.yml on main/],
+      [{ GITHUB_WORKFLOW_REF: undefined }, /only ci\.yml \/ build-android\.yml on main/],
+      [{ GITHUB_EVENT_PATH: pushEventFile({ ref: 'refs/heads/other' }) }, /not this repository's main/],
+      [{ GITHUB_EVENT_PATH: pushEventFile({ repository: { full_name: 'someone/fork' } }) }, /not this repository's main/],
+      [{ GITHUB_EVENT_PATH: pushEventFile({ repository: { full_name: 'dicoge/holohunter', fork: true } }) }, /not this repository's main/],
+      [{ GITHUB_EVENT_NAME: 'workflow_dispatch' }, /push to main only/],
+      [{ GITHUB_EVENT_NAME: 'schedule' }, /push to main only/],
+      [{ GITHUB_EVENT_NAME: 'pull_request_target' }, /push to main only/],
+      [{ RUNNER_ENVIRONMENT: 'self-hosted' }, /only an ephemeral GitHub-hosted runner/],
+    ];
+    for (const [over, re] of cases) await refusesAsync(runPush(root, over, { runInstaller: inst }), re);
+    assert.equal(inst.calls.length, 0);
+    ok(`push to main from ci.yml / build-android.yml installs exactly the two packages under the unchanged terms proof; 4 terms STOPs; ${cases.length} broadened contexts refused`);
   }
 
   console.log('── installer outcomes ──');
@@ -418,64 +488,107 @@ try {
     ok('no --licenses / yes / file writes; stdin closed; CLI takes no args; guard read-only; policy hash + packages unchanged; URL pinned');
   }
 
-  console.log('── wiring: exactly one reviewed invocation ──');
+  console.log('── wiring: exactly the reviewed invocations (ci.yml PR 284 / push main; build-android.yml push main) ──');
   {
-    const PROVISION_IF = "${{ github.event_name == 'pull_request' && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository }}";
+    const PR_IF = "github.event_name == 'pull_request' && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository";
+    const MAIN_IF = "github.event_name == 'push' && github.ref == 'refs/heads/main'";
+    const CI_IF = `\${{ (${PR_IF}) || (${MAIN_IF}) }}`;
+    const DEBUG_IF = `\${{ ${MAIN_IF} }}`;
+    const DEPLOY_IF = "github.event_name == 'workflow_dispatch' && inputs.deploy_production && needs.preflight.result == 'success' && needs.validate.result == 'success' && needs['release-apk-postpackage-guard'].result == 'success'";
+    const RUN = 'set -euo pipefail\nnode scripts/ci/android-sdk-provision.mjs';
     // The helper itself (not this offline test, which Validate runs via npm run test:android-sdk-provision).
     const HELPER_RE = /ci\/android-sdk-provision\.mjs/;
-    function provisionWiringProblems(ciText, others) {
+    function provisionWiringProblems(ciText, debugText, others) {
       const p = [];
-      let wf;
-      try { wf = parseYaml(ciText); } catch (e) { return [`yaml ${e.message}`]; }
-      const hits = [];
-      for (const [jobId, job] of Object.entries(wf.jobs || {})) {
-        (job.steps || []).forEach((s, i) => { if (HELPER_RE.test(String(s.run || '') + String(s.uses || ''))) hits.push({ jobId, i, s }); });
+      const check = (text, file, wantJob, wantIf, guardRe, gradleRe) => {
+        let wf;
+        try { wf = parseYaml(text); } catch (e) { p.push(`${file}: yaml ${e.message}`); return null; }
+        const hits = [];
+        for (const [jobId, job] of Object.entries(wf.jobs || {})) {
+          (job.steps || []).forEach((s, i) => { if (HELPER_RE.test(String(s.run || '') + String(s.uses || ''))) hits.push({ jobId, i, s }); });
+        }
+        if (hits.length !== 1) { p.push(`${file}: expected exactly one provisioning step, found ${hits.length}`); return wf; }
+        const { jobId, i, s } = hits[0];
+        if (jobId !== wantJob) p.push(`${file}: provisioning in job ${jobId}`);
+        if (String(s.run).trim() !== RUN) p.push(`${file}: provisioning run must be exactly the fixed no-argument helper`);
+        if (s.if !== wantIf) p.push(`${file}: provisioning condition must be exactly ${wantIf}: ${s.if}`);
+        if ('continue-on-error' in s || 'shell' in s || s.env) p.push(`${file}: provisioning step must not mask failures, override the shell or inject env`);
+        const steps = wf.jobs[wantJob]?.steps || [];
+        const gi = steps.findIndex((x) => guardRe.test(String(x.run || '')));
+        const wi = steps.findIndex((x) => gradleRe.test(String(x.run || '')));
+        const ji = steps.findIndex((x) => String(x.uses || '').startsWith('actions/setup-java@'));
+        if (!(ji >= 0 && ji < i && i < gi && gi < wi)) p.push(`${file}: order must be Java → provisioning → unchanged guard → gradlew (sdkDownload=false)`);
+        if (gi >= 0 && Object.hasOwn(steps[gi], 'if')) p.push(`${file}: the guard must stay unconditional`);
+        return wf;
+      };
+      const ci = check(ciText, 'ci.yml', 'release-apk-postpackage-guard', CI_IF,
+        /android-sdk-guard\.mjs --profile release/, /\.\/gradlew app:assembleRelease -Pandroid\.builder\.sdkDownload=false/);
+      const dbg = check(debugText, 'build-android.yml', 'build', DEBUG_IF,
+        /android-sdk-guard\.mjs --profile debug/, /\.\/gradlew assembleDebug -Pandroid\.builder\.sdkDownload=false/);
+      // nothing else widened: triggers and the dispatch-only Production deploy gate stay exactly as reviewed
+      if (ci) {
+        const on = ci.on || {};
+        if (JSON.stringify(Object.keys(on)) !== JSON.stringify(['push', 'pull_request', 'workflow_dispatch'])
+            || JSON.stringify(on.push?.branches) !== JSON.stringify(['main']) || JSON.stringify(on.pull_request?.branches) !== JSON.stringify(['main', 'staging'])
+            || on.workflow_dispatch?.inputs?.deploy_production?.default !== false) p.push('ci.yml triggers changed');
+        if (ci.jobs?.['deploy-production']?.if !== DEPLOY_IF) p.push('ci.yml Production deploy gate changed');
       }
-      if (hits.length !== 1) return [`expected exactly one provisioning step, found ${hits.length}`];
-      const { jobId, i, s } = hits[0];
-      if (jobId !== 'release-apk-postpackage-guard') p.push(`provisioning in job ${jobId}`);
-      if (String(s.run).trim() !== 'set -euo pipefail\nnode scripts/ci/android-sdk-provision.mjs') p.push('provisioning run must be exactly the fixed no-argument helper');
-      if (s.if !== PROVISION_IF) p.push(`provisioning condition must be exactly the PR 284 same-repo branch: ${s.if}`);
-      if ('continue-on-error' in s || 'shell' in s || s.env) p.push('provisioning step must not mask failures, override the shell or inject env');
-      const steps = wf.jobs['release-apk-postpackage-guard'].steps;
-      const gi = steps.findIndex((x) => /android-sdk-guard\.mjs --profile release/.test(String(x.run || '')));
-      const wi = steps.findIndex((x) => /\.\/gradlew app:assembleRelease -Pandroid\.builder\.sdkDownload=false/.test(String(x.run || '')));
-      const ji = steps.findIndex((x) => String(x.uses || '').startsWith('actions/setup-java@'));
-      if (!(ji < i && i < gi && gi < wi)) p.push('order must be Java → provisioning → unchanged guard → gradlew (sdkDownload=false)');
-      if (gi >= 0 && Object.hasOwn(steps[gi], 'if')) p.push('the guard must stay unconditional');
+      if (dbg) {
+        const on = dbg.on || {};
+        if (JSON.stringify(Object.keys(on)) !== JSON.stringify(['push', 'workflow_dispatch']) || JSON.stringify(on.push?.branches) !== JSON.stringify(['main'])) {
+          p.push('build-android.yml triggers changed');
+        }
+      }
       for (const [name, text] of others) if (HELPER_RE.test(text)) p.push(`${name} must not provision`);
       return p;
     }
     const ci = fs.readFileSync(path.join(REPO, '.github/workflows/ci.yml'), 'utf8');
-    const others = fs.readdirSync(path.join(REPO, '.github/workflows')).filter((f) => f !== 'ci.yml')
+    const debug = fs.readFileSync(path.join(REPO, '.github/workflows/build-android.yml'), 'utf8');
+    const others = fs.readdirSync(path.join(REPO, '.github/workflows')).filter((f) => f !== 'ci.yml' && f !== 'build-android.yml')
       .map((f) => [f, fs.readFileSync(path.join(REPO, '.github/workflows', f), 'utf8')]);
-    assert.deepEqual(provisionWiringProblems(ci, others), []);
-    const rep = (from, to) => { assert.ok(ci.includes(from), `anchor ${from.slice(0, 50)}`); return ci.replace(from, to); };
+    assert.deepEqual(provisionWiringProblems(ci, debug, others), []);
+    const repIn = (src) => (from, to) => { assert.ok(src.includes(from), `anchor ${from.slice(0, 50)}`); return src.replace(from, to); };
+    const rep = repIn(ci);
+    const repD = repIn(debug);
     const runLine = '          node scripts/ci/android-sdk-provision.mjs\n';
-    const mutants = {
-      'condition removed': [rep(`        if: ${PROVISION_IF}\n`, ''), /condition must be exactly/],
-      'any branch': [rep(" && github.head_ref == 'fix/last-known-price-20261107'", ''), /condition must be exactly/],
-      'fork allowed': [rep(' && github.event.pull_request.head.repo.full_name == github.repository', ''), /condition must be exactly/],
-      'argument added': [rep(runLine, '          node scripts/ci/android-sdk-provision.mjs https://evil.example/repo.xml\n'), /fixed no-argument helper/],
-      'failure ignored': [rep(runLine, '          node scripts/ci/android-sdk-provision.mjs || true\n'), /fixed no-argument helper/],
-      'continue-on-error': [rep(`        if: ${PROVISION_IF}\n`, `        if: ${PROVISION_IF}\n        continue-on-error: true\n`), /must not mask failures/],
-      'guard made conditional': [rep("      - name: Verify pre-installed Android SDK (fail-closed; no install, no license acceptance)\n", `      - name: Verify pre-installed Android SDK (fail-closed; no install, no license acceptance)\n        if: \${{ github.event_name == 'push' }}\n`), /guard must stay unconditional/],
+    const move = (src, startMarker, endMarker, beforeMarker) => {
+      const start = src.indexOf(startMarker);
+      const end = src.indexOf(endMarker);
+      assert.ok(start >= 0 && end > start, `anchors ${startMarker.slice(0, 40)}`);
+      const block = src.slice(start, end);
+      const without = src.slice(0, start) + src.slice(end);
+      return without.replace(beforeMarker, `${block}${beforeMarker}`);
     };
-    // provisioning moved AFTER the guard
-    {
-      const start = ci.indexOf('      - name: Provision exactly NDK');
-      const end = ci.indexOf('      # 2026-11-07: this guard never installs');
-      const block = ci.slice(start, end);
-      const without = ci.slice(0, start) + ci.slice(end);
-      mutants['provisioning after guard'] = [without.replace('      - name: Assemble release APK\n', `${block}      - name: Assemble release APK\n`), /order must be/];
-    }
-    for (const [name, [text, re]] of Object.entries(mutants)) {
-      const probs = provisionWiringProblems(text, others);
+    const mutants = {
+      'ci condition removed': [rep(`        if: ${CI_IF}\n`, ''), debug, /ci\.yml: provisioning condition must be exactly/],
+      'ci any PR branch': [rep(" && github.head_ref == 'fix/last-known-price-20261107'", ''), debug, /ci\.yml: provisioning condition/],
+      'ci staging PR': [rep("github.head_ref == 'fix/last-known-price-20261107'", "github.base_ref == 'staging'"), debug, /ci\.yml: provisioning condition/],
+      'ci fork allowed': [rep(' && github.event.pull_request.head.repo.full_name == github.repository', ''), debug, /ci\.yml: provisioning condition/],
+      'ci push any branch': [rep(" && github.ref == 'refs/heads/main') }}", ') }}'), debug, /ci\.yml: provisioning condition/],
+      'ci dispatch added': [rep("github.ref == 'refs/heads/main') }}", "github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch' }}"), debug, /ci\.yml: provisioning condition/],
+      'ci argument added': [rep(runLine, '          node scripts/ci/android-sdk-provision.mjs https://evil.example/repo.xml\n'), debug, /fixed no-argument helper/],
+      'ci failure ignored': [rep(runLine, '          node scripts/ci/android-sdk-provision.mjs || true\n'), debug, /fixed no-argument helper/],
+      'ci continue-on-error': [rep(`        if: ${CI_IF}\n`, `        if: ${CI_IF}\n        continue-on-error: true\n`), debug, /must not mask failures/],
+      'ci guard made conditional': [rep("      - name: Verify pre-installed Android SDK (fail-closed; no install, no license acceptance)\n", `      - name: Verify pre-installed Android SDK (fail-closed; no install, no license acceptance)\n        if: \${{ github.event_name == 'push' }}\n`), debug, /ci\.yml: the guard must stay unconditional/],
+      'ci provisioning after guard': [move(ci, '      - name: Provision exactly NDK', '      # 2026-11-07: this guard never installs', '      - name: Assemble release APK\n'), debug, /ci\.yml: order must be/],
+      'ci push trigger widened': [rep('    branches: [main]\n    paths-ignore:', '    branches: [main, staging]\n    paths-ignore:'), debug, /ci\.yml triggers changed/],
+      'ci deploy gate widened': [rep("      github.event_name == 'workflow_dispatch'\n      && inputs.deploy_production\n", "      github.event_name != 'pull_request'\n"), debug, /Production deploy gate changed/],
+      'ci deploy default on': [rep('        default: false', '        default: true'), debug, /ci\.yml triggers changed/],
+      'debug condition removed': [ci, repD(`        if: ${DEBUG_IF}\n`, ''), /build-android\.yml: provisioning condition/],
+      'debug dispatch added': [ci, repD(`        if: ${DEBUG_IF}\n`, "        if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}\n"), /build-android\.yml: provisioning condition/],
+      'debug push any branch': [ci, repD(`        if: ${DEBUG_IF}\n`, "        if: ${{ github.event_name == 'push' }}\n"), /build-android\.yml: provisioning condition/],
+      'debug provisioning after guard': [ci, move(debug, '      # 2026-11-10 follow-up (push to main ONLY', '      # 2026-11-07: no SDK download', '      - name: Build Android debug APK\n'), /build-android\.yml: order must be/],
+      'debug guard made conditional': [ci, repD("      - name: Verify pre-installed Android SDK (fail-closed; no install, no license acceptance)\n", `      - name: Verify pre-installed Android SDK (fail-closed; no install, no license acceptance)\n        if: \${{ github.event_name == 'push' }}\n`), /build-android\.yml: the guard must stay unconditional/],
+      'debug trigger widened': [ci, repD('    branches: [main]\n', '    branches: [main, staging]\n'), /build-android\.yml triggers changed/],
+      'debug argument added': [ci, repD(runLine, '          node scripts/ci/android-sdk-provision.mjs --channel=3\n'), /build-android\.yml: provisioning run must be exactly/],
+    };
+    for (const [name, [ciText, debugText, re]] of Object.entries(mutants)) {
+      const probs = provisionWiringProblems(ciText, debugText, others);
       assert.ok(probs.some((x) => re.test(x)), `wiring mutation "${name}" must be caught by ${re}; got ${probs.join(' | ')}`);
     }
-    const otherProbs = provisionWiringProblems(ci, [...others, ['eas-build.yml', 'run: node scripts/ci/android-sdk-provision.mjs']]);
+    const otherProbs = provisionWiringProblems(ci, debug, [...others, ['eas-build.yml', 'run: node scripts/ci/android-sdk-provision.mjs']]);
     assert.ok(otherProbs.some((x) => /eas-build\.yml must not provision/.test(x)), 'another workflow provisioning is caught');
-    ok(`one reviewed PR-284-only invocation before the unconditional guard; ${Object.keys(mutants).length + 1} wiring mutations caught`);
+    ok(`ci.yml (PR 284 | push main) + build-android.yml (push main) invocations before the unconditional guards; triggers + deploy gate unchanged; ${Object.keys(mutants).length + 1} wiring mutations caught`);
   }
 } finally {
   for (const d of tmpRoots) fs.rmSync(d, { recursive: true, force: true });
