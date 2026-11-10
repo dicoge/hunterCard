@@ -18,7 +18,8 @@
  *   'SEC'      → signed（簽名版 / パラレル/サイン），只吃 SEC。
  *   'HR'|'UR'|'SR'|'OUR'|'OSR'|'RR' → 標準平行版 token，只吃完全相同 rarity。
  *   'HSD06'|'HBP04'… → 產品／套牌碼標替代平行版，只吃完全相同產品碼。
- *   null       → 無標籤的純 (パラレル)：版本不精確，交由 merge 判斷唯一性，否則 fail closed。
+ *   null       → 無標籤的純 (パラレル)：版本不精確；以版本自身 rarity 或本列印次證明，否則 fail closed
+ *                （2026-11-10 PR #287：不再以「唯一剩餘平行 listing」推論）。
  */
 
 // 已知 hOCG rarity 代碼（精確比對用；不做子字串）。
@@ -130,6 +131,37 @@ function classifyVariant(name) {
 }
 
 /**
+ * 2026-11-10（PR #287 matcher repair A）：純 (パラレル) 版本自身的 `rarity` 欄位（遊々亭該 listing
+ * 標示的 rarity）→ 已知代碼，否則 null。這是「本版本是哪一個印次」的明確證明；只對 token=null
+ * 的純平行版本有意義。缺失／不在已知詞彙 → null（未綁定：見 assignVariantBuyMatches 的列印次
+ * 規則，不臆測）。不讀報價日期、不讀圖片／美術。
+ */
+function plainParallelRarity(variant) {
+  if (!variant || typeof variant !== 'object') return null;
+  const { versionClass, token } = classifyVariant(variant.name);
+  if (versionClass !== 'parallel' || token !== null) return null;
+  const code = normalizeRarityCode(variant.rarity);
+  return isKnownRarityCode(code) ? code : null;
+}
+
+/**
+ * 某版本（在 rarity 為 rowRarity 的 card 列上）可否持有 token 的報價。merge 候選池、regen 身分
+ * 保留、verifier retained invariant 共用，與 assignVariantBuyMatches 同一判準：
+ *   - 帶具體 token 的版本：完全相等。
+ *   - 純 (パラレル) 且自身 rarity 明確：只收同一標準平行 token（SR 版本不收 UR）。
+ *   - 純 (パラレル) 而 rarity 缺失／未知：只收「本列自身印次代碼」且為標準平行 token（列印次
+ *     證明）；列 rarity 未知或不同 → 不相容（fail closed，不借別列印次）。
+ */
+function variantTokenCompatible(variant, token, rowRarity) {
+  const own = classifyVariant(variant && variant.name);
+  if (own.token !== null) return own.token === token;
+  if (!PARALLEL_RARITIES.has(token)) return false;
+  const bound = plainParallelRarity(variant);
+  if (bound != null) return bound === token;
+  return normalizeRarityCode(rowRarity) === token;
+}
+
+/**
  * 判定一段來源版本標記字串屬於哪一類：
  *   - 空（null / 純卡號無尾綴）→ { kind:'bare', token:'' }：真正無標記的原印版。
  *   - 完全等於已知 rarity / 產品碼 → { kind:'known', token }：精確版本。
@@ -189,6 +221,8 @@ export {
   isOwnSetPrinting,
   versionClassFromName,
   classifyVariant,
+  plainParallelRarity,
+  variantTokenCompatible,
   classifySourceRarity,
   sourceToken,
   rarityTokenInName,

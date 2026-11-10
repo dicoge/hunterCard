@@ -25,7 +25,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
-import { normalizeCardNumber, classifyVariant, PARALLEL_RARITIES } from './lib/variant-key.js';
+import { normalizeCardNumber, variantTokenCompatible } from './lib/variant-key.js';
 import {
   buildBuyIndex, reconcileCardBuyQuotes, assignVariantBuyMatches, applyVariantBuyProvenance,
   representativeBuyEntry, lastKnownBuyCandidate, historyDateKey,
@@ -161,7 +161,7 @@ export function regenerateFromRunProof(db, proof, { buyDir = BUY_DIR } = {}) {
     const fresh = (numKey && buyIndex.get(numKey)) || [];
     const freshTokens = new Set(fresh.map((b) => b.token));
     if (Array.isArray(card.prices) && card.prices.length > 0) {
-      const freshMatches = assignVariantBuyMatches(card.prices, fresh);
+      const freshMatches = assignVariantBuyMatches(card.prices, fresh, card.rarity);
       card.prices.forEach((v, i) => {
         if (!v || typeof v !== 'object') return;
         if (freshMatches[i] != null) {
@@ -170,8 +170,7 @@ export function regenerateFromRunProof(db, proof, { buyDir = BUY_DIR } = {}) {
           return;
         }
         const own = v.buyPriceRetained === true ? lastKnownBuyCandidate({ ...v, buyLastKnown: undefined }, now) : null;
-        const cls = classifyVariant(v.name);
-        const compatible = own && (cls.token === null ? PARALLEL_RARITIES.has(own.token) : cls.token === own.token);
+        const compatible = own && variantTokenCompatible(v, own.token, card.rarity);
         if (own && compatible && !freshTokens.has(own.token) && !('buyLastKnown' in v) && !violations.has(`${id}\u0000${i}`)) {
           variantsRetained += 1; // identity: unchanged
           return;

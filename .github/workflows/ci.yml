@@ -189,6 +189,9 @@ jobs:
       - name: Verify buy-price version alignment (DIC-856)
         run: npm run test:buy-price
 
+      - name: Verify the alignment verifier follows the merge run-proof contract (no run marker → retained only; no cross-printing expectation) (PR 287)
+        run: npm run test:buy-alignment-run-proof
+
       - name: Verify buy-price regeneration is deterministic (DIC-856)
         run: npm run test:buy-price-regen
 
@@ -800,8 +803,15 @@ jobs:
       # 2026-11-10 follow-up: the SAME two packages, helper and terms proof also run on an ordinary
       # push to main of this repository (post-merge CI 42802314758 failed because this step was
       # PR-284-only). No other event, branch, tag, fork, staging PR, schedule or workflow_dispatch.
-      - name: Provision exactly NDK 27.1.12297006 + CMake 3.22.1 (PR 284 branch or push to main only; terms pre-verified; nothing accepted)
-        if: ${{ (github.event_name == 'pull_request' && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository) || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+      # 2026-11-10 PR #287 repair R2: plus the same-repo DAILY data branch family bot/scrape/YYYY-MM-DD
+      # into main (the recurring daily handoff; its pull_request CI otherwise skips this step and the
+      # unchanged guard fails closed). Expressions have no regex, so this `if` is only a prefilter
+      # (prefix + base main + same-repo head); the helper itself enforces the anchored whole-ref
+      # family with a real calendar date, env head == event head, base main in env AND event, and
+      # refuses (exit 2, step fails) anything else, e.g. bot/scrape/x. No fork / other base /
+      # dispatch / staging / other workflow; same helper, packages and terms proof.
+      - name: Provision exactly NDK 27.1.12297006 + CMake 3.22.1 (PR 284 branch, daily bot/scrape/YYYY-MM-DD into main, or push to main only; terms pre-verified; nothing accepted)
+        if: ${{ (github.event_name == 'pull_request' && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository) || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'bot/scrape/') && github.base_ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository) || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
         run: |
           set -euo pipefail
           node scripts/ci/android-sdk-provision.mjs
