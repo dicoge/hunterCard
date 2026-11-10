@@ -70,9 +70,27 @@ await test('four printings stay four zh rows, each with its own listing image (S
   const out = buildPrintingDisplayRows(listings, 'zh');
   const byLabel = Object.fromEntries(out.map((r) => [r.sourceLabel, r]));
   assert.equal(out.length, 4);
+  // Per printing (keyed by the shop listing name), each row shows ITS OWN raw listing's price.
+  // 2026-11-10 (PR #287 CI 42828493043): the shipped catalog moves prices (SR ¥1,280 → ¥980),
+  // so the expected price is read from that printing's raw row by exact id — not from the
+  // function under test, and not a sorted bag (a swap between printings would fail here).
+  const PRINTINGS = {
+    'さくらみこ': ['hBP03-029_hBP03_R_hBP03-029_R', 'R', '一般版'],
+    'さくらみこ(パラレル)': ['hBP03-029_hBP03_SR_hBP03-029_SR', 'SR', '平行版'],
+    'さくらみこ(hEB01)': ['hBP03-029_hEB01_R_hBP03-029_R_02', 'R', '一般版・hEB01 收錄'],
+    'さくらみこ(パラレル/hEB01)': ['hBP03-029_hEB01_SR_hBP03-029_SR_02', 'SR', '平行版・hEB01 收錄'],
+  };
+  const ownListingPrice = (id, name) => {
+    const row = rows.find((r) => r.id === id);
+    assert.ok(row, `oracle: raw row ${id}`);
+    const own = (row.prices ?? []).filter((p) => p.name === name);
+    assert.equal(own.length, 1, `oracle: ${id} has exactly one listing ${name}`);
+    assert.ok(own[0].sellPrice > 0 && own[0].sellPrice === row.sellPrice, `oracle: ${id} listing price is its own positive sell quote`);
+    return own[0].sellPrice;
+  };
   assert.deepEqual(
-    out.map((r) => [r.rarity, r.label, r.sellPrice]).sort((a, b) => a[2] - b[2]),
-    [['R', '一般版・hEB01 收錄', 50], ['SR', '平行版・hEB01 收錄', 120], ['R', '一般版', 180], ['SR', '平行版', 1280]],
+    Object.fromEntries(out.map((r) => [r.sourceLabel, [r.rarity, r.label, r.sellPrice]])),
+    Object.fromEntries(Object.entries(PRINTINGS).map(([name, [id, rarity, label]]) => [name, [rarity, label, ownListingPrice(id, name)]])),
   );
   assert.match(byLabel['さくらみこ'].imageUrl, /hbp03\/10062\.jpg$/);
   assert.match(byLabel['さくらみこ(パラレル)'].imageUrl, /hbp03\/10063\.jpg$/);
@@ -188,7 +206,12 @@ await test('CardDetail renders the reduced favorites-shaped payload (no listings
   try {
     assert.ok(container.textContent.includes(full.nameZh || full.name), 'the page rendered');
     assert.ok(!container.textContent.includes('[object Object]'), 'no stringified object');
-    assert.ok(!container.textContent.includes('1,280'), 'no price invented without listings');
+    // no price invented without listings: neither this printing's own CURRENT raw price (read
+    // from its raw row) nor the 2026-10-19 reported value (was a pinned '1,280' only)
+    const own = rep.sellPrice.toLocaleString('en-US');
+    for (const shown of [`¥${own}`, `￥${own}`, `JPY ${own}`, '1,280']) {
+      assert.ok(!container.textContent.includes(shown), `no price invented without listings (${shown})`);
+    }
   } finally {
     await act(async () => root.unmount());
     container.remove();
