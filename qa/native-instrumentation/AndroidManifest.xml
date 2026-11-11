@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  CI-DEBUG TEST ARTIFACT ONLY — NEVER an Alpha / Play / EAS release.
+  android:testOnly="true": Play rejects it and `adb install` needs `-t`.
+  The instrumentation runs inside the target process and therefore requires the SAME
+  signing certificate as the target (the CI "Android Debug" signer). It requests no
+  permission of its own; the code additionally refuses non-emulators, other packages
+  and any other signer at runtime.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.dicoge.holohunter.catalogqa"
+    android:versionCode="1"
+    android:versionName="qa-prep-1">
+
+    <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="36" />
+
+    <application
+        android:label="HH catalog QA (CI debug test only)"
+        android:hasCode="true"
+        android:allowBackup="false"
+        android:testOnly="true" />
+
+    <instrumentation
+        android:name="com.dicoge.holohunter.catalogqa.CatalogNativeQaInstrumentation"
+        android:targetPackage="com.dicoge.holohunter"
+        android:label="HH remote catalog native QA (CI debug test only)" />
+</manifest>
