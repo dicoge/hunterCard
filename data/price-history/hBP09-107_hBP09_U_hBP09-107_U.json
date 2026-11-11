@@ -162,8 +162,16 @@
       "currency": "JPY",
       "cardId": "hBP09-107_hBP09_U_hBP09-107_U",
       "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-11-11",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-107_hBP09_U_hBP09-107_U",
+      "sourceProduct": "hBP09"
     }
   ],
-  "lastUpdated": "2026-11-10T12:07:44.861Z",
+  "lastUpdated": "2026-11-11T12:11:07.365Z",
   "nameZh": "凱拉做的Holo劍"
 }

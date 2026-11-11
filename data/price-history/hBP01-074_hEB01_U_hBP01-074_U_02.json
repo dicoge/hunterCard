@@ -146,8 +146,16 @@
       "currency": "JPY",
       "cardId": "hBP01-074_hEB01_U_hBP01-074_U_02",
       "sourceProduct": "hEB01"
+    },
+    {
+      "date": "2026-11-11",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-074_hEB01_U_hBP01-074_U_02",
+      "sourceProduct": "hEB01"
     }
   ],
-  "lastUpdated": "2026-11-10T12:07:38.485Z",
+  "lastUpdated": "2026-11-11T12:10:09.677Z",
   "nameZh": "霸子·貝爾茲"
 }

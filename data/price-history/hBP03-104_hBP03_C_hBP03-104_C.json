@@ -162,8 +162,16 @@
       "currency": "JPY",
       "cardId": "hBP03-104_hBP03_C_hBP03-104_C",
       "sourceProduct": "hBP03"
+    },
+    {
+      "date": "2026-11-11",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-104_hBP03_C_hBP03-104_C",
+      "sourceProduct": "hBP03"
     }
   ],
-  "lastUpdated": "2026-11-10T12:07:42.018Z",
+  "lastUpdated": "2026-11-11T12:10:51.712Z",
   "nameZh": "Riscot"
 }
