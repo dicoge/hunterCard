@@ -162,8 +162,16 @@
       "currency": "JPY",
       "cardId": "hBP04-094_hBP04_U_hBP04-094_U",
       "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-11-11",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-094_hBP04_U_hBP04-094_U",
+      "sourceProduct": "hBP04"
     }
   ],
-  "lastUpdated": "2026-11-10T12:07:42.395Z",
+  "lastUpdated": "2026-11-11T12:10:54.197Z",
   "nameZh": "灰樹花之舞"
 }

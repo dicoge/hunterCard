@@ -162,8 +162,16 @@
       "currency": "JPY",
       "cardId": "hBP05-005_hBP05_OUR_hBP05-005_OUR",
       "sourceProduct": "hBP05"
+    },
+    {
+      "date": "2026-11-11",
+      "price": 5980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-005_hBP05_OUR_hBP05-005_OUR",
+      "sourceProduct": "hBP05"
     }
   ],
-  "lastUpdated": "2026-11-10T12:07:39.326Z",
+  "lastUpdated": "2026-11-11T12:10:31.871Z",
   "nameZh": "癒月巧可"
 }

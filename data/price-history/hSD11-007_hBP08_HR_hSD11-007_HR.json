@@ -170,8 +170,16 @@
       "currency": "JPY",
       "cardId": "hSD11-007_hBP08_HR_hSD11-007_HR",
       "sourceProduct": "hBP08"
+    },
+    {
+      "date": "2026-11-11",
+      "price": 7980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD11-007_hBP08_HR_hSD11-007_HR",
+      "sourceProduct": "hBP08"
     }
   ],
-  "lastUpdated": "2026-11-10T12:07:44.461Z",
+  "lastUpdated": "2026-11-11T12:11:02.920Z",
   "nameZh": "水宮樞"
 }

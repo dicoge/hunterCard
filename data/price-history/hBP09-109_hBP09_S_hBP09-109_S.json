@@ -162,8 +162,16 @@
       "currency": "JPY",
       "cardId": "hBP09-109_hBP09_S_hBP09-109_S",
       "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-11-11",
+      "price": 420,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-109_hBP09_S_hBP09-109_S",
+      "sourceProduct": "hBP09"
     }
   ],
-  "lastUpdated": "2026-11-10T12:07:44.871Z",
+  "lastUpdated": "2026-11-11T12:11:07.546Z",
   "nameZh": "化妝"
 }

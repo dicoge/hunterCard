@@ -90,8 +90,16 @@
       "currency": "JPY",
       "cardId": "hSD20-012_hSD20_U_hSD20-012_U",
       "sourceProduct": "hSD20"
+    },
+    {
+      "date": "2026-11-11",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD20-012_hSD20_U_hSD20-012_U",
+      "sourceProduct": "hSD20"
     }
   ],
-  "lastUpdated": "2026-11-10T12:07:45.332Z",
+  "lastUpdated": "2026-11-11T12:11:10.837Z",
   "nameZh": "遊玩★巡遊隊！"
 }

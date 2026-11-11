@@ -162,8 +162,16 @@
       "currency": "JPY",
       "cardId": "hBP06-102_hBP06_C_hBP06-102_C",
       "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-11-11",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-102_hBP06_C_hBP06-102_C",
+      "sourceProduct": "hBP06"
     }
   ],
-  "lastUpdated": "2026-11-10T12:07:43.670Z",
+  "lastUpdated": "2026-11-11T12:10:56.864Z",
   "nameZh": "炸蝦獅"
 }
