@@ -23,6 +23,10 @@
  *             calendar date) → main only; malformed / invalid-date / prefix / suffix refs, other or
  *             mismatched base, forks, env/event head mismatch, pull_request_target / dispatch /
  *             schedule refused; a daily ref is no push grant; PR 284 and push paths unchanged.
+ *   PR #288 (2026-11-11): exactly same-repo fix/price-hints-20261110 → main as PR 288
+ *             (refs/pull/288/merge + event numbers); wrong branch / base / repository / fork /
+ *             PR number / missing identity / event refused; terms STOPs kept; no push grant;
+ *             the PR 284 / daily / push-main paths still install.
  *   normalization (2026-11-08): the official AOSP TrimStringAdapter port against hand-derived
  *             vectors (Java ASCII \s / trim, NBSP, VT, U+2028, tabs, lone vs paragraph LF) with
  *             wrong-port mutants; formatted text → same canonical hash accepted, while wording /
@@ -41,7 +45,7 @@ import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 import { createHash } from 'node:crypto';
 import {
-  provision, validateMetadata, httpsTransport, ProvisionRefusal, PACKAGES, METADATA_URL, ALLOWED_BRANCH, isDailyDataBranch,
+  provision, validateMetadata, httpsTransport, ProvisionRefusal, PACKAGES, METADATA_URL, ALLOWED_BRANCH, isDailyDataBranch, PR288_BRANCH, PR288_NUMBER,
   officialTrimStringAdapter, officialLicenseText,
 } from './ci/android-sdk-provision.mjs';
 
@@ -92,6 +96,21 @@ function dataPrEnv(sdkRoot, over = {}, eventOver = {}, baseRef = 'main', branch 
   write(f, JSON.stringify({ pull_request: { head: { ref: branch, repo: { full_name: 'dicoge/holohunter' } },
     base: { ref: baseRef, repo: { full_name: 'dicoge/holohunter' } }, ...eventOver } }));
   return env(sdkRoot, { GITHUB_HEAD_REF: branch, GITHUB_BASE_REF: 'main', GITHUB_EVENT_PATH: f, ...over });
+}
+/** 2026-11-11: the exact same-repo PR #288 (fix/price-hints-20261110 → main) context. */
+function pr288Env(sdkRoot, over = {}, prOver = {}, topOver = {}) {
+  const f = path.join(tmp('pr288-event'), 'event.json');
+  write(f, JSON.stringify({
+    number: PR288_NUMBER,
+    pull_request: {
+      number: PR288_NUMBER,
+      head: { ref: PR288_BRANCH, repo: { full_name: 'dicoge/holohunter' } },
+      base: { ref: 'main', repo: { full_name: 'dicoge/holohunter' } },
+      ...prOver,
+    },
+    ...topOver,
+  }));
+  return env(sdkRoot, { GITHUB_HEAD_REF: PR288_BRANCH, GITHUB_BASE_REF: 'main', GITHUB_REF: 'refs/pull/288/merge', GITHUB_EVENT_PATH: f, ...over });
 }
 function env(sdkRoot, over = {}) {
   return {
@@ -551,6 +570,99 @@ try {
     ok(`same-repo bot/scrape/YYYY-MM-DD (real dates) → main installs the same two packages under the unchanged terms proof; ${BAD_REFS.length} malformed refs rejected by the family; 3 terms STOPs; ${cases.length} other refs / bases / forks / head mismatches / events refused; daily ref not a push grant; PR 284 path unchanged`);
   }
 
+  console.log('── PR #288 (same-repo fix/price-hints-20261110 → main, number 288 only): same terms proof ──');
+  {
+    assert.equal(PR288_BRANCH, 'fix/price-hints-20261110');
+    assert.equal(PR288_NUMBER, 288);
+    const runPr = (root, over = {}, prOver = {}, topOver = {}, extra = {}) => provision({ env: pr288Env(root, over, prOver, topOver), platform: 'linux',
+      sdkRoot: root, policy: extra.policy || POLICY, transport: extra.transport || transportOf(metadata()), runInstaller: extra.runInstaller || installer(root), log: quiet });
+    {
+      const root = sdk();
+      const inst = installer(root);
+      const t = transportOf(metadata());
+      const before = snapshotOf(root);
+      const r = await runPr(root, {}, {}, {}, { transport: t, runInstaller: inst });
+      assert.deepEqual(r.installed, ['ndk;27.1.12297006', 'cmake;3.22.1']);
+      assert.deepEqual(inst.calls[0].args, [`--sdk_root=${root}`, '--channel=0', '--install', 'ndk;27.1.12297006', 'cmake;3.22.1'], 'exact packages, no --licenses');
+      assert.deepEqual(t.calls, [METADATA_URL]);
+      assert.equal(snapshotOf(root), before, 'accepted terms untouched');
+    }
+    {
+      // the package / terms failure negatives hold on this path exactly as on every other one
+      const r1 = sdk(); const i1 = installer(r1);
+      await refusesAsync(runPr(r1, {}, {}, {}, { runInstaller: i1, transport: transportOf(metadata({ license: 'abd' })) }), /not authorized by the policy/);
+      const r2 = sdk({ accepted: null }); const i2 = installer(r2);
+      await refusesAsync(runPr(r2, {}, {}, {}, { runInstaller: i2 }), /never accepted on this runner/);
+      const r3 = sdk(); const i3 = installer(r3);
+      await refusesAsync(runPr(r3, {}, {}, {}, { policy: REAL_POLICY, runInstaller: i3 }), /not authorized by the policy/);
+      assert.equal(i1.calls.length + i2.calls.length + i3.calls.length, 0, 'installer never reached');
+    }
+    const root = sdk();
+    const inst = installer(root);
+    const ONLY = /only fix\/last-known-price-20261107 or bot\/scrape\/YYYY-MM-DD/;
+    const NOT288 = /is not this repository's PR #288 from fix\/price-hints-20261110 into main/;
+    const SAME_REPO = { full_name: 'dicoge/holohunter' };
+    const branchCase = (b) => [{ GITHUB_HEAD_REF: b }, { head: { ref: b, repo: SAME_REPO } }, {}, ONLY];
+    const cases = [
+      // wrong branch (env and event alike): other dates / suffix / prefix / case / renamed
+      ...['fix/price-hints-20261111', 'fix/price-hints-20261110-x', 'fix/price-hints-20261110/x', 'xfix/price-hints-20261110',
+        'Fix/price-hints-20261110', 'fix/price-hints', 'fix/price-hints-2026111', 'refs/heads/fix/price-hints-20261110'].map(branchCase),
+      // wrong / missing base (env)
+      [{ GITHUB_BASE_REF: 'staging' }, {}, {}, /may provision only as PR #288 into main/],
+      [{ GITHUB_BASE_REF: undefined }, {}, {}, /may provision only as PR #288 into main/],
+      // wrong / missing PR number in GITHUB_REF
+      [{ GITHUB_REF: 'refs/pull/289/merge' }, {}, {}, /may provision only as PR #288 \(refs\/pull\/288\/merge\)/],
+      [{ GITHUB_REF: 'refs/pull/288/head' }, {}, {}, /refs\/pull\/288\/merge/],
+      [{ GITHUB_REF: 'refs/heads/fix/price-hints-20261110' }, {}, {}, /refs\/pull\/288\/merge/],
+      [{ GITHUB_REF: undefined }, {}, {}, /refs\/pull\/288\/merge/],
+      // wrong / missing PR number in the event (top-level and pull_request)
+      [{}, { number: 289 }, {}, NOT288],
+      [{}, { number: '288' }, {}, NOT288],
+      [{}, { number: undefined }, {}, NOT288],
+      [{}, {}, { number: 289 }, NOT288],
+      [{}, {}, { number: undefined }, NOT288],
+      // wrong / missing base in the event: other branch, other repository, missing
+      [{}, { base: { ref: 'staging', repo: SAME_REPO } }, {}, NOT288],
+      [{}, { base: { ref: 'main', repo: { full_name: 'someone/fork' } } }, {}, NOT288],
+      [{}, { base: { ref: 'main' } }, {}, NOT288],
+      [{}, { base: undefined }, {}, NOT288],
+      // fork / other repository with the same branch name; head repo missing; env vs event head mismatch
+      [{}, { head: { ref: PR288_BRANCH, repo: { full_name: 'someone/fork' } } }, {}, /fork or other branch/],
+      [{}, { head: { ref: PR288_BRANCH } }, {}, /fork or other branch/],
+      [{ GITHUB_REPOSITORY: 'someone/fork' }, {}, {}, /fork or other branch/],
+      [{}, { head: { ref: ALLOWED_BRANCH, repo: SAME_REPO } }, {}, /fork or other branch/],
+      [{}, { head: { ref: 'bot/scrape/2026-11-10', repo: SAME_REPO } }, {}, /fork or other branch/],
+      // missing event identity (no pull_request object / unreadable payload)
+      [{}, {}, { pull_request: null }, /fork or other branch/],
+      [{ GITHUB_EVENT_PATH: '/nonexistent/event.json' }, {}, {}, /GITHUB_EVENT_PATH unreadable/],
+      // other events / runners
+      [{ GITHUB_EVENT_NAME: 'pull_request_target' }, {}, {}, /push to main only/],
+      [{ GITHUB_EVENT_NAME: 'workflow_dispatch' }, {}, {}, /push to main only/],
+      [{ GITHUB_EVENT_NAME: 'schedule' }, {}, {}, /push to main only/],
+      [{ RUNNER_ENVIRONMENT: 'self-hosted' }, {}, {}, /only an ephemeral GitHub-hosted runner/],
+    ];
+    for (const [over, prOver, topOver, re] of cases) await refusesAsync(runPr(root, over, prOver, topOver, { runInstaller: inst }), re);
+    assert.equal(inst.calls.length, 0);
+    // the branch is never a push grant
+    const rp = sdk();
+    const ip = installer(rp);
+    await refusesAsync(provision({ env: pushEnv(rp, { GITHUB_REF: `refs/heads/${PR288_BRANCH}` }), platform: 'linux', sdkRoot: rp, policy: POLICY,
+      transport: transportOf(metadata()), runInstaller: ip, log: quiet }), /push ref refs\/heads\/fix\/price-hints-20261110: only refs\/heads\/main/);
+    assert.equal(ip.calls.length, 0);
+    // the existing authorized contexts are unchanged: PR 284 (no number / base requirement), daily data, push main
+    for (const [name, e] of [
+      ['PR 284', (r) => env(r)],
+      ['daily data', (r) => dataPrEnv(r)],
+      ['push main', (r) => pushEnv(r)],
+    ]) {
+      const r = sdk();
+      const i = installer(r);
+      assert.deepEqual((await provision({ env: e(r), platform: 'linux', sdkRoot: r, policy: POLICY, transport: transportOf(metadata()), runInstaller: i, log: quiet })).installed,
+        ['ndk;27.1.12297006', 'cmake;3.22.1'], `${name} path unchanged`);
+    }
+    ok(`exact same-repo PR #288 (fix/price-hints-20261110 → main, refs/pull/288/merge, event number 288) installs the same two packages under the unchanged terms proof; 3 terms STOPs; ${cases.length} wrong branch / base / repository / fork / PR number / missing identity / event contexts refused; no push grant; PR 284 / daily / push-main paths unchanged`);
+  }
+
   console.log('── installer outcomes ──');
   {
     let root = sdk();
@@ -588,7 +700,9 @@ try {
     // PR #287 repair R2: the same-repo daily data family into main only. The expression is a prefilter
     // (no regex in Actions); the helper enforces the anchored bot/scrape/YYYY-MM-DD real-date family.
     const DATA_IF = "github.event_name == 'pull_request' && startsWith(github.head_ref, 'bot/scrape/') && github.base_ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository";
-    const CI_IF = `\${{ (${PR_IF}) || (${DATA_IF}) || (${MAIN_IF}) }}`;
+    // 2026-11-11: exactly same-repo PR #288 (number, branch, base main, base + head repository).
+    const PR288_IF = "github.event_name == 'pull_request' && github.event.pull_request.number == 288 && github.head_ref == 'fix/price-hints-20261110' && github.base_ref == 'main' && github.event.pull_request.base.repo.full_name == github.repository && github.event.pull_request.head.repo.full_name == github.repository";
+    const CI_IF = `\${{ (${PR_IF}) || (${DATA_IF}) || (${PR288_IF}) || (${MAIN_IF}) }}`;
     const DEBUG_IF = `\${{ ${MAIN_IF} }}`;
     const DEPLOY_IF = "github.event_name == 'workflow_dispatch' && inputs.deploy_production && needs.preflight.result == 'success' && needs.validate.result == 'success' && needs['release-apk-postpackage-guard'].result == 'success'";
     const RUN = 'set -euo pipefail\nnode scripts/ci/android-sdk-provision.mjs';
@@ -668,6 +782,14 @@ try {
       'ci data branch fork allowed': [rep("github.base_ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository", "github.base_ref == 'main'"), debug, /ci\.yml: provisioning condition/],
       'ci any same-repo PR': [rep("startsWith(github.head_ref, 'bot/scrape/') && ", ''), debug, /ci\.yml: provisioning condition/],
       'ci data branch pull_request_target': [rep("(github.event_name == 'pull_request' && startsWith(", "(github.event_name == 'pull_request_target' && startsWith("), debug, /ci\.yml: provisioning condition/],
+      'ci pr288 number removed': [rep(' && github.event.pull_request.number == 288', ''), debug, /ci\.yml: provisioning condition/],
+      'ci pr288 other number': [rep('github.event.pull_request.number == 288', 'github.event.pull_request.number == 289'), debug, /ci\.yml: provisioning condition/],
+      'ci pr288 branch generalized': [rep("github.head_ref == 'fix/price-hints-20261110'", "startsWith(github.head_ref, 'fix/')"), debug, /ci\.yml: provisioning condition/],
+      'ci pr288 branch removed': [rep(" && github.head_ref == 'fix/price-hints-20261110'", ''), debug, /ci\.yml: provisioning condition/],
+      'ci pr288 any base': [rep(" && github.base_ref == 'main' && github.event.pull_request.base.repo.full_name == github.repository", " && github.event.pull_request.base.repo.full_name == github.repository"), debug, /ci\.yml: provisioning condition/],
+      'ci pr288 base repo unchecked': [rep(' && github.event.pull_request.base.repo.full_name == github.repository', ''), debug, /ci\.yml: provisioning condition/],
+      'ci pr288 fork allowed': [rep('github.event.pull_request.base.repo.full_name == github.repository && github.event.pull_request.head.repo.full_name == github.repository', 'github.event.pull_request.base.repo.full_name == github.repository'), debug, /ci\.yml: provisioning condition/],
+      'ci pr288 pull_request_target': [rep("(github.event_name == 'pull_request' && github.event.pull_request.number == 288", "(github.event_name == 'pull_request_target' && github.event.pull_request.number == 288"), debug, /ci\.yml: provisioning condition/],
       'ci push any branch': [rep(" && github.ref == 'refs/heads/main') }}", ') }}'), debug, /ci\.yml: provisioning condition/],
       'ci dispatch added': [rep("github.ref == 'refs/heads/main') }}", "github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch' }}"), debug, /ci\.yml: provisioning condition/],
       'ci argument added': [rep(runLine, '          node scripts/ci/android-sdk-provision.mjs https://evil.example/repo.xml\n'), debug, /fixed no-argument helper/],
@@ -692,7 +814,7 @@ try {
     }
     const otherProbs = provisionWiringProblems(ci, debug, [...others, ['eas-build.yml', 'run: node scripts/ci/android-sdk-provision.mjs']]);
     assert.ok(otherProbs.some((x) => /eas-build\.yml must not provision/.test(x)), 'another workflow provisioning is caught');
-    ok(`ci.yml (PR 284 | daily bot/scrape/* prefilter → main | push main) + build-android.yml (push main) invocations before the unconditional guards; triggers + deploy gate unchanged; ${Object.keys(mutants).length + 1} wiring mutations caught`);
+    ok(`ci.yml (PR 284 | daily bot/scrape/* prefilter → main | exact PR 288 → main | push main) + build-android.yml (push main) invocations before the unconditional guards; triggers + deploy gate unchanged; ${Object.keys(mutants).length + 1} wiring mutations caught`);
   }
 } finally {
   for (const d of tmpRoots) fs.rmSync(d, { recursive: true, force: true });

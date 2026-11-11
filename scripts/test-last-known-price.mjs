@@ -21,7 +21,9 @@
 //      replaces the old time.
 //   D. privacy: sentinel buy/history/ytStats/variant-buy fields never survive the public
 //      native/web projection or the Store MVP mapper, and quote times are sell times only.
-//   E. CardDetail renders 報價日 / 最近已知售價（舊價） / 報價日期不明 from each printing's own time.
+//   E/F. (2026-11-10 user override) CardDetail / search tile / list row render the exact-printing
+//      price with NO quote-date / 舊價 / 無新報價 / 報價日期不明 hint, in fresh / old / retained /
+//      unknown states, while the payload keeps each printing's own quote time + retained flag.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -489,83 +491,105 @@ async function renderDetail(card) {
 }
 const textOf = (container, id) => container.querySelector(`[data-testid="${id}"]`)?.textContent ?? null;
 
-await test('E1 one printing, source stopped quoting: 最近已知售價（舊價） with its ORIGINAL date, never today', async () => {
-  const card = searchPayload([rowParallel]);
+// 2026-11-10 USER OVERRIDE (Android report: 「本次更新無新報價・沿用 2026-08-25 的原報價（舊價）」
+// — 「如果會請拿掉 我可沒叫你這樣顯示」): no quote-date / 舊價 / 無新報價 / 報價日期不明 hint is
+// rendered on any price surface. The exact-printing price, its own picture / version / shop
+// name still render, and the payload keeps each printing's own quote time + retained flag
+// internally (asserted below) — the hint is removed, the provenance is not.
+const QUOTE_HINT_RE = /舊價|無新報價|報價日期不明|日期不明|最近已知|非即時行情|沿用|\d{4}-\d{2}-\d{2}\s*報價|旧価格|新しい価格なし|取得日不明|時点/;
+const QUOTE_TESTIDS = ['card-detail-price-quote', 'card-detail-market-quote', 'card-detail-quote-BASE', 'card-detail-quote-PARALLEL',
+  'card-detail-quote-HEB01', 'card-detail-quote-PARALLEL/SIGN', 'search-card-tile-price-note', 'search-result-price-age'];
+function assertNoQuoteHint(container, quoteTimes, label) {
+  const text = container.textContent;
+  assert.doesNotMatch(text, QUOTE_HINT_RE, `${label}: no quote-age / retained / unknown-date wording`);
+  for (const at of quoteTimes) if (at) assert.ok(!text.includes(day(at)), `${label}: quote date ${day(at)} is not rendered`);
+  for (const id of QUOTE_TESTIDS) assert.equal(textOf(container, id), null, `${label}: no ${id} node`);
+}
+const rowParallelRetained = { ...rowParallel, timestamp: FRESH2, sellQuoteRetained: true };
+
+await test('E1 one printing, source stopped quoting (old) or retained this run: price shown, NO hint; quote time + retained kept internally', async () => {
+  for (const [card, at, retained, label] of [
+    [searchPayload([rowParallel]), OLD, false, 'old (30 days)'],
+    [searchPayload([rowParallelRetained]), FRESH2, true, 'retained (2h old, no new quote this run)'],
+  ]) {
+    assert.equal(card.priceQuotedAt, at, `${label}: the printing's own quote time stays on the payload`);
+    assert.equal(card.priceRetained === true, retained, `${label}: the writer's retained flag stays on the payload`);
+    const { container, cleanup } = await renderDetail(card);
+    try {
+      assert.ok(container.textContent.includes('¥3,480'), `${label}: the exact-printing value itself`);
+      assertNoQuoteHint(container, [at, iso(NOW)], label);
+    } finally { await cleanup(); }
+  }
+});
+
+await test('E2 fresh quote and unknown time: price shown, no date / unknown-date hint', async () => {
+  for (const [card, price, at, label] of [
+    [searchPayload([rowBase]), '¥120', FRESH, 'fresh'],
+    [searchPayload([rowNoTime]), '¥50', null, 'unknown time'],
+  ]) {
+    assert.equal(card.priceQuotedAt, at, `${label}: internal quote time (null = unknown) unchanged`);
+    const { container, cleanup } = await renderDetail(card);
+    try {
+      assert.ok(container.textContent.includes(price), `${label}: price ${price} shown`);
+      assertNoQuoteHint(container, [at], label);
+    } finally { await cleanup(); }
+  }
+});
+
+await test('E3 several printings: each row keeps its own price / picture / shop name, no per-row hint; ambiguous row unpriced; row count unchanged', async () => {
+  const card = searchPayload(ROWS);
+  // internal per-printing provenance is untouched (never a sibling's time)
+  assert.equal(card.printingQuotedAt.BASE, FRESH);
+  assert.equal(card.printingQuotedAt.PARALLEL, OLD);
+  assert.equal(Object.hasOwn(card.printingQuotedAt, 'HEB01'), false);
   const { container, cleanup } = await renderDetail(card);
   try {
-    const line = textOf(container, 'card-detail-price-quote');
-    assert.ok(line, 'quote line rendered');
-    assert.match(line, /最近已知售價（舊價）/);
-    assert.ok(line.includes(day(OLD)), `original quote date ${day(OLD)} shown`);
-    assert.ok(!line.includes(day(iso(NOW))), 'today\'s date is never shown as the quote date');
-    assert.ok(container.textContent.includes('¥3,480'), 'the retained exact-printing value itself');
-  } finally { await cleanup(); }
-});
-
-await test('E2 fresh quote: 報價日 without the old-price label; unknown time: 報價日期不明', async () => {
-  {
-    const { container, cleanup } = await renderDetail(searchPayload([rowBase]));
-    try {
-      const line = textOf(container, 'card-detail-price-quote');
-      assert.equal(line, `${day(FRESH)} 報價`);
-    } finally { await cleanup(); }
-  }
-  {
-    const { container, cleanup } = await renderDetail(searchPayload([rowNoTime]));
-    try {
-      assert.equal(textOf(container, 'card-detail-price-quote'), '報價日期不明，未確認為最新售價');
-    } finally { await cleanup(); }
-  }
-});
-
-await test('E3 several printings: each row labelled from ITS OWN time; ambiguous row has no quote; row count unchanged', async () => {
-  const { container, cleanup } = await renderDetail(searchPayload(ROWS));
-  try {
-    assert.equal(textOf(container, 'card-detail-quote-BASE'), `${day(FRESH)} 報價`);
-    const parallel = textOf(container, 'card-detail-quote-PARALLEL');
-    assert.match(parallel, /最近已知售價（舊價）/);
-    assert.ok(parallel.includes(day(OLD)) && !parallel.includes(day(FRESH)), 'the base row\'s fresh date is not borrowed');
-    assert.equal(textOf(container, 'card-detail-quote-HEB01'), '報價日期不明，未確認為最新售價');
-    assert.equal(textOf(container, 'card-detail-quote-PARALLEL/SIGN'), null, 'ambiguous printing: no quote line');
     const variantRows = [...container.querySelectorAll('[data-testid^="card-detail-variant-"]')]
       .filter((el) => /^card-detail-variant-(?!image-|noimage-|hint)/.test(el.getAttribute('data-testid')));
-    assert.equal(variantRows.length, 4, 'four version rows (quote lines do not add rows)');
+    assert.equal(variantRows.length, 4, 'four version rows');
+    const byId = Object.fromEntries(variantRows.map((el) => [el.getAttribute('data-testid').replace('card-detail-variant-', ''), el.textContent]));
+    // the row price is rendered in the user's currency exactly as the screen converts it
+    const { convertPrice } = await import('../src/constants/index.ts');
+    const { useSettingsStore } = await import('../src/store/settingsStore.ts');
+    const shown = (jpy) => { const c = convertPrice(jpy, useSettingsStore.getState().preferredCurrency); return `${c.symbol}${c.value?.toLocaleString()}`; };
+    assert.ok(byId.BASE.includes(shown(120)) && byId.BASE.includes('テスト'), `BASE row: own price + shop name (${byId.BASE})`);
+    assert.ok(byId.PARALLEL.includes(shown(3480)) && byId.PARALLEL.includes('テスト(パラレル)'), `PARALLEL row: own price + shop name (${byId.PARALLEL})`);
+    assert.ok(byId.HEB01.includes(shown(50)), `HEB01 row: own price (${byId.HEB01})`);
+    assert.ok(!byId['PARALLEL/SIGN'].includes(shown(9000)) && !byId['PARALLEL/SIGN'].includes(shown(9500)), `ambiguous printing: no price picked (${byId['PARALLEL/SIGN']})`);
+    assert.ok(container.querySelector('[data-testid="card-detail-variant-image-PARALLEL"]'), 'own picture kept');
+    assertNoQuoteHint(container, [FRESH, OLD], 'several printings');
   } finally { await cleanup(); }
 });
 
-await test('E4 a route payload without quote provenance renders as before (no invented label)', async () => {
+await test('E4 a route payload without quote provenance renders the same (price, no hint)', async () => {
   const { container, cleanup } = await renderDetail(toCanonicalCardRecord(rowParallel, {}, FULL));
   try {
-    assert.equal(textOf(container, 'card-detail-price-quote'), null);
     assert.ok(container.textContent.includes('¥3,480'));
+    assertNoQuoteHint(container, [OLD], 'no provenance');
   } finally { await cleanup(); }
 });
 
-await test('E5 scan → detail (non-Store profile 市場數據): the selected version is labelled from the scanned quote\'s own time', async () => {
+await test('E5 scan → detail (non-Store profile 市場數據): selected version price shown, no hint; scan provenance kept on the route payload', async () => {
   const scanCard = {
     id: 'hZZ98-001_hBP08_SR', name: 'テスト', nameZh: '測試卡', cardNumber: 'hZZ98-001', type: 'ホロメン', rarity: 'SR',
     series: 'hBP08', sellPrice: 3480, yuyuName: '', color: 'white', imageUrl: '',
     prices: [{ name: 'テスト(パラレル)', sellPrice: 3480, rarity: 'SR', imageUrl: IMG('hbp08', 2) }],
     provenance: provenanceFromRow({ timestamp: OLD, sourceProduct: 'hBP08', yuyuImage: IMG('hbp08', 2) }),
   };
-  {
-    const { container, cleanup } = await renderDetail({ ...scanCard, ...scanQuoteProvenance(scanCard) });
+  for (const [card, label] of [[scanCard, 'old scanned quote'], [{ ...scanCard, provenance: null }, 'synced entry (no provenance)']]) {
+    const route = { ...card, ...scanQuoteProvenance(card) };
+    assert.equal(route.priceQuotedAt, card.provenance ? OLD : null, `${label}: internal quote time unchanged`);
+    const { container, cleanup } = await renderDetail(route);
     try {
-      const line = textOf(container, 'card-detail-market-quote');
-      assert.ok(line && /最近已知售價（舊價）/.test(line) && line.includes(day(OLD)), `old scanned quote labelled old: ${line}`);
-    } finally { await cleanup(); }
-  }
-  {
-    const synced = { ...scanCard, provenance: null };
-    const { container, cleanup } = await renderDetail({ ...synced, ...scanQuoteProvenance(synced) });
-    try {
-      assert.equal(textOf(container, 'card-detail-market-quote'), '報價日期不明，未確認為最新售價', 'no provenance → unknown, not fresh');
+      assert.ok(container.textContent.includes('3,480'), `${label}: price shown`);
+      assertNoQuoteHint(container, [OLD], label);
     } finally { await cleanup(); }
   }
 });
 
 // ── F. compact search price (tile + list row) ─────────────────────────────
-const { SearchResultTile, CardListItem, compactPriceMarker } = await import('../src/screens/SearchResultsScreen.tsx');
+const SearchResultsModule = await import('../src/screens/SearchResultsScreen.tsx');
+const { SearchResultTile, CardListItem } = SearchResultsModule;
 async function renderEl(el) {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -576,38 +600,39 @@ async function renderEl(el) {
 const tileOf = async (card, now, onPress = () => {}) => renderEl(React.createElement(SearchResultTile, { card, now, onPress }));
 const HOUR_MS = 60 * 60 * 1000;
 
-await test('F1 compact tile: old → 舊價, unknown → 日期不明, fresh / legacy → no marker; the price node itself is unchanged', async () => {
+await test('F1 compact tile: old / retained / fresh / unknown / legacy → the same price text and NO marker', async () => {
   const old = searchPayload([rowParallel]);
   const cases = [
-    [old, NOW, '舊價'],
-    [old, Date.parse(OLD) + HOUR_MS, null],                 // same payload, injected clock → fresh
-    [searchPayload([rowBase]), NOW, null],
-    [searchPayload([rowNoTime]), NOW, '日期不明'],
-    [toCanonicalCardRecord(rowParallel, {}, FULL), NOW, null], // no quote provenance → no claim
+    [old, NOW, 'old'],
+    [old, Date.parse(OLD) + HOUR_MS, 'old payload, injected clock'],
+    [searchPayload([rowParallelRetained]), NOW, 'retained'],
+    [searchPayload([rowBase]), NOW, 'fresh'],
+    [searchPayload([rowNoTime]), NOW, 'unknown time'],
+    [toCanonicalCardRecord(rowParallel, {}, FULL), NOW, 'no provenance'],
   ];
   let reference = null;
-  for (const [card, now, want] of cases) {
+  for (const [card, now, label] of cases) {
     const { container, cleanup } = await tileOf(card, now);
     try {
       const price = textOf(container, 'search-card-tile-price');
-      assert.ok(price && /\d/.test(price), 'the tile still shows its price');
-      assert.ok(!/舊價|日期不明/.test(price), 'the marker is a separate node, never inside the price text');
-      assert.equal(textOf(container, 'search-card-tile-price-note'), want, `marker for ${card.id} @ ${now}`);
+      assert.ok(price && /\d/.test(price), `${label}: the tile still shows its price`);
+      assertNoQuoteHint(container, [card.priceQuotedAt, iso(NOW)], `tile ${label}`);
       if (card.sellPrice === 3480) {
         reference ??= price;
-        assert.equal(price, reference, 'same price value text with or without the marker');
+        assert.equal(price, reference, `${label}: same price value text in every quote state`);
       }
     } finally { await cleanup(); }
   }
+  assert.equal(SearchResultsModule.compactPriceMarker, undefined, 'the compact marker presentation hook is gone');
 });
 
-await test('F2 compact tile: no quote → no price and no marker; tap still navigates; list row carries the same marker', async () => {
+await test('F2 compact tile: no quote → no price; tap still navigates; list row shows the price with no marker', async () => {
   const unpriced = searchPayload([detailRow({ id: 'hZZ98-001_hPR_X', series: 'hPR', sourceProduct: 'hPR', rarity: 'P', sellPrice: null, prices: [] })]);
   {
     const { container, cleanup } = await tileOf(unpriced, NOW);
     try {
       assert.equal(textOf(container, 'search-card-tile-price'), null);
-      assert.equal(textOf(container, 'search-card-tile-price-note'), null);
+      assertNoQuoteHint(container, [], 'unpriced tile');
     } finally { await cleanup(); }
   }
   {
@@ -619,16 +644,19 @@ await test('F2 compact tile: no quote → no price and no marker; tap still navi
       assert.equal(pressed, 1, 'navigation handler unchanged');
     } finally { await cleanup(); }
   }
-  {
-    const { container, cleanup } = await renderEl(React.createElement(CardListItem, { card: searchPayload([rowParallel]), onPress() {}, now: NOW }));
+  for (const [card, label] of [[searchPayload([rowParallel]), 'old'], [searchPayload([rowParallelRetained]), 'retained'], [searchPayload([rowNoTime]), 'unknown time']]) {
+    const { container, cleanup } = await renderEl(React.createElement(CardListItem, { card, onPress() {} }));
     try {
-      assert.equal(textOf(container, 'search-result-price-age'), '舊價');
-      assert.ok(textOf(container, 'search-result-price-row').includes('3,480') || /\d/.test(textOf(container, 'search-result-price-row')));
+      const row = textOf(container, 'search-result-price-row');
+      assert.ok(row && /\d/.test(row), `list ${label}: price shown`);
+      assertNoQuoteHint(container, [card.priceQuotedAt, iso(NOW)], `list ${label}`);
     } finally { await cleanup(); }
   }
-  const t = (k) => ({ price_quote_old_tag: 'OLD', price_quote_unknown_short: 'UNK' }[k]);
-  assert.equal(compactPriceMarker(searchPayload([rowParallel]), 3480, t, NOW), 'OLD');
-  assert.equal(compactPriceMarker(searchPayload([rowParallel]), null, t, NOW), undefined, 'no price → no marker');
+  // the classifier itself stays available internally (not rendered): the same payload is still
+  // classified exactly as before
+  assert.equal(classifyPriceFreshness({ price: 3480, quotedAt: searchPayload([rowParallel]).priceQuotedAt, now: NOW }).state, 'last-known');
+  assert.equal(classifyPriceFreshness({ price: 3480, quotedAt: FRESH2, now: NOW, retained: true }).state, 'last-known');
+  assert.equal(classifyPriceFreshness({ price: 120, quotedAt: FRESH, now: NOW }).state, 'fresh');
 });
 
 console.log(`\n${process.exitCode ? '✗' : '✓'} last-known price: ${passed} checks passed`);

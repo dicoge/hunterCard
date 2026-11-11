@@ -10,7 +10,6 @@ import { getCatalogRevision, loadCatalogSnapshot } from '../utils/staticData';
 import { useCatalogRevision } from '../hooks/useCatalogRevision';
 import { useTranslation } from '../i18n';
 import { uniformGridItemStyle } from '../utils/gridLayout';
-import { classifyPriceFreshness, quoteTagKey } from '../utils/priceFreshness';
 import { AppShell, buildShellTabs } from '../components/shell';
 import {
   ArrowLeftGlyph,
@@ -237,25 +236,10 @@ function cardPriceValue(card: CardResult): number | null {
   return typeof price === 'number' && price > 0 ? price : null;
 }
 
-/**
- * 最近已知售價 on the compact result price (2026-11-07): the shown price is the elected
- * row's own sellPrice, and `priceQuotedAt` is that same row's quote time, so the shared
- * classifier decides old / unknown exactly as CardDetail does. Fresh or no price → no
- * marker; a payload that carries no quote provenance (undefined) → no marker (no claim).
- */
-export function compactPriceMarker(
-  card: CardResult,
-  price: number | null | undefined,
-  t: (key: any) => string,
-  now?: number,
-): string | undefined {
-  if (card.priceQuotedAt === undefined) return undefined;
-  // The writer's explicit retained flag (no new quote this run) marks the price even when the
-  // original quote is only a day old: 無新報價 instead of nothing.
-  const f = classifyPriceFreshness({ price, quotedAt: card.priceQuotedAt, now, retained: card.priceRetained === true });
-  const key = quoteTagKey(f);
-  return key ? t(key) : undefined;
-}
+// 2026-11-10 (user override): the compact result price shows ONLY the price. No quote-age /
+// retained / unknown-date marker is rendered on tiles or list rows. The card keeps its own
+// `priceQuotedAt` / `priceRetained` provenance internally (detail routes, history, alerts);
+// it is just not turned into a visible hint here.
 
 export function applySearchRefinements(
   results: CardResult[],
@@ -709,15 +693,11 @@ export function SearchResultTile({
   card,
   width,
   onPress,
-  now,
 }: {
   card: CardResult;
   width?: number;
   onPress: () => void;
-  /** Clock for the last-known marker (ms); defaults to Date.now. Tests inject it. */
-  now?: number;
 }) {
-  const { t } = useTranslation();
   const { preferredCurrency, preferredLanguage } = useSettingsStore();
   const { primary } = resolveCardDisplayName(card, preferredLanguage);
   const price = cardPriceValue(card);
@@ -727,7 +707,6 @@ export function SearchResultTile({
       name={primary || card.cardNumber || card.id}
       rarity={card.rarity || undefined}
       price={showPrice ? formatCardPrice(price, preferredCurrency) : undefined}
-      priceNote={showPrice ? compactPriceMarker(card, price, t, now) : undefined}
       imageUrl={card.imageUrl || undefined}
       onPress={onPress}
       width={width}
@@ -787,7 +766,7 @@ function CardIdentityBadges({
   );
 }
 
-export function CardListItem({ card, onPress, now }: { card: CardResult; onPress: () => void; now?: number }) {
+export function CardListItem({ card, onPress }: { card: CardResult; onPress: () => void }) {
   const { t } = useTranslation();
   const [imgErr, setImgErr] = React.useState(false);
   const id = card.cardNumber || card.id;
@@ -861,12 +840,6 @@ export function CardListItem({ card, onPress, now }: { card: CardResult; onPress
           card.yuyuPrice != null && card.yuyuPrice > 0 ? (
             <View style={styles.priceRowList} testID="search-result-price-row">
               <Text style={styles.priceBadgeList}>{formatPrice(card.yuyuPrice)}</Text>
-              {(() => {
-                const marker = compactPriceMarker(card, card.yuyuPrice, t, now);
-                return marker ? (
-                  <Text style={styles.priceAgeBadgeList} testID="search-result-price-age">{marker}</Text>
-                ) : null;
-              })()}
               {card.prices && card.prices.length > 1 && (
                 <Text style={styles.variantBadge}>+{card.prices.length - 1}</Text>
               )}
@@ -1135,12 +1108,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 'auto',
     alignSelf: 'flex-end',
-  },
-  // 最近已知售價 marker beside the list price (same row; amber like CardDetail's 舊價).
-  priceAgeBadgeList: {
-    color: '#f59e0b',
-    fontSize: 10,
-    fontWeight: '700',
   },
   variantBadge: {
     color: COLORS.primary,

@@ -810,8 +810,13 @@ jobs:
       # family with a real calendar date, env head == event head, base main in env AND event, and
       # refuses (exit 2, step fails) anything else, e.g. bot/scrape/x. No fork / other base /
       # dispatch / staging / other workflow; same helper, packages and terms proof.
-      - name: Provision exactly NDK 27.1.12297006 + CMake 3.22.1 (PR 284 branch, daily bot/scrape/YYYY-MM-DD into main, or push to main only; terms pre-verified; nothing accepted)
-        if: ${{ (github.event_name == 'pull_request' && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository) || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'bot/scrape/') && github.base_ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository) || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+      # 2026-11-11 PR #288 (user-prioritised corrected test build of the price-hint removal): plus
+      # EXACTLY same-repo PR #288 from fix/price-hints-20261110 into main (number, branch, base and
+      # head/base repository all pinned here and re-checked by the helper against GITHUB_REF
+      # refs/pull/288/merge and the event payload). Same two packages, same terms proof; no other
+      # branch, PR number, fork, base, event or workflow.
+      - name: Provision exactly NDK 27.1.12297006 + CMake 3.22.1 (PR 284 branch, daily bot/scrape/YYYY-MM-DD into main, PR 288 into main, or push to main only; terms pre-verified; nothing accepted)
+        if: ${{ (github.event_name == 'pull_request' && github.head_ref == 'fix/last-known-price-20261107' && github.event.pull_request.head.repo.full_name == github.repository) || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'bot/scrape/') && github.base_ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository) || (github.event_name == 'pull_request' && github.event.pull_request.number == 288 && github.head_ref == 'fix/price-hints-20261110' && github.base_ref == 'main' && github.event.pull_request.base.repo.full_name == github.repository && github.event.pull_request.head.repo.full_name == github.repository) || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
         run: |
           set -euo pipefail
           node scripts/ci/android-sdk-provision.mjs

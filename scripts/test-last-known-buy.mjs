@@ -22,9 +22,10 @@
 //   D. privacy: nested sentinels of every new buy field never survive the public projection,
 //      the Store MVP mapper or the remote-catalog contract; the full web copy keeps the
 //      retained flag but never the holder; sellQuoteRetained is sell metadata only.
-//   E. UI (full profile): buy line inside 市場數據 shows source + original time + the
-//      retained label; sell headline / compact marker / scan say 無新報價 for a retained
-//      one-day-old quote and nothing old for a fresh one; Store MVP payload has no buy line.
+//   E. UI (full profile; 2026-11-10 user override): the buy line inside 市場數據 shows the
+//      merchant only; sell headline / tile / list render the price with NO quote-date / 舊價 /
+//      無新報價 hint in retained, fresh, stale and unknown states, while the payload keeps the
+//      own quote time + retained flag; Store MVP payload has no buy line.
 
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -71,7 +72,6 @@ const React = (await import('react')).default;
 const { act } = await import('react');
 const { createRoot } = await import('react-dom/client');
 const CardDetailScreen = (await import('../src/screens/CardDetailScreen.tsx')).default;
-const { compactPriceMarker } = await import('../src/screens/SearchResultsScreen.tsx');
 
 let passed = 0;
 async function test(name, fn) {
@@ -599,22 +599,38 @@ const buyListing = (over = {}) => ({
 });
 const payload = (row, flags = FULL) => toCanonicalCardRecord({ ...row, prices: dedupeListings(row.prices ?? []) }, {}, flags, [row]);
 
-await test('E1 full profile buy line: original source + time; retained → 無新報價 even 1h old; 20h old → 舊價; fresh → plain date', async () => {
+// 2026-11-10 USER OVERRIDE: no quote-date / 舊價 / 無新報價 / 報價日期不明 hint on any rendered
+// price (Android: 「本次更新無新報價・沿用 2026-08-25 的原報價（舊價）」「如果會請拿掉 我可沒叫你這樣顯示」).
+// The exact-version value and its merchant name still render; quote time / retained stay internal.
+const QUOTE_HINT_RE = /舊價|無新報價|報價日期不明|日期不明|最近已知|非即時行情|沿用|\d{4}-\d{2}-\d{2}\s*報價/;
+const assertNoQuoteHint = (container, dates, label) => {
+  const text = container.textContent;
+  assert.doesNotMatch(text, QUOTE_HINT_RE, `${label}: no quote-age / retained / unknown-date wording`);
+  for (const at of dates) if (at) assert.ok(!text.includes(at.slice(0, 10)), `${label}: quote date ${at.slice(0, 10)} not rendered`);
+  for (const id of ['card-detail-price-quote', 'card-detail-market-quote', 'search-card-tile-price-note', 'search-result-price-age']) {
+    assert.equal(textOf(container, id), null, `${label}: no ${id} node`);
+  }
+};
+
+await test('E1 full profile buy line: the merchant only (來源：torecolo) in retained / fresh / stale / unknown states; value shown; time + retained kept internally', async () => {
   const cases = [
-    [buyListing({ buyPriceRetained: true }), (t) => /本次更新無新報價/.test(t) && t.includes(iso(NOW - HOUR).slice(0, 10)) && t.includes('來源：torecolo')],
-    [buyListing(), (t) => !/無新報價|舊價/.test(t) && t.startsWith(`${iso(NOW - HOUR).slice(0, 10)} 報價`) && t.includes('來源：torecolo')],
-    // stale buy (past the 18h window, not retained): buy wording with the original date and source — never 售價
-    [buyListing({ buyPriceTimestamp: iso(NOW - 20 * HOUR) }), (t) => /最近已知收購價（舊價）/.test(t) && t.includes(iso(NOW - 20 * HOUR).slice(0, 10)) && t.includes('來源：torecolo')],
-    // unknown buy time: says the date is unknown and that it is not confirmed as the latest BUY price
-    [buyListing({ buyPriceTimestamp: undefined }), (t) => /報價日期不明，未確認為最新收購價/.test(t) && t.includes('來源：torecolo')],
+    [buyListing({ buyPriceRetained: true }), iso(NOW - HOUR), true, 'retained 1h'],
+    [buyListing(), iso(NOW - HOUR), false, 'fresh 1h'],
+    [buyListing({ buyPriceTimestamp: iso(NOW - 20 * HOUR) }), iso(NOW - 20 * HOUR), false, 'stale 20h'],
+    [buyListing({ buyPriceTimestamp: undefined }), null, false, 'unknown time'],
   ];
-  for (const [listing, ok] of cases) {
-    const { container, cleanup } = await renderDetail(payload(detailRow({ prices: [listing] })));
+  for (const [listing, at, retained, label] of cases) {
+    const card = payload(detailRow({ prices: [listing] }));
+    // internal buy provenance of the selected exact version is unchanged (source, own time, retained)
+    const q = buildPriceVersions(card)[0]?.buyQuote;
+    assert.ok(q && q.source === 'torecolo', `${label}: buy quote source kept internally`);
+    assert.equal(q.quotedAt ?? null, at, `${label}: buy quote time kept internally`);
+    assert.equal(q.retained === true, retained, `${label}: buy retained flag kept internally`);
+    const { container, cleanup } = await renderDetail(card);
     try {
-      const line = textOf(container, 'card-detail-buy-quote');
-      assert.ok(line && ok(line), `buy line: ${line}`);
-      assert.doesNotMatch(line, /售價/, `a buy line never calls the quote a selling price: ${line}`);
-      assert.ok(textOf(container, 'card-detail-spread-shop-buyback')?.includes('¥50'), 'the retained exact-version value itself');
+      assert.equal(textOf(container, 'card-detail-buy-quote'), '來源：torecolo', `${label}: merchant reference only`);
+      assert.ok(textOf(container, 'card-detail-spread-shop-buyback')?.includes('¥50'), `${label}: the exact-version value itself`);
+      assertNoQuoteHint(container, [at, iso(NOW - DAY)], label);
     } finally { await cleanup(); }
   }
 });
@@ -628,26 +644,39 @@ await test('E2 Store MVP payload: no buy value, no buy line, no buy provenance',
   } finally { await cleanup(); }
 });
 
-await test('E3 sell: a one-day-old RETAINED quote says 無新報價 with its original date (headline, compact marker, scan); same age without the flag is fresh', async () => {
+await test('E3 sell: a one-day-old RETAINED quote and a fresh one render the same price with NO hint (headline, tile, list); the retained flag stays internal (payload, scan)', async () => {
   const yesterday = iso(NOW - DAY);
   const retainedRow = detailRow({ sellQuoteRetained: true, prices: [{ name: BASE_NAME, sellPrice: 100, rarity: 'C' }] });
-  {
-    const { container, cleanup } = await renderDetail(payload(retainedRow));
-    try {
-      const line = textOf(container, 'card-detail-price-quote');
-      assert.equal(line, `本次更新無新報價・沿用 ${yesterday.slice(0, 10)} 的原報價（舊價）`);
-    } finally { await cleanup(); }
-  }
   const freshRow = detailRow({ prices: [{ name: BASE_NAME, sellPrice: 100, rarity: 'C' }] });
-  {
-    const { container, cleanup } = await renderDetail(payload(freshRow));
-    try {
-      assert.equal(textOf(container, 'card-detail-price-quote'), `${yesterday.slice(0, 10)} 報價`, 'recovered / freshly priced → no retained label');
-    } finally { await cleanup(); }
+  const { SearchResultTile, CardListItem } = await import('../src/screens/SearchResultsScreen.tsx');
+  const renderEl = async (el) => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => root.render(el));
+    return { container, cleanup: async () => { await act(async () => root.unmount()); container.remove(); } };
+  };
+  for (const [row, label] of [[retainedRow, 'retained'], [freshRow, 'fresh']]) {
+    const card = payload(row);
+    assert.equal(card.priceQuotedAt, yesterday, `${label}: own quote time kept internally`);
+    {
+      const { container, cleanup } = await renderDetail(card);
+      try {
+        assert.ok(container.textContent.includes('¥100'), `${label}: headline price shown`);
+        assertNoQuoteHint(container, [yesterday], `detail ${label}`);
+      } finally { await cleanup(); }
+    }
+    for (const el of [React.createElement(SearchResultTile, { card, onPress() {} }), React.createElement(CardListItem, { card, onPress() {} })]) {
+      const { container, cleanup } = await renderEl(el);
+      try {
+        assert.ok(/\d/.test(container.textContent), `${label}: compact price shown`);
+        assertNoQuoteHint(container, [yesterday], `compact ${label}`);
+      } finally { await cleanup(); }
+    }
   }
-  const t = (k) => ({ price_quote_retained_tag: '無新報價', price_quote_old_tag: '舊價', price_quote_unknown_short: '日期不明' }[k] ?? k);
-  assert.equal(compactPriceMarker(payload(retainedRow), 100, t, NOW), '無新報價');
-  assert.equal(compactPriceMarker(payload(freshRow), 100, t, NOW), undefined);
+  // the classifier stays usable internally: same inputs, same states as before
+  assert.equal(classifyPriceFreshness({ price: 100, quotedAt: yesterday, now: NOW, retained: true }).state, 'last-known');
+  assert.equal(classifyPriceFreshness({ price: 100, quotedAt: yesterday, now: NOW }).state, 'fresh');
   const prov = provenanceFromRow({ timestamp: yesterday, sourceProduct: 'hZZ98', sellQuoteRetained: true });
   assert.equal(prov.retained, true);
   assert.equal('retained' in provenanceFromRow({ timestamp: yesterday }), false, 'no flag → no claim (shape unchanged)');
