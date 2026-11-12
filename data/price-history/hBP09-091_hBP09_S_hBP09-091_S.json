@@ -162,8 +162,16 @@
       "currency": "JPY",
       "cardId": "hBP09-091_hBP09_S_hBP09-091_S",
       "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-11-12",
+      "price": 280,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-091_hBP09_S_hBP09-091_S",
+      "sourceProduct": "hBP09"
     }
   ],
-  "lastUpdated": "2026-11-10T12:07:44.800Z",
+  "lastUpdated": "2026-11-12T12:07:14.837Z",
   "nameZh": "淡藍色 BESTIE DAYS"
 }
