@@ -162,8 +162,16 @@
       "currency": "JPY",
       "cardId": "hBP09-049_hBP09_SR_hBP09-049_SR",
       "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-11-12",
+      "price": 220,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-049_hBP09_SR_hBP09-049_SR",
+      "sourceProduct": "hBP09"
     }
   ],
-  "lastUpdated": "2026-11-10T12:07:44.644Z",
+  "lastUpdated": "2026-11-12T12:07:14.448Z",
   "nameZh": "霸子·貝爾茲"
 }
