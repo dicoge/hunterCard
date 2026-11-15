@@ -39,8 +39,15 @@ export interface BottomTabBarProps {
   activeKey: BottomTabKey;
   onChange?: (item: BottomTabItem) => void;
   scanFabTint?: 'pink-purple' | 'pink-cyan';
+  /** 'full' = Pen H8TW7 edge-to-edge mobile bar; 'dock' = the same bar clamped
+   *  to the Pen 390 width and centred (desktop web root-stack screens, which
+   *  have no permanent drawer). Set by AppShell. */
+  variant?: 'full' | 'dock';
   testID?: string;
 }
+
+/** Pen `C / Tab Bar` (H8TW7) frame width — the dock never grows past it. */
+export const TAB_BAR_DOCK_MAX_WIDTH = 390;
 
 const DEFAULT_ORDER: BottomTabKey[] = ['home', 'search', 'scan', 'deck', 'me'];
 
@@ -55,6 +62,7 @@ export function BottomTabBar({
   activeKey,
   onChange,
   scanFabTint = 'pink-purple',
+  variant = 'full',
   testID = 'shell-bottom-tab-bar',
 }: BottomTabBarProps) {
   const { t } = useTranslation();
@@ -72,7 +80,7 @@ export function BottomTabBar({
 
   return (
     <View style={styles.root} testID={testID}>
-      <View style={styles.bar} testID={`${testID}-bar`}>
+      <View style={[styles.bar, variant === 'dock' && styles.barDock]} testID={`${testID}-bar`}>
         {left.map((item) => renderTab(item, item.key === activeKey, handlePress))}
         <View style={styles.spacer} accessibilityElementsHidden />
         {right.map((item) => renderTab(item, item.key === activeKey, handlePress))}
@@ -168,13 +176,34 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'space-between',
   },
+  // Desktop root-stack dock: the Pen 390 bar, centred, instead of a 1180px
+  // stretch with ~190px gaps between tabs (2026-11-03 audit).
+  barDock: {
+    maxWidth: TAB_BAR_DOCK_MAX_WIDTH,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderTopLeftRadius: RADII.xl,
+    borderTopRightRadius: RADII.xl,
+  },
+  // 2026-11-03: five 78px slots (390) did not fit the 366px inner width of a
+  // 390 bar (12px padding each side) and overflowed to x=402. Slots now share
+  // the inner width (≤78 each, ≥ LAYOUT.minTouch), so nothing overflows at
+  // 390 or on narrower phones.
   spacer: {
-    width: 78,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
+    maxWidth: 78,
+    minWidth: LAYOUT.minTouch,
     height: LAYOUT.bottomTab.fab,
   },
   tab: {
-    width: 78,
-    height: 42,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
+    maxWidth: 78,
+    minWidth: LAYOUT.minTouch,
+    minHeight: LAYOUT.minTouch,
     alignItems: 'center',
     justifyContent: 'flex-start',
     gap: 4,
